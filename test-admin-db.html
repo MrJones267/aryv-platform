@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARYV Admin Panel - Database Connection Test</title>
+    <style>
+        body { 
+            font-family: system-ui, sans-serif; 
+            margin: 0; 
+            padding: 2rem; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+        }
+        .card { 
+            background: white; 
+            padding: 1.5rem; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+            margin-bottom: 2rem; 
+        }
+        .success { 
+            color: #28a745; 
+        }
+        .error { 
+            color: #dc3545; 
+        }
+        .loading { 
+            color: #6c757d; 
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 1rem; 
+        }
+        th, td { 
+            padding: 0.75rem; 
+            text-align: left; 
+            border-bottom: 1px solid #dee2e6; 
+        }
+        th { 
+            background: #f8f9fa; 
+            font-weight: 600; 
+        }
+        .status { 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 12px; 
+            font-size: 0.8rem; 
+            font-weight: 500; 
+        }
+        .status.active { 
+            background: #d4edda; 
+            color: #155724; 
+        }
+        .status.blocked { 
+            background: #f8d7da; 
+            color: #721c24; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏢 ARYV Professional Admin Panel</h1>
+        <h2>Database Connection Test</h2>
+
+        <div class="card">
+            <h3>Backend Connection Status</h3>
+            <p id="connection-status" class="loading">🔄 Testing connection...</p>
+        </div>
+
+        <div class="card">
+            <h3>Authentication Test</h3>
+            <p id="auth-status" class="loading">🔄 Testing authentication...</p>
+            <div id="auth-details"></div>
+        </div>
+
+        <div class="card">
+            <h3>Users from Database</h3>
+            <p id="users-status" class="loading">🔄 Loading users...</p>
+            <div id="users-data"></div>
+        </div>
+
+        <div class="card">
+            <h3>Rides from Database</h3>
+            <p id="rides-status" class="loading">🔄 Loading rides...</p>
+            <div id="rides-data"></div>
+        </div>
+    </div>
+
+    <script>
+        // Test backend connection
+        async function testConnection() {
+            try {
+                const response = await fetch('http://localhost:3001/health');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('connection-status').innerHTML = 
+                        `✅ <span class="success">Connected to ARYV Backend</span><br>
+                         Server: ${data.message}<br>
+                         Database: ${data.database}`;
+                    document.getElementById('connection-status').className = 'success';
+                } else {
+                    throw new Error('Backend returned error');
+                }
+            } catch (error) {
+                document.getElementById('connection-status').innerHTML = 
+                    `❌ <span class="error">Failed to connect to backend: ${error.message}</span>`;
+                document.getElementById('connection-status').className = 'error';
+            }
+        }
+
+        // Test authentication
+        async function testAuth() {
+            try {
+                const response = await fetch('http://localhost:3001/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'admin@aryv-app.com', password: 'admin123' })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('auth-status').innerHTML = 
+                        `✅ <span class="success">Authentication successful</span>`;
+                    document.getElementById('auth-status').className = 'success';
+                    
+                    document.getElementById('auth-details').innerHTML = `
+                        <p><strong>User:</strong> ${data.data.user.firstName} ${data.data.user.lastName}</p>
+                        <p><strong>Email:</strong> ${data.data.user.email}</p>
+                        <p><strong>Role:</strong> ${data.data.user.role}</p>
+                        <p><strong>Token:</strong> ${data.data.accessToken.substring(0, 50)}...</p>
+                    `;
+                    
+                    // Store token for other requests
+                    window.authToken = data.data.accessToken;
+                } else {
+                    throw new Error(data.message || 'Authentication failed');
+                }
+            } catch (error) {
+                document.getElementById('auth-status').innerHTML = 
+                    `❌ <span class="error">Authentication failed: ${error.message}</span>`;
+                document.getElementById('auth-status').className = 'error';
+            }
+        }
+
+        // Test users endpoint
+        async function testUsers() {
+            try {
+                const response = await fetch('http://localhost:3001/api/users');
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    document.getElementById('users-status').innerHTML = 
+                        `✅ <span class="success">Loaded ${data.data.length} users from database</span>`;
+                    document.getElementById('users-status').className = 'success';
+                    
+                    const table = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Verified</th>
+                                    <th>Join Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.data.map(user => `
+                                    <tr>
+                                        <td>${user.id}</td>
+                                        <td>${user.name}</td>
+                                        <td>${user.email}</td>
+                                        <td>${user.role}</td>
+                                        <td><span class="status ${user.status}">${user.status}</span></td>
+                                        <td>${user.verified ? '✅' : '❌'}</td>
+                                        <td>${new Date(user.joinDate).toLocaleDateString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    
+                    document.getElementById('users-data').innerHTML = table;
+                } else {
+                    throw new Error('No user data received');
+                }
+            } catch (error) {
+                document.getElementById('users-status').innerHTML = 
+                    `❌ <span class="error">Failed to load users: ${error.message}</span>`;
+                document.getElementById('users-status').className = 'error';
+            }
+        }
+
+        // Test rides endpoint
+        async function testRides() {
+            try {
+                const response = await fetch('http://localhost:3001/api/rides');
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    document.getElementById('rides-status').innerHTML = 
+                        `✅ <span class="success">Loaded ${data.data.length} rides from database</span>`;
+                    document.getElementById('rides-status').className = 'success';
+                    
+                    const table = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Ride ID</th>
+                                    <th>Driver</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Departure</th>
+                                    <th>Status</th>
+                                    <th>Price</th>
+                                    <th>Distance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.data.map(ride => `
+                                    <tr>
+                                        <td>${ride.id}</td>
+                                        <td>${ride.driverName} (${ride.driverId})</td>
+                                        <td>${ride.route.from}</td>
+                                        <td>${ride.route.to}</td>
+                                        <td>${new Date(ride.departureTime).toLocaleString()}</td>
+                                        <td><span class="status ${ride.status}">${ride.status}</span></td>
+                                        <td>$${ride.price}</td>
+                                        <td>${ride.distance} km</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    
+                    document.getElementById('rides-data').innerHTML = table;
+                } else {
+                    throw new Error('No ride data received');
+                }
+            } catch (error) {
+                document.getElementById('rides-status').innerHTML = 
+                    `❌ <span class="error">Failed to load rides: ${error.message}</span>`;
+                document.getElementById('rides-status').className = 'error';
+            }
+        }
+
+        // Run all tests
+        async function runTests() {
+            await testConnection();
+            await testAuth();
+            await testUsers();
+            await testRides();
+        }
+
+        // Start tests when page loads
+        window.addEventListener('DOMContentLoaded', runTests);
+    </script>
+</body>
+</html>

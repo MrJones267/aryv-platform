@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background color -->
+    <item android:drawable="@color/launch_screen_background" />
+    
+    <!-- Logo -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/launch_screen_logo" />
+    </item>
+    
+    <!-- Loading indicator area -->
+    <item android:gravity="bottom|center_horizontal">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</layer-list>

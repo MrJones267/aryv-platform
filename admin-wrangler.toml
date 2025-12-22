@@ -1,0 +1,11 @@
+name = "aryv-admin-worker"
+main = "admin-worker.js"
+compatibility_date = "2024-01-01"
+
+# Custom domain routes (uncomment when ready)
+# [[routes]]
+# pattern = "admin.aryv-app.com/*"
+# zone_name = "aryv-app.com"
+
+[vars]
+NODE_ENV = "production"

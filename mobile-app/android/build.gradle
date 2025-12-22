@@ -1,0 +1,46 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
+    ext {
+        buildToolsVersion = "34.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 34
+        targetSdkVersion = 34
+        ndkVersion = "23.1.7779620"
+        kotlinVersion = "1.8.10"
+        googlePlayServicesAuthVersion = "20.7.0"
+    }
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://repo1.maven.org/maven2" }
+        maven { url "https://jcenter.bintray.com" }
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:7.4.2")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.10")
+        classpath("com.google.gms:google-services:4.4.0")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://repo1.maven.org/maven2" }
+        maven { url "https://jcenter.bintray.com" }
+        maven { url "https://www.jitpack.io" }
+        maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
+    }
+    
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            android {
+                buildFeatures {
+                    buildConfig true
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,80 @@
+
+<svg width="60" height="60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Professional gradient background -->
+    <radialGradient id="professionalBg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#42A5F5;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#2196F3;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1976D2;stop-opacity:1" />
+    </radialGradient>
+    
+    <!-- Modern accent gradient -->
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5722;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#FF7043;stop-opacity:0.6" />
+    </linearGradient>
+    
+    <!-- Text shadow filter -->
+    <filter id="textShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="4" dy="6" stdDeviation="8" flood-color="#0D47A1" flood-opacity="0.4"/>
+      <feDropShadow dx="2" dy="3" stdDeviation="4" flood-color="#0D47A1" flood-opacity="0.3"/>
+    </filter>
+    
+    <!-- Subtle pattern -->
+    <pattern id="hexPattern" patternUnits="userSpaceOnUse" width="60" height="52">
+      <polygon points="30,8 48,18 48,38 30,48 12,38 12,18" 
+               fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.1"/>
+    </pattern>
+    
+    <!-- Inner glow -->
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background circle with professional gradient -->
+  <circle cx="30" cy="30" r="-2" fill="url(#professionalBg)"/>
+  
+  <!-- Subtle geometric pattern overlay -->
+  <circle cx="30" cy="30" r="-34" fill="url(#hexPattern)" opacity="0.3"/>
+  
+  <!-- Main letter "A" with modern typography -->
+  <text x="30" y="36" 
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+        font-size="27" 
+        font-weight="700"
+        text-anchor="middle" 
+        fill="#FFFFFF" 
+        filter="url(#textShadow)">A</text>
+  
+  <!-- Modern accent elements -->
+  <!-- Top-right arc -->
+  <path d="M 39 15 A 40 40 0 0 1 45 21" 
+        fill="none" stroke="url(#accentGradient)" stroke-width="8" stroke-linecap="round"/>
+  
+  <!-- Bottom-left arc -->
+  <path d="M 15 39 A 30 30 0 0 1 21 45" 
+        fill="none" stroke="#42A5F5" stroke-width="6" stroke-opacity="0.7" stroke-linecap="round"/>
+  
+  <!-- Right side accent dots -->
+  <circle cx="42" cy="27" r="6" fill="url(#accentGradient)" filter="url(#innerGlow)"/>
+  <circle cx="43.199999999999996" cy="30" r="8" fill="url(#accentGradient)" filter="url(#innerGlow)"/>
+  <circle cx="42" cy="33" r="6" fill="url(#accentGradient)" filter="url(#innerGlow)"/>
+  
+  <!-- Left side minimal line -->
+  <line x1="13.2" y1="25.2" x2="13.2" y2="34.8" 
+        stroke="#42A5F5" stroke-width="4" stroke-opacity="0.6" stroke-linecap="round"/>
+  
+  <!-- Subtle highlight on letter -->
+  <text x="28" y="34" 
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+        font-size="27" 
+        font-weight="700"
+        text-anchor="middle" 
+        fill="url(#accentGradient)" 
+        opacity="0.3">A</text>
+</svg>

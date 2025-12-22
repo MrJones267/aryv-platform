@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="ARYV Admin Panel - Professional ride-sharing management platform" />
+    <meta name="theme-color" content="#667eea" />
+    <meta name="msapplication-TileColor" content="#667eea" />
+    
+    <!-- Preload critical fonts -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" as="style" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+    
+    <!-- Material Icons -->
+    <link rel="preload" href="https://fonts.googleapis.com/icon?family=Material+Icons" as="style" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    
+    <title>ARYV React Admin Panel</title>
+    
+    <style>
+      /* Loading screen styles */
+      #initial-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #f5f5f5;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+      }
+      
+      .loader-logo {
+        width: 64px;
+        height: 64px;
+        background-image: url('data:image/png;base64,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');
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        margin-bottom: 16px;
+        animation: pulse 2s infinite;
+      }
+      
+      .loader-text {
+        color: #666;
+        font-family: 'Roboto', sans-serif;
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+      
+      .loader-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #e0e0e0;
+        border-top: 2px solid #1976d2;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Hide loader once React takes over */
+      .app-loaded #initial-loader {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Initial loading screen -->
+      <div id="initial-loader">
+        <div class="loader-logo"></div>
+        <div class="loader-text">Loading ARYV React Admin Panel...</div>
+        <div class="loader-spinner"></div>
+      </div>
+    </div>
+    
+    <script type="module" src="/src/index-simple.tsx"></script>
+    
+    <script>
+      // Remove loader once React app is loaded
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          document.body.classList.add('app-loaded');
+        }, 500);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,62 @@
+{
+  "name": "hitch-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end testing suite for Hitch ride-sharing platform",
+  "main": "test-runner.js",
+  "scripts": {
+    "test": "node test-runner.js",
+    "test:headless": "E2E_HEADLESS=true node test-runner.js",
+    "test:headed": "E2E_HEADLESS=false node test-runner.js",
+    "test:chrome": "E2E_BROWSERS=chromium node test-runner.js",
+    "test:firefox": "E2E_BROWSERS=firefox node test-runner.js",
+    "test:webkit": "E2E_BROWSERS=webkit node test-runner.js",
+    "test:all-browsers": "E2E_BROWSERS=chromium,firefox,webkit node test-runner.js",
+    "test:user-journey": "node test-runner.js --suites 'User Journey'",
+    "test:ride-lifecycle": "node test-runner.js --suites 'Ride Lifecycle'",
+    "test:ai-integration": "node test-runner.js --suites 'AI Integration'",
+    "test:admin-panel": "node test-runner.js --suites 'Admin Panel'",
+    "test:performance": "node test-runner.js --suites 'Performance'",
+    "test:security": "node test-runner.js --suites 'Security'",
+    "test:mobile": "node test-runner.js --suites 'Mobile Responsive'",
+    "test:critical": "node test-runner.js --suites 'User Journey,Ride Lifecycle,Admin Panel,Security'",
+    "test:smoke": "node test-runner.js --suites 'User Journey' --strict",
+    "test:regression": "node test-runner.js --strict",
+    "test:ci": "E2E_HEADLESS=true E2E_SCREENSHOTS=true E2E_VIDEOS=false node test-runner.js --strict",
+    "test:local": "E2E_HEADLESS=false E2E_SCREENSHOTS=true E2E_VIDEOS=true node test-runner.js",
+    "setup": "npm install",
+    "clean": "rm -rf reports screenshots videos",
+    "install-browsers": "npx playwright install"
+  },
+  "keywords": [
+    "e2e",
+    "testing",
+    "playwright",
+    "automation",
+    "rideshare",
+    "hitch"
+  ],
+  "author": "Claude-Code",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "chai": "^4.3.10",
+    "axios": "^1.6.0",
+    "fs-extra": "^11.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hitch-platform/hitch.git",
+    "directory": "tests/e2e"
+  },
+  "bugs": {
+    "url": "https://github.com/hitch-platform/hitch/issues"
+  },
+  "homepage": "https://github.com/hitch-platform/hitch#readme"
+}

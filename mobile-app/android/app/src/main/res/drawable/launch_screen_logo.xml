@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+  <group android:scaleX="1.0"
+      android:scaleY="1.0"
+      android:pivotX="60"
+      android:pivotY="60">
+    <!-- ARYV "A" Letter Logo -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M30,90 L45,30 L75,30 L90,90 L75,90 L70,75 L50,75 L45,90 Z M55,60 L65,60 L60,45 Z"/>
+    <!-- Replace circles with small squares -->
+    <path android:fillColor="#FF4081" android:pathData="M37,97h6v6h-6z"/>
+    <path android:fillColor="#FF4081" android:pathData="M57,97h6v6h-6z"/>
+    <path android:fillColor="#FF4081" android:pathData="M77,97h6v6h-6z"/>
+  </group>
+</vector>

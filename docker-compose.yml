@@ -1,0 +1,279 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with PostGIS extension
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: aryv-postgres
+    environment:
+      POSTGRES_DB: aryv_db
+      POSTGRES_USER: aryv_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aryv_secure_password}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - aryv-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aryv_user -d aryv_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7.2-alpine
+    container_name: aryv-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - aryv-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-aryv_redis_password}
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: aryv-backend
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      DATABASE_URL: postgresql://aryv_user:${POSTGRES_PASSWORD:-aryv_secure_password}@postgres:5432/aryv_db
+      REDIS_URL: redis://default:${REDIS_PASSWORD:-aryv_redis_password}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:19006}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/src:/app/src:delegated
+      - ./backend/uploads:/app/uploads
+      - backend_node_modules:/app/node_modules
+    networks:
+      - aryv-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Real-time Socket.io Service  
+  realtime-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.realtime
+    container_name: aryv-realtime
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3002
+      DATABASE_URL: postgresql://aryv_user:${POSTGRES_PASSWORD:-aryv_secure_password}@postgres:5432/aryv_db
+      REDIS_URL: redis://default:${REDIS_PASSWORD:-aryv_redis_password}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:19006}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SOCKET_IO_ADAPTER: redis
+      SOCKET_IO_STICKY: true
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./realtime-production-server.js:/app/server.js:ro
+      - realtime_node_modules:/app/node_modules
+    networks:
+      - aryv-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Admin Panel (React)
+  admin-panel:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: aryv-admin-panel
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      VITE_API_BASE_URL: ${REACT_APP_API_URL:-http://localhost:3001}
+      VITE_SOCKET_URL: ${REACT_APP_SOCKET_URL:-http://localhost:3001}
+      VITE_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./admin-panel/src:/app/src:delegated
+      - admin_node_modules:/app/node_modules
+    networks:
+      - aryv-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Services (Python)
+  ai-services:
+    build:
+      context: ./ai-services
+      dockerfile: Dockerfile
+    container_name: aryv-ai-services
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-development}
+      FLASK_APP: app.py
+      DATABASE_URL: postgresql://aryv_user:${POSTGRES_PASSWORD:-aryv_secure_password}@postgres:5432/aryv_db
+      REDIS_URL: redis://default:${REDIS_PASSWORD:-aryv_redis_password}@redis:6379
+      ML_MODEL_PATH: /app/models
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ai-services:/app:delegated
+      - ai_models:/app/models
+    networks:
+      - aryv-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Load Balancer & Reverse Proxy
+  nginx:
+    image: nginx:1.24-alpine
+    container_name: aryv-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - aryv-network
+    depends_on:
+      - backend
+      - admin-panel
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: aryv-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - aryv-network
+    restart: unless-stopped
+
+  # Monitoring with Grafana
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: aryv-grafana
+    ports:
+      - "3003:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - aryv-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_node_modules:
+    driver: local
+  admin_node_modules:
+    driver: local
+  realtime_node_modules:
+    driver: local
+  ai_models:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  aryv-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16

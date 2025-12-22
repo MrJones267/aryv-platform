@@ -1,0 +1,300 @@
+# ARYV Platform - Prometheus Alert Rules
+# Author: Claude-Code
+# Created: 2025-01-21
+# Last Modified: 2025-01-21
+
+groups:
+  # High Priority Critical Alerts
+  - name: aryv.critical
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up{job=~"aryv-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "{{ $labels.job }} service is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+          runbook_url: "https://docs.aryv.com/runbooks/service-down"
+
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database has been down for more than 30 seconds."
+          runbook_url: "https://docs.aryv.com/runbooks/database-down"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis cache has been down for more than 30 seconds."
+          runbook_url: "https://docs.aryv.com/runbooks/redis-down"
+
+      # High error rate alerts
+      - alert: HighErrorRate
+        expr: (rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }} on {{ $labels.instance }}."
+          runbook_url: "https://docs.aryv.com/runbooks/high-error-rate"
+
+      # Response time alerts
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=~"aryv-.*"}[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.job }}."
+
+      # AI Services specific alerts
+      - alert: AIServiceHighLatency
+        expr: histogram_quantile(0.95, rate(ai_prediction_duration_seconds_bucket[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "AI service high latency"
+          description: "AI service prediction latency is {{ $value }}s (95th percentile)."
+
+      - alert: AIServiceLowAccuracy
+        expr: avg_over_time(ai_model_accuracy[1h]) < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "AI model accuracy degraded"
+          description: "AI model accuracy has dropped to {{ $value }} over the last hour."
+
+  # Resource utilization alerts
+  - name: aryv.resources
+    rules:
+      # CPU alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}."
+
+      # Memory alerts
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}."
+
+      # Disk space alerts
+      - alert: LowDiskSpace
+        expr: 100 - ((node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100) > 85
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}."
+
+      - alert: CriticalDiskSpace
+        expr: 100 - ((node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100) > 95
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical disk space"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}. Immediate action required."
+
+  # Database specific alerts
+  - name: aryv.database
+    rules:
+      - alert: DatabaseHighConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Database connection usage high"
+          description: "PostgreSQL connection usage is {{ $value | humanizePercentage }}."
+
+      - alert: DatabaseSlowQueries
+        expr: pg_stat_activity_max_tx_duration{datname!~"template.*"} > 300
+        for: 1m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Long running queries detected in database {{ $labels.datname }}."
+
+      - alert: DatabaseReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Database replication lag"
+          description: "Database replication lag is {{ $value }}s."
+
+  # Application business logic alerts
+  - name: aryv.business
+    rules:
+      # Ride booking alerts
+      - alert: LowRideBookingRate
+        expr: rate(ride_bookings_total[1h]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "Low ride booking rate"
+          description: "Ride booking rate has dropped to {{ $value }} bookings per hour."
+
+      - alert: HighRideCancellationRate
+        expr: (rate(ride_cancellations_total[1h]) / rate(ride_bookings_total[1h])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "High ride cancellation rate"
+          description: "Ride cancellation rate is {{ $value | humanizePercentage }}."
+
+      # Payment alerts
+      - alert: HighPaymentFailureRate
+        expr: (rate(payment_failures_total[5m]) / rate(payment_attempts_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High payment failure rate"
+          description: "Payment failure rate is {{ $value | humanizePercentage }}."
+
+      # User experience alerts
+      - alert: HighLoginFailureRate
+        expr: (rate(login_failures_total[5m]) / rate(login_attempts_total[5m])) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High login failure rate"
+          description: "Login failure rate is {{ $value | humanizePercentage }}."
+
+  # Security alerts
+  - name: aryv.security
+    rules:
+      - alert: UnusualTrafficSpike
+        expr: rate(http_requests_total[1m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Unusual traffic spike detected"
+          description: "Request rate is {{ $value }} requests/second, which is unusually high."
+
+      - alert: TooManyFailedAuthAttempts
+        expr: rate(auth_failures_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Too many failed authentication attempts"
+          description: "Failed authentication rate is {{ $value }} per second."
+
+      - alert: SSLCertificateExpiring
+        expr: (ssl_certificate_expiry_timestamp - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate for {{ $labels.instance }} expires in {{ $value }} days."
+
+      - alert: SSLCertificateExpired
+        expr: ssl_certificate_expiry_timestamp < time()
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "SSL certificate expired"
+          description: "SSL certificate for {{ $labels.instance }} has expired."
+
+  # External dependencies alerts
+  - name: aryv.external
+    rules:
+      - alert: ExternalServiceDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "External service unreachable"
+          description: "External service {{ $labels.instance }} is unreachable."
+
+      - alert: GoogleMapsAPIHighLatency
+        expr: external_api_duration_seconds{service="google_maps"} > 5
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Google Maps API high latency"
+          description: "Google Maps API response time is {{ $value }}s."
+
+  # Data quality alerts
+  - name: aryv.data_quality
+    rules:
+      - alert: MissingLocationData
+        expr: rate(rides_without_location_total[1h]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Rides missing location data"
+          description: "{{ $value }} rides per hour are missing location data."
+
+      - alert: AIModelPredictionFailure
+        expr: rate(ai_prediction_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "AI model prediction failures"
+          description: "AI prediction failure rate is {{ $value }} per second."

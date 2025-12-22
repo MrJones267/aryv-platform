@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hitch Admin Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #007AFF 0%, #5856d6 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 1.1em; }
+        .content { padding: 30px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 25px;
+            border-radius: 12px;
+            border-left: 4px solid #007AFF;
+            transition: transform 0.3s ease;
+        }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-value { font-size: 2.5em; font-weight: bold; color: #007AFF; margin-bottom: 5px; }
+        .stat-label { color: #6c757d; font-size: 1.1em; }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        button {
+            background: linear-gradient(135deg, #007AFF 0%, #5856d6 100%);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,122,255,0.3); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .status { padding: 15px; margin: 15px 0; border-radius: 8px; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .response {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .login-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 1px solid #dee2e6;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+        .form-group input:focus {
+            border-color: #007AFF;
+            outline: none;
+        }
+        .user-info {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🚗 Hitch Admin Dashboard</h1>
+            <p>Development Environment Management Panel</p>
+        </div>
+        
+        <div class="content">
+            <div id="status" class="status info">Ready to connect to backend...</div>
+            
+            <div id="login-section" class="login-form">
+                <h3 style="margin-bottom: 20px; color: #495057;">Admin Login</h3>
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" value="admin@hitch.com" placeholder="Enter admin email">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" value="admin123" placeholder="Enter password">
+                </div>
+                <button onclick="adminLogin()">🔐 Admin Login</button>
+            </div>
+            
+            <div id="user-info" style="display: none;" class="user-info">
+                <h3>👤 Logged in as: <span id="user-name"></span></h3>
+                <p>Role: <span id="user-role"></span> | Session: <span id="session-time"></span></p>
+                <button onclick="logout()" style="margin-top: 10px; background: rgba(255,255,255,0.2);">Logout</button>
+            </div>
+            
+            <div id="dashboard-content" style="display: none;">
+                <div class="stats-grid" id="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-users">-</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-rides">-</div>
+                        <div class="stat-label">Total Rides</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-revenue">-</div>
+                        <div class="stat-label">Revenue ($)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="active-drivers">-</div>
+                        <div class="stat-label">Active Drivers</div>
+                    </div>
+                </div>
+                
+                <div class="controls">
+                    <button onclick="refreshDashboard()">🔄 Refresh Dashboard</button>
+                    <button onclick="testAPI()">🧪 Test Backend API</button>
+                    <button onclick="viewRides()">🚗 View Rides</button>
+                    <button onclick="viewCourier()">📦 View Packages</button>
+                    <button onclick="testUsers()">👥 Test Users</button>
+                    <button onclick="systemStatus()">⚙️ System Status</button>
+                </div>
+            </div>
+            
+            <div id="response" class="response" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+        let authToken = null;
+        let currentUser = null;
+
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function showResponse(data, title = 'Response') {
+            const responseEl = document.getElementById('response');
+            responseEl.textContent = `${title}:\n${JSON.stringify(data, null, 2)}`;
+            responseEl.style.display = 'block';
+        }
+
+        async function makeRequest(endpoint, options = {}) {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    headers: { ...headers, ...options.headers },
+                    ...options
+                });
+
+                const data = await response.json();
+                return { success: response.ok && data.success, data, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function adminLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                updateStatus('Logging in...', 'info');
+                const result = await makeRequest('/api/admin/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (result.success) {
+                    authToken = result.data.token;
+                    currentUser = result.data.user;
+                    
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('user-info').style.display = 'block';
+                    document.getElementById('dashboard-content').style.display = 'block';
+                    
+                    document.getElementById('user-name').textContent = `${currentUser.firstName} ${currentUser.lastName}`;
+                    document.getElementById('user-role').textContent = currentUser.role;
+                    document.getElementById('session-time').textContent = new Date().toLocaleString();
+                    
+                    updateStatus('✅ Login successful! Loading dashboard...', 'success');
+                    await loadDashboard();
+                } else {
+                    updateStatus(`❌ Login failed: ${result.data?.message || result.error}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`❌ Login error: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadDashboard() {
+            try {
+                const result = await makeRequest('/api/admin/analytics/dashboard');
+                if (result.success) {
+                    const data = result.data.data;
+                    document.getElementById('total-users').textContent = data.totalUsers || 0;
+                    document.getElementById('total-rides').textContent = data.totalRides || 0;
+                    document.getElementById('total-revenue').textContent = data.totalRevenue || 0;
+                    document.getElementById('active-drivers').textContent = data.activeDrivers || 0;
+                    updateStatus('✅ Dashboard loaded successfully', 'success');
+                } else {
+                    updateStatus('⚠️ Could not load dashboard data', 'error');
+                }
+            } catch (error) {
+                updateStatus(`❌ Dashboard error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAPI() {
+            const result = await makeRequest('/health');
+            showResponse(result.data, 'Backend Health Check');
+            if (result.success) {
+                updateStatus('✅ Backend API is working', 'success');
+            } else {
+                updateStatus('❌ Backend API error', 'error');
+            }
+        }
+
+        async function viewRides() {
+            const result = await makeRequest('/api/rides');
+            showResponse(result.data, 'Available Rides');
+        }
+
+        async function viewCourier() {
+            const result = await makeRequest('/api/courier/packages', {
+                method: 'POST',
+                body: JSON.stringify({
+                    pickup: 'Admin Test Pickup',
+                    delivery: 'Admin Test Delivery',
+                    weight: 1.0,
+                    description: 'Admin Test Package'
+                })
+            });
+            showResponse(result.data, 'Courier Package Created');
+        }
+
+        async function testUsers() {
+            const result = await makeRequest('/api/auth/register', {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: `testuser${Date.now()}@hitch.com`,
+                    password: 'testpass123',
+                    firstName: 'Test',
+                    lastName: 'User',
+                    phone: '+1234567890'
+                })
+            });
+            showResponse(result.data, 'User Registration Test');
+        }
+
+        async function systemStatus() {
+            const health = await makeRequest('/health');
+            const dashboard = await makeRequest('/api/admin/analytics/dashboard');
+            
+            const status = {
+                timestamp: new Date().toISOString(),
+                backend: health.success ? 'WORKING' : 'ERROR',
+                dashboard_api: dashboard.success ? 'WORKING' : 'ERROR',
+                authenticated: !!authToken,
+                user: currentUser ? `${currentUser.firstName} ${currentUser.lastName} (${currentUser.role})` : 'Not logged in'
+            };
+            
+            showResponse(status, 'System Status Report');
+        }
+
+        function refreshDashboard() {
+            loadDashboard();
+        }
+
+        function logout() {
+            authToken = null;
+            currentUser = null;
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('user-info').style.display = 'none';
+            document.getElementById('dashboard-content').style.display = 'none';
+            updateStatus('Logged out successfully', 'info');
+        }
+
+        // Auto-test backend on load
+        setTimeout(testAPI, 1000);
+    </script>
+</body>
+</html>

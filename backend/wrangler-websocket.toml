@@ -1,0 +1,25 @@
+# Cloudflare Workers Configuration with Durable Objects for WebSocket
+name = "aryv-api-websocket"
+main = "websocket-worker.js"
+compatibility_date = "2024-01-01"
+
+# Durable Objects configuration for real-time features
+[durable_objects]
+bindings = [
+  { name = "ARYV_REALTIME", class_name = "ARYVRealtimeServer" }
+]
+
+# Required migrations for Durable Objects (Free Plan)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [ "ARYVRealtimeServer" ]
+
+# Environment variables
+[vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://aryv-app.com,https://www.aryv-app.com,https://admin.aryv-app.com"
+
+# Custom domain routes
+# [[routes]]
+# pattern = "api.aryv-app.com/*"
+# zone_name = "aryv-app.com"

@@ -1,0 +1,79 @@
+# Production-optimized Dockerfile for Hitch Backend
+# Author: Claude-Code
+# Created: 2025-01-25
+
+FROM node:18-alpine AS base
+
+# Install security updates and required packages
+RUN apk update && apk upgrade && \
+    apk add --no-cache \
+    curl \
+    tini \
+    && rm -rf /var/cache/apk/*
+
+# Create app user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+WORKDIR /app
+
+# Copy package files for dependency installation
+COPY package*.json ./
+
+# Build stage
+FROM base AS build
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
+
+# Install dependencies
+RUN npm ci --only=production --ignore-scripts && \
+    npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+# Remove development dependencies and clean up
+RUN npm prune --production && \
+    rm -rf src/ tests/ coverage/ *.md .git*
+
+# Production stage
+FROM base AS production
+
+# Set production environment
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Copy built application and dependencies
+COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=build --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nodejs:nodejs /app/package*.json ./
+COPY --from=build --chown=nodejs:nodejs /app/migrations ./migrations
+COPY --from=build --chown=nodejs:nodejs /app/scripts ./scripts
+
+# Create necessary directories with proper permissions
+RUN mkdir -p uploads logs tmp && \
+    chown -R nodejs:nodejs uploads logs tmp && \
+    chmod 755 uploads logs tmp
+
+# Set up security measures
+RUN chmod +x scripts/*.sh
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start the application
+CMD ["node", "dist/index.js"]

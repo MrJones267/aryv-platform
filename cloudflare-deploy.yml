@@ -1,0 +1,73 @@
+# Cloudflare Deployment Configuration for ARYV Platform
+# Domain: aryv-app.com
+
+services:
+  # Main website
+  - name: aryv-website
+    subdomain: www
+    source: ./admin-panel/build
+    type: static
+    environment: production
+
+  # API Backend
+  - name: aryv-api
+    subdomain: api  
+    source: ./backend
+    type: nodejs
+    environment: production
+    env_vars:
+      NODE_ENV: production
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      CORS_ORIGIN: https://www.aryv-app.com,https://aryv-app.com
+
+  # Admin Panel
+  - name: aryv-admin
+    subdomain: admin
+    source: ./admin-panel/build
+    type: static  
+    environment: production
+
+# DNS Configuration
+dns_records:
+  - type: A
+    name: "@"
+    content: "192.0.2.1"  # Cloudflare IP
+    
+  - type: CNAME
+    name: "www"
+    content: "aryv-app.com"
+    
+  - type: CNAME
+    name: "api" 
+    content: "aryv-app.com"
+    
+  - type: CNAME
+    name: "admin"
+    content: "aryv-app.com"
+
+# SSL/Security
+ssl:
+  mode: "full"
+  edge_certificates: true
+  always_use_https: true
+
+# Performance
+performance:
+  caching: aggressive
+  minification: 
+    - css
+    - js
+    - html
+  compression: brotli
+
+# Security Rules  
+security:
+  bot_fight_mode: true
+  ddos_protection: true
+  rate_limiting:
+    - path: "/api/auth/*"
+      requests_per_minute: 60
+    - path: "/api/*" 
+      requests_per_minute: 300

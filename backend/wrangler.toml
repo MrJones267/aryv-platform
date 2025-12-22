@@ -1,0 +1,32 @@
+# Cloudflare Workers Configuration for ARYV Backend
+name = "aryv-api"
+main = "workers-entry.js"
+compatibility_date = "2024-01-01"
+
+# Custom domain configuration (configure after deployment)
+# routes = [
+#   { pattern = "api.aryv-app.com/*", zone_name = "aryv-app.com" }
+# ]
+
+# Environment variables
+[env.production]
+name = "aryv-api-production"
+
+[env.production.vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://aryv-app.com,https://www.aryv-app.com,https://admin.aryv-app.com"
+
+# KV storage for sessions (optional)
+# [[env.production.kv_namespaces]]
+# binding = "ARYV_CACHE"
+# id = "your-kv-namespace-id"
+
+# Durable Objects for real-time features (optional)
+# [durable_objects]
+# bindings = [
+#   { name = "ARYV_REALTIME", class_name = "RealtimeService" }
+# ]
+
+# Cron triggers for background tasks (optional)
+# [triggers]
+# crons = ["0 0 * * *"]

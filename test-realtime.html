@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hitch Real-time Features Test</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 30px; 
+            border-radius: 15px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 2.5em;
+        }
+        
+        .status { 
+            padding: 15px; 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .connected { 
+            background: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb; 
+        }
+        
+        .disconnected { 
+            background: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb; 
+        }
+        
+        .warning { 
+            background: #fff3cd; 
+            color: #856404; 
+            border: 1px solid #ffeaa7; 
+        }
+        
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .test-section h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+        
+        button { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            border: none; 
+            padding: 12px 20px; 
+            border-radius: 6px; 
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        input, select { 
+            padding: 10px; 
+            border: 2px solid #ddd; 
+            border-radius: 6px; 
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        input:focus, select:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .metric-label {
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        .messages-container {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .message { 
+            background: #e9ecef; 
+            padding: 10px; 
+            margin: 8px 0; 
+            border-radius: 6px; 
+            border-left: 4px solid #667eea;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 13px;
+        }
+        
+        .message.notification { border-left-color: #28a745; }
+        .message.ride { border-left-color: #17a2b8; }
+        .message.location { border-left-color: #ffc107; }
+        .message.error { border-left-color: #dc3545; }
+        .message.system { border-left-color: #6c757d; }
+        
+        .location-simulator {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .emoji { font-size: 1.2em; margin-right: 5px; }
+        
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            .button-group { flex-direction: column; }
+            .metrics { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Hitch Real-time Features Test</h1>
+            <p>Comprehensive testing of Socket.io real-time functionality</p>
+        </div>
+        
+        <div id="status" class="status disconnected">
+            <span class="emoji">❌</span>
+            <span>Disconnected from server</span>
+        </div>
+        
+        <div class="metrics">
+            <div class="metric-card">
+                <div id="connectedUsers" class="metric-value">0</div>
+                <div class="metric-label">Connected Users</div>
+            </div>
+            <div class="metric-card">
+                <div id="activeRides" class="metric-value">0</div>
+                <div class="metric-label">Active Rides</div>
+            </div>
+            <div class="metric-card">
+                <div id="messagesCount" class="metric-value">0</div>
+                <div class="metric-label">Messages Received</div>
+            </div>
+            <div class="metric-card">
+                <div id="uptime" class="metric-value">00:00</div>
+                <div class="metric-label">Connected Time</div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🔐 Authentication & Connection</h3>
+            <div class="button-group">
+                <button onclick="testConnection()">🔌 Connect to Server</button>
+                <button onclick="authenticateUser()">👤 Authenticate User</button>
+                <button onclick="disconnect()">❌ Disconnect</button>
+            </div>
+            <div>
+                <input type="text" id="userIdInput" placeholder="User ID (e.g., user123)" value="mobile_user_001">
+                <input type="text" id="tokenInput" placeholder="Auth Token" value="mock-token-123">
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🚗 Ride Management</h3>
+            <div class="button-group">
+                <button onclick="bookRide()">📱 Book Test Ride</button>
+                <button onclick="joinRide()">🎯 Join Ride Room</button>
+                <button onclick="updateRideStatus()">🔄 Update Ride Status</button>
+                <button onclick="simulateDriverLocation()">📍 Simulate Driver Location</button>
+            </div>
+            <div>
+                <input type="text" id="rideIdInput" placeholder="Ride ID" value="ride_12345">
+                <select id="rideStatusSelect">
+                    <option value="confirmed">Confirmed</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="arrived">Driver Arrived</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📦 Package Tracking</h3>
+            <div class="button-group">
+                <button onclick="createPackage()">📦 Create Test Package</button>
+                <button onclick="simulateCourierLocation()">🚚 Simulate Courier Movement</button>
+                <button onclick="updatePackageStatus()">📋 Update Package Status</button>
+            </div>
+            <div>
+                <input type="text" id="packageIdInput" placeholder="Package ID" value="PKG_TEST_001">
+                <select id="packageStatusSelect">
+                    <option value="created">Created</option>
+                    <option value="picked_up">Picked Up</option>
+                    <option value="in_transit">In Transit</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🔔 Notifications & Messages</h3>
+            <div class="button-group">
+                <button onclick="sendNotification()">🔔 Send Test Notification</button>
+                <button onclick="sendCustomMessage()">💬 Send Custom Message</button>
+                <button onclick="testBroadcast()">📢 Test Broadcast</button>
+            </div>
+            <div>
+                <input type="text" id="notificationTitle" placeholder="Notification Title" value="Test Notification">
+                <input type="text" id="notificationMessage" placeholder="Notification Message" value="This is a test notification">
+                <input type="text" id="targetUserId" placeholder="Target User ID (leave empty for broadcast)">
+            </div>
+        </div>
+        
+        <div class="location-simulator">
+            <h4>📍 Live Location Simulator</h4>
+            <p>Simulating movement around Lagos, Nigeria</p>
+            <div class="button-group">
+                <button id="locationToggle" onclick="toggleLocationSimulation()">▶️ Start Location Simulation</button>
+                <button onclick="sendRandomLocation()">📍 Send Random Location</button>
+            </div>
+            <div>
+                <span>Current: </span>
+                <span id="currentLocation">Not sending location</span>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🧪 System Tests</h3>
+            <div class="button-group">
+                <button onclick="runAllTests()">🚀 Run All Tests</button>
+                <button onclick="clearMessages()">🗑️ Clear Messages</button>
+                <button onclick="getServerStats()">📊 Get Server Stats</button>
+                <button onclick="stressTest()">⚡ Stress Test</button>
+            </div>
+        </div>
+        
+        <div>
+            <h3>📝 Real-time Messages</h3>
+            <div id="messages" class="messages-container"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let messageCount = 0;
+        let connectionTime = null;
+        let locationInterval = null;
+        let currentLat = 6.5244; // Lagos coordinates
+        let currentLng = 3.3792;
+        
+        // UI elements
+        const status = document.getElementById('status');
+        const messages = document.getElementById('messages');
+        const connectedUsersEl = document.getElementById('connectedUsers');
+        const activeRidesEl = document.getElementById('activeRides');
+        const messagesCountEl = document.getElementById('messagesCount');
+        const uptimeEl = document.getElementById('uptime');
+        const currentLocationEl = document.getElementById('currentLocation');
+        const locationToggle = document.getElementById('locationToggle');
+        
+        // Update uptime every second
+        setInterval(() => {
+            if (connectionTime) {
+                const elapsed = Math.floor((Date.now() - connectionTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                uptimeEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+        
+        function addMessage(text, type = 'message', data = null) {
+            messageCount++;
+            messagesCountEl.textContent = messageCount;
+            
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            let content = `[${timestamp}] ${text}`;
+            
+            if (data) {
+                content += `\n📊 Data: ${JSON.stringify(data, null, 2)}`;
+            }
+            
+            div.innerHTML = content;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+        
+        function updateStatus(connected, message) {
+            isConnected = connected;
+            status.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            status.innerHTML = `
+                <span class="emoji">${connected ? '✅' : '❌'}</span>
+                <span>${message}</span>
+            `;
+        }
+        
+        function testConnection() {
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            addMessage('Attempting to connect to Hitch real-time server...', 'system');
+            
+            socket = io('http://localhost:3001', {
+                transports: ['websocket', 'polling'],
+                timeout: 20000,
+                forceNew: true
+            });
+            
+            socket.on('connect', () => {
+                connectionTime = Date.now();
+                updateStatus(true, 'Connected to Hitch Real-time Server');
+                addMessage('✅ Successfully connected to server!', 'system');
+                addMessage(`🔗 Socket ID: ${socket.id}`, 'system');
+            });
+            
+            socket.on('disconnect', (reason) => {
+                connectionTime = null;
+                updateStatus(false, `Disconnected: ${reason}`);
+                addMessage(`❌ Disconnected from server: ${reason}`, 'system');
+            });
+            
+            socket.on('connect_error', (error) => {
+                updateStatus(false, `Connection failed: ${error.message}`);
+                addMessage(`❌ Connection error: ${error.message}`, 'error');
+            });
+            
+            // Real-time event listeners
+            socket.on('authenticated', (data) => {
+                addMessage('🔐 Authentication response received', 'system', data);
+                if (data.connectedUsers !== undefined) {
+                    connectedUsersEl.textContent = data.connectedUsers;
+                }
+            });
+            
+            socket.on('ride_booked', (data) => {
+                addMessage('🚗 New ride booked!', 'ride', data);
+                if (data.data) {
+                    activeRidesEl.textContent = parseInt(activeRidesEl.textContent) + 1;
+                }
+            });
+            
+            socket.on('ride_status_update', (data) => {
+                addMessage(`🔄 Ride status updated: ${data.data?.status}`, 'ride', data);
+            });
+            
+            socket.on('live_location', (data) => {
+                addMessage(`📍 Live location update from ${data.data?.userId}`, 'location', data.data);
+            });
+            
+            socket.on('courier_location_update', (data) => {
+                addMessage(`🚚 Courier location update`, 'location', data.data);
+            });
+            
+            socket.on('package_created', (data) => {
+                addMessage('📦 New package created!', 'notification', data);
+            });
+            
+            socket.on('notification', (data) => {
+                addMessage(`🔔 ${data.title}: ${data.message}`, 'notification', data);
+            });
+            
+            socket.on('user_connected', (data) => {
+                addMessage(`👤 User connected: ${data.userId}`, 'system');
+                connectedUsersEl.textContent = parseInt(connectedUsersEl.textContent) + 1;
+            });
+            
+            socket.on('user_disconnected', (data) => {
+                addMessage(`👤 User disconnected: ${data.userId}`, 'system');
+                connectedUsersEl.textContent = Math.max(0, parseInt(connectedUsersEl.textContent) - 1);
+            });
+            
+            socket.on('test_response', (data) => {
+                addMessage('🧪 Test response received', 'system', data);
+            });
+            
+            socket.on('joined_ride', (data) => {
+                addMessage(`🎯 Joined ride room: ${data.rideId}`, 'ride');
+            });
+        }
+        
+        function authenticateUser() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const userId = document.getElementById('userIdInput').value || 'mobile_user_001';
+            const token = document.getElementById('tokenInput').value || 'mock-token-123';
+            
+            socket.emit('authenticate', { userId, token });
+            addMessage(`🔐 Sending authentication for user: ${userId}`, 'system');
+        }
+        
+        function bookRide() {
+            // Test API call first
+            fetch('http://localhost:3001/api/rides/book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pickupLocation: 'Victoria Island, Lagos',
+                    destination: 'Lekki Phase 1',
+                    rideType: 'Premium'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                addMessage('📱 Ride booked via API call', 'ride', data);
+            })
+            .catch(error => {
+                addMessage(`❌ API call failed: ${error.message}`, 'error');
+            });
+        }
+        
+        function joinRide() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const rideId = document.getElementById('rideIdInput').value || 'ride_12345';
+            socket.emit('join_ride', { rideId });
+            addMessage(`🎯 Joining ride room: ${rideId}`, 'ride');
+        }
+        
+        function updateRideStatus() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const rideId = document.getElementById('rideIdInput').value || 'ride_12345';
+            const status = document.getElementById('rideStatusSelect').value;
+            
+            socket.emit('ride_update', {
+                rideId,
+                status,
+                location: { lat: currentLat, lng: currentLng },
+                message: `Ride status changed to ${status}`
+            });
+            
+            addMessage(`🔄 Updating ride ${rideId} status to: ${status}`, 'ride');
+        }
+        
+        function createPackage() {
+            fetch('http://localhost:3001/api/courier/packages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    senderName: 'Test Sender',
+                    receiverName: 'Test Receiver',
+                    packageDetails: 'Real-time test package',
+                    pickupLocation: 'Ikeja, Lagos',
+                    deliveryLocation: 'Victoria Island, Lagos'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                addMessage('📦 Package created via API', 'notification', data);
+            })
+            .catch(error => {
+                addMessage(`❌ Package creation failed: ${error.message}`, 'error');
+            });
+        }
+        
+        function sendNotification() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const title = document.getElementById('notificationTitle').value;
+            const message = document.getElementById('notificationMessage').value;
+            const targetUserId = document.getElementById('targetUserId').value;
+            
+            socket.emit('send_notification', {
+                targetUserId: targetUserId || null,
+                type: 'test',
+                title,
+                message,
+                data: { testData: true, timestamp: new Date().toISOString() }
+            });
+            
+            addMessage(`🔔 Sending notification: "${title}" to ${targetUserId || 'all users'}`, 'notification');
+        }
+        
+        function sendCustomMessage() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const testData = {
+                message: 'Custom test message',
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                location: { lat: currentLat, lng: currentLng }
+            };
+            
+            socket.emit('test_realtime', testData);
+            addMessage('💬 Sending custom test message', 'system', testData);
+        }
+        
+        function toggleLocationSimulation() {
+            if (locationInterval) {
+                clearInterval(locationInterval);
+                locationInterval = null;
+                locationToggle.textContent = '▶️ Start Location Simulation';
+                currentLocationEl.textContent = 'Location simulation stopped';
+                addMessage('📍 Location simulation stopped', 'location');
+            } else {
+                locationInterval = setInterval(sendLocationUpdate, 3000);
+                locationToggle.textContent = '⏸️ Stop Location Simulation';
+                addMessage('📍 Location simulation started', 'location');
+                sendLocationUpdate(); // Send first update immediately
+            }
+        }
+        
+        function sendLocationUpdate() {
+            if (!socket || !isConnected) return;
+            
+            // Simulate movement around Lagos
+            currentLat += (Math.random() - 0.5) * 0.001;
+            currentLng += (Math.random() - 0.5) * 0.001;
+            
+            const locationData = {
+                userId: document.getElementById('userIdInput').value || 'mobile_user_001',
+                latitude: currentLat,
+                longitude: currentLng,
+                heading: Math.floor(Math.random() * 360),
+                speed: Math.floor(Math.random() * 60)
+            };
+            
+            socket.emit('location_update', locationData);
+            currentLocationEl.textContent = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
+        }
+        
+        function sendRandomLocation() {
+            sendLocationUpdate();
+        }
+        
+        function simulateDriverLocation() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const driverLocation = {
+                userId: 'driver_123',
+                latitude: 6.5244 + (Math.random() - 0.5) * 0.01,
+                longitude: 3.3792 + (Math.random() - 0.5) * 0.01,
+                heading: Math.floor(Math.random() * 360),
+                speed: Math.floor(Math.random() * 60),
+                type: 'driver'
+            };
+            
+            socket.emit('location_update', driverLocation);
+            addMessage('🚗 Simulated driver location update', 'location', driverLocation);
+        }
+        
+        function simulateCourierLocation() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            const courierLocation = {
+                userId: 'courier_456',
+                latitude: 6.5244 + (Math.random() - 0.5) * 0.01,
+                longitude: 3.3792 + (Math.random() - 0.5) * 0.01,
+                heading: Math.floor(Math.random() * 360),
+                speed: Math.floor(Math.random() * 40),
+                type: 'courier',
+                packageId: document.getElementById('packageIdInput').value
+            };
+            
+            socket.emit('location_update', courierLocation);
+            addMessage('🚚 Simulated courier location update', 'location', courierLocation);
+        }
+        
+        function updatePackageStatus() {
+            const status = document.getElementById('packageStatusSelect').value;
+            const packageId = document.getElementById('packageIdInput').value;
+            
+            // Simulate package status update via notification
+            sendNotification();
+            addMessage(`📋 Package ${packageId} status updated to: ${status}`, 'notification');
+        }
+        
+        function testBroadcast() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            socket.emit('send_notification', {
+                type: 'broadcast',
+                title: 'System Broadcast',
+                message: 'This is a test broadcast message to all connected users',
+                data: { broadcast: true, timestamp: new Date().toISOString() }
+            });
+            
+            addMessage('📢 Sending broadcast message to all users', 'notification');
+        }
+        
+        function getServerStats() {
+            fetch('http://localhost:3001/health')
+                .then(response => response.json())
+                .then(data => {
+                    addMessage('📊 Server statistics retrieved', 'system', data);
+                    if (data.connectedUsers !== undefined) {
+                        connectedUsersEl.textContent = data.connectedUsers;
+                    }
+                    if (data.activeRides !== undefined) {
+                        activeRidesEl.textContent = data.activeRides;
+                    }
+                })
+                .catch(error => {
+                    addMessage(`❌ Failed to get server stats: ${error.message}`, 'error');
+                });
+        }
+        
+        function stressTest() {
+            if (!socket || !isConnected) {
+                addMessage('❌ Please connect to server first', 'error');
+                return;
+            }
+            
+            addMessage('⚡ Starting stress test...', 'system');
+            
+            // Send multiple rapid events
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    socket.emit('test_realtime', {
+                        test: 'stress_test',
+                        iteration: i + 1,
+                        timestamp: new Date().toISOString()
+                    });
+                }, i * 100);
+            }
+            
+            addMessage('⚡ Stress test: sent 10 rapid messages', 'system');
+        }
+        
+        function runAllTests() {
+            addMessage('🚀 Running comprehensive test suite...', 'system');
+            
+            if (!isConnected) {
+                testConnection();
+                setTimeout(() => {
+                    if (isConnected) {
+                        runTestSequence();
+                    }
+                }, 2000);
+            } else {
+                runTestSequence();
+            }
+        }
+        
+        function runTestSequence() {
+            const tests = [
+                { name: 'Authenticate User', fn: authenticateUser, delay: 1000 },
+                { name: 'Join Ride Room', fn: joinRide, delay: 2000 },
+                { name: 'Book Test Ride', fn: bookRide, delay: 3000 },
+                { name: 'Send Location Update', fn: sendRandomLocation, delay: 4000 },
+                { name: 'Update Ride Status', fn: updateRideStatus, delay: 5000 },
+                { name: 'Create Test Package', fn: createPackage, delay: 6000 },
+                { name: 'Send Test Notification', fn: sendNotification, delay: 7000 },
+                { name: 'Test Custom Message', fn: sendCustomMessage, delay: 8000 },
+                { name: 'Get Server Stats', fn: getServerStats, delay: 9000 }
+            ];
+            
+            tests.forEach((test, index) => {
+                setTimeout(() => {
+                    addMessage(`🧪 Running test: ${test.name}`, 'system');
+                    test.fn();
+                }, test.delay);
+            });
+            
+            setTimeout(() => {
+                addMessage('✅ All tests completed!', 'system');
+            }, 10000);
+        }
+        
+        function clearMessages() {
+            messages.innerHTML = '';
+            messageCount = 0;
+            messagesCountEl.textContent = '0';
+            addMessage('🗑️ Messages cleared', 'system');
+        }
+        
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                addMessage('❌ Manually disconnected from server', 'system');
+            }
+            
+            if (locationInterval) {
+                toggleLocationSimulation();
+            }
+        }
+        
+        // Auto-connect on page load
+        window.addEventListener('load', () => {
+            addMessage('🌐 Page loaded, ready to test real-time features', 'system');
+            addMessage('💡 Click "Connect to Server" to begin testing', 'system');
+        });
+        
+        // Handle page visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && socket && !isConnected) {
+                addMessage('👁️ Page became visible, attempting reconnection...', 'system');
+                testConnection();
+            }
+        });
+    </script>
+</body>
+</html>

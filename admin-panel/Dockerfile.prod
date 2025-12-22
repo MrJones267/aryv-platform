@@ -1,0 +1,71 @@
+# Production-optimized Dockerfile for Hitch Admin Panel
+# Author: Claude-Code
+# Created: 2025-01-25
+
+FROM node:18-alpine AS base
+
+# Install security updates
+RUN apk update && apk upgrade && \
+    apk add --no-cache curl tini && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Build stage
+FROM base AS build
+
+# Install dependencies
+RUN npm install --include=dev && \
+    npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build for production
+RUN npm run build
+
+# Production stage
+FROM nginx:1.24-alpine AS production
+
+# Install security updates
+RUN apk update && apk upgrade && \
+    apk add --no-cache curl && \
+    rm -rf /var/cache/apk/*
+
+# Create nginx user
+RUN addgroup -g 1001 -S nginx_app && \
+    adduser -S nginx_app -u 1001
+
+# Copy built application
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.prod.conf /etc/nginx/nginx.conf
+
+# Create log directories
+RUN mkdir -p /var/log/nginx && \
+    touch /var/log/nginx/access.log /var/log/nginx/error.log && \
+    chown -R nginx_app:nginx_app /var/log/nginx
+
+# Set proper permissions
+RUN chown -R nginx_app:nginx_app /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:3000/health.html || exit 1
+
+# Create health check file
+RUN echo "OK" > /usr/share/nginx/html/health.html
+
+# Expose port
+EXPOSE 3000
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

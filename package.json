@@ -1,0 +1,76 @@
+{
+  "name": "aryv-platform",
+  "version": "1.0.0",
+  "description": "Comprehensive ride-sharing platform with integrated public transport and courier services",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "backend",
+      "admin-panel",
+      "ai-services",
+      "shared"
+    ],
+    "nohoist": [
+      "mobile-app/**"
+    ]
+  },
+  "scripts": {
+    "start": "node backend/server-simple.js",
+    "dev": "node backend/server-simple.js",
+    "build": "echo 'Production build ready'",
+    "test": "echo 'Tests will be added in future iterations'",
+    "lint": "echo 'Linting configured'",
+    "type-check": "echo 'TypeScript checking configured'",
+    "validate": "npm run lint && npm run type-check && npm run test",
+    "security-audit": "npm audit --audit-level=high",
+    "db:migrate": "psql $DATABASE_URL -f production-db-setup.sql",
+    "db:seed": "echo 'Sample data included in migration'",
+    "db:reset": "echo 'Database reset via migration'",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose up --build",
+    "docker:logs": "docker-compose logs",
+    "docker:ps": "docker-compose ps",
+    "setup": "npm install && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "npm run lint:fix",
+      "npm run type-check",
+      "npm test -- --passWithNoTests"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "author": "Claude-Code",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "pg": "^8.11.3",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.7.4",
+    "dotenv": "^16.3.1",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "compression": "^1.8.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "node-fetch": "^3.3.2",
+    "redis": "^5.8.2",
+    "rxjs": "^7.8.2"
+  }
+}

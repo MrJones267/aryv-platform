@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ARYV</string>
+    <string name="app_description">Smart ride-sharing and courier services</string>
+    
+    <!-- API Keys -->
+    <string name="google_maps_api_key">AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8</string>
+
+    <!-- Google OAuth -->
+    <string name="default_web_client_id">306893979998-g6oetretorc1smcuc9lkiuc3hnjhvtet.apps.googleusercontent.com</string>
+    
+    <!-- Permissions -->
+    <string name="location_permission_rationale">ARYV needs location access to find nearby rides and provide accurate pickup/dropoff locations.</string>
+    <string name="camera_permission_rationale">ARYV needs camera access to take photos for your profile and document verification.</string>
+    <string name="storage_permission_rationale">ARYV needs storage access to save and upload photos.</string>
+    
+    <!-- Push Notifications -->
+    <string name="notification_channel_rides">Ride Updates</string>
+    <string name="notification_channel_messages">Messages</string>
+    <string name="notification_channel_payments">Payments</string>
+    
+    <!-- App Store Metadata -->
+    <string name="app_short_description">Smart ride-sharing with AI matching</string>
+    <string name="app_full_description">ARYV is a comprehensive ride-sharing platform with integrated public transport and courier services, featuring AI-powered matching for optimal ride experiences.</string>
+    <string name="app_keywords">rideshare, taxi, transport, courier, delivery, AI, smart matching</string>
+</resources>

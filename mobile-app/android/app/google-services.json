@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "aryv-temp"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:temp",
+        "android_client_info": {
+          "package_name": "com.aryvmobile"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "temp-key"
+        }
+      ]
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:temp-debug",
+        "android_client_info": {
+          "package_name": "com.aryvmobile.debug"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "temp-key-debug"
+        }
+      ]
+    }
+  ]
+}

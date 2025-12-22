@@ -1,0 +1,6 @@
+# SSL certificates directory
+# Place your SSL certificates here:
+# - api.yourdomain.com.crt
+# - api.yourdomain.com.key
+# - admin.yourdomain.com.crt
+# - admin.yourdomain.com.key

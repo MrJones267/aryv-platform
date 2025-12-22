@@ -1,0 +1,8 @@
+<svg width="58" height="58" xmlns="http://www.w3.org/2000/svg">
+  <rect width="58" height="58" fill="#2196F3"/>
+  <text x="29" y="34" font-family="Arial" font-size="23" 
+        font-weight="bold" text-anchor="middle" fill="white">A</text>
+  <circle cx="23" cy="46" r="1" fill="#FF4081"/>
+  <circle cx="29" cy="46" r="1" fill="#FF4081"/>
+  <circle cx="34" cy="46" r="1" fill="#FF4081"/>
+</svg>

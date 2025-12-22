@@ -1,0 +1,32 @@
+# Dockerfile for ARYV Real-time Socket.io Service
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install basic dependencies for Socket.io
+RUN npm init -y && \
+    npm install socket.io@^4.7.4 express@^4.18.2 cors@^2.8.5 helmet@^7.1.0 \
+    morgan@^1.10.0 compression@^1.7.4 dotenv@^16.3.1 jsonwebtoken@^9.0.2 \
+    redis@^4.6.12 @socket.io/redis-adapter@^8.2.1
+
+# Copy server file
+COPY realtime-server.js server.js
+
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S aryv -u 1001
+    
+# Change ownership of the app directory
+RUN chown -R aryv:nodejs /app
+USER aryv
+
+# Expose port
+EXPOSE 3002
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3002/health || exit 1
+
+# Start the server
+CMD ["node", "server.js"]
