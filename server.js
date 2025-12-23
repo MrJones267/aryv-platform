@@ -5,11 +5,39 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+// Debug environment variables
+console.log('🔍 Environment Debug:');
+console.log('- NODE_ENV:', process.env.NODE_ENV);
+console.log('- PORT:', process.env.PORT);
+console.log('- DATABASE_URL exists:', !!process.env.DATABASE_URL);
+if (process.env.DATABASE_URL) {
+  console.log('- DATABASE_URL preview:', process.env.DATABASE_URL.substring(0, 30) + '...');
+} else {
+  console.log('- DATABASE_URL: NOT SET!');
+}
+
+// Database connection with fallback
+const getDatabaseConfig = () => {
+  if (process.env.DATABASE_URL) {
+    console.log('✅ Using DATABASE_URL environment variable');
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    };
+  } else {
+    console.log('⚠️ DATABASE_URL not found, using fallback config');
+    return {
+      host: process.env.PGHOST || 'localhost',
+      port: process.env.PGPORT || 5432,
+      database: process.env.PGDATABASE || 'railway',
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD || '',
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    };
+  }
+};
+
+const pool = new Pool(getDatabaseConfig());
 
 // Test database connection
 pool.connect((err, client, release) => {
