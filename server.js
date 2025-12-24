@@ -690,10 +690,18 @@ app.all('/api/admin/add-sample-data', async (req, res) => {
     const existingPackages = await pool.query('SELECT COUNT(*) as count FROM packages');
     if (parseInt(existingPackages.rows[0].count) === 0) {
       await pool.query(`
-        INSERT INTO packages (sender_id, title, description, package_size, pickup_address, delivery_address, recipient_name, recipient_phone, total_price, platform_fee, status, tracking_code)
+        INSERT INTO packages (
+          sender_id, title, description, package_size, 
+          pickup_address, delivery_address, recipient_name, recipient_phone, 
+          base_price, total_price, platform_fee, status, tracking_code
+        )
         VALUES 
-        ($1, 'Electronics Package', 'Laptop and accessories', 'medium', '123 Tech Street', '456 Business Ave', 'John Doe', '+1234567890', 45.00, 4.50, 'pending_pickup', 'PKG001'),
-        ($2, 'Documents', 'Important business documents', 'small', '789 Office Blvd', '321 Corporate Dr', 'Jane Smith', '+0987654321', 15.00, 1.50, 'confirmed', 'PKG002')
+        ($1, 'Electronics Package', 'Laptop and accessories', 'medium', 
+         '123 Tech Street', '456 Business Ave', 'John Doe', '+1234567890', 
+         40.50, 45.00, 4.50, 'pending_pickup', 'PKG001'),
+        ($2, 'Documents', 'Important business documents', 'small', 
+         '789 Office Blvd', '321 Corporate Dr', 'Jane Smith', '+0987654321', 
+         13.50, 15.00, 1.50, 'confirmed', 'PKG002')
         ON CONFLICT (tracking_code) DO NOTHING
       `, [user1.id, user2.id]);
       console.log('✅ Added sample packages');
