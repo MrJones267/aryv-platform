@@ -243,6 +243,37 @@ app.all('/api/admin/migrate-rides-packages', async (req, res) => {
   try {
     console.log('🔄 Starting rides and packages schema migration...');
     
+    // Check if migration was already completed
+    const existingTables = await pool.query(`
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name IN ('rides', 'packages', 'vehicles', 'bookings')
+    `);
+    
+    if (existingTables.rows.length === 4) {
+      console.log('⚠️ Migration already completed, returning current status');
+      
+      const counts = await Promise.all([
+        pool.query('SELECT COUNT(*) as count FROM users'),
+        pool.query('SELECT COUNT(*) as count FROM rides'),
+        pool.query('SELECT COUNT(*) as count FROM bookings'),
+        pool.query('SELECT COUNT(*) as count FROM packages'),
+        pool.query('SELECT COUNT(*) as count FROM vehicles')
+      ]);
+      
+      return res.json({
+        success: true,
+        message: 'Migration already completed - returning current status',
+        data: {
+          users: parseInt(counts[0].rows[0].count),
+          rides: parseInt(counts[1].rows[0].count),
+          bookings: parseInt(counts[2].rows[0].count),
+          packages: parseInt(counts[3].rows[0].count),
+          vehicles: parseInt(counts[4].rows[0].count)
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Create rides table
     const createRidesTable = `
       CREATE TABLE IF NOT EXISTS rides (
@@ -507,29 +538,33 @@ app.all('/api/admin/migrate-rides-packages', async (req, res) => {
     await pool.query(createVehiclesTable);
     console.log('✅ Created vehicles table');
     
-    // Create indexes for performance
+    // Create indexes for performance (with IF NOT EXISTS)
     const createIndexes = [
-      'CREATE INDEX idx_rides_driver_id ON rides(driver_id)',
-      'CREATE INDEX idx_rides_status ON rides(status)',
-      'CREATE INDEX idx_rides_departure_time ON rides(departure_time)',
-      'CREATE INDEX idx_rides_origin_location ON rides(origin_lat, origin_lng)',
-      'CREATE INDEX idx_bookings_ride_id ON bookings(ride_id)',
-      'CREATE INDEX idx_bookings_passenger_id ON bookings(passenger_id)',
-      'CREATE INDEX idx_bookings_status ON bookings(status)',
-      'CREATE INDEX idx_packages_sender_id ON packages(sender_id)',
-      'CREATE INDEX idx_packages_courier_id ON packages(courier_id)',
-      'CREATE INDEX idx_packages_status ON packages(status)',
-      'CREATE INDEX idx_packages_tracking_code ON packages(tracking_code)',
-      'CREATE INDEX idx_package_events_package_id ON package_events(package_id)',
-      'CREATE INDEX idx_package_events_event_time ON package_events(event_time)',
-      'CREATE INDEX idx_vehicles_owner_id ON vehicles(owner_id)',
-      'CREATE INDEX idx_vehicles_license_plate ON vehicles(license_plate)'
+      'CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id)',
+      'CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status)',
+      'CREATE INDEX IF NOT EXISTS idx_rides_departure_time ON rides(departure_time)',
+      'CREATE INDEX IF NOT EXISTS idx_rides_origin_location ON rides(origin_lat, origin_lng)',
+      'CREATE INDEX IF NOT EXISTS idx_bookings_ride_id ON bookings(ride_id)',
+      'CREATE INDEX IF NOT EXISTS idx_bookings_passenger_id ON bookings(passenger_id)',
+      'CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)',
+      'CREATE INDEX IF NOT EXISTS idx_packages_sender_id ON packages(sender_id)',
+      'CREATE INDEX IF NOT EXISTS idx_packages_courier_id ON packages(courier_id)',
+      'CREATE INDEX IF NOT EXISTS idx_packages_status ON packages(status)',
+      'CREATE INDEX IF NOT EXISTS idx_packages_tracking_code ON packages(tracking_code)',
+      'CREATE INDEX IF NOT EXISTS idx_package_events_package_id ON package_events(package_id)',
+      'CREATE INDEX IF NOT EXISTS idx_package_events_event_time ON package_events(event_time)',
+      'CREATE INDEX IF NOT EXISTS idx_vehicles_owner_id ON vehicles(owner_id)',
+      'CREATE INDEX IF NOT EXISTS idx_vehicles_license_plate ON vehicles(license_plate)'
     ];
     
     for (const indexQuery of createIndexes) {
-      await pool.query(indexQuery);
+      try {
+        await pool.query(indexQuery);
+      } catch (indexError) {
+        console.log(`Index already exists: ${indexError.message}`);
+      }
     }
-    console.log('✅ Created performance indexes');
+    console.log('✅ Created/verified performance indexes');
     
     // Add sample data - check for existing users first
     const existingUsers = await pool.query(`
