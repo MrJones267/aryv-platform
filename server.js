@@ -531,29 +531,45 @@ app.all('/api/admin/migrate-rides-packages', async (req, res) => {
     }
     console.log('✅ Created performance indexes');
     
-    // Add sample data
-    await pool.query(`
-      INSERT INTO vehicles (owner_id, make, model, year, color, license_plate, vehicle_type, seating_capacity, is_verified, is_active)
-      VALUES 
-      ((SELECT id FROM users WHERE email = 'driver@aryv-app.com'), 'Toyota', 'Camry', 2022, 'Silver', 'ABC-123', 'car', 4, TRUE, TRUE),
-      ((SELECT id FROM users WHERE email = 'premium.driver@aryv-app.com'), 'Mercedes', 'E-Class', 2023, 'Black', 'XYZ-789', 'car', 4, TRUE, TRUE)
+    // Add sample data - check for existing users first
+    const existingUsers = await pool.query(`
+      SELECT id, email FROM users WHERE user_type IN ('driver', 'admin') ORDER BY id LIMIT 3
     `);
     
-    await pool.query(`
-      INSERT INTO rides (driver_id, vehicle_id, origin_address, destination_address, departure_time, available_seats, price_per_seat, status, ride_code)
-      VALUES 
-      ((SELECT id FROM users WHERE email = 'driver@aryv-app.com'), 1, 'Downtown Plaza', 'Airport Terminal', NOW() + INTERVAL '2 hours', 3, 25.00, 'pending', 'RD001'),
-      ((SELECT id FROM users WHERE email = 'premium.driver@aryv-app.com'), 2, 'University Campus', 'Shopping Mall', NOW() + INTERVAL '4 hours', 2, 35.00, 'confirmed', 'RD002')
-    `);
+    if (existingUsers.rows.length >= 2) {
+      const user1 = existingUsers.rows[0];
+      const user2 = existingUsers.rows[1];
+      
+      await pool.query(`
+        INSERT INTO vehicles (owner_id, make, model, year, color, license_plate, vehicle_type, seating_capacity, is_verified, is_active)
+        VALUES 
+        ($1, 'Toyota', 'Camry', 2022, 'Silver', 'ABC-123', 'car', 4, TRUE, TRUE),
+        ($2, 'Mercedes', 'E-Class', 2023, 'Black', 'XYZ-789', 'car', 4, TRUE, TRUE)
+        ON CONFLICT (license_plate) DO NOTHING
+      `, [user1.id, user2.id]);
+      
+      await pool.query(`
+        INSERT INTO rides (driver_id, vehicle_id, origin_address, destination_address, departure_time, available_seats, price_per_seat, status, ride_code)
+        VALUES 
+        ($1, 1, 'Downtown Plaza', 'Airport Terminal', NOW() + INTERVAL '2 hours', 3, 25.00, 'pending', 'RD001'),
+        ($2, 2, 'University Campus', 'Shopping Mall', NOW() + INTERVAL '4 hours', 2, 35.00, 'confirmed', 'RD002')
+        ON CONFLICT (ride_code) DO NOTHING
+      `, [user1.id, user2.id]);
+      
+      await pool.query(`
+        INSERT INTO packages (sender_id, title, description, package_size, pickup_address, delivery_address, recipient_name, recipient_phone, total_price, platform_fee, status, tracking_code)
+        VALUES 
+        ($1, 'Electronics Package', 'Laptop and accessories', 'medium', '123 Tech Street', '456 Business Ave', 'John Doe', '+1234567890', 45.00, 4.50, 'pending_pickup', 'PKG001'),
+        ($2, 'Documents', 'Important business documents', 'small', '789 Office Blvd', '321 Corporate Dr', 'Jane Smith', '+0987654321', 15.00, 1.50, 'confirmed', 'PKG002')
+        ON CONFLICT (tracking_code) DO NOTHING
+      `, [user1.id, user2.id]);
+      
+      console.log('✅ Added sample data with existing users');
+    } else {
+      console.log('⚠️ Not enough users found, skipping sample data');
+    }
     
-    await pool.query(`
-      INSERT INTO packages (sender_id, title, description, package_size, pickup_address, delivery_address, recipient_name, recipient_phone, total_price, platform_fee, status, tracking_code)
-      VALUES 
-      ((SELECT id FROM users WHERE email = 'test@aryv-app.com'), 'Electronics Package', 'Laptop and accessories', 'medium', '123 Tech Street', '456 Business Ave', 'John Doe', '+1234567890', 45.00, 4.50, 'pending_pickup', 'PKG001'),
-      ((SELECT id FROM users WHERE email = 'admin@aryv-app.com'), 'Documents', 'Important business documents', 'small', '789 Office Blvd', '321 Corporate Dr', 'Jane Smith', '+0987654321', 15.00, 1.50, 'confirmed', 'PKG002')
-    `);
-    
-    console.log('✅ Added sample data');
+    console.log('✅ Sample data section completed');
     
     // Get counts for verification
     const counts = await Promise.all([
