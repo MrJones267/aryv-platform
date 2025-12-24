@@ -638,6 +638,100 @@ app.all('/api/admin/migrate-rides-packages', async (req, res) => {
   }
 });
 
+// Add sample data endpoint (ADMIN ONLY)
+app.all('/api/admin/add-sample-data', async (req, res) => {
+  try {
+    console.log('🔄 Adding sample data...');
+    
+    // Check for existing users
+    const existingUsers = await pool.query(`
+      SELECT id, email, user_type FROM users ORDER BY id LIMIT 5
+    `);
+    
+    if (existingUsers.rows.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Not enough users found to create sample data',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const users = existingUsers.rows;
+    const user1 = users[0]; // First user
+    const user2 = users[1]; // Second user
+    
+    // Add vehicles if none exist
+    const existingVehicles = await pool.query('SELECT COUNT(*) as count FROM vehicles');
+    if (parseInt(existingVehicles.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO vehicles (owner_id, make, model, year, color, license_plate, vehicle_type, seating_capacity, is_verified, is_active)
+        VALUES 
+        ($1, 'Toyota', 'Camry', 2022, 'Silver', 'ABC-123', 'car', 4, TRUE, TRUE),
+        ($2, 'Mercedes', 'E-Class', 2023, 'Black', 'XYZ-789', 'car', 4, TRUE, TRUE)
+        ON CONFLICT (license_plate) DO NOTHING
+      `, [user1.id, user2.id]);
+      console.log('✅ Added sample vehicles');
+    }
+    
+    // Add rides if none exist
+    const existingRides = await pool.query('SELECT COUNT(*) as count FROM rides');
+    if (parseInt(existingRides.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO rides (driver_id, vehicle_id, origin_address, destination_address, departure_time, available_seats, price_per_seat, status, ride_code)
+        VALUES 
+        ($1, 1, 'Downtown Plaza', 'Airport Terminal', NOW() + INTERVAL '2 hours', 3, 25.00, 'pending', 'RD001'),
+        ($2, 2, 'University Campus', 'Shopping Mall', NOW() + INTERVAL '4 hours', 2, 35.00, 'confirmed', 'RD002')
+        ON CONFLICT (ride_code) DO NOTHING
+      `, [user1.id, user2.id]);
+      console.log('✅ Added sample rides');
+    }
+    
+    // Add packages if none exist
+    const existingPackages = await pool.query('SELECT COUNT(*) as count FROM packages');
+    if (parseInt(existingPackages.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO packages (sender_id, title, description, package_size, pickup_address, delivery_address, recipient_name, recipient_phone, total_price, platform_fee, status, tracking_code)
+        VALUES 
+        ($1, 'Electronics Package', 'Laptop and accessories', 'medium', '123 Tech Street', '456 Business Ave', 'John Doe', '+1234567890', 45.00, 4.50, 'pending_pickup', 'PKG001'),
+        ($2, 'Documents', 'Important business documents', 'small', '789 Office Blvd', '321 Corporate Dr', 'Jane Smith', '+0987654321', 15.00, 1.50, 'confirmed', 'PKG002')
+        ON CONFLICT (tracking_code) DO NOTHING
+      `, [user1.id, user2.id]);
+      console.log('✅ Added sample packages');
+    }
+    
+    // Get final counts
+    const counts = await Promise.all([
+      pool.query('SELECT COUNT(*) as count FROM users'),
+      pool.query('SELECT COUNT(*) as count FROM rides'),
+      pool.query('SELECT COUNT(*) as count FROM bookings'),
+      pool.query('SELECT COUNT(*) as count FROM packages'),
+      pool.query('SELECT COUNT(*) as count FROM vehicles')
+    ]);
+    
+    res.json({
+      success: true,
+      message: 'Sample data added successfully',
+      data: {
+        users: parseInt(counts[0].rows[0].count),
+        rides: parseInt(counts[1].rows[0].count),
+        bookings: parseInt(counts[2].rows[0].count),
+        packages: parseInt(counts[3].rows[0].count),
+        vehicles: parseInt(counts[4].rows[0].count)
+      },
+      userDetails: users.map(u => ({ id: u.id, email: u.email, type: u.user_type })),
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Sample data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Debug endpoint to check database connection
 app.get('/api/debug/database', async (req, res) => {
   try {
