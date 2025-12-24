@@ -54,7 +54,8 @@
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.1",
     "stripe": "^14.7.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "google-auth-library": "^9.14.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

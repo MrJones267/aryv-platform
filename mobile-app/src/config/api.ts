@@ -147,21 +147,21 @@ export const getApiConfig = () => {
       socketUrl: 'http://localhost:3001',
       wsUrl: 'ws://localhost:3001',
       cdnUrl: API_ENDPOINTS.CDN_URL,
-      // Keep production URLs as fallback (replace with your Railway URL)
-      fallbackApiUrl: 'https://api.aryv-app.com/api', // Production API domain
-      fallbackSocketUrl: 'https://api.aryv-app.com', // Production API domain
+      // Keep production URLs as fallback (Railway production)
+      fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway production URL
+      fallbackSocketUrl: 'https://api.aryv-app.com', // Railway production URL
     };
   }
   
   // Use production configuration for production builds
   return {
     ...baseConfig,
-    apiUrl: API_ENDPOINTS.BASE_URL,
-    socketUrl: API_ENDPOINTS.SOCKET_URL,
-    wsUrl: API_ENDPOINTS.WS_URL,
+    apiUrl: 'https://api.aryv-app.com/api', // Railway production URL
+    socketUrl: 'https://api.aryv-app.com', // Railway production URL
+    wsUrl: 'wss://api.aryv-app.com', // Railway production WebSocket
     cdnUrl: API_ENDPOINTS.CDN_URL,
-    fallbackApiUrl: API_ENDPOINTS.BASE_URL, // Same as production
-    fallbackSocketUrl: API_ENDPOINTS.SOCKET_URL, // Same as production
+    fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway fallback
+    fallbackSocketUrl: 'https://api.aryv-app.com', // Railway fallback
   };
 };
 
