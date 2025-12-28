@@ -173,7 +173,7 @@ const startServer = async (): Promise<void> => {
         await testConnection();
         logInfo('Database connection successful!');
       } catch (error) {
-        logError('Database connection failed, continuing without database', error);
+        logError('Database connection failed, continuing without database', error as Error);
         logInfo('Server will run in database-free mode');
       }
     }
