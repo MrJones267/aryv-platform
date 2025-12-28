@@ -55,7 +55,8 @@
     "socket.io": "^4.8.1",
     "stripe": "^14.7.0",
     "winston": "^3.17.0",
-    "google-auth-library": "^9.14.1"
+    "google-auth-library": "^9.14.1",
+    "axios": "^1.6.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -81,7 +82,8 @@
     "supertest": "^6.3.4",
     "ts-jest": "^29.1.1",
     "tsx": "^4.1.4",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "@types/axios": "^0.14.0"
   },
   "engines": {
     "node": ">=18.0.0"
