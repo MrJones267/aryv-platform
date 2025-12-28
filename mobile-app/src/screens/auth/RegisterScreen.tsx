@@ -184,7 +184,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               <Icon name="arrow-back" size={24} color="#333333" />
             </TouchableOpacity>
             <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join the Hitch community</Text>
+            <Text style={styles.subtitle}>Join the ARYV community</Text>
           </View>
 
           {/* Form */}

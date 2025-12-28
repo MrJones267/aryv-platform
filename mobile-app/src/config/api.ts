@@ -19,6 +19,15 @@ export const APP_CONFIG = {
   // Platform detection
   IS_ANDROID: Platform.OS === 'android',
   IS_IOS: Platform.OS === 'ios',
+  
+  // Demo mode for testing without full backend
+  ENABLE_DEMO_MODE: true,
+  DEMO_USER: {
+    email: 'demo@aryv-app.com',
+    password: 'demo123',
+    firstName: 'Demo',
+    lastName: 'User',
+  },
 };
 
 // API Base URLs
@@ -148,7 +157,7 @@ export const getApiConfig = () => {
       wsUrl: 'ws://localhost:3001',
       cdnUrl: API_ENDPOINTS.CDN_URL,
       // Keep production URLs as fallback (Railway production)
-      fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway production URL
+      fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway production URL  
       fallbackSocketUrl: 'https://api.aryv-app.com', // Railway production URL
     };
   }
