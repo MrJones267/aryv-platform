@@ -164,13 +164,31 @@ process.on('unhandledRejection', (reason, promise) => {
 // Initialize database and start server
 const startServer = async (): Promise<void> => {
   try {
-    // Test database connection (required for production)
-    if (NODE_ENV === 'development') {
-      logInfo('Development mode: skipping database connection check...');
-    } else {
-      logInfo('Testing database connection...');
+    // Test database connection
+    logInfo('Testing database connection...');
+    try {
       await testConnection();
       logInfo('Database connection successful!');
+    } catch (dbError) {
+      logError('Database connection failed', dbError as Error);
+      
+      if (NODE_ENV === 'production') {
+        // In production, wait a bit and retry once more
+        logInfo('Retrying database connection in 5 seconds...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        try {
+          await testConnection();
+          logInfo('Database connection successful on retry!');
+        } catch (retryError) {
+          logError('Database connection failed after retry', retryError as Error);
+          console.error('🚨 CRITICAL: Cannot connect to database in production mode');
+          console.error('🔧 Please check DATABASE_URL environment variable');
+          process.exit(1);
+        }
+      } else {
+        logInfo('Development mode: continuing without database connection...');
+      }
     }
     
     // Skip database sync since tables already exist

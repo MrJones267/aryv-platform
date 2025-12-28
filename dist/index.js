@@ -124,12 +124,30 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 const startServer = async () => {
     try {
-        if (NODE_ENV === 'development') {
-            (0, logger_1.logInfo)('Development mode: skipping database connection check...');
-        }
-        else {
-            (0, logger_1.logInfo)('Testing database connection...');
+        (0, logger_1.logInfo)('Testing database connection...');
+        try {
             await (0, models_1.testConnection)();
+            (0, logger_1.logInfo)('Database connection successful!');
+        }
+        catch (dbError) {
+            (0, logger_1.logError)('Database connection failed', dbError);
+            if (NODE_ENV === 'production') {
+                (0, logger_1.logInfo)('Retrying database connection in 5 seconds...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                try {
+                    await (0, models_1.testConnection)();
+                    (0, logger_1.logInfo)('Database connection successful on retry!');
+                }
+                catch (retryError) {
+                    (0, logger_1.logError)('Database connection failed after retry', retryError);
+                    console.error('🚨 CRITICAL: Cannot connect to database in production mode');
+                    console.error('🔧 Please check DATABASE_URL environment variable');
+                    process.exit(1);
+                }
+            }
+            else {
+                (0, logger_1.logInfo)('Development mode: continuing without database connection...');
+            }
         }
         (0, logger_1.logInfo)('Database tables already exist, skipping sync...');
         (0, logger_1.logInfo)('Initializing Socket.io service...');

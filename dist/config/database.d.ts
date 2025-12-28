@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-declare const sequelize: Sequelize;
+declare let sequelize: Sequelize;
 declare const testConnection: () => Promise<void>;
 export { sequelize, testConnection };
 export { Op, QueryTypes } from 'sequelize';
