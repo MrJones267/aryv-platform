@@ -156,21 +156,21 @@ export const getApiConfig = () => {
       socketUrl: 'http://localhost:3001',
       wsUrl: 'ws://localhost:3001',
       cdnUrl: API_ENDPOINTS.CDN_URL,
-      // Keep production URLs as fallback (Railway production)
-      fallbackApiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway production URL  
-      fallbackSocketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway production URL
+      // Keep production URLs as fallback (Custom domain)
+      fallbackApiUrl: 'https://api.aryv-app.com/api', // Custom domain as primary fallback
+      fallbackSocketUrl: 'https://api.aryv-app.com', // Custom domain as primary fallback
     };
   }
   
   // Use production configuration for production builds
   return {
     ...baseConfig,
-    apiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway production URL
-    socketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway production URL
-    wsUrl: 'wss://aryv-platform-production.up.railway.app', // Correct Railway production WebSocket
+    apiUrl: 'https://api.aryv-app.com/api', // Custom domain with Cloudflare proxy
+    socketUrl: 'https://api.aryv-app.com', // Custom domain with Cloudflare proxy
+    wsUrl: 'wss://api.aryv-app.com', // Custom domain WebSocket with Cloudflare
     cdnUrl: API_ENDPOINTS.CDN_URL,
-    fallbackApiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway fallback
-    fallbackSocketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway fallback
+    fallbackApiUrl: 'https://aryv-platform-production.up.railway.app/api', // Railway default as fallback
+    fallbackSocketUrl: 'https://aryv-platform-production.up.railway.app', // Railway default as fallback
   };
 };
 
