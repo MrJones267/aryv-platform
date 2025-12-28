@@ -224,7 +224,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {
           id: 'about',
           icon: 'info',
-          title: 'About Hitch',
+          title: 'About ARYV',
           subtitle: 'Version 1.0.0',
           type: 'navigation',
           action: 'about',

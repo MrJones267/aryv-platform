@@ -194,7 +194,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
           </View>
           <Text style={styles.title}>App Permissions</Text>
           <Text style={styles.subtitle}>
-            Hitch needs a few permissions to provide you with the best experience
+            ARYV needs a few permissions to provide you with the best experience
           </Text>
         </View>
 

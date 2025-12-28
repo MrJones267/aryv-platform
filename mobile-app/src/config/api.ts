@@ -21,7 +21,7 @@ export const APP_CONFIG = {
   IS_IOS: Platform.OS === 'ios',
   
   // Demo mode for testing without full backend
-  ENABLE_DEMO_MODE: true,
+  ENABLE_DEMO_MODE: false, // DISABLED for production - use real Railway backend
   DEMO_USER: {
     email: 'demo@aryv-app.com',
     password: 'demo123',
@@ -157,20 +157,20 @@ export const getApiConfig = () => {
       wsUrl: 'ws://localhost:3001',
       cdnUrl: API_ENDPOINTS.CDN_URL,
       // Keep production URLs as fallback (Railway production)
-      fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway production URL  
-      fallbackSocketUrl: 'https://api.aryv-app.com', // Railway production URL
+      fallbackApiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway production URL  
+      fallbackSocketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway production URL
     };
   }
   
   // Use production configuration for production builds
   return {
     ...baseConfig,
-    apiUrl: 'https://api.aryv-app.com/api', // Railway production URL
-    socketUrl: 'https://api.aryv-app.com', // Railway production URL
-    wsUrl: 'wss://api.aryv-app.com', // Railway production WebSocket
+    apiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway production URL
+    socketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway production URL
+    wsUrl: 'wss://aryv-platform-production.up.railway.app', // Correct Railway production WebSocket
     cdnUrl: API_ENDPOINTS.CDN_URL,
-    fallbackApiUrl: 'https://api.aryv-app.com/api', // Railway fallback
-    fallbackSocketUrl: 'https://api.aryv-app.com', // Railway fallback
+    fallbackApiUrl: 'https://aryv-platform-production.up.railway.app/api', // Correct Railway fallback
+    fallbackSocketUrl: 'https://aryv-platform-production.up.railway.app', // Correct Railway fallback
   };
 };
 
