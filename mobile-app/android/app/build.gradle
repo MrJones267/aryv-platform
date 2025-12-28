@@ -10,10 +10,6 @@ apply plugin: "com.google.gms.google-services"
 react {
     /* Enable Hermes for production builds */
     enableHermes = true
-    
-    /* Bundle configuration for production */
-    bundleAssetName = "index.android.bundle"
-    entryFile = file("../index.js")
 }
 
 /**
@@ -39,6 +35,20 @@ android {
     compileSdkVersion rootProject.ext.compileSdkVersion
 
     namespace "com.aryvmobile"
+    
+    // Fix for Material Design 3 resource conflicts
+    packagingOptions {
+        resources {
+            excludes += [
+                '**/m3_sys_motion_easing_linear.xml',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt'
+            ]
+        }
+    }
     defaultConfig {
         applicationId "com.aryvmobile"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -88,12 +98,24 @@ android {
             keyPassword 'android'
         }
         release {
-            // Use debug keystore for development/testing builds
-            // In production, replace with proper release keystore
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            // Production keystore configuration
+            // Reads from keystore.properties file for security
+            def keystorePropertiesFile = file('keystore.properties')
+            def keystoreProperties = new Properties()
+            
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            } else {
+                // Fallback to debug keystore if production keystore not configured
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
     }
     buildTypes {
