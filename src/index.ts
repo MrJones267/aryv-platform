@@ -164,18 +164,13 @@ process.on('unhandledRejection', (reason, promise) => {
 // Initialize database and start server
 const startServer = async (): Promise<void> => {
   try {
-    // Test database connection (optional in production)
+    // Test database connection (required for production)
     if (NODE_ENV === 'development') {
       logInfo('Development mode: skipping database connection check...');
     } else {
       logInfo('Testing database connection...');
-      try {
-        await testConnection();
-        logInfo('Database connection successful!');
-      } catch (error) {
-        logError('Database connection failed, continuing without database', error as Error);
-        logInfo('Server will run in database-free mode');
-      }
+      await testConnection();
+      logInfo('Database connection successful!');
     }
     
     // Skip database sync since tables already exist
