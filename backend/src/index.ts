@@ -25,6 +25,7 @@ import userRoutes from './routes/users';
 import locationRoutes from './routes/locations';
 import cashPaymentRoutes from './routes/cashPayments';
 import currencyRoutes from './routes/currencies';
+import countryRoutes from './routes/countries';
 import groupChatRoutes from './routes/groupChat';
 import SocketService from './services/SocketService';
 import { notificationService } from './services/NotificationService';
@@ -86,8 +87,21 @@ app.use(express.urlencoded({
   type: 'application/x-www-form-urlencoded',
 }));
 
-// Health check endpoint
+// Health check endpoint - both with and without /api prefix for compatibility
 app.get('/health', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'ARYV Backend API is running',
+    timestamp: new Date().toISOString(),
+    environment: NODE_ENV,
+    version: '1.0.0',
+    database: 'connected',
+    uptime: process.uptime(),
+  });
+});
+
+// Health check endpoint with /api prefix for mobile app compatibility
+app.get('/api/health', (_req, res) => {
   res.status(200).json({
     success: true,
     message: 'ARYV Backend API is running',
@@ -115,6 +129,7 @@ app.get('/', (_req, res) => {
       locations: '/api/locations',
       cashPayments: '/api/payments/cash',
       currencies: '/api/currencies',
+      countries: '/api/countries',
       groupChats: '/api/group-chats',
       docs: '/api/docs',
     },
@@ -133,6 +148,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/payments/cash', cashPaymentRoutes);
 app.use('/api/currencies', currencyRoutes);
+app.use('/api/countries', countryRoutes);
 app.use('/api/group-chats', groupChatRoutes);
 
 // API Documentation

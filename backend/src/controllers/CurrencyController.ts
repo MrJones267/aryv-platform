@@ -8,22 +8,113 @@
 import { Request, Response } from 'express';
 import { CurrencyService } from '../services/CurrencyService';
 import { UserCurrency } from '../models/UserCurrency';
+import { Currency } from '../models/Currency';
 import { AuthenticatedRequest } from '../types';
 
+// Type for fallback currency data that matches Currency model
+interface FallbackCurrency {
+  id?: string;
+  code: string;
+  name: string;
+  symbol: string;
+  decimalPlaces: number;
+  flag: string;
+  countryCode: string;
+  exchangeRate: number;
+  isPopular: boolean;
+  region: string;
+  lastUpdated?: string;
+}
+
 export class CurrencyController {
+  
+  // Fallback currency data for when database is empty or API calls fail
+  private static fallbackCurrencies: FallbackCurrency[] = [
+    {
+      code: 'USD',
+      name: 'US Dollar',
+      symbol: '$',
+      decimalPlaces: 2,
+      flag: '🇺🇸',
+      countryCode: 'US',
+      exchangeRate: 1.0,
+      isPopular: true,
+      region: 'North America'
+    },
+    {
+      code: 'EUR',
+      name: 'Euro',
+      symbol: '€',
+      decimalPlaces: 2,
+      flag: '🇪🇺',
+      countryCode: 'EU',
+      exchangeRate: 0.85,
+      isPopular: true,
+      region: 'Europe'
+    },
+    {
+      code: 'GBP',
+      name: 'British Pound',
+      symbol: '£',
+      decimalPlaces: 2,
+      flag: '🇬🇧',
+      countryCode: 'GB',
+      exchangeRate: 0.73,
+      isPopular: true,
+      region: 'Europe'
+    },
+    {
+      code: 'KES',
+      name: 'Kenyan Shilling',
+      symbol: 'KSh',
+      decimalPlaces: 2,
+      flag: '🇰🇪',
+      countryCode: 'KE',
+      exchangeRate: 129.5,
+      isPopular: false,
+      region: 'Africa'
+    },
+    {
+      code: 'NGN',
+      name: 'Nigerian Naira',
+      symbol: '₦',
+      decimalPlaces: 2,
+      flag: '🇳🇬',
+      countryCode: 'NG',
+      exchangeRate: 760.0,
+      isPopular: false,
+      region: 'Africa'
+    },
+    {
+      code: 'ZAR',
+      name: 'South African Rand',
+      symbol: 'R',
+      decimalPlaces: 2,
+      flag: '🇿🇦',
+      countryCode: 'ZA',
+      exchangeRate: 18.5,
+      isPopular: false,
+      region: 'Africa'
+    }
+  ];
 
   /**
-   * Get all available currencies
+   * Get all available currencies with fallback support
    */
   static async getCurrencies(_req: Request, res: Response): Promise<Response> {
     try {
       const currencies = await CurrencyService.getActiveCurrencies();
+      
+      // If no currencies in database, use fallback data
+      const finalCurrencies: (Currency | FallbackCurrency)[] = currencies && currencies.length > 0 
+        ? currencies 
+        : this.fallbackCurrencies;
 
       return res.status(200).json({
         success: true,
         data: {
-          currencies: currencies.map(currency => ({
-            id: currency.id,
+          currencies: finalCurrencies.map(currency => ({
+            id: currency.id || currency.code,
             code: currency.code,
             name: currency.name,
             symbol: currency.symbol,
@@ -31,9 +122,12 @@ export class CurrencyController {
             flag: currency.flag,
             countryCode: currency.countryCode,
             exchangeRate: currency.exchangeRate,
-            lastUpdated: currency.lastUpdated,
+            lastUpdated: (currency as Currency).lastUpdated ? (currency as Currency).lastUpdated.toISOString() : (currency as FallbackCurrency).lastUpdated || new Date().toISOString(),
+            region: (currency as Currency).region || (currency as FallbackCurrency).region,
+            isPopular: (currency as Currency).isPopular || (currency as FallbackCurrency).isPopular
           })),
-          total: currencies.length,
+          total: finalCurrencies.length,
+          source: currencies && currencies.length > 0 ? 'database' : 'fallback'
         },
         timestamp: new Date().toISOString(),
       });
@@ -44,45 +138,98 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
 
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch currencies',
-        code: 'CURRENCY_FETCH_ERROR',
+      // Return fallback currencies even on error
+      return res.status(200).json({
+        success: true,
+        data: {
+          currencies: this.fallbackCurrencies.map(currency => ({
+            id: currency.code,
+            code: currency.code,
+            name: currency.name,
+            symbol: currency.symbol,
+            decimalPlaces: currency.decimalPlaces,
+            flag: currency.flag,
+            countryCode: currency.countryCode,
+            exchangeRate: currency.exchangeRate,
+            lastUpdated: new Date().toISOString(),
+            region: currency.region,
+            isPopular: currency.isPopular
+          })),
+          total: this.fallbackCurrencies.length,
+          source: 'fallback',
+          warning: 'Using fallback data due to database error'
+        },
         timestamp: new Date().toISOString(),
       });
     }
   }
 
   /**
-   * Get popular currencies by region
+   * Get popular currencies by region with fallback support
    */
   static async getPopularCurrencies(req: Request, res: Response): Promise<Response> {
     try {
       const { region = 'global' } = req.query;
 
-      const popularCodes = CurrencyService.getPopularCurrenciesByRegion(region as string);
-      const currencies = await Promise.all(
-        popularCodes.map(code => CurrencyService.getCurrencyByCode(code)),
-      );
+      try {
+        const popularCodes = CurrencyService.getPopularCurrenciesByRegion(region as string);
+        const currencies = await Promise.all(
+          popularCodes.map(code => CurrencyService.getCurrencyByCode(code)),
+        );
 
-      const validCurrencies = currencies.filter(c => c !== null);
+        const validCurrencies = currencies.filter(c => c !== null);
 
-      return res.status(200).json({
-        success: true,
-        data: {
-          currencies: validCurrencies.map(currency => ({
-            id: currency!.id,
-            code: currency!.code,
-            name: currency!.name,
-            symbol: currency!.symbol,
-            flag: currency!.flag,
-            exchangeRate: currency!.exchangeRate,
-          })),
-          region,
-          total: validCurrencies.length,
-        },
-        timestamp: new Date().toISOString(),
-      });
+        if (validCurrencies && validCurrencies.length > 0) {
+          return res.status(200).json({
+            success: true,
+            data: {
+              currencies: validCurrencies.map(currency => ({
+                id: currency!.id,
+                code: currency!.code,
+                name: currency!.name,
+                symbol: currency!.symbol,
+                flag: currency!.flag,
+                exchangeRate: currency!.exchangeRate,
+                region: currency!.region || '',
+                isPopular: currency!.isPopular || false
+              })),
+              region,
+              total: validCurrencies.length,
+              source: 'database'
+            },
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          throw new Error('No currencies found in database');
+        }
+      } catch (dbError) {
+        // Use fallback data
+        let fallbackCurrencies = this.fallbackCurrencies.filter(c => c.isPopular);
+        
+        if (region && region !== 'global') {
+          fallbackCurrencies = fallbackCurrencies.filter(c => c.region === region);
+        }
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            currencies: fallbackCurrencies.map(currency => ({
+              id: currency.code,
+              code: currency.code,
+              name: currency.name,
+              symbol: currency.symbol,
+              flag: currency.flag,
+              exchangeRate: currency.exchangeRate,
+              region: currency.region,
+              isPopular: currency.isPopular
+            })),
+            region,
+            total: fallbackCurrencies.length,
+            source: 'fallback'
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       console.error('[CurrencyController] Error fetching popular currencies:', {
         error: (error as Error).message,
@@ -90,10 +237,27 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
 
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch popular currencies',
-        code: 'POPULAR_CURRENCY_ERROR',
+      // Return fallback popular currencies even on error
+      const fallbackPopular = this.fallbackCurrencies.filter(c => c.isPopular);
+      
+      return res.status(200).json({
+        success: true,
+        data: {
+          currencies: fallbackPopular.map(currency => ({
+            id: currency.code,
+            code: currency.code,
+            name: currency.name,
+            symbol: currency.symbol,
+            flag: currency.flag,
+            exchangeRate: currency.exchangeRate,
+            region: currency.region,
+            isPopular: currency.isPopular
+          })),
+          region: (req.query['region'] as string) || 'global',
+          total: fallbackPopular.length,
+          source: 'fallback',
+          warning: 'Using fallback data due to error'
+        },
         timestamp: new Date().toISOString(),
       });
     }

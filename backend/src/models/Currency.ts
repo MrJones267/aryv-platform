@@ -19,11 +19,13 @@ export interface CurrencyAttributes {
   lastUpdated: Date; // Last time exchange rate was updated
   countryCode?: string; // ISO country code
   flag?: string; // Country flag emoji or URL
+  region?: string; // Geographic region (North America, Europe, Africa, etc.)
+  isPopular?: boolean; // Whether currency is popular/commonly used
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface CurrencyCreationAttributes extends Optional<CurrencyAttributes, 'id' | 'createdAt' | 'updatedAt' | 'countryCode' | 'flag'> {}
+export interface CurrencyCreationAttributes extends Optional<CurrencyAttributes, 'id' | 'createdAt' | 'updatedAt' | 'countryCode' | 'flag' | 'region' | 'isPopular'> {}
 
 export class Currency extends Model<CurrencyAttributes, CurrencyCreationAttributes> implements CurrencyAttributes {
   public id!: string;
@@ -36,6 +38,8 @@ export class Currency extends Model<CurrencyAttributes, CurrencyCreationAttribut
   public lastUpdated!: Date;
   public countryCode?: string;
   public flag?: string;
+  public region?: string;
+  public isPopular?: boolean;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 
@@ -124,6 +128,17 @@ Currency.init(
       type: DataTypes.STRING(10),
       allowNull: true,
       comment: 'Country flag emoji or icon reference',
+    },
+    region: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Geographic region (North America, Europe, Africa, etc.)',
+    },
+    isPopular: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false,
+      comment: 'Whether currency is popular/commonly used',
     },
     createdAt: {
       type: DataTypes.DATE,
