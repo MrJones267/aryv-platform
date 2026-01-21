@@ -194,3 +194,11 @@ junit.xml
 
 # Performance test results
 artillery-report/
+# APK files (too large for GitHub)
+*.apk
+
+# Keystore files (sensitive)
+*.keystore
+*.jks
+keystore.properties
+
