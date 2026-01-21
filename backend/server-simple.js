@@ -313,6 +313,97 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// User registration endpoint
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, firstName, lastName, phone, role = 'passenger' } = req.body;
+
+    // Validate required fields
+    const errors = [];
+    if (!email) errors.push({ field: 'email', message: '"email" is required' });
+    if (!password) errors.push({ field: 'password', message: '"password" is required' });
+    if (!phone) errors.push({ field: 'phone', message: '"phone" is required' });
+    if (!firstName) errors.push({ field: 'firstName', message: '"firstName" is required' });
+    if (!lastName) errors.push({ field: 'lastName', message: '"lastName" is required' });
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: errors,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'Email already registered',
+        code: 'EMAIL_EXISTS',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // Generate user ID
+    const userId = require('crypto').randomUUID();
+
+    // Create user
+    const insertQuery = `
+      INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number, role, is_active, is_verified, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      RETURNING id, email, first_name, last_name, role, created_at
+    `;
+    const result = await pool.query(insertQuery, [userId, email, passwordHash, firstName, lastName, phone, role]);
+    const user = result.rows[0];
+
+    // Generate tokens
+    const token = signToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role
+    });
+
+    const refreshTokenValue = signToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role
+    }, {
+      expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d'
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      data: {
+        accessToken: token,
+        refreshToken: refreshTokenValue,
+        expiresIn: 7 * 24 * 60 * 60,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Registration failed',
+      code: 'REGISTRATION_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Token refresh endpoint
 app.post('/api/auth/refresh', (req, res) => {
   refreshToken(req, res);
@@ -892,22 +983,430 @@ app.get('/api/courier/analytics', async (req, res) => {
   }
 });
 
-// Default catch-all
-app.use('/api/*', (req, res) => {
+// ==========================================
+// CURRENCIES ENDPOINTS
+// ==========================================
+
+// Fallback currency data
+const fallbackCurrencies = [
+  { id: 'USD', code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2, flag: '🇺🇸', countryCode: 'US', exchangeRate: 1.0, isPopular: true, region: 'North America' },
+  { id: 'EUR', code: 'EUR', name: 'Euro', symbol: '€', decimalPlaces: 2, flag: '🇪🇺', countryCode: 'EU', exchangeRate: 0.92, isPopular: true, region: 'Europe' },
+  { id: 'GBP', code: 'GBP', name: 'British Pound', symbol: '£', decimalPlaces: 2, flag: '🇬🇧', countryCode: 'GB', exchangeRate: 0.79, isPopular: true, region: 'Europe' },
+  { id: 'KES', code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', decimalPlaces: 2, flag: '🇰🇪', countryCode: 'KE', exchangeRate: 153.5, isPopular: true, region: 'Africa' },
+  { id: 'NGN', code: 'NGN', name: 'Nigerian Naira', symbol: '₦', decimalPlaces: 2, flag: '🇳🇬', countryCode: 'NG', exchangeRate: 1550.0, isPopular: true, region: 'Africa' },
+  { id: 'ZAR', code: 'ZAR', name: 'South African Rand', symbol: 'R', decimalPlaces: 2, flag: '🇿🇦', countryCode: 'ZA', exchangeRate: 18.5, isPopular: true, region: 'Africa' },
+  { id: 'CAD', code: 'CAD', name: 'Canadian Dollar', symbol: 'C$', decimalPlaces: 2, flag: '🇨🇦', countryCode: 'CA', exchangeRate: 1.36, isPopular: true, region: 'North America' },
+  { id: 'AUD', code: 'AUD', name: 'Australian Dollar', symbol: 'A$', decimalPlaces: 2, flag: '🇦🇺', countryCode: 'AU', exchangeRate: 1.53, isPopular: true, region: 'Oceania' },
+  { id: 'INR', code: 'INR', name: 'Indian Rupee', symbol: '₹', decimalPlaces: 2, flag: '🇮🇳', countryCode: 'IN', exchangeRate: 83.12, isPopular: true, region: 'Asia' },
+  { id: 'JPY', code: 'JPY', name: 'Japanese Yen', symbol: '¥', decimalPlaces: 0, flag: '🇯🇵', countryCode: 'JP', exchangeRate: 149.5, isPopular: true, region: 'Asia' },
+  { id: 'CNY', code: 'CNY', name: 'Chinese Yuan', symbol: '¥', decimalPlaces: 2, flag: '🇨🇳', countryCode: 'CN', exchangeRate: 7.24, isPopular: true, region: 'Asia' },
+  { id: 'CHF', code: 'CHF', name: 'Swiss Franc', symbol: 'CHF', decimalPlaces: 2, flag: '🇨🇭', countryCode: 'CH', exchangeRate: 0.88, isPopular: true, region: 'Europe' },
+  { id: 'MXN', code: 'MXN', name: 'Mexican Peso', symbol: '$', decimalPlaces: 2, flag: '🇲🇽', countryCode: 'MX', exchangeRate: 17.15, isPopular: false, region: 'North America' },
+  { id: 'BRL', code: 'BRL', name: 'Brazilian Real', symbol: 'R$', decimalPlaces: 2, flag: '🇧🇷', countryCode: 'BR', exchangeRate: 4.97, isPopular: false, region: 'South America' },
+  { id: 'GHS', code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', decimalPlaces: 2, flag: '🇬🇭', countryCode: 'GH', exchangeRate: 12.5, isPopular: false, region: 'Africa' },
+  { id: 'UGX', code: 'UGX', name: 'Ugandan Shilling', symbol: 'USh', decimalPlaces: 0, flag: '🇺🇬', countryCode: 'UG', exchangeRate: 3780, isPopular: false, region: 'Africa' },
+  { id: 'TZS', code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', decimalPlaces: 0, flag: '🇹🇿', countryCode: 'TZ', exchangeRate: 2510, isPopular: false, region: 'Africa' },
+  { id: 'EGP', code: 'EGP', name: 'Egyptian Pound', symbol: 'E£', decimalPlaces: 2, flag: '🇪🇬', countryCode: 'EG', exchangeRate: 30.9, isPopular: false, region: 'Africa' }
+];
+
+// Get all currencies
+app.get('/api/currencies', async (req, res) => {
+  try {
+    // Try to fetch from database first
+    const result = await pool.query(`
+      SELECT id, code, name, symbol, decimal_places as "decimalPlaces",
+             is_active as "isActive", exchange_rate as "exchangeRate",
+             country_code as "countryCode", flag, region, is_popular as "isPopular",
+             last_updated as "lastUpdated"
+      FROM currencies
+      WHERE is_active = true
+      ORDER BY code ASC
+    `);
+
+    if (result.rows.length > 0) {
+      return res.json({
+        success: true,
+        data: {
+          currencies: result.rows,
+          total: result.rows.length,
+          source: 'database'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Return fallback currencies if database is empty
+    res.json({
+      success: true,
+      data: {
+        currencies: fallbackCurrencies,
+        total: fallbackCurrencies.length,
+        source: 'fallback'
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Currencies fetch error:', error);
+    // Return fallback data on error
+    res.json({
+      success: true,
+      data: {
+        currencies: fallbackCurrencies,
+        total: fallbackCurrencies.length,
+        source: 'fallback',
+        warning: 'Using fallback data due to database error'
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Get popular currencies by region
+app.get('/api/currencies/popular', (req, res) => {
+  const region = (req.query.region || 'global').toLowerCase();
+
+  const regionMap = {
+    'north-america': ['USD', 'CAD', 'MXN'],
+    'europe': ['EUR', 'GBP', 'CHF'],
+    'asia': ['JPY', 'CNY', 'INR'],
+    'africa': ['ZAR', 'NGN', 'KES', 'GHS', 'EGP'],
+    'south-america': ['BRL'],
+    'oceania': ['AUD'],
+    'global': ['USD', 'EUR', 'GBP', 'KES', 'NGN', 'ZAR']
+  };
+
+  const popularCodes = regionMap[region] || regionMap['global'];
+  const popularCurrencies = fallbackCurrencies.filter(c => popularCodes.includes(c.code));
+
   res.json({
     success: true,
-    message: 'ARYV Backend API with PostgreSQL, Courier Service and WebSocket',
-    endpoint: req.path,
-    method: req.method,
+    data: {
+      currencies: popularCurrencies,
+      region: region,
+      total: popularCurrencies.length
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Currency conversion
+app.post('/api/currencies/convert', (req, res) => {
+  try {
+    const { fromCurrency, toCurrency, amount } = req.body;
+
+    if (!fromCurrency || !toCurrency || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: 'fromCurrency, toCurrency, and amount are required',
+        code: 'MISSING_PARAMS',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 10000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Amount must be between 0.01 and 10000',
+        code: 'INVALID_AMOUNT',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const fromCurr = fallbackCurrencies.find(c => c.code === fromCurrency.toUpperCase());
+    const toCurr = fallbackCurrencies.find(c => c.code === toCurrency.toUpperCase());
+
+    if (!fromCurr || !toCurr) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid currency code',
+        code: 'INVALID_CURRENCY',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Convert via USD as base
+    const usdAmount = numAmount / fromCurr.exchangeRate;
+    const convertedAmount = parseFloat((usdAmount * toCurr.exchangeRate).toFixed(toCurr.decimalPlaces));
+    const exchangeRate = toCurr.exchangeRate / fromCurr.exchangeRate;
+
+    res.json({
+      success: true,
+      data: {
+        fromCurrency: fromCurrency.toUpperCase(),
+        toCurrency: toCurrency.toUpperCase(),
+        amount: numAmount,
+        convertedAmount,
+        exchangeRate: parseFloat(exchangeRate.toFixed(6)),
+        timestamp: new Date().toISOString()
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Currency conversion error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Conversion failed',
+      code: 'CONVERSION_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ==========================================
+// COUNTRIES ENDPOINTS
+// ==========================================
+
+// Fallback country data
+const fallbackCountries = [
+  { id: 'US', code: 'US', name: 'United States', nameOfficial: 'United States of America', flag: '🇺🇸', phonePrefix: '+1', continent: 'North America', region: 'Americas', capital: 'Washington D.C.', timezones: ['America/New_York', 'America/Los_Angeles'], languages: ['English'], isActive: true },
+  { id: 'GB', code: 'GB', name: 'United Kingdom', nameOfficial: 'United Kingdom of Great Britain and Northern Ireland', flag: '🇬🇧', phonePrefix: '+44', continent: 'Europe', region: 'Europe', capital: 'London', timezones: ['Europe/London'], languages: ['English'], isActive: true },
+  { id: 'CA', code: 'CA', name: 'Canada', nameOfficial: 'Canada', flag: '🇨🇦', phonePrefix: '+1', continent: 'North America', region: 'Americas', capital: 'Ottawa', timezones: ['America/Toronto', 'America/Vancouver'], languages: ['English', 'French'], isActive: true },
+  { id: 'KE', code: 'KE', name: 'Kenya', nameOfficial: 'Republic of Kenya', flag: '🇰🇪', phonePrefix: '+254', continent: 'Africa', region: 'Africa', capital: 'Nairobi', timezones: ['Africa/Nairobi'], languages: ['English', 'Swahili'], isActive: true },
+  { id: 'NG', code: 'NG', name: 'Nigeria', nameOfficial: 'Federal Republic of Nigeria', flag: '🇳🇬', phonePrefix: '+234', continent: 'Africa', region: 'Africa', capital: 'Abuja', timezones: ['Africa/Lagos'], languages: ['English'], isActive: true },
+  { id: 'ZA', code: 'ZA', name: 'South Africa', nameOfficial: 'Republic of South Africa', flag: '🇿🇦', phonePrefix: '+27', continent: 'Africa', region: 'Africa', capital: 'Pretoria', timezones: ['Africa/Johannesburg'], languages: ['English', 'Zulu', 'Afrikaans'], isActive: true },
+  { id: 'AU', code: 'AU', name: 'Australia', nameOfficial: 'Commonwealth of Australia', flag: '🇦🇺', phonePrefix: '+61', continent: 'Oceania', region: 'Oceania', capital: 'Canberra', timezones: ['Australia/Sydney'], languages: ['English'], isActive: true },
+  { id: 'IN', code: 'IN', name: 'India', nameOfficial: 'Republic of India', flag: '🇮🇳', phonePrefix: '+91', continent: 'Asia', region: 'Asia', capital: 'New Delhi', timezones: ['Asia/Kolkata'], languages: ['Hindi', 'English'], isActive: true },
+  { id: 'GH', code: 'GH', name: 'Ghana', nameOfficial: 'Republic of Ghana', flag: '🇬🇭', phonePrefix: '+233', continent: 'Africa', region: 'Africa', capital: 'Accra', timezones: ['Africa/Accra'], languages: ['English'], isActive: true },
+  { id: 'UG', code: 'UG', name: 'Uganda', nameOfficial: 'Republic of Uganda', flag: '🇺🇬', phonePrefix: '+256', continent: 'Africa', region: 'Africa', capital: 'Kampala', timezones: ['Africa/Kampala'], languages: ['English', 'Swahili'], isActive: true },
+  { id: 'TZ', code: 'TZ', name: 'Tanzania', nameOfficial: 'United Republic of Tanzania', flag: '🇹🇿', phonePrefix: '+255', continent: 'Africa', region: 'Africa', capital: 'Dodoma', timezones: ['Africa/Dar_es_Salaam'], languages: ['English', 'Swahili'], isActive: true },
+  { id: 'RW', code: 'RW', name: 'Rwanda', nameOfficial: 'Republic of Rwanda', flag: '🇷🇼', phonePrefix: '+250', continent: 'Africa', region: 'Africa', capital: 'Kigali', timezones: ['Africa/Kigali'], languages: ['English', 'French', 'Kinyarwanda'], isActive: true },
+  { id: 'EG', code: 'EG', name: 'Egypt', nameOfficial: 'Arab Republic of Egypt', flag: '🇪🇬', phonePrefix: '+20', continent: 'Africa', region: 'Africa', capital: 'Cairo', timezones: ['Africa/Cairo'], languages: ['Arabic'], isActive: true },
+  { id: 'DE', code: 'DE', name: 'Germany', nameOfficial: 'Federal Republic of Germany', flag: '🇩🇪', phonePrefix: '+49', continent: 'Europe', region: 'Europe', capital: 'Berlin', timezones: ['Europe/Berlin'], languages: ['German'], isActive: true },
+  { id: 'FR', code: 'FR', name: 'France', nameOfficial: 'French Republic', flag: '🇫🇷', phonePrefix: '+33', continent: 'Europe', region: 'Europe', capital: 'Paris', timezones: ['Europe/Paris'], languages: ['French'], isActive: true },
+  { id: 'JP', code: 'JP', name: 'Japan', nameOfficial: 'Japan', flag: '🇯🇵', phonePrefix: '+81', continent: 'Asia', region: 'Asia', capital: 'Tokyo', timezones: ['Asia/Tokyo'], languages: ['Japanese'], isActive: true },
+  { id: 'CN', code: 'CN', name: 'China', nameOfficial: "People's Republic of China", flag: '🇨🇳', phonePrefix: '+86', continent: 'Asia', region: 'Asia', capital: 'Beijing', timezones: ['Asia/Shanghai'], languages: ['Mandarin'], isActive: true },
+  { id: 'BR', code: 'BR', name: 'Brazil', nameOfficial: 'Federative Republic of Brazil', flag: '🇧🇷', phonePrefix: '+55', continent: 'South America', region: 'Americas', capital: 'Brasília', timezones: ['America/Sao_Paulo'], languages: ['Portuguese'], isActive: true },
+  { id: 'MX', code: 'MX', name: 'Mexico', nameOfficial: 'United Mexican States', flag: '🇲🇽', phonePrefix: '+52', continent: 'North America', region: 'Americas', capital: 'Mexico City', timezones: ['America/Mexico_City'], languages: ['Spanish'], isActive: true },
+  { id: 'AE', code: 'AE', name: 'United Arab Emirates', nameOfficial: 'United Arab Emirates', flag: '🇦🇪', phonePrefix: '+971', continent: 'Asia', region: 'Middle East', capital: 'Abu Dhabi', timezones: ['Asia/Dubai'], languages: ['Arabic', 'English'], isActive: true }
+];
+
+// Get all countries
+app.get('/api/countries', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      countries: fallbackCountries,
+      total: fallbackCountries.length
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Get popular countries
+app.get('/api/countries/popular', (req, res) => {
+  const popularCountries = fallbackCountries.filter(c =>
+    ['US', 'GB', 'KE', 'NG', 'ZA', 'GH'].includes(c.code)
+  );
+
+  res.json({
+    success: true,
+    data: {
+      countries: popularCountries,
+      total: popularCountries.length
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Get country by code
+app.get('/api/countries/:code', (req, res) => {
+  const code = req.params.code.toUpperCase();
+  const country = fallbackCountries.find(c => c.code === code);
+
+  if (!country) {
+    return res.status(404).json({
+      success: false,
+      error: 'Country not found',
+      code: 'COUNTRY_NOT_FOUND',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  res.json({
+    success: true,
+    data: country,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Search countries
+app.get('/api/countries/search', (req, res) => {
+  const query = (req.query.q || '').toLowerCase();
+
+  if (!query || query.length < 2) {
+    return res.json({
+      success: true,
+      data: {
+        countries: [],
+        total: 0
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  const results = fallbackCountries.filter(c =>
+    c.name.toLowerCase().includes(query) ||
+    c.code.toLowerCase().includes(query) ||
+    c.capital.toLowerCase().includes(query)
+  );
+
+  res.json({
+    success: true,
+    data: {
+      countries: results,
+      total: results.length,
+      query
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ==========================================
+// LOCATIONS ENDPOINTS
+// ==========================================
+
+// Location search (mock implementation - would integrate with Google Places API)
+app.get('/api/locations/search', (req, res) => {
+  const query = req.query.q || req.query.query || '';
+
+  if (!query || query.length < 2) {
+    return res.json({
+      success: true,
+      data: {
+        locations: [],
+        total: 0
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Mock location results
+  const mockLocations = [
+    { id: '1', name: 'Nairobi CBD', address: 'Central Business District, Nairobi, Kenya', latitude: -1.2921, longitude: 36.8219, type: 'city_center' },
+    { id: '2', name: 'Jomo Kenyatta International Airport', address: 'JKIA, Nairobi, Kenya', latitude: -1.3192, longitude: 36.9278, type: 'airport' },
+    { id: '3', name: 'Westlands', address: 'Westlands, Nairobi, Kenya', latitude: -1.2673, longitude: 36.8118, type: 'neighborhood' },
+    { id: '4', name: 'Karen', address: 'Karen, Nairobi, Kenya', latitude: -1.3162, longitude: 36.7115, type: 'neighborhood' },
+    { id: '5', name: 'Lagos Island', address: 'Lagos Island, Lagos, Nigeria', latitude: 6.4549, longitude: 3.4246, type: 'neighborhood' },
+    { id: '6', name: 'Victoria Island', address: 'Victoria Island, Lagos, Nigeria', latitude: 6.4281, longitude: 3.4219, type: 'neighborhood' },
+    { id: '7', name: 'Sandton City', address: 'Sandton, Johannesburg, South Africa', latitude: -26.1076, longitude: 28.0567, type: 'shopping' },
+    { id: '8', name: 'Cape Town CBD', address: 'Cape Town City Centre, South Africa', latitude: -33.9249, longitude: 18.4241, type: 'city_center' }
+  ];
+
+  const results = mockLocations.filter(loc =>
+    loc.name.toLowerCase().includes(query.toLowerCase()) ||
+    loc.address.toLowerCase().includes(query.toLowerCase())
+  );
+
+  res.json({
+    success: true,
+    data: {
+      locations: results,
+      total: results.length,
+      query
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Geocode address to coordinates
+app.post('/api/locations/geocode', (req, res) => {
+  const { address } = req.body;
+
+  if (!address) {
+    return res.status(400).json({
+      success: false,
+      error: 'Address is required',
+      code: 'MISSING_ADDRESS',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Mock geocoding - in production, use Google Geocoding API
+  const mockResult = {
+    address: address,
+    latitude: -1.2921 + (Math.random() - 0.5) * 0.1,
+    longitude: 36.8219 + (Math.random() - 0.5) * 0.1,
+    formattedAddress: `${address}, Kenya`,
+    placeId: `place_${Date.now()}`
+  };
+
+  res.json({
+    success: true,
+    data: mockResult,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Reverse geocode coordinates to address
+app.post('/api/locations/reverse-geocode', (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({
+      success: false,
+      error: 'Latitude and longitude are required',
+      code: 'MISSING_COORDINATES',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Mock reverse geocoding
+  const mockResult = {
+    latitude: parseFloat(latitude),
+    longitude: parseFloat(longitude),
+    address: 'Nearby Location',
+    formattedAddress: `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}, Kenya`,
+    placeId: `place_${Date.now()}`
+  };
+
+  res.json({
+    success: true,
+    data: mockResult,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ==========================================
+// ADDITIONAL /API/HEALTH ENDPOINT
+// ==========================================
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'ARYV Backend API is running',
     timestamp: new Date().toISOString(),
-    note: 'Database connected - courier service and real-time features available',
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0',
+    database: 'connected',
+    uptime: process.uptime()
+  });
+});
+
+// Default catch-all
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `Route ${req.originalUrl} not found`,
+    code: 'ROUTE_NOT_FOUND',
+    timestamp: new Date().toISOString(),
     availableEndpoints: [
+      'GET /api/health - Health check',
+      'GET /api/currencies - List all currencies',
+      'GET /api/currencies/popular - Popular currencies by region',
+      'POST /api/currencies/convert - Convert between currencies',
+      'GET /api/countries - List all countries',
+      'GET /api/countries/popular - Popular countries',
+      'GET /api/countries/:code - Get country by code',
+      'GET /api/locations/search - Search locations',
+      'POST /api/locations/geocode - Geocode address',
+      'POST /api/locations/reverse-geocode - Reverse geocode',
       'GET /api/packages - List all packages',
-      'GET /api/couriers - List all couriers', 
-      'GET /api/packages/:id/events - Package tracking events',
-      'GET /api/courier/analytics - Courier service analytics',
-      'GET /api/websocket/status - WebSocket connection status',
-      'POST /api/broadcast/notification - Send notification to user'
+      'GET /api/couriers - List all couriers',
+      'GET /api/rides - List all rides',
+      'POST /api/auth/login - User login',
+      'POST /api/auth/register - User registration',
+      'POST /api/auth/google/verify - Google OAuth verification'
     ]
   });
 });
