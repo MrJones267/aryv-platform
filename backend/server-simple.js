@@ -205,6 +205,9 @@ if (process.env.VALIDATION_ENABLED === 'true') {
   app.use(validateAndSanitize);
 }
 
+// Trust proxy for Cloudflare/Railway (required for rate limiting to work correctly)
+app.set('trust proxy', 1);
+
 // Rate limiting middleware
 const rateLimit = require('express-rate-limit');
 const rateLimiter = rateLimit({
