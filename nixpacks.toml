@@ -1,12 +1,17 @@
 # Nixpacks configuration for Railway deployment
+# Updated: Force Node.js 20 (Node 18 is EOL)
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_20", "npm"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --legacy-peer-deps"]
 
 [phases.build]
-cmds = ["echo 'Using server-simple.js - no TypeScript build needed'"]
+cmds = ["echo 'Build complete - using server-simple.js'"]
 
 [start]
 cmd = "node backend/server-simple.js"
