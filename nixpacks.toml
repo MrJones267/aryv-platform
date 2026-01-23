@@ -1,0 +1,12 @@
+# Nixpacks configuration for Railway deployment
+[phases.setup]
+nixPkgs = ["nodejs_18"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["echo 'Using server-simple.js - no TypeScript build needed'"]
+
+[start]
+cmd = "node backend/server-simple.js"
