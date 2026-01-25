@@ -45,17 +45,18 @@ const getDatabaseConfig = () => {
   };
 
   // SSL Configuration for production
-  if (process.env.NODE_ENV === 'production') {
+  // Railway and other managed PostgreSQL services use self-signed certificates
+  if (process.env.NODE_ENV === 'production' || process.env.DATABASE_URL) {
     baseConfig.ssl = {
       require: true,
-      rejectUnauthorized: true,
-      // For Railway/Supabase/managed PostgreSQL
-      sslmode: process.env.PGSSLMODE || 'require',
+      // Allow self-signed certificates (required for Railway PostgreSQL)
+      rejectUnauthorized: false,
     };
-    
-    // Custom SSL certificate if provided
+
+    // Custom SSL certificate if provided (for strict SSL verification)
     if (process.env.PGSSLROOTCERT) {
       baseConfig.ssl.ca = require('fs').readFileSync(process.env.PGSSLROOTCERT).toString();
+      baseConfig.ssl.rejectUnauthorized = true;
     }
   } else {
     baseConfig.ssl = false;
