@@ -8,7 +8,7 @@ NIXPACKS_NODE_VERSION = "20"
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci --legacy-peer-deps"]
+cmds = ["rm -rf node_modules/.cache && npm install --legacy-peer-deps"]
 
 [phases.build]
 cmds = ["echo 'Build complete - using server-simple.js'"]
