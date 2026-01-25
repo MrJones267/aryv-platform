@@ -1009,7 +1009,17 @@ const fallbackCurrencies = [
   { id: 'GHS', code: 'GHS', name: 'Ghanaian Cedi', symbol: '₵', decimalPlaces: 2, flag: '🇬🇭', countryCode: 'GH', exchangeRate: 12.5, isPopular: false, region: 'Africa' },
   { id: 'UGX', code: 'UGX', name: 'Ugandan Shilling', symbol: 'USh', decimalPlaces: 0, flag: '🇺🇬', countryCode: 'UG', exchangeRate: 3780, isPopular: false, region: 'Africa' },
   { id: 'TZS', code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', decimalPlaces: 0, flag: '🇹🇿', countryCode: 'TZ', exchangeRate: 2510, isPopular: false, region: 'Africa' },
-  { id: 'EGP', code: 'EGP', name: 'Egyptian Pound', symbol: 'E£', decimalPlaces: 2, flag: '🇪🇬', countryCode: 'EG', exchangeRate: 30.9, isPopular: false, region: 'Africa' }
+  { id: 'EGP', code: 'EGP', name: 'Egyptian Pound', symbol: 'E£', decimalPlaces: 2, flag: '🇪🇬', countryCode: 'EG', exchangeRate: 30.9, isPopular: false, region: 'Africa' },
+  // Southern African currencies
+  { id: 'BWP', code: 'BWP', name: 'Botswana Pula', symbol: 'P', decimalPlaces: 2, flag: '🇧🇼', countryCode: 'BW', exchangeRate: 13.5, isPopular: false, region: 'Africa' },
+  { id: 'ZWL', code: 'ZWL', name: 'Zimbabwe Dollar', symbol: 'Z$', decimalPlaces: 2, flag: '🇿🇼', countryCode: 'ZW', exchangeRate: 322.0, isPopular: false, region: 'Africa' },
+  { id: 'ZMW', code: 'ZMW', name: 'Zambian Kwacha', symbol: 'ZK', decimalPlaces: 2, flag: '🇿🇲', countryCode: 'ZM', exchangeRate: 26.5, isPopular: false, region: 'Africa' },
+  { id: 'NAD', code: 'NAD', name: 'Namibian Dollar', symbol: 'N$', decimalPlaces: 2, flag: '🇳🇦', countryCode: 'NA', exchangeRate: 18.5, isPopular: false, region: 'Africa' },
+  { id: 'MZN', code: 'MZN', name: 'Mozambican Metical', symbol: 'MT', decimalPlaces: 2, flag: '🇲🇿', countryCode: 'MZ', exchangeRate: 63.5, isPopular: false, region: 'Africa' },
+  { id: 'MWK', code: 'MWK', name: 'Malawian Kwacha', symbol: 'MK', decimalPlaces: 2, flag: '🇲🇼', countryCode: 'MW', exchangeRate: 1680.0, isPopular: false, region: 'Africa' },
+  { id: 'LSL', code: 'LSL', name: 'Lesotho Loti', symbol: 'L', decimalPlaces: 2, flag: '🇱🇸', countryCode: 'LS', exchangeRate: 18.5, isPopular: false, region: 'Africa' },
+  { id: 'SZL', code: 'SZL', name: 'Swazi Lilangeni', symbol: 'E', decimalPlaces: 2, flag: '🇸🇿', countryCode: 'SZ', exchangeRate: 18.5, isPopular: false, region: 'Africa' },
+  { id: 'AOA', code: 'AOA', name: 'Angolan Kwanza', symbol: 'Kz', decimalPlaces: 2, flag: '🇦🇴', countryCode: 'AO', exchangeRate: 825.0, isPopular: false, region: 'Africa' }
 ];
 
 // Get all currencies
@@ -1181,7 +1191,17 @@ const fallbackCountries = [
   { id: 'CN', code: 'CN', name: 'China', nameOfficial: "People's Republic of China", flag: '🇨🇳', phonePrefix: '+86', continent: 'Asia', region: 'Asia', capital: 'Beijing', timezones: ['Asia/Shanghai'], languages: ['Mandarin'], isActive: true },
   { id: 'BR', code: 'BR', name: 'Brazil', nameOfficial: 'Federative Republic of Brazil', flag: '🇧🇷', phonePrefix: '+55', continent: 'South America', region: 'Americas', capital: 'Brasília', timezones: ['America/Sao_Paulo'], languages: ['Portuguese'], isActive: true },
   { id: 'MX', code: 'MX', name: 'Mexico', nameOfficial: 'United Mexican States', flag: '🇲🇽', phonePrefix: '+52', continent: 'North America', region: 'Americas', capital: 'Mexico City', timezones: ['America/Mexico_City'], languages: ['Spanish'], isActive: true },
-  { id: 'AE', code: 'AE', name: 'United Arab Emirates', nameOfficial: 'United Arab Emirates', flag: '🇦🇪', phonePrefix: '+971', continent: 'Asia', region: 'Middle East', capital: 'Abu Dhabi', timezones: ['Asia/Dubai'], languages: ['Arabic', 'English'], isActive: true }
+  { id: 'AE', code: 'AE', name: 'United Arab Emirates', nameOfficial: 'United Arab Emirates', flag: '🇦🇪', phonePrefix: '+971', continent: 'Asia', region: 'Middle East', capital: 'Abu Dhabi', timezones: ['Asia/Dubai'], languages: ['Arabic', 'English'], isActive: true },
+  // Southern African countries
+  { id: 'BW', code: 'BW', name: 'Botswana', nameOfficial: 'Republic of Botswana', flag: '🇧🇼', phonePrefix: '+267', continent: 'Africa', region: 'Africa', capital: 'Gaborone', timezones: ['Africa/Gaborone'], languages: ['English', 'Setswana'], isActive: true },
+  { id: 'ZW', code: 'ZW', name: 'Zimbabwe', nameOfficial: 'Republic of Zimbabwe', flag: '🇿🇼', phonePrefix: '+263', continent: 'Africa', region: 'Africa', capital: 'Harare', timezones: ['Africa/Harare'], languages: ['English', 'Shona', 'Ndebele'], isActive: true },
+  { id: 'ZM', code: 'ZM', name: 'Zambia', nameOfficial: 'Republic of Zambia', flag: '🇿🇲', phonePrefix: '+260', continent: 'Africa', region: 'Africa', capital: 'Lusaka', timezones: ['Africa/Lusaka'], languages: ['English'], isActive: true },
+  { id: 'NA', code: 'NA', name: 'Namibia', nameOfficial: 'Republic of Namibia', flag: '🇳🇦', phonePrefix: '+264', continent: 'Africa', region: 'Africa', capital: 'Windhoek', timezones: ['Africa/Windhoek'], languages: ['English'], isActive: true },
+  { id: 'MZ', code: 'MZ', name: 'Mozambique', nameOfficial: 'Republic of Mozambique', flag: '🇲🇿', phonePrefix: '+258', continent: 'Africa', region: 'Africa', capital: 'Maputo', timezones: ['Africa/Maputo'], languages: ['Portuguese'], isActive: true },
+  { id: 'MW', code: 'MW', name: 'Malawi', nameOfficial: 'Republic of Malawi', flag: '🇲🇼', phonePrefix: '+265', continent: 'Africa', region: 'Africa', capital: 'Lilongwe', timezones: ['Africa/Blantyre'], languages: ['English', 'Chichewa'], isActive: true },
+  { id: 'LS', code: 'LS', name: 'Lesotho', nameOfficial: 'Kingdom of Lesotho', flag: '🇱🇸', phonePrefix: '+266', continent: 'Africa', region: 'Africa', capital: 'Maseru', timezones: ['Africa/Maseru'], languages: ['English', 'Sesotho'], isActive: true },
+  { id: 'SZ', code: 'SZ', name: 'Eswatini', nameOfficial: 'Kingdom of Eswatini', flag: '🇸🇿', phonePrefix: '+268', continent: 'Africa', region: 'Africa', capital: 'Mbabane', timezones: ['Africa/Mbabane'], languages: ['English', 'Swati'], isActive: true },
+  { id: 'AO', code: 'AO', name: 'Angola', nameOfficial: 'Republic of Angola', flag: '🇦🇴', phonePrefix: '+244', continent: 'Africa', region: 'Africa', capital: 'Luanda', timezones: ['Africa/Luanda'], languages: ['Portuguese'], isActive: true }
 ];
 
 // Get all countries
