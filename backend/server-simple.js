@@ -2890,12 +2890,17 @@ app.get('/api/countries/search', (req, res) => {
 });
 
 // ==========================================
-// LOCATIONS ENDPOINTS
+// LOCATIONS ENDPOINTS - Google Places & Geocoding API Integration
 // ==========================================
 
-// Location search (mock implementation - would integrate with Google Places API)
-app.get('/api/locations/search', (req, res) => {
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+
+// Location search using Google Places API
+app.get('/api/locations/search', async (req, res) => {
   const query = req.query.q || req.query.query || '';
+  const lat = req.query.lat;
+  const lng = req.query.lng;
+  const radius = req.query.radius || 50000; // Default 50km radius
 
   if (!query || query.length < 2) {
     return res.json({
@@ -2908,37 +2913,226 @@ app.get('/api/locations/search', (req, res) => {
     });
   }
 
-  // Mock location results
-  const mockLocations = [
-    { id: '1', name: 'Nairobi CBD', address: 'Central Business District, Nairobi, Kenya', latitude: -1.2921, longitude: 36.8219, type: 'city_center' },
-    { id: '2', name: 'Jomo Kenyatta International Airport', address: 'JKIA, Nairobi, Kenya', latitude: -1.3192, longitude: 36.9278, type: 'airport' },
-    { id: '3', name: 'Westlands', address: 'Westlands, Nairobi, Kenya', latitude: -1.2673, longitude: 36.8118, type: 'neighborhood' },
-    { id: '4', name: 'Karen', address: 'Karen, Nairobi, Kenya', latitude: -1.3162, longitude: 36.7115, type: 'neighborhood' },
-    { id: '5', name: 'Lagos Island', address: 'Lagos Island, Lagos, Nigeria', latitude: 6.4549, longitude: 3.4246, type: 'neighborhood' },
-    { id: '6', name: 'Victoria Island', address: 'Victoria Island, Lagos, Nigeria', latitude: 6.4281, longitude: 3.4219, type: 'neighborhood' },
-    { id: '7', name: 'Sandton City', address: 'Sandton, Johannesburg, South Africa', latitude: -26.1076, longitude: 28.0567, type: 'shopping' },
-    { id: '8', name: 'Cape Town CBD', address: 'Cape Town City Centre, South Africa', latitude: -33.9249, longitude: 18.4241, type: 'city_center' }
-  ];
+  // Check if Google API key is configured
+  if (!GOOGLE_MAPS_API_KEY) {
+    console.error('Google Maps API key not configured');
+    return res.status(503).json({
+      success: false,
+      error: 'Location service unavailable - API key not configured',
+      code: 'SERVICE_UNAVAILABLE',
+      timestamp: new Date().toISOString()
+    });
+  }
 
-  const results = mockLocations.filter(loc =>
-    loc.name.toLowerCase().includes(query.toLowerCase()) ||
-    loc.address.toLowerCase().includes(query.toLowerCase())
-  );
+  try {
+    // Build Google Places Text Search API URL
+    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_MAPS_API_KEY}`;
 
-  res.json({
-    success: true,
-    data: {
-      locations: results,
-      total: results.length,
-      query
-    },
-    timestamp: new Date().toISOString()
-  });
+    // Add location bias if coordinates provided
+    if (lat && lng) {
+      url += `&location=${lat},${lng}&radius=${radius}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results) {
+      const locations = data.results.map((place, index) => ({
+        id: place.place_id,
+        placeId: place.place_id,
+        name: place.name,
+        address: place.formatted_address,
+        latitude: place.geometry.location.lat,
+        longitude: place.geometry.location.lng,
+        type: getPlaceType(place.types),
+        types: place.types,
+        rating: place.rating || null,
+        userRatingsTotal: place.user_ratings_total || 0,
+        icon: place.icon,
+        businessStatus: place.business_status
+      }));
+
+      res.json({
+        success: true,
+        data: {
+          locations,
+          total: locations.length,
+          query,
+          source: 'google_places'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else if (data.status === 'ZERO_RESULTS') {
+      res.json({
+        success: true,
+        data: {
+          locations: [],
+          total: 0,
+          query,
+          source: 'google_places'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('Google Places API error:', data.status, data.error_message);
+      res.status(500).json({
+        success: false,
+        error: 'Location search failed',
+        code: data.status,
+        message: data.error_message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Location search error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Location search failed',
+      code: 'SEARCH_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
-// Geocode address to coordinates
-app.post('/api/locations/geocode', (req, res) => {
-  const { address } = req.body;
+// Place autocomplete for real-time suggestions
+app.get('/api/locations/autocomplete', async (req, res) => {
+  const input = req.query.input || req.query.q || '';
+  const lat = req.query.lat;
+  const lng = req.query.lng;
+  const sessionToken = req.query.sessionToken;
+
+  if (!input || input.length < 2) {
+    return res.json({
+      success: true,
+      data: { predictions: [], total: 0 },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: 'Location service unavailable',
+      code: 'SERVICE_UNAVAILABLE',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  try {
+    let url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}`;
+
+    if (lat && lng) {
+      url += `&location=${lat},${lng}&radius=50000`;
+    }
+    if (sessionToken) {
+      url += `&sessiontoken=${sessionToken}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' || data.status === 'ZERO_RESULTS') {
+      const predictions = (data.predictions || []).map(pred => ({
+        placeId: pred.place_id,
+        description: pred.description,
+        mainText: pred.structured_formatting?.main_text,
+        secondaryText: pred.structured_formatting?.secondary_text,
+        types: pred.types
+      }));
+
+      res.json({
+        success: true,
+        data: {
+          predictions,
+          total: predictions.length,
+          source: 'google_places'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('Google Autocomplete error:', data.status);
+      res.status(500).json({
+        success: false,
+        error: 'Autocomplete failed',
+        code: data.status,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Autocomplete error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Autocomplete failed',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Get place details by place ID
+app.get('/api/locations/details/:placeId', async (req, res) => {
+  const { placeId } = req.params;
+  const sessionToken = req.query.sessionToken;
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: 'Location service unavailable',
+      code: 'SERVICE_UNAVAILABLE',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  try {
+    let url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=place_id,name,formatted_address,geometry,types,address_components,formatted_phone_number,opening_hours,rating,user_ratings_total&key=${GOOGLE_MAPS_API_KEY}`;
+
+    if (sessionToken) {
+      url += `&sessiontoken=${sessionToken}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.result) {
+      const place = data.result;
+      res.json({
+        success: true,
+        data: {
+          placeId: place.place_id,
+          name: place.name,
+          address: place.formatted_address,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          types: place.types,
+          addressComponents: place.address_components,
+          phone: place.formatted_phone_number,
+          openingHours: place.opening_hours,
+          rating: place.rating,
+          userRatingsTotal: place.user_ratings_total,
+          source: 'google_places'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Place not found',
+        code: data.status,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Place details error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get place details',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Geocode address to coordinates using Google Geocoding API
+app.post('/api/locations/geocode', async (req, res) => {
+  const { address, region } = req.body;
 
   if (!address) {
     return res.status(400).json({
@@ -2949,24 +3143,106 @@ app.post('/api/locations/geocode', (req, res) => {
     });
   }
 
-  // Mock geocoding - in production, use Google Geocoding API
-  const mockResult = {
-    address: address,
-    latitude: -1.2921 + (Math.random() - 0.5) * 0.1,
-    longitude: 36.8219 + (Math.random() - 0.5) * 0.1,
-    formattedAddress: `${address}, Kenya`,
-    placeId: `place_${Date.now()}`
-  };
+  if (!GOOGLE_MAPS_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: 'Geocoding service unavailable',
+      code: 'SERVICE_UNAVAILABLE',
+      timestamp: new Date().toISOString()
+    });
+  }
 
-  res.json({
-    success: true,
-    data: mockResult,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_MAPS_API_KEY}`;
+
+    if (region) {
+      url += `&region=${region}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const result = data.results[0];
+      const components = result.address_components || [];
+
+      // Parse address components
+      const addressParts = {
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: ''
+      };
+
+      components.forEach(comp => {
+        if (comp.types.includes('street_number')) {
+          addressParts.street = comp.long_name + ' ';
+        }
+        if (comp.types.includes('route')) {
+          addressParts.street += comp.long_name;
+        }
+        if (comp.types.includes('locality')) {
+          addressParts.city = comp.long_name;
+        }
+        if (comp.types.includes('administrative_area_level_1')) {
+          addressParts.state = comp.short_name;
+        }
+        if (comp.types.includes('country')) {
+          addressParts.country = comp.long_name;
+          addressParts.countryCode = comp.short_name;
+        }
+        if (comp.types.includes('postal_code')) {
+          addressParts.postalCode = comp.long_name;
+        }
+      });
+
+      res.json({
+        success: true,
+        data: {
+          address: address,
+          formattedAddress: result.formatted_address,
+          latitude: result.geometry.location.lat,
+          longitude: result.geometry.location.lng,
+          placeId: result.place_id,
+          locationType: result.geometry.location_type,
+          viewport: result.geometry.viewport,
+          addressComponents: addressParts,
+          types: result.types,
+          source: 'google_geocoding'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else if (data.status === 'ZERO_RESULTS') {
+      res.status(404).json({
+        success: false,
+        error: 'Address not found',
+        code: 'NOT_FOUND',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('Geocoding API error:', data.status, data.error_message);
+      res.status(500).json({
+        success: false,
+        error: 'Geocoding failed',
+        code: data.status,
+        message: data.error_message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Geocoding failed',
+      code: 'GEOCODING_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
-// Reverse geocode coordinates to address
-app.post('/api/locations/reverse-geocode', (req, res) => {
+// Reverse geocode coordinates to address using Google Geocoding API
+app.post('/api/locations/reverse-geocode', async (req, res) => {
   const { latitude, longitude } = req.body;
 
   if (!latitude || !longitude) {
@@ -2978,21 +3254,135 @@ app.post('/api/locations/reverse-geocode', (req, res) => {
     });
   }
 
-  // Mock reverse geocoding
-  const mockResult = {
-    latitude: parseFloat(latitude),
-    longitude: parseFloat(longitude),
-    address: 'Nearby Location',
-    formattedAddress: `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}, Kenya`,
-    placeId: `place_${Date.now()}`
+  if (!GOOGLE_MAPS_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: 'Reverse geocoding service unavailable',
+      code: 'SERVICE_UNAVAILABLE',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  try {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const result = data.results[0];
+      const components = result.address_components || [];
+
+      // Parse address components
+      const addressParts = {
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        postalCode: ''
+      };
+
+      components.forEach(comp => {
+        if (comp.types.includes('street_number')) {
+          addressParts.street = comp.long_name + ' ';
+        }
+        if (comp.types.includes('route')) {
+          addressParts.street += comp.long_name;
+        }
+        if (comp.types.includes('locality')) {
+          addressParts.city = comp.long_name;
+        }
+        if (comp.types.includes('administrative_area_level_1')) {
+          addressParts.state = comp.short_name;
+        }
+        if (comp.types.includes('country')) {
+          addressParts.country = comp.long_name;
+          addressParts.countryCode = comp.short_name;
+        }
+        if (comp.types.includes('postal_code')) {
+          addressParts.postalCode = comp.long_name;
+        }
+      });
+
+      res.json({
+        success: true,
+        data: {
+          latitude: lat,
+          longitude: lng,
+          address: addressParts.street.trim() || result.formatted_address.split(',')[0],
+          formattedAddress: result.formatted_address,
+          placeId: result.place_id,
+          addressComponents: addressParts,
+          types: result.types,
+          source: 'google_geocoding'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else if (data.status === 'ZERO_RESULTS') {
+      res.status(404).json({
+        success: false,
+        error: 'No address found for these coordinates',
+        code: 'NOT_FOUND',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('Reverse geocoding API error:', data.status, data.error_message);
+      res.status(500).json({
+        success: false,
+        error: 'Reverse geocoding failed',
+        code: data.status,
+        message: data.error_message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Reverse geocoding error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Reverse geocoding failed',
+      code: 'REVERSE_GEOCODING_ERROR',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Helper function to determine place type
+function getPlaceType(types) {
+  if (!types || types.length === 0) return 'place';
+
+  const typeMap = {
+    'airport': 'airport',
+    'train_station': 'transit',
+    'transit_station': 'transit',
+    'bus_station': 'transit',
+    'subway_station': 'transit',
+    'shopping_mall': 'shopping',
+    'shopping_center': 'shopping',
+    'restaurant': 'restaurant',
+    'food': 'restaurant',
+    'lodging': 'hotel',
+    'hospital': 'hospital',
+    'school': 'education',
+    'university': 'education',
+    'park': 'park',
+    'neighborhood': 'neighborhood',
+    'locality': 'city',
+    'administrative_area_level_1': 'state',
+    'country': 'country',
+    'point_of_interest': 'poi',
+    'establishment': 'business'
   };
 
-  res.json({
-    success: true,
-    data: mockResult,
-    timestamp: new Date().toISOString()
-  });
-});
+  for (const type of types) {
+    if (typeMap[type]) {
+      return typeMap[type];
+    }
+  }
+
+  return 'place';
+}
 
 // ==========================================
 // PAYMENT ENDPOINTS
