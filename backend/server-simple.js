@@ -66,15 +66,122 @@ const getDatabaseConfig = () => {
 
 const pool = new Pool(getDatabaseConfig());
 
-// Test database connection
-pool.connect((err, client, release) => {
+// Test database connection and initialize schema
+pool.connect(async (err, client, release) => {
   if (err) {
     console.error('❌ Error connecting to database:', err.stack);
   } else {
     console.log('✅ Connected to PostgreSQL database');
     release();
+
+    // Initialize database schema
+    try {
+      await initializeDatabase();
+      console.log('✅ Database schema initialized');
+    } catch (initErr) {
+      console.error('⚠️ Database initialization warning:', initErr.message);
+    }
   }
 });
+
+// Initialize database schema - creates tables if they don't exist
+async function initializeDatabase() {
+  const initQueries = `
+    -- Add missing columns to users table
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='rating') THEN
+        ALTER TABLE users ADD COLUMN rating DECIMAL(3,2) DEFAULT 5.0;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='profile_picture') THEN
+        ALTER TABLE users ADD COLUMN profile_picture VARCHAR(500);
+      END IF;
+    END $$;
+
+    -- Create rides table if not exists
+    CREATE TABLE IF NOT EXISTS rides (
+      id SERIAL PRIMARY KEY,
+      driver_id INTEGER NOT NULL,
+      vehicle_id INTEGER,
+      origin_address VARCHAR(500) NOT NULL,
+      origin_lat DECIMAL(10,8) DEFAULT 0,
+      origin_lng DECIMAL(11,8) DEFAULT 0,
+      destination_address VARCHAR(500) NOT NULL,
+      destination_lat DECIMAL(10,8) DEFAULT 0,
+      destination_lng DECIMAL(11,8) DEFAULT 0,
+      departure_time TIMESTAMP WITH TIME ZONE NOT NULL,
+      arrival_time TIMESTAMP WITH TIME ZONE,
+      available_seats INTEGER NOT NULL DEFAULT 4,
+      price_per_seat DECIMAL(8,2) NOT NULL DEFAULT 0,
+      distance DECIMAL(8,2),
+      estimated_duration INTEGER,
+      actual_duration INTEGER,
+      actual_route JSONB,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      description TEXT,
+      preferences JSONB,
+      special_requirements TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create bookings table if not exists
+    CREATE TABLE IF NOT EXISTS bookings (
+      id SERIAL PRIMARY KEY,
+      ride_id INTEGER NOT NULL,
+      passenger_id INTEGER NOT NULL,
+      seats_booked INTEGER NOT NULL DEFAULT 1,
+      total_amount DECIMAL(8,2) NOT NULL DEFAULT 0,
+      platform_fee DECIMAL(8,2) NOT NULL DEFAULT 0.00,
+      pickup_address VARCHAR(500),
+      pickup_lat DECIMAL(10,8),
+      pickup_lng DECIMAL(11,8),
+      dropoff_address VARCHAR(500),
+      dropoff_lat DECIMAL(10,8),
+      dropoff_lng DECIMAL(11,8),
+      pickup_time TIMESTAMP WITH TIME ZONE,
+      dropoff_time TIMESTAMP WITH TIME ZONE,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      special_requests TEXT,
+      cancel_reason TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create vehicles table if not exists
+    CREATE TABLE IF NOT EXISTS vehicles (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      make VARCHAR(50) NOT NULL,
+      model VARCHAR(50) NOT NULL,
+      year INTEGER NOT NULL,
+      color VARCHAR(30) NOT NULL,
+      license_plate VARCHAR(20) UNIQUE NOT NULL,
+      vehicle_type VARCHAR(20) NOT NULL DEFAULT 'sedan',
+      seats_available INTEGER NOT NULL DEFAULT 4,
+      insurance_expiry DATE,
+      registration_expiry DATE,
+      is_verified BOOLEAN DEFAULT FALSE,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Add preferences column to rides if it doesn't exist
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='rides' AND column_name='preferences') THEN
+        ALTER TABLE rides ADD COLUMN preferences JSONB;
+      END IF;
+    END $$;
+
+    -- Create indexes if they don't exist
+    CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
+    CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
+    CREATE INDEX IF NOT EXISTS idx_bookings_ride_id ON bookings(ride_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_passenger_id ON bookings(passenger_id);
+  `;
+
+  await pool.query(initQueries);
+}
 
 // Enhanced CORS configuration for production security
 const getCorsConfiguration = () => {
@@ -234,6 +341,77 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     database: 'Connected'
   });
+});
+
+// Database status and initialization endpoint
+app.get('/api/db/status', async (req, res) => {
+  try {
+    // Check which tables exist
+    const tablesQuery = `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `;
+    const tablesResult = await pool.query(tablesQuery);
+    const tables = tablesResult.rows.map(r => r.table_name);
+
+    // Check rides table columns
+    let ridesColumns = [];
+    if (tables.includes('rides')) {
+      const colsQuery = `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'rides'`;
+      const colsResult = await pool.query(colsQuery);
+      ridesColumns = colsResult.rows;
+    }
+
+    // Check users table columns
+    let usersColumns = [];
+    if (tables.includes('users')) {
+      const colsQuery = `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users'`;
+      const colsResult = await pool.query(colsQuery);
+      usersColumns = colsResult.rows;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        tables,
+        ridesTableExists: tables.includes('rides'),
+        bookingsTableExists: tables.includes('bookings'),
+        vehiclesTableExists: tables.includes('vehicles'),
+        usersTableExists: tables.includes('users'),
+        ridesColumns,
+        usersColumns
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Manual database initialization endpoint
+app.post('/api/db/initialize', async (req, res) => {
+  try {
+    await initializeDatabase();
+    res.json({
+      success: true,
+      message: 'Database schema initialized successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database initialization error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Authentication endpoints

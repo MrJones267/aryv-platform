@@ -19,6 +19,8 @@ CREATE TABLE users (
     date_of_birth DATE,
     role user_role NOT NULL DEFAULT 'passenger',
     profile_image VARCHAR(500),
+    profile_picture VARCHAR(500), -- Alias for profile_image used by some endpoints
+    rating DECIMAL(3,2) DEFAULT 5.0 CHECK (rating >= 0 AND rating <= 5),
     is_verified BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     last_login TIMESTAMP WITH TIME ZONE,
@@ -70,13 +72,13 @@ CREATE TABLE drivers (
 CREATE TABLE rides (
     id SERIAL PRIMARY KEY,
     driver_id INTEGER NOT NULL REFERENCES users(id),
-    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
+    vehicle_id INTEGER REFERENCES vehicles(id), -- Made optional for flexibility
     origin_address VARCHAR(500) NOT NULL,
-    origin_lat DECIMAL(10,8) NOT NULL,
-    origin_lng DECIMAL(11,8) NOT NULL,
+    origin_lat DECIMAL(10,8) DEFAULT 0,
+    origin_lng DECIMAL(11,8) DEFAULT 0,
     destination_address VARCHAR(500) NOT NULL,
-    destination_lat DECIMAL(10,8) NOT NULL,
-    destination_lng DECIMAL(11,8) NOT NULL,
+    destination_lat DECIMAL(10,8) DEFAULT 0,
+    destination_lng DECIMAL(11,8) DEFAULT 0,
     departure_time TIMESTAMP WITH TIME ZONE NOT NULL,
     arrival_time TIMESTAMP WITH TIME ZONE,
     available_seats INTEGER NOT NULL CHECK (available_seats >= 1),
@@ -87,6 +89,7 @@ CREATE TABLE rides (
     actual_route JSONB, -- Store actual route taken
     status ride_status NOT NULL DEFAULT 'pending',
     description TEXT,
+    preferences JSONB, -- Added for ride preferences (no smoking, pets allowed, etc.)
     special_requirements TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -227,10 +230,10 @@ VALUES
   ('courier@aryv-app.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LedhMFQJqN8/LedhMF', 'John', 'Courier', '+1234567892', 'driver', true, true),
   ('sender@aryv-app.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LedhMFQJqN8/LedhMF', 'Jane', 'Sender', '+1234567893', 'passenger', true, true);
 
--- Sample rides
-INSERT INTO rides (driver_id, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude, pickup_address, dropoff_address, departure_time, available_seats, price_per_seat, distance, status) VALUES
-(2, 40.7589, -73.9851, 40.6892, -73.9442, 'Times Square, New York', 'Brooklyn Bridge, New York', '2025-01-25 14:00:00+00', 3, 25.00, 12.5, 'available'),
-(2, 34.0522, -118.2437, 34.1478, -118.1445, 'Downtown LA', 'Pasadena', '2025-01-25 16:30:00+00', 2, 18.50, 15.2, 'available');
+-- Sample rides (using correct column names matching table definition)
+INSERT INTO rides (driver_id, vehicle_id, origin_lat, origin_lng, destination_lat, destination_lng, origin_address, destination_address, departure_time, available_seats, price_per_seat, distance, status) VALUES
+(2, 1, 40.7589, -73.9851, 40.6892, -73.9442, 'Times Square, New York', 'Brooklyn Bridge, New York', '2025-01-25 14:00:00+00', 3, 25.00, 12.5, 'pending'),
+(2, 1, 34.0522, -118.2437, 34.1478, -118.1445, 'Downtown LA', 'Pasadena', '2025-01-25 16:30:00+00', 2, 18.50, 15.2, 'pending');
 
 -- Courier service tables
 CREATE TYPE package_size AS ENUM ('small', 'medium', 'large', 'custom');
