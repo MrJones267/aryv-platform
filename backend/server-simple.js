@@ -174,6 +174,50 @@ async function initializeDatabase() {
       END IF;
     END $$;
 
+    -- Fix vehicles owner_id to support UUID (users.id is UUID)
+    -- Check if owner_id column is INTEGER and alter to TEXT to support UUID
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='vehicles' AND column_name='owner_id' AND data_type='integer'
+      ) THEN
+        ALTER TABLE vehicles ALTER COLUMN owner_id TYPE TEXT USING owner_id::TEXT;
+      END IF;
+      -- Also check for user_id column (older schema)
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='vehicles' AND column_name='user_id' AND data_type='integer'
+      ) THEN
+        ALTER TABLE vehicles ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+      END IF;
+    END $$;
+
+    -- Fix packages sender_id and courier_id to support UUID
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='packages' AND column_name='sender_id' AND data_type='integer'
+      ) THEN
+        ALTER TABLE packages ALTER COLUMN sender_id TYPE TEXT USING sender_id::TEXT;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='packages' AND column_name='courier_id' AND data_type='integer'
+      ) THEN
+        ALTER TABLE packages ALTER COLUMN courier_id TYPE TEXT USING courier_id::TEXT;
+      END IF;
+    END $$;
+
+    -- Fix rides driver_id to support UUID
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='rides' AND column_name='driver_id' AND data_type='integer'
+      ) THEN
+        ALTER TABLE rides ALTER COLUMN driver_id TYPE TEXT USING driver_id::TEXT;
+      END IF;
+    END $$;
+
     -- Create indexes if they don't exist
     CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
     CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
