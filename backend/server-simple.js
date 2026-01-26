@@ -1858,16 +1858,21 @@ app.post('/api/rides/sample', async (req, res) => {
 // Get all packages
 app.get('/api/packages', async (req, res) => {
   try {
+    // Use ::text cast to handle UUID/INTEGER type mismatch
     const result = await pool.query(`
-      SELECT 
+      SELECT
         p.id, p.title, p.description, p.package_size, p.weight, p.fragile, p.valuable,
         p.pickup_address, p.dropoff_address, p.distance, p.price, p.platform_fee,
         p.status, p.tracking_code, p.special_instructions, p.created_at,
-        sender.first_name as sender_first_name, sender.last_name as sender_last_name, sender.email as sender_email,
-        courier.first_name as courier_first_name, courier.last_name as courier_last_name, courier.email as courier_email
+        COALESCE(sender.first_name, 'Unknown') as sender_first_name,
+        COALESCE(sender.last_name, 'Sender') as sender_last_name,
+        sender.email as sender_email,
+        COALESCE(courier.first_name, 'Unassigned') as courier_first_name,
+        COALESCE(courier.last_name, '') as courier_last_name,
+        courier.email as courier_email
       FROM packages p
-      LEFT JOIN users sender ON p.sender_id = sender.id
-      LEFT JOIN users courier ON p.courier_id = courier.id
+      LEFT JOIN users sender ON p.sender_id::text = sender.id::text
+      LEFT JOIN users courier ON p.courier_id::text = courier.id::text
       ORDER BY p.created_at DESC
     `);
     
