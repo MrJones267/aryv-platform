@@ -2188,6 +2188,395 @@ app.get('/api/courier/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== DRIVER PROFILE & VEHICLE ENDPOINTS ====================
+
+// Get complete driver profile with vehicle info
+app.get('/api/driver/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get user profile with driver-specific fields
+    const userQuery = `
+      SELECT
+        u.id, u.email, u.first_name, u.last_name, u.phone_number,
+        u.profile_picture, u.profile_picture_url, u.date_of_birth,
+        u.role, u.user_type, u.is_verified, u.is_active,
+        u.driver_license_verified, u.vehicle_registered,
+        u.driver_rating, u.total_rides_as_driver, u.total_earnings,
+        u.country, u.city, u.preferred_currency, u.preferred_language,
+        u.created_at, u.updated_at
+      FROM users u
+      WHERE u.id = $1
+    `;
+    const userResult = await pool.query(userQuery, [userId]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Get user's vehicles
+    const vehiclesQuery = `
+      SELECT
+        id, make, model, year, color, license_plate,
+        vehicle_type, seats_available, insurance_expiry,
+        registration_expiry, is_verified, is_active, created_at
+      FROM vehicles
+      WHERE user_id::text = $1::text
+      ORDER BY created_at DESC
+    `;
+    const vehiclesResult = await pool.query(vehiclesQuery, [userId]);
+
+    // Get driver stats
+    const statsQuery = `
+      SELECT
+        COUNT(*) as total_rides,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_rides,
+        COALESCE(SUM(driver_earnings), 0) as total_earnings
+      FROM rides
+      WHERE driver_id::text = $1::text
+    `;
+    const statsResult = await pool.query(statsQuery, [userId]);
+    const stats = statsResult.rows[0] || {};
+
+    res.json({
+      success: true,
+      data: {
+        profile: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          fullName: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          phone: user.phone_number,
+          profilePicture: user.profile_picture || user.profile_picture_url,
+          dateOfBirth: user.date_of_birth,
+          role: user.role,
+          userType: user.user_type,
+          country: user.country,
+          city: user.city,
+          preferredCurrency: user.preferred_currency || 'USD',
+          preferredLanguage: user.preferred_language || 'en',
+          isVerified: user.is_verified,
+          isActive: user.is_active,
+          driverLicenseVerified: user.driver_license_verified,
+          vehicleRegistered: user.vehicle_registered,
+          rating: parseFloat(user.driver_rating) || 5.0,
+          createdAt: user.created_at,
+          updatedAt: user.updated_at
+        },
+        vehicles: vehiclesResult.rows.map(v => ({
+          id: v.id,
+          make: v.make,
+          model: v.model,
+          year: v.year,
+          color: v.color,
+          licensePlate: v.license_plate,
+          vehicleType: v.vehicle_type,
+          seatsAvailable: v.seats_available,
+          insuranceExpiry: v.insurance_expiry,
+          registrationExpiry: v.registration_expiry,
+          isVerified: v.is_verified,
+          isActive: v.is_active,
+          createdAt: v.created_at
+        })),
+        stats: {
+          totalRides: parseInt(stats.total_rides) || 0,
+          completedRides: parseInt(stats.completed_rides) || 0,
+          totalEarnings: parseFloat(stats.total_earnings) || 0,
+          rating: parseFloat(user.driver_rating) || 5.0
+        }
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get driver profile error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch driver profile',
+      details: error.message
+    });
+  }
+});
+
+// Get user's vehicles
+app.get('/api/vehicles', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const query = `
+      SELECT
+        id, make, model, year, color, license_plate,
+        vehicle_type, seats_available, insurance_expiry,
+        registration_expiry, is_verified, is_active, created_at, updated_at
+      FROM vehicles
+      WHERE user_id::text = $1::text
+      ORDER BY created_at DESC
+    `;
+    const result = await pool.query(query, [userId]);
+
+    res.json({
+      success: true,
+      data: result.rows.map(v => ({
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        year: v.year,
+        color: v.color,
+        licensePlate: v.license_plate,
+        vehicleType: v.vehicle_type,
+        seatsAvailable: v.seats_available,
+        insuranceExpiry: v.insurance_expiry,
+        registrationExpiry: v.registration_expiry,
+        isVerified: v.is_verified,
+        isActive: v.is_active,
+        createdAt: v.created_at,
+        updatedAt: v.updated_at
+      })),
+      total: result.rows.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get vehicles error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch vehicles' });
+  }
+});
+
+// Add a new vehicle
+app.post('/api/vehicles', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      make, model, year, color, licensePlate,
+      vehicleType, seatsAvailable, insuranceExpiry, registrationExpiry
+    } = req.body;
+
+    // Validate required fields
+    if (!make || !model || !year || !color || !licensePlate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: make, model, year, color, licensePlate',
+        code: 'VALIDATION_ERROR'
+      });
+    }
+
+    const insertQuery = `
+      INSERT INTO vehicles (
+        user_id, make, model, year, color, license_plate,
+        vehicle_type, seats_available, insurance_expiry, registration_expiry,
+        is_verified, is_active, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      RETURNING *
+    `;
+
+    const result = await pool.query(insertQuery, [
+      userId, make, model, year, color, licensePlate,
+      vehicleType || 'sedan', seatsAvailable || 4,
+      insuranceExpiry || null, registrationExpiry || null
+    ]);
+
+    const vehicle = result.rows[0];
+
+    // Update user's vehicle_registered flag
+    await pool.query('UPDATE users SET vehicle_registered = true WHERE id = $1', [userId]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Vehicle added successfully',
+      data: {
+        id: vehicle.id,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        color: vehicle.color,
+        licensePlate: vehicle.license_plate,
+        vehicleType: vehicle.vehicle_type,
+        seatsAvailable: vehicle.seats_available,
+        insuranceExpiry: vehicle.insurance_expiry,
+        registrationExpiry: vehicle.registration_expiry,
+        isVerified: vehicle.is_verified,
+        isActive: vehicle.is_active,
+        createdAt: vehicle.created_at
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Add vehicle error:', error);
+    if (error.code === '23505') { // Unique violation
+      return res.status(409).json({
+        success: false,
+        error: 'A vehicle with this license plate already exists',
+        code: 'DUPLICATE_LICENSE_PLATE'
+      });
+    }
+    res.status(500).json({ success: false, error: 'Failed to add vehicle', details: error.message });
+  }
+});
+
+// Update a vehicle
+app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const vehicleId = req.params.id;
+    const {
+      make, model, year, color, licensePlate,
+      vehicleType, seatsAvailable, insuranceExpiry, registrationExpiry, isActive
+    } = req.body;
+
+    const updateQuery = `
+      UPDATE vehicles SET
+        make = COALESCE($1, make),
+        model = COALESCE($2, model),
+        year = COALESCE($3, year),
+        color = COALESCE($4, color),
+        license_plate = COALESCE($5, license_plate),
+        vehicle_type = COALESCE($6, vehicle_type),
+        seats_available = COALESCE($7, seats_available),
+        insurance_expiry = COALESCE($8, insurance_expiry),
+        registration_expiry = COALESCE($9, registration_expiry),
+        is_active = COALESCE($10, is_active),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $11 AND user_id::text = $12::text
+      RETURNING *
+    `;
+
+    const result = await pool.query(updateQuery, [
+      make, model, year, color, licensePlate,
+      vehicleType, seatsAvailable, insuranceExpiry, registrationExpiry,
+      isActive, vehicleId, userId
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vehicle not found or not owned by user',
+        code: 'VEHICLE_NOT_FOUND'
+      });
+    }
+
+    const vehicle = result.rows[0];
+    res.json({
+      success: true,
+      message: 'Vehicle updated successfully',
+      data: {
+        id: vehicle.id,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        color: vehicle.color,
+        licensePlate: vehicle.license_plate,
+        vehicleType: vehicle.vehicle_type,
+        seatsAvailable: vehicle.seats_available,
+        insuranceExpiry: vehicle.insurance_expiry,
+        registrationExpiry: vehicle.registration_expiry,
+        isVerified: vehicle.is_verified,
+        isActive: vehicle.is_active,
+        updatedAt: vehicle.updated_at
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Update vehicle error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update vehicle' });
+  }
+});
+
+// Delete a vehicle
+app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const vehicleId = req.params.id;
+
+    const deleteQuery = `
+      DELETE FROM vehicles
+      WHERE id = $1 AND user_id::text = $2::text
+      RETURNING id
+    `;
+
+    const result = await pool.query(deleteQuery, [vehicleId, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vehicle not found or not owned by user',
+        code: 'VEHICLE_NOT_FOUND'
+      });
+    }
+
+    // Check if user still has vehicles
+    const countResult = await pool.query(
+      'SELECT COUNT(*) FROM vehicles WHERE user_id::text = $1::text',
+      [userId]
+    );
+    if (parseInt(countResult.rows[0].count) === 0) {
+      await pool.query('UPDATE users SET vehicle_registered = false WHERE id = $1', [userId]);
+    }
+
+    res.json({
+      success: true,
+      message: 'Vehicle deleted successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Delete vehicle error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete vehicle' });
+  }
+});
+
+// Get vehicle by ID
+app.get('/api/vehicles/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const vehicleId = req.params.id;
+
+    const query = `
+      SELECT * FROM vehicles
+      WHERE id = $1 AND user_id::text = $2::text
+    `;
+    const result = await pool.query(query, [vehicleId, userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vehicle not found',
+        code: 'VEHICLE_NOT_FOUND'
+      });
+    }
+
+    const v = result.rows[0];
+    res.json({
+      success: true,
+      data: {
+        id: v.id,
+        make: v.make,
+        model: v.model,
+        year: v.year,
+        color: v.color,
+        licensePlate: v.license_plate,
+        vehicleType: v.vehicle_type,
+        seatsAvailable: v.seats_available,
+        insuranceExpiry: v.insurance_expiry,
+        registrationExpiry: v.registration_expiry,
+        isVerified: v.is_verified,
+        isActive: v.is_active,
+        createdAt: v.created_at,
+        updatedAt: v.updated_at
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get vehicle error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch vehicle' });
+  }
+});
+
+// ==================== END DRIVER & VEHICLE ENDPOINTS ====================
+
 // Set courier availability
 app.post('/api/courier/availability', authenticateToken, async (req, res) => {
   try {
