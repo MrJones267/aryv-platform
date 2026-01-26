@@ -1917,6 +1917,7 @@ app.get('/api/packages', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch packages',
+      details: error.message,
       timestamp: new Date().toISOString()
     });
   }
