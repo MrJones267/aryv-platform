@@ -373,6 +373,22 @@ app.get('/api/db/status', async (req, res) => {
       usersColumns = colsResult.rows;
     }
 
+    // Check packages table columns
+    let packagesColumns = [];
+    if (tables.includes('packages')) {
+      const colsQuery = `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'packages'`;
+      const colsResult = await pool.query(colsQuery);
+      packagesColumns = colsResult.rows;
+    }
+
+    // Check vehicles table columns
+    let vehiclesColumns = [];
+    if (tables.includes('vehicles')) {
+      const colsQuery = `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'vehicles'`;
+      const colsResult = await pool.query(colsQuery);
+      vehiclesColumns = colsResult.rows;
+    }
+
     res.json({
       success: true,
       data: {
@@ -381,8 +397,11 @@ app.get('/api/db/status', async (req, res) => {
         bookingsTableExists: tables.includes('bookings'),
         vehiclesTableExists: tables.includes('vehicles'),
         usersTableExists: tables.includes('users'),
+        packagesTableExists: tables.includes('packages'),
         ridesColumns,
-        usersColumns
+        usersColumns,
+        packagesColumns,
+        vehiclesColumns
       },
       timestamp: new Date().toISOString()
     });
