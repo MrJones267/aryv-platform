@@ -1283,24 +1283,24 @@ app.get('/api/users', async (req, res) => {
 // Get rides (for admin panel)
 app.get('/api/rides', async (req, res) => {
   try {
+    // Query rides with LEFT JOIN to handle UUID/INTEGER type mismatch
+    // driver_id may be stored as INTEGER while users.id is UUID
     const ridesQuery = `
-      SELECT 
+      SELECT
         r.id,
         r.driver_id,
-        u.first_name || ' ' || u.last_name as driver_name,
+        COALESCE(u.first_name || ' ' || u.last_name, 'Unknown Driver') as driver_name,
         r.origin_address as "from",
         r.destination_address as "to",
         r.departure_time,
         r.status,
         r.available_seats as capacity,
-        COALESCE(SUM(b.seats_booked), 0) as booked,
+        COALESCE((SELECT SUM(seats_booked) FROM bookings WHERE ride_id = r.id AND status IN ('pending', 'confirmed')), 0) as booked,
         r.price_per_seat as price,
-        r.distance,
+        COALESCE(r.distance, r.total_distance, 0) as distance,
         r.created_at
       FROM rides r
-      JOIN users u ON r.driver_id = u.id
-      LEFT JOIN bookings b ON r.id = b.ride_id AND b.status IN ('pending', 'confirmed')
-      GROUP BY r.id, r.driver_id, u.first_name, u.last_name
+      LEFT JOIN users u ON r.driver_id::text = u.id::text
       ORDER BY r.created_at DESC
     `;
     const result = await pool.query(ridesQuery);
@@ -1308,26 +1308,28 @@ app.get('/api/rides', async (req, res) => {
     res.json({
       success: true,
       data: result.rows.map(ride => ({
-        id: `R${ride.id.toString().padStart(3, '0')}`,
-        driverId: `D${ride.driver_id.toString().padStart(3, '0')}`,
+        id: ride.id,
+        driverId: ride.driver_id,
         driverName: ride.driver_name,
         route: { from: ride.from, to: ride.to },
         departureTime: ride.departure_time,
         status: ride.status,
-        passengers: { 
-          booked: parseInt(ride.booked), 
-          capacity: ride.capacity 
+        passengers: {
+          booked: parseInt(ride.booked) || 0,
+          capacity: ride.capacity || 4
         },
-        price: parseFloat(ride.price),
+        price: parseFloat(ride.price) || 0,
         distance: parseFloat(ride.distance) || 0,
         created: ride.created_at
-      }))
+      })),
+      total: result.rows.length
     });
   } catch (error) {
     console.error('Rides error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 });
@@ -1410,16 +1412,19 @@ app.get('/api/rides/:id', async (req, res) => {
   try {
     const rideId = req.params.id;
 
+    // Use LEFT JOIN to handle UUID/INTEGER type mismatch
     const rideQuery = `
       SELECT
         r.*,
-        u.first_name as driver_first_name, u.last_name as driver_last_name,
-        u.profile_picture as driver_picture, u.rating as driver_rating,
+        COALESCE(u.first_name, 'Unknown') as driver_first_name,
+        COALESCE(u.last_name, 'Driver') as driver_last_name,
+        u.profile_picture as driver_picture,
+        COALESCE(u.rating, u.driver_rating, 5.0) as driver_rating,
         v.make as vehicle_make, v.model as vehicle_model, v.color as vehicle_color,
         v.license_plate as vehicle_plate
       FROM rides r
-      JOIN users u ON r.driver_id = u.id
-      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN users u ON r.driver_id::text = u.id::text
+      LEFT JOIN vehicles v ON r.vehicle_id::text = v.id::text
       WHERE r.id = $1
     `;
 
@@ -1435,11 +1440,11 @@ app.get('/api/rides/:id', async (req, res) => {
 
     const ride = result.rows[0];
 
-    // Get bookings for this ride
+    // Get bookings for this ride with LEFT JOIN
     const bookingsQuery = `
-      SELECT b.*, u.first_name, u.last_name, u.profile_picture
+      SELECT b.*, COALESCE(u.first_name, 'Unknown') as first_name, COALESCE(u.last_name, 'User') as last_name, u.profile_picture
       FROM bookings b
-      JOIN users u ON b.passenger_id = u.id
+      LEFT JOIN users u ON b.passenger_id::text = u.id::text
       WHERE b.ride_id = $1 AND b.status IN ('pending', 'confirmed')
     `;
     const bookingsResult = await pool.query(bookingsQuery, [rideId]);
@@ -1588,15 +1593,18 @@ app.post('/api/rides/search', async (req, res) => {
       departureDate, seats, maxPrice, maxDistance
     } = req.body;
 
+    // Use LEFT JOIN to handle UUID/INTEGER type mismatch
     let query = `
       SELECT
         r.*,
-        u.first_name as driver_first_name, u.last_name as driver_last_name,
-        u.rating as driver_rating, u.profile_picture as driver_picture,
+        COALESCE(u.first_name, 'Unknown') as driver_first_name,
+        COALESCE(u.last_name, 'Driver') as driver_last_name,
+        COALESCE(u.rating, u.driver_rating, 5.0) as driver_rating,
+        u.profile_picture as driver_picture,
         (SELECT COALESCE(SUM(seats_booked), 0) FROM bookings WHERE ride_id = r.id AND status IN ('pending', 'confirmed')) as booked_seats
       FROM rides r
-      JOIN users u ON r.driver_id = u.id
-      WHERE r.status IN ('pending', 'confirmed')
+      LEFT JOIN users u ON r.driver_id::text = u.id::text
+      WHERE r.status IN ('pending', 'confirmed', 'available')
         AND r.departure_time > CURRENT_TIMESTAMP
         AND r.available_seats > (SELECT COALESCE(SUM(seats_booked), 0) FROM bookings WHERE ride_id = r.id AND status IN ('pending', 'confirmed'))
     `;
@@ -1632,10 +1640,10 @@ app.post('/api/rides/search', async (req, res) => {
       origin: { address: ride.origin_address, lat: parseFloat(ride.origin_lat), lng: parseFloat(ride.origin_lng) },
       destination: { address: ride.destination_address, lat: parseFloat(ride.destination_lat), lng: parseFloat(ride.destination_lng) },
       departureTime: ride.departure_time,
-      availableSeats: ride.available_seats - parseInt(ride.booked_seats),
+      availableSeats: ride.available_seats - parseInt(ride.booked_seats || 0),
       totalSeats: ride.available_seats,
-      pricePerSeat: parseFloat(ride.price_per_seat),
-      distance: parseFloat(ride.distance),
+      pricePerSeat: parseFloat(ride.price_per_seat) || 0,
+      distance: parseFloat(ride.distance) || parseFloat(ride.total_distance) || 0,
       status: ride.status
     }));
 
