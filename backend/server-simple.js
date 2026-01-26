@@ -1877,12 +1877,16 @@ app.post('/api/rides/sample', async (req, res) => {
 // Get all packages
 app.get('/api/packages', async (req, res) => {
   try {
-    // Use ::text cast to handle UUID/INTEGER type mismatch
+    // Use correct column names from actual database schema
     const result = await pool.query(`
       SELECT
         p.id, p.title, p.description, p.package_size, p.weight, p.fragile, p.valuable,
-        p.pickup_address, p.dropoff_address, p.distance, p.price, p.platform_fee,
-        p.status, p.tracking_code, p.special_instructions, p.created_at,
+        p.pickup_address, p.pickup_lat, p.pickup_lng,
+        p.pickup_contact_name, p.pickup_contact_phone,
+        p.delivery_address, p.delivery_lat, p.delivery_lng,
+        p.recipient_name, p.recipient_phone,
+        p.distance, p.price, p.platform_fee,
+        p.status, p.tracking_code, p.special_handling_instructions, p.created_at,
         COALESCE(sender.first_name, 'Unknown') as sender_first_name,
         COALESCE(sender.last_name, 'Sender') as sender_last_name,
         sender.email as sender_email,
@@ -1894,7 +1898,7 @@ app.get('/api/packages', async (req, res) => {
       LEFT JOIN users courier ON p.courier_id::text = courier.id::text
       ORDER BY p.created_at DESC
     `);
-    
+
     const packages = result.rows.map(pkg => ({
       id: pkg.id,
       title: pkg.title,
@@ -1904,23 +1908,31 @@ app.get('/api/packages', async (req, res) => {
       fragile: pkg.fragile,
       valuable: pkg.valuable,
       pickup: {
-        address: pkg.pickup_address
+        address: pkg.pickup_address,
+        lat: parseFloat(pkg.pickup_lat) || null,
+        lng: parseFloat(pkg.pickup_lng) || null,
+        contactName: pkg.pickup_contact_name,
+        contactPhone: pkg.pickup_contact_phone
       },
-      dropoff: {
-        address: pkg.dropoff_address
+      delivery: {
+        address: pkg.delivery_address,
+        lat: parseFloat(pkg.delivery_lat) || null,
+        lng: parseFloat(pkg.delivery_lng) || null,
+        recipientName: pkg.recipient_name,
+        recipientPhone: pkg.recipient_phone
       },
-      distance: pkg.distance,
-      price: pkg.price,
-      platformFee: pkg.platform_fee,
+      distance: parseFloat(pkg.distance) || 0,
+      price: parseFloat(pkg.price) || 0,
+      platformFee: parseFloat(pkg.platform_fee) || 0,
       status: pkg.status,
       trackingCode: pkg.tracking_code,
-      specialInstructions: pkg.special_instructions,
+      specialInstructions: pkg.special_handling_instructions,
       sender: pkg.sender_first_name ? {
         name: `${pkg.sender_first_name} ${pkg.sender_last_name}`,
         email: pkg.sender_email
       } : null,
-      courier: pkg.courier_first_name ? {
-        name: `${pkg.courier_first_name} ${pkg.courier_last_name}`,
+      courier: pkg.courier_first_name && pkg.courier_first_name !== 'Unassigned' ? {
+        name: `${pkg.courier_first_name} ${pkg.courier_last_name}`.trim(),
         email: pkg.courier_email
       } : null,
       createdAt: pkg.created_at
@@ -2220,14 +2232,14 @@ app.get('/api/driver/profile', authenticateToken, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Get user's vehicles
+    // Get user's vehicles (using owner_id and seating_capacity from actual schema)
     const vehiclesQuery = `
       SELECT
         id, make, model, year, color, license_plate,
-        vehicle_type, seats_available, insurance_expiry,
-        registration_expiry, is_verified, is_active, created_at
+        vehicle_type, seating_capacity, insurance_verified,
+        is_verified, is_active, created_at
       FROM vehicles
-      WHERE user_id::text = $1::text
+      WHERE owner_id::text = $1::text
       ORDER BY created_at DESC
     `;
     const vehiclesResult = await pool.query(vehiclesQuery, [userId]);
@@ -2278,9 +2290,8 @@ app.get('/api/driver/profile', authenticateToken, async (req, res) => {
           color: v.color,
           licensePlate: v.license_plate,
           vehicleType: v.vehicle_type,
-          seatsAvailable: v.seats_available,
-          insuranceExpiry: v.insurance_expiry,
-          registrationExpiry: v.registration_expiry,
+          seatingCapacity: v.seating_capacity,
+          insuranceVerified: v.insurance_verified,
           isVerified: v.is_verified,
           isActive: v.is_active,
           createdAt: v.created_at
@@ -2312,10 +2323,10 @@ app.get('/api/vehicles', authenticateToken, async (req, res) => {
     const query = `
       SELECT
         id, make, model, year, color, license_plate,
-        vehicle_type, seats_available, insurance_expiry,
-        registration_expiry, is_verified, is_active, created_at, updated_at
+        vehicle_type, seating_capacity, insurance_verified,
+        is_verified, is_active, created_at, updated_at
       FROM vehicles
-      WHERE user_id::text = $1::text
+      WHERE owner_id::text = $1::text
       ORDER BY created_at DESC
     `;
     const result = await pool.query(query, [userId]);
@@ -2330,9 +2341,8 @@ app.get('/api/vehicles', authenticateToken, async (req, res) => {
         color: v.color,
         licensePlate: v.license_plate,
         vehicleType: v.vehicle_type,
-        seatsAvailable: v.seats_available,
-        insuranceExpiry: v.insurance_expiry,
-        registrationExpiry: v.registration_expiry,
+        seatingCapacity: v.seating_capacity,
+        insuranceVerified: v.insurance_verified,
         isVerified: v.is_verified,
         isActive: v.is_active,
         createdAt: v.created_at,
@@ -2367,17 +2377,16 @@ app.post('/api/vehicles', authenticateToken, async (req, res) => {
 
     const insertQuery = `
       INSERT INTO vehicles (
-        user_id, make, model, year, color, license_plate,
-        vehicle_type, seats_available, insurance_expiry, registration_expiry,
+        owner_id, make, model, year, color, license_plate,
+        vehicle_type, seating_capacity,
         is_verified, is_active, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
 
     const result = await pool.query(insertQuery, [
       userId, make, model, year, color, licensePlate,
-      vehicleType || 'sedan', seatsAvailable || 4,
-      insuranceExpiry || null, registrationExpiry || null
+      vehicleType || 'sedan', seatsAvailable || 4
     ]);
 
     const vehicle = result.rows[0];
@@ -2396,9 +2405,7 @@ app.post('/api/vehicles', authenticateToken, async (req, res) => {
         color: vehicle.color,
         licensePlate: vehicle.license_plate,
         vehicleType: vehicle.vehicle_type,
-        seatsAvailable: vehicle.seats_available,
-        insuranceExpiry: vehicle.insurance_expiry,
-        registrationExpiry: vehicle.registration_expiry,
+        seatingCapacity: vehicle.seating_capacity,
         isVerified: vehicle.is_verified,
         isActive: vehicle.is_active,
         createdAt: vehicle.created_at
@@ -2436,18 +2443,16 @@ app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
         color = COALESCE($4, color),
         license_plate = COALESCE($5, license_plate),
         vehicle_type = COALESCE($6, vehicle_type),
-        seats_available = COALESCE($7, seats_available),
-        insurance_expiry = COALESCE($8, insurance_expiry),
-        registration_expiry = COALESCE($9, registration_expiry),
-        is_active = COALESCE($10, is_active),
+        seating_capacity = COALESCE($7, seating_capacity),
+        is_active = COALESCE($8, is_active),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11 AND user_id::text = $12::text
+      WHERE id = $9 AND owner_id::text = $10::text
       RETURNING *
     `;
 
     const result = await pool.query(updateQuery, [
       make, model, year, color, licensePlate,
-      vehicleType, seatsAvailable, insuranceExpiry, registrationExpiry,
+      vehicleType, seatsAvailable,
       isActive, vehicleId, userId
     ]);
 
@@ -2471,9 +2476,7 @@ app.put('/api/vehicles/:id', authenticateToken, async (req, res) => {
         color: vehicle.color,
         licensePlate: vehicle.license_plate,
         vehicleType: vehicle.vehicle_type,
-        seatsAvailable: vehicle.seats_available,
-        insuranceExpiry: vehicle.insurance_expiry,
-        registrationExpiry: vehicle.registration_expiry,
+        seatingCapacity: vehicle.seating_capacity,
         isVerified: vehicle.is_verified,
         isActive: vehicle.is_active,
         updatedAt: vehicle.updated_at
@@ -2494,7 +2497,7 @@ app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
 
     const deleteQuery = `
       DELETE FROM vehicles
-      WHERE id = $1 AND user_id::text = $2::text
+      WHERE id = $1 AND owner_id::text = $2::text
       RETURNING id
     `;
 
@@ -2510,7 +2513,7 @@ app.delete('/api/vehicles/:id', authenticateToken, async (req, res) => {
 
     // Check if user still has vehicles
     const countResult = await pool.query(
-      'SELECT COUNT(*) FROM vehicles WHERE user_id::text = $1::text',
+      'SELECT COUNT(*) FROM vehicles WHERE owner_id::text = $1::text',
       [userId]
     );
     if (parseInt(countResult.rows[0].count) === 0) {
@@ -2536,7 +2539,7 @@ app.get('/api/vehicles/:id', authenticateToken, async (req, res) => {
 
     const query = `
       SELECT * FROM vehicles
-      WHERE id = $1 AND user_id::text = $2::text
+      WHERE id = $1 AND owner_id::text = $2::text
     `;
     const result = await pool.query(query, [vehicleId, userId]);
 
@@ -2559,9 +2562,8 @@ app.get('/api/vehicles/:id', authenticateToken, async (req, res) => {
         color: v.color,
         licensePlate: v.license_plate,
         vehicleType: v.vehicle_type,
-        seatsAvailable: v.seats_available,
-        insuranceExpiry: v.insurance_expiry,
-        registrationExpiry: v.registration_expiry,
+        seatingCapacity: v.seating_capacity,
+        insuranceVerified: v.insurance_verified,
         isVerified: v.is_verified,
         isActive: v.is_active,
         createdAt: v.created_at,
@@ -4483,9 +4485,9 @@ app.post('/api/emergency/contacts/find', authenticateToken, async (req, res) => 
       data: {
         contacts: [],
         emergencyServices: [
-          { name: 'Police', number: '911', type: 'police' },
-          { name: 'Ambulance', number: '911', type: 'medical' },
-          { name: 'Fire', number: '911', type: 'fire' }
+          { name: 'Police', number: '999', type: 'police' },
+          { name: 'Ambulance', number: '999', type: 'medical' },
+          { name: 'Fire', number: '999', type: 'fire' }
         ]
       },
       timestamp: new Date().toISOString()
