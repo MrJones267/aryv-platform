@@ -5,10 +5,17 @@
  * @lastModified 2025-01-25
  */
 
-// import { API_BASE_URL } from '../config/api';
-// import { getAuthToken } from '../utils/storage';
-const API_BASE_URL = process.env.REACT_NATIVE_API_URL || 'https://api.aryv-app.com';
-const getAuthToken = () => Promise.resolve('mock-token');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiConfig } from '../config/api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('PredictiveAIService');
+const API_BASE_URL = getApiConfig().apiUrl?.replace('/api', '') || 'https://api.aryv-app.com';
+const getAuthToken = async () => {
+  const token = await AsyncStorage.getItem('@aryv_auth_token')
+    || await AsyncStorage.getItem('accessToken');
+  return token || '';
+};
 
 export interface PredictionResult {
   prediction: number;
@@ -111,7 +118,7 @@ class PredictiveAIServiceClass {
 
       return data;
     } catch (error) {
-      console.error('PredictiveAIService error:', error);
+      log.error('PredictiveAIService request error', error);
       throw error;
     }
   }

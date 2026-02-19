@@ -6,6 +6,9 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('OfflineStorage');
 
 export interface CacheMetadata {
   timestamp: number;
@@ -50,7 +53,7 @@ class OfflineStorage {
       await AsyncStorage.setItem(cacheKey, JSON.stringify(cachedData));
       await this.cleanupExpiredCache();
     } catch (error) {
-      console.error('Error setting cache:', error);
+      log.error('Error setting cache:', error);
     }
   }
 
@@ -74,7 +77,7 @@ class OfflineStorage {
 
       return cachedData.data;
     } catch (error) {
-      console.error('Error getting cache:', error);
+      log.error('Error getting cache:', error);
       return null;
     }
   }
@@ -84,7 +87,7 @@ class OfflineStorage {
       const cacheKey = this.CACHE_PREFIX + key;
       await AsyncStorage.removeItem(cacheKey);
     } catch (error) {
-      console.error('Error removing cache:', error);
+      log.error('Error removing cache:', error);
     }
   }
 
@@ -102,7 +105,7 @@ class OfflineStorage {
       
       return now - cachedData.metadata.timestamp <= cachedData.metadata.ttl;
     } catch (error) {
-      console.error('Error checking cache validity:', error);
+      log.error('Error checking cache validity:', error);
       return false;
     }
   }
@@ -122,7 +125,7 @@ class OfflineStorage {
       
       return totalSize;
     } catch (error) {
-      console.error('Error calculating cache size:', error);
+      log.error('Error calculating cache size:', error);
       return 0;
     }
   }
@@ -154,7 +157,7 @@ class OfflineStorage {
         await this.evictOldestCache();
       }
     } catch (error) {
-      console.error('Error cleaning up cache:', error);
+      log.error('Error cleaning up cache:', error);
     }
   }
 
@@ -186,7 +189,7 @@ class OfflineStorage {
         await AsyncStorage.removeItem(cacheItems[i].key);
       }
     } catch (error) {
-      console.error('Error evicting oldest cache:', error);
+      log.error('Error evicting oldest cache:', error);
     }
   }
 
@@ -196,7 +199,7 @@ class OfflineStorage {
       const cacheKeys = keys.filter(key => key.startsWith(this.CACHE_PREFIX));
       await AsyncStorage.multiRemove(cacheKeys);
     } catch (error) {
-      console.error('Error clearing all cache:', error);
+      log.error('Error clearing all cache:', error);
     }
   }
 
@@ -215,7 +218,7 @@ class OfflineStorage {
       
       await AsyncStorage.setItem(this.OFFLINE_ACTIONS_KEY, JSON.stringify(updatedActions));
     } catch (error) {
-      console.error('Error adding offline action:', error);
+      log.error('Error adding offline action:', error);
     }
   }
 
@@ -224,7 +227,7 @@ class OfflineStorage {
       const actionsJson = await AsyncStorage.getItem(this.OFFLINE_ACTIONS_KEY);
       return actionsJson ? JSON.parse(actionsJson) : [];
     } catch (error) {
-      console.error('Error getting offline actions:', error);
+      log.error('Error getting offline actions:', error);
       return [];
     }
   }
@@ -236,7 +239,7 @@ class OfflineStorage {
       
       await AsyncStorage.setItem(this.OFFLINE_ACTIONS_KEY, JSON.stringify(filteredActions));
     } catch (error) {
-      console.error('Error removing offline action:', error);
+      log.error('Error removing offline action:', error);
     }
   }
 
@@ -251,7 +254,7 @@ class OfflineStorage {
       
       await AsyncStorage.setItem(this.OFFLINE_ACTIONS_KEY, JSON.stringify(updatedActions));
     } catch (error) {
-      console.error('Error updating offline action retry count:', error);
+      log.error('Error updating offline action retry count:', error);
     }
   }
 
@@ -259,7 +262,7 @@ class OfflineStorage {
     try {
       await AsyncStorage.removeItem(this.OFFLINE_ACTIONS_KEY);
     } catch (error) {
-      console.error('Error clearing offline actions:', error);
+      log.error('Error clearing offline actions:', error);
     }
   }
 
@@ -281,7 +284,7 @@ class OfflineStorage {
       
       await AsyncStorage.setItem(this.SYNC_QUEUE_KEY, JSON.stringify(updatedQueue));
     } catch (error) {
-      console.error('Error adding to sync queue:', error);
+      log.error('Error adding to sync queue:', error);
     }
   }
 
@@ -290,7 +293,7 @@ class OfflineStorage {
       const queueJson = await AsyncStorage.getItem(this.SYNC_QUEUE_KEY);
       return queueJson ? JSON.parse(queueJson) : [];
     } catch (error) {
-      console.error('Error getting sync queue:', error);
+      log.error('Error getting sync queue:', error);
       return [];
     }
   }
@@ -302,7 +305,7 @@ class OfflineStorage {
       
       await AsyncStorage.setItem(this.SYNC_QUEUE_KEY, JSON.stringify(filteredQueue));
     } catch (error) {
-      console.error('Error removing from sync queue:', error);
+      log.error('Error removing from sync queue:', error);
     }
   }
 
@@ -310,7 +313,7 @@ class OfflineStorage {
     try {
       await AsyncStorage.removeItem(this.SYNC_QUEUE_KEY);
     } catch (error) {
-      console.error('Error clearing sync queue:', error);
+      log.error('Error clearing sync queue:', error);
     }
   }
 
@@ -338,7 +341,7 @@ class OfflineStorage {
         syncQueueCount: syncQueue.length,
       };
     } catch (error) {
-      console.error('Error getting storage stats:', error);
+      log.error('Error getting storage stats:', error);
       return {
         cacheSize: 0,
         cacheCount: 0,

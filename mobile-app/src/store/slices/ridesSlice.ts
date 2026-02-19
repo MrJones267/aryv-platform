@@ -121,7 +121,7 @@ const initialState: RidesState = {
   error: null,
   searchFilters: {
     passengers: 1,
-    maxDistance: 10,
+    maxDistance: 500,
   },
 };
 

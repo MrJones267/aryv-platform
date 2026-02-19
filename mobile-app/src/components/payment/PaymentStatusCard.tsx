@@ -89,9 +89,9 @@ const PaymentStatusCard: React.FC<PaymentStatusCardProps> = ({
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-BW', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'BWP'
     }).format(amount);
   };
 

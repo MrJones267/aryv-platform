@@ -21,6 +21,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { Card, Button } from '../../components/ui';
 import memoryManager, { MemoryWarning } from '../../utils/performance/MemoryManager';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('PerformanceDashboard');
 
 interface MemoryStats {
   totalMemory: number;
@@ -58,7 +61,7 @@ const PerformanceDashboard: React.FC = () => {
       // Get performance metrics
       await loadPerformanceMetrics();
     } catch (error) {
-      console.error('Error loading performance data:', error);
+      log.error('Error loading performance data:', error);
     } finally {
       setLoading(false);
     }
@@ -271,7 +274,7 @@ const PerformanceDashboard: React.FC = () => {
       
       {memoryStats?.warnings && memoryStats.warnings.length > 0 ? (
         <ScrollView style={styles.warningsList} nestedScrollEnabled>
-          {memoryStats.warnings.map((warning: any, index: number) => (
+          {memoryStats.warnings.map((warning: { level: string; message?: string; timestamp: string | number }, index: number) => (
             <View key={index} style={styles.warningItem}>
               <Icon 
                 name={

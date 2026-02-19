@@ -18,6 +18,9 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { GroupChatService } from '../services/GroupChatService';
 import { colors, spacing, typography } from '../theme';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('GroupCompletionBanner');
 
 interface GroupCompletionBannerProps {
   groupChatId: string;
@@ -28,7 +31,7 @@ interface GroupCompletionBannerProps {
     requiredVotes: number;
     userVote?: boolean;
   };
-  onVoteUpdate?: (votes: any) => void;
+  onVoteUpdate?: (votes: Record<string, unknown>) => void;
   onDismiss?: () => void;
 }
 
@@ -62,7 +65,7 @@ export const GroupCompletionBanner: React.FC<GroupCompletionBannerProps> = ({
         );
       }
     } catch (error) {
-      console.error('Error voting:', error);
+      log.error('Error voting:', error);
       Alert.alert('Error', 'Failed to record your vote. Please try again.');
     } finally {
       setIsVoting(false);

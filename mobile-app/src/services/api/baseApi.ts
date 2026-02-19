@@ -8,6 +8,9 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
+import logger from '../LoggingService';
+
+const log = logger.createLogger('BaseApi');
 
 // Types
 export interface ApiResponse<T = any> {
@@ -23,7 +26,7 @@ export interface ApiError {
   success: false;
   error: string;
   code?: string;
-  details?: any;
+  details?: unknown;
   timestamp: string;
 }
 
@@ -38,7 +41,7 @@ const FALLBACK_URL = apiConfig.fallbackApiUrl || 'https://api.aryv-app.com/api';
 
 const API_TIMEOUT = 30000; // 30 seconds
 
-console.log('🔗 Mobile App API Configuration:', {
+log.info('Mobile App API Configuration', {
   baseUrl: BASE_URL,
   fallbackUrl: FALLBACK_URL,
   isDev: __DEV__,
@@ -61,13 +64,10 @@ apiClient.interceptors.request.use(
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (token) {
-        config.headers = {
-          ...config.headers,
-          Authorization: `Bearer ${token}`,
-        } as any;
+        config.headers.set('Authorization', `Bearer ${token}`);
       }
     } catch (error) {
-      console.warn('Failed to get access token from storage:', error);
+      log.warn('Failed to get access token from storage', { error: String(error) });
     }
     
     // Add timestamp for cache busting
@@ -79,7 +79,7 @@ apiClient.interceptors.request.use(
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
+    log.error('Request interceptor error', error);
     return Promise.reject(error);
   }
 );
@@ -89,7 +89,7 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
     // Log successful responses in debug mode
     if (__DEV__) {
-      console.log('API Response:', {
+      log.debug('API Response', {
         url: response.config.url,
         method: response.config.method,
         status: response.status,
@@ -103,7 +103,7 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
     
     if (__DEV__) {
-      console.error('API Error:', {
+      log.error('API Error', error, {
         url: error.config?.url,
         method: error.config?.method,
         status: error.response?.status,
@@ -149,7 +149,7 @@ apiClient.interceptors.response.use(
         // navigationService.navigate('Auth');
         
       } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
+        log.error('Token refresh failed', refreshError);
         await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
       }
     }
@@ -158,7 +158,7 @@ apiClient.interceptors.response.use(
     if (!error.response) {
       // In development, try fallback URL if local database backend fails
       if (__DEV__ && FALLBACK_URL && originalRequest.baseURL?.includes('localhost') && !originalRequest._fallbackAttempted) {
-        console.log('🔄 Local backend failed, trying production fallback...');
+        log.info('Local backend failed, trying production fallback');
         originalRequest._fallbackAttempted = true;
         originalRequest.baseURL = FALLBACK_URL;
         return apiClient(originalRequest);
@@ -223,8 +223,8 @@ export class BaseApiService {
   
   // POST request
   protected async post<T>(
-    endpoint: string, 
-    data?: any, 
+    endpoint: string,
+    data?: unknown,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
@@ -237,8 +237,8 @@ export class BaseApiService {
   
   // PUT request
   protected async put<T>(
-    endpoint: string, 
-    data?: any, 
+    endpoint: string,
+    data?: unknown,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
@@ -251,8 +251,8 @@ export class BaseApiService {
   
   // PATCH request
   protected async patch<T>(
-    endpoint: string, 
-    data?: any, 
+    endpoint: string,
+    data?: unknown,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
@@ -297,14 +297,15 @@ export class BaseApiService {
   }
   
   // Error handler
-  private handleError(error: any): ApiError {
-    if (error.success === false) {
+  private handleError(error: unknown): ApiError {
+    if (typeof error === 'object' && error !== null && 'success' in error && (error as ApiError).success === false) {
       return error as ApiError;
     }
-    
+
+    const errMsg = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message || 'An unexpected error occurred',
+      error: errMsg || 'An unexpected error occurred',
       code: 'UNKNOWN_ERROR',
       timestamp: new Date().toISOString(),
     };

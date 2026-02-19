@@ -20,10 +20,15 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { GroupChatService } from '../services/GroupChatService';
-// import { useAuth } from '../contexts/AuthContext';
-const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: 'User' } });
 import { useAppSelector } from '../store/hooks';
+const useAuth = () => {
+  const profile = useAppSelector(state => state.user.profile);
+  return { user: { id: profile?.id || '', firstName: profile?.firstName || '', lastName: profile?.lastName || '' } };
+};
 import { colors, spacing, typography } from '../theme';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('GroupParticipantsList');
 
 interface Participant {
   id: string;
@@ -63,11 +68,12 @@ export const GroupParticipantsList: React.FC<GroupParticipantsListProps> = ({
       setLoading(true);
       const response = await GroupChatService.getGroupParticipants(groupChatId);
       
-      if (response.success) {
-        setParticipants(response.data.participants || []);
-        
+      if (response.success && response.data) {
+        const data = response.data as { participants?: Participant[] };
+        setParticipants(data.participants || []);
+
         // Find current user's role
-        const currentParticipant = response.data.participants?.find(
+        const currentParticipant = data.participants?.find(
           (p: Participant) => p.userId === currentUser?.id
         );
         if (currentParticipant) {
@@ -75,7 +81,7 @@ export const GroupParticipantsList: React.FC<GroupParticipantsListProps> = ({
         }
       }
     } catch (error) {
-      console.error('Error loading participants:', error);
+      log.error('Error loading participants:', error);
       Alert.alert('Error', 'Failed to load participants');
     } finally {
       setLoading(false);
@@ -109,7 +115,7 @@ export const GroupParticipantsList: React.FC<GroupParticipantsListProps> = ({
 
   const executeParticipantAction = async (participant: Participant, action: string) => {
     try {
-      let updates: any = {};
+      let updates: Record<string, string> = {};
 
       switch (action) {
         case 'promote':
@@ -142,7 +148,7 @@ export const GroupParticipantsList: React.FC<GroupParticipantsListProps> = ({
         Alert.alert('Success', `Participant ${action}d successfully`);
       }
     } catch (error) {
-      console.error('Error updating participant:', error);
+      log.error('Error updating participant:', error);
       Alert.alert('Error', `Failed to ${action} participant`);
     }
   };

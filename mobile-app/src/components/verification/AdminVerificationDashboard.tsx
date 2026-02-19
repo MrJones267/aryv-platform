@@ -27,6 +27,9 @@ import {
   OCRResults,
   ValidationResults,
 } from '../../services/DocumentVerificationService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('AdminVerificationDashboard');
 
 const { width } = Dimensions.get('window');
 
@@ -34,7 +37,7 @@ interface AdminVerificationDashboardProps {
   onApprove: (documentId: string, notes?: string) => Promise<void>;
   onReject: (documentId: string, reason: string, notes?: string) => Promise<void>;
   onRequestMoreInfo: (documentId: string, requirements: string[]) => Promise<void>;
-  style?: any;
+  style?: object;
 }
 
 interface PendingDocumentsResponse {
@@ -93,7 +96,7 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
       const mockDocuments = generateMockPendingDocuments();
       setPendingDocuments(mockDocuments);
     } catch (error) {
-      console.error('Error loading pending documents:', error);
+      log.error('Error loading pending documents:', error);
       Alert.alert('Error', 'Failed to load pending documents');
     } finally {
       setIsLoading(false);
@@ -112,7 +115,7 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
       };
       setAdminStats(mockStats);
     } catch (error) {
-      console.error('Error loading admin stats:', error);
+      log.error('Error loading admin stats:', error);
     }
   };
 
@@ -140,8 +143,8 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
       setReviewNotes('');
       
       Alert.alert('Document Approved', 'The document has been approved successfully.');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to approve document');
+    } catch (error: unknown) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to approve document');
     }
   };
 
@@ -161,8 +164,8 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
       setRejectionReason('');
       
       Alert.alert('Document Rejected', 'The document has been rejected and the user will be notified.');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to reject document');
+    } catch (error: unknown) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to reject document');
     }
   };
 
@@ -183,8 +186,8 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
       setSelectedDocument(null);
       
       Alert.alert('More Information Requested', 'The user has been notified to provide additional information.');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to request more information');
+    } catch (error: unknown) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to request more information');
     }
   };
 
@@ -320,7 +323,7 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
                 styles.filterButton,
                 filterStatus === filter.key && styles.filterButtonActive,
               ]}
-              onPress={() => setFilterStatus(filter.key as any)}
+              onPress={() => setFilterStatus(filter.key as typeof filterStatus)}
             >
               <Text
                 style={[
@@ -343,7 +346,7 @@ export const AdminVerificationDashboard: React.FC<AdminVerificationDashboardProp
             const options = ['date', 'priority', 'confidence'];
             const currentIndex = options.indexOf(sortBy);
             const nextIndex = (currentIndex + 1) % options.length;
-            setSortBy(options[nextIndex] as any);
+            setSortBy(options[nextIndex] as typeof sortBy);
           }}
         >
           <Text style={styles.sortButtonText}>

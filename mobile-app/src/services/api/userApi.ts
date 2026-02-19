@@ -14,15 +14,20 @@ export interface User {
   phone: string;
   firstName: string;
   lastName: string;
-  role: 'passenger' | 'driver' | 'admin' | 'courier';
+  roles: ('passenger' | 'driver' | 'admin' | 'courier')[]; // Updated to match unified type
+  primaryRole: 'passenger' | 'driver' | 'admin' | 'courier'; // Added primary role
   status: 'active' | 'suspended' | 'pending_verification' | 'deactivated';
   profilePicture?: string;
   dateOfBirth?: Date;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
+  isDriverVerified: boolean; // Added driver verification
   rating?: number;
   totalRides: number;
+  totalDeliveries: number; // Added total deliveries
+  vehicles: unknown[]; // Added vehicles array
   joinDate: string;
+  memberSince: string; // Added member since
   createdAt: string;
   updatedAt: string;
 }
@@ -37,12 +42,13 @@ export interface UpdateProfileData {
 
 export interface UserPreferences {
   language: 'en' | 'es' | 'fr';
-  currency: 'USD' | 'EUR' | 'GBP';
+  currency: string; // Changed to string to match unified type
   distanceUnit: 'km' | 'miles';
   theme: 'light' | 'dark' | 'system';
   pushNotifications: boolean;
   emailNotifications: boolean;
   smsNotifications: boolean;
+  locationSharing: boolean; // Added missing field
   autoAcceptRides: boolean;
   maxWalkingDistance: number;
 }
@@ -104,7 +110,7 @@ class UserApiService extends BaseApiService {
       uri: imageUri,
       type: 'image/jpeg',
       name: 'profile.jpg',
-    } as any);
+    } as unknown as Blob);
 
     return this.upload<{ profilePictureUrl: string }>('/users/upload-avatar', formData);
   }
@@ -297,7 +303,7 @@ class UserApiService extends BaseApiService {
     year: number;
     color: string;
     licensePlate: string;
-    type: 'sedan' | 'suv' | 'hatchback' | 'minivan';
+    type: 'sedan' | 'suv' | 'hatchback' | 'coupe' | 'truck' | 'van' | 'motorcycle';
     capacity: number;
   }): Promise<ApiResponse<{ id: string; message: string }>> {
     return this.post('/users/vehicles', vehicleData);
@@ -339,19 +345,19 @@ class UserApiService extends BaseApiService {
       uri: documents.driverLicense,
       type: 'image/jpeg',
       name: 'driver-license.jpg',
-    } as any);
-    
+    } as unknown as Blob);
+
     formData.append('vehicleRegistration', {
       uri: documents.vehicleRegistration,
       type: 'image/jpeg',
       name: 'vehicle-registration.jpg',
-    } as any);
-    
+    } as unknown as Blob);
+
     formData.append('insurance', {
       uri: documents.insurance,
       type: 'image/jpeg',
       name: 'insurance.jpg',
-    } as any);
+    } as unknown as Blob);
 
     return this.upload<{ message: string }>('/users/driver-verification', formData);
   }

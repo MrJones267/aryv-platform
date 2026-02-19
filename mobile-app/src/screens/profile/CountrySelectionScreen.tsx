@@ -20,7 +20,11 @@ import { colors } from '../../theme';
 import { Button } from '../../components/ui';
 import { Country, CountryService } from '../../services/CountryService';
 import { CurrencyService } from '../../services/CurrencyService';
+import UserPreferencesService from '../../services/UserPreferencesService';
 import CountrySelector from '../../components/country/CountrySelector';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CountrySelectionScreen');
 
 const CountrySelectionScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -44,7 +48,7 @@ const CountrySelectionScreen: React.FC = () => {
         setSelectedCountry(userCountry.country);
       }
     } catch (error) {
-      console.error('Error loading user country:', error);
+      log.error('Error loading user country:', error);
     } finally {
       setLoading(false);
     }
@@ -66,7 +70,7 @@ const CountrySelectionScreen: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error detecting user country:', error);
+      log.error('Error detecting user country:', error);
     }
   };
 
@@ -87,6 +91,17 @@ const CountrySelectionScreen: React.FC = () => {
       const result = await CountryService.setUserCountry(selectedCountry.code, true);
       
       if (result) {
+        // Update UserPreferencesService for profile display
+        const preferencesService = UserPreferencesService.getInstance();
+        await preferencesService.updateCountry({
+          code: selectedCountry.code,
+          name: selectedCountry.name,
+          dialCode: selectedCountry.phonePrefix || '',
+          currency: result.suggestedCurrency || '',
+          flag: selectedCountry.flag || '',
+          region: selectedCountry.region,
+        });
+        
         Alert.alert(
           'Country Updated',
           `Your country of operation has been set to ${selectedCountry.name}.${
@@ -98,7 +113,7 @@ const CountrySelectionScreen: React.FC = () => {
             {
               text: 'View Currency Settings',
               onPress: () => {
-                (navigation as any).navigate('CurrencySettings');
+                (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('CurrencySettings');
               }
             },
             {
@@ -113,7 +128,7 @@ const CountrySelectionScreen: React.FC = () => {
         Alert.alert('Error', 'Failed to update your country. Please try again.');
       }
     } catch (error) {
-      console.error('Error saving country:', error);
+      log.error('Error saving country:', error);
       Alert.alert('Error', 'Failed to update your country. Please try again.');
     } finally {
       setSaving(false);

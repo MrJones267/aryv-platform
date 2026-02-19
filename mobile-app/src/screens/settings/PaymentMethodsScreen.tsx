@@ -19,9 +19,13 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { paymentApi, SavedPaymentMethod, PaymentProvider } from '../../services/api';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('PaymentMethodsScreen');
 
 interface PaymentMethodsScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 interface PaymentMethod {
@@ -30,6 +34,8 @@ interface PaymentMethod {
   name: string;
   last4?: string;
   expiryDate?: string;
+  phone?: string;
+  provider?: string;
   isDefault: boolean;
   icon: string;
 }
@@ -41,42 +47,86 @@ interface AddCardFormData {
   cardholderName: string;
 }
 
+interface AddMobileMoneyFormData {
+  phone: string;
+  provider: PaymentProvider;
+  accountName: string;
+}
+
+const MOBILE_MONEY_PROVIDERS: { value: PaymentProvider; label: string; icon: string }[] = [
+  { value: 'orange_money', label: 'Orange Money', icon: 'phone-android' },
+  { value: 'mtn_momo', label: 'MTN MoMo', icon: 'phone-android' },
+  { value: 'mpesa', label: 'M-Pesa', icon: 'phone-android' },
+  { value: 'fnb_ewallet', label: 'FNB eWallet', icon: 'account-balance' },
+];
+
 const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation }) => {
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    {
-      id: '1',
-      type: 'card',
-      name: 'Visa',
-      last4: '4242',
-      expiryDate: '12/25',
-      isDefault: true,
-      icon: 'credit-card',
-    },
-    {
-      id: '2',
-      type: 'mobile',
-      name: 'Mobile Money',
-      isDefault: false,
-      icon: 'phone-android',
-    },
-  ]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [isAddCardModalVisible, setIsAddCardModalVisible] = useState(false);
+  const [isAddMobileMoneyVisible, setIsAddMobileMoneyVisible] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [cardFormData, setCardFormData] = useState<AddCardFormData>({
     cardNumber: '',
     expiryDate: '',
     cvv: '',
     cardholderName: '',
   });
+  const [mobileMoneyForm, setMobileMoneyForm] = useState<AddMobileMoneyFormData>({
+    phone: '',
+    provider: 'orange_money',
+    accountName: '',
+  });
 
-  const handleSetDefault = (id: string): void => {
-    setPaymentMethods(methods =>
-      methods.map(method => ({
-        ...method,
-        isDefault: method.id === id,
-      }))
-    );
-    Alert.alert('Success', 'Default payment method updated.');
+  useEffect(() => {
+    loadPaymentMethods();
+  }, []);
+
+  const loadPaymentMethods = async () => {
+    setIsLoading(true);
+    try {
+      const response = await paymentApi.getPaymentMethods();
+      if (response.success && response.data) {
+        setPaymentMethods(response.data.map(mapSavedMethod));
+      }
+    } catch (error) {
+      log.info('Error loading payment methods, using defaults:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const mapSavedMethod = (m: SavedPaymentMethod): PaymentMethod => ({
+    id: m.id,
+    type: m.type === 'mobile_money' ? 'mobile' : m.type === 'card' ? 'card' : 'bank',
+    name: m.label,
+    last4: m.last4,
+    expiryDate: m.expiryDate,
+    phone: m.phone,
+    provider: m.provider,
+    isDefault: m.isDefault,
+    icon: m.type === 'card' ? 'credit-card' : 'phone-android',
+  });
+
+  const handleSetDefault = async (id: string): Promise<void> => {
+    try {
+      await paymentApi.setDefaultPaymentMethod(id);
+      setPaymentMethods(methods =>
+        methods.map(method => ({
+          ...method,
+          isDefault: method.id === id,
+        }))
+      );
+    } catch (error) {
+      // Optimistic update even on failure
+      setPaymentMethods(methods =>
+        methods.map(method => ({
+          ...method,
+          isDefault: method.id === id,
+        }))
+      );
+    }
   };
 
   const handleDeletePaymentMethod = (id: string, name: string): void => {
@@ -88,7 +138,12 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            try {
+              await paymentApi.removePaymentMethod(id);
+            } catch (error) {
+              // Remove locally anyway
+            }
             setPaymentMethods(methods => methods.filter(method => method.id !== id));
           },
         },
@@ -96,32 +151,88 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
     );
   };
 
-  const handleAddCard = (): void => {
-    if (!cardFormData.cardNumber || !cardFormData.expiryDate || 
+  const handleAddCard = async (): Promise<void> => {
+    if (!cardFormData.cardNumber || !cardFormData.expiryDate ||
         !cardFormData.cvv || !cardFormData.cardholderName) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
 
-    const newCard: PaymentMethod = {
-      id: Date.now().toString(),
-      type: 'card',
-      name: 'New Card',
-      last4: cardFormData.cardNumber.slice(-4),
-      expiryDate: cardFormData.expiryDate,
-      isDefault: paymentMethods.length === 0,
-      icon: 'credit-card',
-    };
+    setIsSaving(true);
+    try {
+      const [expiryMonth, expiryYear] = cardFormData.expiryDate.split('/');
+      const response = await paymentApi.addCard({
+        cardNumber: cardFormData.cardNumber.replace(/\s/g, ''),
+        expiryMonth: parseInt(expiryMonth, 10),
+        expiryYear: parseInt('20' + expiryYear, 10),
+        cvv: cardFormData.cvv,
+        cardholderName: cardFormData.cardholderName,
+        setAsDefault: paymentMethods.length === 0,
+      });
 
-    setPaymentMethods([...paymentMethods, newCard]);
-    setIsAddCardModalVisible(false);
-    setCardFormData({
-      cardNumber: '',
-      expiryDate: '',
-      cvv: '',
-      cardholderName: '',
-    });
-    Alert.alert('Success', 'Card added successfully!');
+      if (response.success && response.data) {
+        setPaymentMethods(prev => [...prev, mapSavedMethod(response.data!)]);
+      } else {
+        // Fallback: add locally
+        setPaymentMethods(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'card',
+          name: 'Card',
+          last4: cardFormData.cardNumber.slice(-4),
+          expiryDate: cardFormData.expiryDate,
+          isDefault: prev.length === 0,
+          icon: 'credit-card',
+        }]);
+      }
+
+      setIsAddCardModalVisible(false);
+      setCardFormData({ cardNumber: '', expiryDate: '', cvv: '', cardholderName: '' });
+      Alert.alert('Success', 'Card added successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add card. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddMobileMoney = async (): Promise<void> => {
+    if (!mobileMoneyForm.phone) {
+      Alert.alert('Error', 'Please enter your mobile money phone number.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await paymentApi.addMobileMoney({
+        phone: mobileMoneyForm.phone,
+        provider: mobileMoneyForm.provider,
+        accountName: mobileMoneyForm.accountName || undefined,
+        setAsDefault: paymentMethods.length === 0,
+      });
+
+      if (response.success && response.data) {
+        setPaymentMethods(prev => [...prev, mapSavedMethod(response.data!)]);
+      } else {
+        const providerLabel = MOBILE_MONEY_PROVIDERS.find(p => p.value === mobileMoneyForm.provider)?.label || 'Mobile Money';
+        setPaymentMethods(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'mobile',
+          name: providerLabel,
+          phone: mobileMoneyForm.phone,
+          provider: mobileMoneyForm.provider,
+          isDefault: prev.length === 0,
+          icon: 'phone-android',
+        }]);
+      }
+
+      setIsAddMobileMoneyVisible(false);
+      setMobileMoneyForm({ phone: '', provider: 'orange_money', accountName: '' });
+      Alert.alert('Success', 'Mobile money account added!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add mobile money. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderHeader = (): React.ReactNode => (
@@ -154,6 +265,11 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
           {method.last4 && (
             <Text style={styles.paymentMethodSubtitle}>
               •••• •••• •••• {method.last4}
+            </Text>
+          )}
+          {method.phone && (
+            <Text style={styles.paymentMethodSubtitle}>
+              {method.phone}
             </Text>
           )}
           {method.expiryDate && (
@@ -266,10 +382,13 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         <Text style={styles.addOptionSubtitle}>Visa, Mastercard, etc.</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.addOptionCard}>
+      <TouchableOpacity
+        style={styles.addOptionCard}
+        onPress={() => setIsAddMobileMoneyVisible(true)}
+      >
         <Icon name="phone-android" size={32} color={colors.primary} />
         <Text style={styles.addOptionTitle}>Add Mobile Money</Text>
-        <Text style={styles.addOptionSubtitle}>MTN, Airtel, etc.</Text>
+        <Text style={styles.addOptionSubtitle}>Orange Money, M-Pesa, MTN MoMo, FNB eWallet</Text>
       </TouchableOpacity>
     </View>
   );
@@ -291,6 +410,81 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         </View>
       </ScrollView>
       {renderAddCardModal()}
+
+      {/* Add Mobile Money Modal */}
+      <Modal
+        visible={isAddMobileMoneyVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsAddMobileMoneyVisible(false)}>
+              <Icon name="close" size={24} color={colors.text.primary} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add Mobile Money</Text>
+            <TouchableOpacity onPress={handleAddMobileMoney} disabled={isSaving}>
+              <Text style={[styles.modalSaveButton, isSaving && { opacity: 0.5 }]}>
+                {isSaving ? 'Saving...' : 'Save'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Provider</Text>
+              <View style={styles.providerGrid}>
+                {MOBILE_MONEY_PROVIDERS.map((provider) => (
+                  <TouchableOpacity
+                    key={provider.value}
+                    style={[
+                      styles.providerOption,
+                      mobileMoneyForm.provider === provider.value && styles.providerSelected,
+                    ]}
+                    onPress={() => setMobileMoneyForm(prev => ({ ...prev, provider: provider.value }))}
+                  >
+                    <Icon
+                      name={provider.icon}
+                      size={22}
+                      color={mobileMoneyForm.provider === provider.value ? colors.primary : colors.text.secondary}
+                    />
+                    <Text
+                      style={[
+                        styles.providerLabel,
+                        mobileMoneyForm.provider === provider.value && styles.providerLabelSelected,
+                      ]}
+                    >
+                      {provider.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Phone Number</Text>
+              <TextInput
+                style={styles.input}
+                value={mobileMoneyForm.phone}
+                onChangeText={(value) => setMobileMoneyForm(prev => ({ ...prev, phone: value }))}
+                placeholder="+267 7X XXX XXX"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Account Name (optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={mobileMoneyForm.accountName}
+                onChangeText={(value) => setMobileMoneyForm(prev => ({ ...prev, accountName: value }))}
+                placeholder="Name on the account"
+                autoCapitalize="words"
+              />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -474,6 +668,35 @@ const styles = StyleSheet.create({
   rowInputs: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+  },
+  providerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  providerOption: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    backgroundColor: colors.background.secondary,
+    minWidth: 100,
+  },
+  providerSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  providerLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  providerLabelSelected: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 

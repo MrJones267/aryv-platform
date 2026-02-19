@@ -24,6 +24,9 @@ import { colors } from '../../theme';
 import { Button } from '../../components/ui';
 import { useAppSelector } from '../../store/hooks';
 import { CashPaymentService } from '../../services/CashPaymentService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('DriverCashReceiptScreen');
 
 interface DriverCashReceiptScreenProps {
   route: {
@@ -46,7 +49,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
   const [locationLoading, setLocationLoading] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const currentUser = useAppSelector((state) => (state.auth as any).user);
+  const currentUser = useAppSelector((state) => (state.auth as { user?: Record<string, unknown> }).user);
 
   useEffect(() => {
     getCurrentLocation();
@@ -63,7 +66,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
         setLocationLoading(false);
       },
       (error) => {
-        console.log('Location error:', error);
+        log.info('Location error:', error);
         setLocationLoading(false);
         // Continue without location
       },
@@ -84,7 +87,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
     if (amountDifference > 0.50) {
       Alert.alert(
         'Amount Discrepancy',
-        `Expected: $${expectedAmount.toFixed(2)}\\nReceived: $${amount.toFixed(2)}\\nDifference: $${amountDifference.toFixed(2)}\\n\\nContinue anyway?`,
+        `Expected: P${expectedAmount.toFixed(2)}\\nReceived: P${amount.toFixed(2)}\\nDifference: P${amountDifference.toFixed(2)}\\n\\nContinue anyway?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { 
@@ -118,7 +121,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
             [
               {
                 text: 'OK',
-                onPress: () => (navigation as any).navigate('RideInProgress'),
+                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideInProgress'),
               },
             ]
           );
@@ -129,7 +132,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
             [
               {
                 text: 'OK',
-                onPress: () => (navigation as any).navigate('RideInProgress'),
+                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideInProgress'),
               },
             ]
           );
@@ -217,7 +220,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Expected Amount:</Text>
-          <Text style={styles.expectedAmountValue}>${expectedAmount.toFixed(2)}</Text>
+          <Text style={styles.expectedAmountValue}>P{expectedAmount.toFixed(2)}</Text>
         </View>
       </View>
 
@@ -225,7 +228,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
         <Icon 
           name={location ? 'location-on' : 'location-off'} 
           size={20} 
-          color={location ? colors.success : colors.textSecondary} 
+          color={location ? colors.success : colors.text.secondary} 
         />
         <Text style={styles.locationText}>
           {locationLoading 
@@ -308,7 +311,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
       </TouchableOpacity>
 
       <View style={styles.securityNote}>
-        <Icon name="security" size={16} color={colors.textSecondary} />
+        <Icon name="security" size={16} color={colors.text.secondary} />
         <Text style={styles.securityNoteText}>
           Confirming will notify the rider and start the payment completion process.
           Only confirm if you have actually received the cash payment.
@@ -338,7 +341,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: colors.text.secondary,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -358,7 +361,7 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: colors.text.secondary,
   },
   detailValue: {
     fontSize: 16,
@@ -507,7 +510,7 @@ const styles = StyleSheet.create({
   securityNoteText: {
     flex: 1,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.text.secondary,
     marginLeft: 8,
     lineHeight: 16,
   },

@@ -6,6 +6,9 @@
  */
 
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('EscrowPaymentService');
 
 export interface EscrowTransaction {
   id: string;
@@ -36,7 +39,7 @@ export interface EscrowReleaseCondition {
   requiredBy?: string; // userId if specific person required
   satisfiedAt?: string;
   satisfiedBy?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface EscrowCreateRequest {
@@ -46,7 +49,7 @@ export interface EscrowCreateRequest {
   amount: number;
   paymentMethod: 'cash' | 'bank_transfer' | 'wallet' | 'card';
   metadata?: {
-    rideDetails?: Record<string, any>;
+    rideDetails?: Record<string, string | number | boolean>;
     autoReleaseHours?: number;
     requiresBothConfirmation?: boolean;
   };
@@ -153,11 +156,12 @@ export class EscrowPaymentService {
           error: response.error || 'Failed to create escrow transaction',
         };
       }
-    } catch (error: any) {
-      console.error('Error creating escrow transaction:', error);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Network error. Please try again.';
+      log.error('Error creating escrow transaction:', error);
       return {
         success: false,
-        error: error.message || 'Network error. Please try again.',
+        error: errorMessage,
       };
     }
   }
@@ -190,11 +194,12 @@ export class EscrowPaymentService {
           error: response.error || 'Failed to fund escrow',
         };
       }
-    } catch (error: any) {
-      console.error('Error funding escrow:', error);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Network error. Please try again.';
+      log.error('Error funding escrow:', error);
       return {
         success: false,
-        error: error.message || 'Network error. Please try again.',
+        error: errorMessage,
       };
     }
   }
@@ -225,11 +230,12 @@ export class EscrowPaymentService {
           error: response.error || 'Failed to release escrow',
         };
       }
-    } catch (error: any) {
-      console.error('Error releasing escrow:', error);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Network error. Please try again.';
+      log.error('Error releasing escrow:', error);
       return {
         success: false,
-        error: error.message || 'Network error. Please try again.',
+        error: errorMessage,
       };
     }
   }
@@ -263,11 +269,11 @@ export class EscrowPaymentService {
           error: response.error || 'Failed to refund escrow',
         };
       }
-    } catch (error: any) {
-      console.error('Error refunding escrow:', error);
+    } catch (error: unknown) {
+      log.error('Error refunding escrow:', error);
       return {
         success: false,
-        error: error.message || 'Network error. Please try again.',
+        error: error instanceof Error ? error.message : 'Network error. Please try again.',
       };
     }
   }
@@ -293,11 +299,11 @@ export class EscrowPaymentService {
           error: response.error || 'Failed to file dispute',
         };
       }
-    } catch (error: any) {
-      console.error('Error filing dispute:', error);
+    } catch (error: unknown) {
+      log.error('Error filing dispute:', error);
       return {
         success: false,
-        error: error.message || 'Network error. Please try again.',
+        error: error instanceof Error ? error.message : 'Network error. Please try again.',
       };
     }
   }
@@ -312,11 +318,11 @@ export class EscrowPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get escrow transaction:', response.error);
+        log.error('Failed to get escrow transaction:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting escrow transaction:', error);
+      log.error('Error getting escrow transaction:', error);
       return null;
     }
   }
@@ -331,11 +337,11 @@ export class EscrowPaymentService {
       if (response.success) {
         return response.data.transactions || [];
       } else {
-        console.error('Failed to get ride escrow transactions:', response.error);
+        log.error('Failed to get ride escrow transactions:', response.error);
         return [];
       }
     } catch (error) {
-      console.error('Error getting ride escrow transactions:', error);
+      log.error('Error getting ride escrow transactions:', error);
       return [];
     }
   }
@@ -350,11 +356,11 @@ export class EscrowPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get wallet balance:', response.error);
+        log.error('Failed to get wallet balance:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting wallet balance:', error);
+      log.error('Error getting wallet balance:', error);
       return null;
     }
   }
@@ -369,11 +375,11 @@ export class EscrowPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get escrow statistics:', response.error);
+        log.error('Failed to get escrow statistics:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting escrow statistics:', error);
+      log.error('Error getting escrow statistics:', error);
       return null;
     }
   }
@@ -408,11 +414,11 @@ export class EscrowPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get escrow history:', response.error);
+        log.error('Failed to get escrow history:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting escrow history:', error);
+      log.error('Error getting escrow history:', error);
       return null;
     }
   }
@@ -438,7 +444,7 @@ export class EscrowPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error checking auto-release conditions:', error);
+      log.error('Error checking auto-release conditions:', error);
       return {
         canRelease: false,
         reason: 'Network error. Please try again.',
@@ -536,7 +542,7 @@ export class EscrowPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error checking escrow eligibility:', error);
+      log.error('Error checking escrow eligibility:', error);
       return {
         canCreate: false,
         reason: 'Network error. Please try again.',

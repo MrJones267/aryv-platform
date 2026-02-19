@@ -21,6 +21,9 @@ import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 // import LinearGradient from 'react-native-linear-gradient';
 import PredictiveAIService, { PredictiveInsights } from '../services/PredictiveAIService';
 import { colors, spacing, typography } from '../theme';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('PredictiveInsightsCard');
 
 interface PredictiveInsightsCardProps {
   latitude: number;
@@ -74,7 +77,7 @@ export const PredictiveInsightsCard: React.FC<PredictiveInsightsCardProps> = ({
         throw new Error(response.message || 'Failed to load insights');
       }
     } catch (err) {
-      console.error('Error loading predictive insights:', err);
+      log.error('Error loading predictive insights:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
       
       // Use fallback data for offline scenarios

@@ -19,9 +19,30 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { logout } from '../../store/slices/authSlice';
-import { fetchUserProfile } from '../../store/slices/userSlice';
+import { logoutUser } from '../../store/slices/authSlice';
+import { fetchUserProfile, setPrimaryRole } from '../../store/slices/userSlice';
+import { UserRole } from '../../types/user';
 import { ProfileScreenProps } from '../../navigation/types';
+import UserPreferencesService from '../../services/UserPreferencesService';
+import { useAppTheme } from '../../contexts/ThemeContext';
+import UserProfileCard from '../../components/profile/UserProfileCard';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ProfileScreen');
+
+interface ExtendedUserFields {
+  profilePicture?: string;
+  rating?: number;
+  totalRides?: number;
+  totalDeliveries?: number;
+  memberSince?: string;
+  bio?: string;
+  isEmailVerified?: boolean;
+  isPhoneVerified?: boolean;
+  isIdentityVerified?: boolean;
+  isDriverVerified?: boolean;
+  primaryRole?: string;
+}
 
 interface ProfileSection {
   id: string;
@@ -44,8 +65,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { isDark, toggleTheme } = useAppTheme();
   
   const [isLoading, setIsLoading] = useState(false);
+  const [currencyRegionText, setCurrencyRegionText] = useState('Loading...');
   const [settings, setSettings] = useState({
     notifications: true,
     locationSharing: true,
@@ -55,6 +78,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     loadUserProfile();
+    loadCurrencyRegionInfo();
   }, []);
 
   const loadUserProfile = async (): Promise<void> => {
@@ -63,10 +87,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       try {
         await dispatch(fetchUserProfile()).unwrap();
       } catch (error) {
-        console.log('Error loading profile:', error);
+        log.info('Error loading profile:', error);
       } finally {
         setIsLoading(false);
       }
+    }
+  };
+
+  const loadCurrencyRegionInfo = async (): Promise<void> => {
+    try {
+      const preferencesService = UserPreferencesService.getInstance();
+      const formattedText = await preferencesService.getFormattedCurrencyRegion();
+      setCurrencyRegionText(formattedText);
+    } catch (error) {
+      log.error('Error loading currency/region info:', error);
+      setCurrencyRegionText('Failed to load settings');
     }
   };
 
@@ -81,9 +116,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await dispatch(logout());
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to sign out');
+              await dispatch(logoutUser()).unwrap();
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              Alert.alert('Error', errMsg || 'Failed to sign out');
             }
           },
         },
@@ -91,43 +127,145 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     );
   };
 
-  const handleSettingToggle = (settingKey: keyof typeof settings): void => {
-    setSettings(prev => ({ ...prev, [settingKey]: !prev[settingKey] }));
+  const handleVehicleManagement = (): void => {
+    Alert.alert(
+      'Vehicle Management',
+      'Choose an action:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'View Vehicles',
+          onPress: () => {
+            // For now, show vehicles in an alert (until VehicleList screen is created)
+            const vehicles = user?.vehicles || [];
+            if (vehicles.length === 0) {
+              Alert.alert('No Vehicles', 'You have no registered vehicles.');
+            } else {
+              const vehicleList = vehicles.map(v => `${v.year} ${v.make} ${v.model} (${v.licensePlate})`).join('\n');
+              Alert.alert('Your Vehicles', vehicleList);
+            }
+          },
+        },
+        {
+          text: 'Add Vehicle',
+          onPress: () => {
+            // Navigate to vehicle registration or show form
+            Alert.alert('Add Vehicle', 'Vehicle registration form will open here.');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRoleSwitching = (): void => {
+    if (!user || !user.roles || user.roles.length <= 1) {
+      return;
+    }
+
+    const roleOptions = user.roles.map(role => ({
+      text: role.charAt(0).toUpperCase() + role.slice(1),
+      onPress: () => {
+        dispatch(setPrimaryRole(role));
+        Alert.alert('Role Switched', `Your active role is now: ${role}`);
+      },
+    }));
+
+    Alert.alert(
+      'Switch Role',
+      `Current role: ${user.primaryRole}. Select a new primary role:`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        ...roleOptions,
+      ]
+    );
+  };
+
+  const handleSettingToggle = (settingKey: string): void => {
+    if (settingKey === 'darkMode') {
+      toggleTheme();
+      return;
+    }
+    setSettings(prev => ({ ...prev, [settingKey as keyof typeof settings]: !prev[settingKey as keyof typeof settings] }));
   };
 
   const handleMenuItemPress = (item: ProfileMenuItem): void => {
+    const nav = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void };
     switch (item.action) {
       case 'editProfile':
-        (navigation as any).navigate('EditProfile');
+        nav.navigate('EditProfile');
         break;
       case 'paymentMethods':
-        (navigation as any).navigate('PaymentMethods');
+        nav.navigate('PaymentMethods');
         break;
       case 'notifications':
-        (navigation as any).navigate('NotificationSettings');
+        nav.navigate('NotificationSettings');
         break;
       case 'privacy':
-        (navigation as any).navigate('PrivacySettings');
+        nav.navigate('PrivacySettings');
+        break;
+      case 'currency':
+        nav.navigate('CurrencySettings');
+        break;
+      case 'security':
+        nav.navigate('SecuritySettings');
+        break;
+      case 'language':
+        nav.navigate('LanguageSettings');
+        break;
+      case 'dataUsage':
+        nav.navigate('DataUsageSettings');
         break;
       case 'help':
-        (navigation as any).navigate('Help');
+        nav.navigate('Help');
         break;
       case 'about':
-        (navigation as any).navigate('About');
+        nav.navigate('About');
         break;
       case 'terms':
-        (navigation as any).navigate('Terms');
+        nav.navigate('Terms');
+        break;
+      case 'revenueAnalytics':
+        nav.navigate('RevenueAnalytics');
+        break;
+      case 'aiDashboard':
+        nav.navigate('AIDashboard');
+        break;
+      case 'vehicles':
+        handleVehicleManagement();
+        break;
+      case 'deliveryHistory':
+        nav.navigate('DeliveryHistory');
+        break;
+      case 'switchRole':
+        handleRoleSwitching();
+        break;
+      case 'becomeDriver':
+        nav.navigate('DriverOnboarding');
         break;
       case 'logout':
         handleLogout();
         break;
       default:
-        console.log('Menu item pressed:', item.id);
+        log.info('Menu item pressed:', { itemId: item.id });
     }
   };
 
-  const profileSections: ProfileSection[] = [
-    {
+  // Helper function to check if user has a specific role
+  const hasRole = (role: UserRole): boolean => {
+    return user?.roles?.includes(role) || false;
+  };
+
+  // Helper function to get active vehicle info
+  const getActiveVehicle = () => {
+    return user?.vehicles?.find(vehicle => (vehicle as unknown as Record<string, unknown>).status === 'active');
+  };
+
+  // Generate profile sections based on user roles
+  const getProfileSections = (): ProfileSection[] => {
+    const sections: ProfileSection[] = [];
+
+    // Account section (always shown)
+    sections.push({
       id: 'account',
       title: 'Account',
       items: [
@@ -156,19 +294,112 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           action: 'paymentMethods',
         },
       ],
-    },
-    {
-      id: 'rides',
-      title: 'Ride Preferences',
+    });
+
+    // Become a Driver prompt (for non-drivers)
+    if (!hasRole('driver')) {
+      sections.push({
+        id: 'becomeDriver',
+        title: 'Drive with Hitch',
+        items: [
+          {
+            id: 'becomeDriver',
+            icon: 'directions-car',
+            title: 'Become a Driver',
+            subtitle: 'Offer rides on routes you already travel',
+            type: 'navigation',
+            action: 'becomeDriver',
+          },
+        ],
+      });
+    }
+
+    // Driver section (only for drivers)
+    if (hasRole('driver')) {
+      const activeVehicle = getActiveVehicle();
+      sections.push({
+        id: 'driver',
+        title: 'Driver Settings',
+        items: [
+          {
+            id: 'vehicles',
+            icon: 'drive-eta',
+            title: 'My Vehicles',
+            subtitle: activeVehicle 
+              ? `${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}`
+              : 'No vehicle registered',
+            type: 'navigation',
+            action: 'vehicles',
+          },
+          {
+            id: 'driverVerification',
+            icon: 'verified-user',
+            title: 'Driver Verification',
+            subtitle: user?.isDriverVerified ? 'Verified' : 'Pending verification',
+            type: 'info',
+            badge: user?.isDriverVerified ? 'verified' : 'pending',
+          },
+          {
+            id: 'autoAccept',
+            icon: 'auto-awesome',
+            title: 'Auto-accept rides',
+            subtitle: 'Automatically accept matching ride requests',
+            type: 'switch',
+            value: settings.autoAcceptRides,
+          },
+        ],
+      });
+    }
+
+    // Courier section (only for couriers)
+    if (hasRole('courier')) {
+      sections.push({
+        id: 'courier',
+        title: 'Courier Settings',
+        items: [
+          {
+            id: 'courierVerification',
+            icon: 'local-shipping',
+            title: 'Courier Verification',
+            subtitle: (user as unknown as Record<string, any>)?.courierVerification?.isVerified ? 'Verified' : 'Pending verification',
+            type: 'info',
+            badge: (user as unknown as Record<string, any>)?.courierVerification?.isVerified ? 'verified' : 'pending',
+          },
+          {
+            id: 'deliveryHistory',
+            icon: 'history',
+            title: 'Delivery History',
+            subtitle: `${user?.totalDeliveries || 0} completed deliveries`,
+            type: 'navigation',
+            action: 'deliveryHistory',
+          },
+        ],
+      });
+    }
+
+    // Multi-role switcher (if user has multiple roles)
+    if (user && user.roles && user.roles.length > 1) {
+      sections.push({
+        id: 'roles',
+        title: 'Role Management',
+        items: [
+          {
+            id: 'switchRole',
+            icon: 'swap-horiz',
+            title: 'Switch Active Role',
+            subtitle: `Currently: ${user.primaryRole}`,
+            type: 'navigation',
+            action: 'switchRole',
+          },
+        ],
+      });
+    }
+
+    // Shared settings section
+    sections.push({
+      id: 'settings',
+      title: 'Settings',
       items: [
-        {
-          id: 'autoAccept',
-          icon: 'auto-awesome',
-          title: 'Auto-accept rides',
-          subtitle: 'Automatically accept matching ride requests',
-          type: 'switch',
-          value: settings.autoAcceptRides,
-        },
         {
           id: 'locationSharing',
           icon: 'location-on',
@@ -177,12 +408,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           type: 'switch',
           value: settings.locationSharing,
         },
-      ],
-    },
-    {
-      id: 'settings',
-      title: 'Settings',
-      items: [
         {
           id: 'notifications',
           icon: 'notifications',
@@ -200,6 +425,38 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           action: 'privacy',
         },
         {
+          id: 'currency',
+          icon: 'attach-money',
+          title: 'Currency & Region',
+          subtitle: currencyRegionText,
+          type: 'navigation',
+          action: 'currency',
+        },
+        {
+          id: 'security',
+          icon: 'shield',
+          title: 'Security Settings',
+          subtitle: 'Manage account security and authentication',
+          type: 'navigation',
+          action: 'security',
+        },
+        {
+          id: 'language',
+          icon: 'language',
+          title: 'Language & Region',
+          subtitle: 'Change app language and regional settings',
+          type: 'navigation',
+          action: 'language',
+        },
+        {
+          id: 'dataUsage',
+          icon: 'data-usage',
+          title: 'Data Usage',
+          subtitle: 'Monitor and control data consumption',
+          type: 'navigation',
+          action: 'dataUsage',
+        },
+        {
           id: 'pushNotifications',
           icon: 'notifications-active',
           title: 'Push notifications',
@@ -207,9 +464,43 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           type: 'switch',
           value: settings.pushNotifications,
         },
+        {
+          id: 'darkMode',
+          icon: 'dark-mode',
+          title: 'Dark Mode',
+          subtitle: isDark ? 'On' : 'Off',
+          type: 'switch',
+          value: isDark,
+        },
       ],
-    },
-    {
+    });
+
+    // Analytics & Insights section
+    sections.push({
+      id: 'analytics',
+      title: 'Analytics & Insights',
+      items: [
+        {
+          id: 'revenueAnalytics',
+          icon: 'bar-chart',
+          title: 'Revenue Analytics',
+          subtitle: 'View earnings breakdown and trends',
+          type: 'navigation',
+          action: 'revenueAnalytics',
+        },
+        {
+          id: 'aiDashboard',
+          icon: 'auto-awesome',
+          title: 'AI Insights',
+          subtitle: 'Demand predictions and smart recommendations',
+          type: 'navigation',
+          action: 'aiDashboard',
+        },
+      ],
+    });
+
+    // Support section (always shown)
+    sections.push({
       id: 'support',
       title: 'Support',
       items: [
@@ -238,42 +529,45 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           action: 'terms',
         },
       ],
-    },
-  ];
+    });
 
-  const renderProfileHeader = (): React.ReactNode => (
-    <View style={styles.profileHeader}>
-      <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.firstName?.charAt(0) || 'U'}
-            {user?.lastName?.charAt(0) || ''}
-          </Text>
-        </View>
-        <TouchableOpacity style={styles.editAvatarButton}>
-          <Icon name="camera-alt" size={16} color="#2196F3" />
-        </TouchableOpacity>
+    return sections;
+  };
+
+  const profileSections = getProfileSections();
+
+  const renderProfileHeader = (): React.ReactNode => {
+    const extUser = user as (typeof user & ExtendedUserFields) | undefined;
+    return (
+      <View style={styles.profileHeader}>
+        <UserProfileCard
+          user={{
+            id: user?.id || '',
+            firstName: user?.firstName || 'User',
+            lastName: user?.lastName || '',
+            profilePicture: extUser?.profilePicture,
+            rating: extUser?.rating || 0,
+            totalRides: extUser?.totalRides || 0,
+            totalDeliveries: extUser?.totalDeliveries || 0,
+            memberSince: extUser?.memberSince
+              ? new Date(extUser.memberSince).getFullYear().toString()
+              : undefined,
+            bio: extUser?.bio,
+            isEmailVerified: extUser?.isEmailVerified,
+            isPhoneVerified: extUser?.isPhoneVerified,
+            isIdentityVerified: extUser?.isIdentityVerified,
+            isDriverVerified: extUser?.isDriverVerified,
+            primaryRole: extUser?.primaryRole,
+          }}
+          variant="full"
+          onPress={() => (navigation as unknown as { navigate: (screen: string) => void }).navigate('EditProfile')}
+          showBio={true}
+          showStats={true}
+          showVerification={true}
+        />
       </View>
-      
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>
-          {user?.firstName} {user?.lastName}
-        </Text>
-        <Text style={styles.userEmail}>{user?.email}</Text>
-        <View style={styles.userStats}>
-          <View style={styles.stat}>
-            <Icon name="star" size={16} color="#FF9800" />
-            <Text style={styles.statValue}>{(user as any)?.rating || '4.8'}</Text>
-          </View>
-          <View style={styles.statSeparator} />
-          <View style={styles.stat}>
-            <Icon name="drive-eta" size={16} color="#2196F3" />
-            <Text style={styles.statValue}>{(user as any)?.totalRides || '0'} rides</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderMenuItem = (item: ProfileMenuItem): React.ReactNode => (
     <TouchableOpacity
@@ -281,7 +575,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       style={styles.menuItem}
       onPress={() => {
         if (item.type === 'switch') {
-          handleSettingToggle(item.id as keyof typeof settings);
+          handleSettingToggle(item.id);
         } else {
           handleMenuItemPress(item);
         }
@@ -317,7 +611,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {item.type === 'switch' && (
           <Switch
             value={item.value as boolean}
-            onValueChange={() => handleSettingToggle(item.id as keyof typeof settings)}
+            onValueChange={() => handleSettingToggle(item.id)}
             trackColor={{ false: '#E0E0E0', true: '#2196F3' }}
             thumbColor="#FFFFFF"
           />

@@ -13,7 +13,7 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import VerificationScreen from '../screens/auth/VerificationScreen';
-import OnboardingWelcomeScreen from '../screens/onboarding/OnboardingWelcomeScreen';
+import RoleSelectionScreen from '../screens/onboarding/RoleSelectionScreen';
 import OnboardingPermissionsScreen from '../screens/onboarding/OnboardingPermissionsScreen';
 import OnboardingProfileScreen from '../screens/onboarding/OnboardingProfileScreen';
 
@@ -26,8 +26,10 @@ export type AuthStackParamList = {
     email: string;
     type: 'email' | 'phone';
   };
-  OnboardingWelcome: undefined;
-  OnboardingPermissions: undefined;
+  RoleSelection: undefined;
+  OnboardingPermissions: {
+    selectedRole?: 'passenger' | 'driver' | 'courier';
+  };
   OnboardingProfile: undefined;
 };
 
@@ -44,57 +46,57 @@ const AuthNavigator: React.FC = () => {
         gestureEnabled: true,
       }}
     >
-      <Stack.Screen 
-        name="Welcome" 
+      <Stack.Screen
+        name="Welcome"
         component={WelcomeScreen}
         options={{
           animationTypeForReplace: 'push',
         }}
       />
-      <Stack.Screen 
-        name="Login" 
+      <Stack.Screen
+        name="Login"
         component={LoginScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="Register" 
+      <Stack.Screen
+        name="Register"
         component={RegisterScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="ForgotPassword" 
+      <Stack.Screen
+        name="ForgotPassword"
         component={ForgotPasswordScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="Verification" 
+      <Stack.Screen
+        name="Verification"
         component={VerificationScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="OnboardingWelcome" 
-        component={OnboardingWelcomeScreen}
+      <Stack.Screen
+        name="RoleSelection"
+        component={RoleSelectionScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="OnboardingPermissions" 
+      <Stack.Screen
+        name="OnboardingPermissions"
         component={OnboardingPermissionsScreen}
         options={{
           gestureDirection: 'horizontal',
         }}
       />
-      <Stack.Screen 
-        name="OnboardingProfile" 
+      <Stack.Screen
+        name="OnboardingProfile"
         component={OnboardingProfileScreen}
         options={{
           gestureDirection: 'horizontal',

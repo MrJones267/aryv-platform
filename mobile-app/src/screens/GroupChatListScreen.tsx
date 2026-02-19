@@ -27,6 +27,9 @@ const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: '
 import { colors, spacing, typography } from '../theme';
 import { GroupChatListItem } from '../components/GroupChatListItem';
 import { CreateGroupModal } from '../components/CreateGroupModal';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('GroupChatListScreen');
 
 interface GroupChat {
   id: string;
@@ -91,10 +94,10 @@ export const GroupChatListScreen: React.FC = () => {
       const response = await GroupChatService.getUserGroupChats(options);
       
       if (response.success) {
-        setGroupChats(response.data.groupChats || []);
+        setGroupChats((response.data as unknown as { groupChats: GroupChat[] })?.groupChats || []);
       }
     } catch (error) {
-      console.error('Error loading group chats:', error);
+      log.error('Error loading group chats:', error);
       Alert.alert('Error', 'Failed to load group chats');
     } finally {
       setLoading(false);
@@ -116,18 +119,18 @@ export const GroupChatListScreen: React.FC = () => {
     socketService.off('participant_left', handleParticipantLeft);
   };
 
-  const handleNewMessage = (data: { message: any; groupChatId: string }) => {
-    setGroupChats(prev => 
+  const handleNewMessage = (data: { message: Record<string, unknown>; groupChatId: string }) => {
+    setGroupChats(prev =>
       prev.map(group => {
         if (group.id === data.groupChatId) {
           return {
             ...group,
             lastMessage: {
-              content: data.message.content,
-              senderId: data.message.senderId,
-              senderName: data.message.sender?.firstName || 'Unknown',
-              createdAt: data.message.createdAt,
-              type: data.message.type,
+              content: data.message.content as string,
+              senderId: data.message.senderId as string,
+              senderName: (data.message.sender as Record<string, unknown>)?.firstName as string || 'Unknown',
+              createdAt: data.message.createdAt as string,
+              type: data.message.type as string,
             },
             unreadCount: data.message.senderId !== user?.id 
               ? group.unreadCount + 1 
@@ -139,7 +142,7 @@ export const GroupChatListScreen: React.FC = () => {
     );
   };
 
-  const handleGroupCreated = (data: { groupChat: any }) => {
+  const handleGroupCreated = (data: { groupChat: GroupChat }) => {
     setGroupChats(prev => [data.groupChat, ...prev]);
   };
 
@@ -164,15 +167,15 @@ export const GroupChatListScreen: React.FC = () => {
   };
 
   const handleGroupPress = (groupChat: GroupChat) => {
-    (navigation as any).navigate('GroupChat', {
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('GroupChat', {
       groupChatId: groupChat.id,
       groupName: groupChat.name,
     });
   };
 
-  const handleCreateGroup = async (groupData: any) => {
+  const handleCreateGroup = async (groupData: Record<string, unknown>) => {
     try {
-      const response = await GroupChatService.createGroupChat(groupData);
+      const response = await GroupChatService.createGroupChat(groupData as unknown as import('../services/GroupChatService').CreateGroupChatRequest);
       
       if (response.success) {
         setShowCreateModal(false);
@@ -180,7 +183,7 @@ export const GroupChatListScreen: React.FC = () => {
         Alert.alert('Success', 'Group chat created successfully');
       }
     } catch (error) {
-      console.error('Error creating group:', error);
+      log.error('Error creating group:', error);
       Alert.alert('Error', 'Failed to create group chat');
     }
   };

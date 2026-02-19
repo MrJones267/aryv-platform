@@ -18,9 +18,12 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('AboutScreen');
 
 interface AboutScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 interface LinkItem {
@@ -92,7 +95,7 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
 
   const handleLinkPress = (url: string): void => {
     Linking.openURL(url).catch(() => {
-      console.error('Failed to open URL:', url);
+      log.error('Failed to open URL:', url);
     });
   };
 

@@ -20,8 +20,11 @@ import { colors } from '../../theme';
 import { CashPaymentService } from '../../services/CashPaymentService';
 import { Currency, CurrencyService } from '../../services/CurrencyService';
 import CurrencySelector from '../currency/CurrencySelector';
+import logger from '../../services/LoggingService';
 
-export type PaymentMethodType = 'cash' | 'stripe' | 'paypal' | 'wallet';
+const log = logger.createLogger('PaymentMethodSelector');
+
+export type PaymentMethodType = 'cash' | 'stripe' | 'mobile_money' | 'wallet';
 
 export interface PaymentMethod {
   id: string;
@@ -94,7 +97,7 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
         onCurrencyChange?.(preferences.primaryCurrency);
       }
     } catch (error) {
-      console.error('Error loading user currency:', error);
+      log.error('Error loading user currency:', error);
     }
   };
 
@@ -105,7 +108,7 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
       setCashEligibility(eligibility);
       onCashEligibilityCheck?.(eligibility.canPay, eligibility.trustScore);
     } catch (error) {
-      console.error('Error checking cash eligibility:', error);
+      log.error('Error checking cash eligibility:', error);
       setCashEligibility({
         canPay: false,
         reason: 'Unable to verify eligibility',
@@ -130,27 +133,23 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
     {
       id: 'stripe',
       title: 'Credit/Debit Card',
-      subtitle: 'Pay with your card via Stripe',
+      subtitle: 'Pay securely with Visa, Mastercard',
       icon: 'credit-card',
       available: true,
     },
     {
-      id: 'paypal',
-      title: 'PayPal',
-      subtitle: 'Pay with your PayPal account',
-      icon: 'account-balance',
-      available: false, // Not implemented yet
-      disabled: true,
-      disabledReason: 'Coming soon',
+      id: 'mobile_money',
+      title: 'Mobile Money',
+      subtitle: 'Orange Money, M-Pesa, MTN MoMo, FNB eWallet',
+      icon: 'phone-android',
+      available: true,
     },
     {
       id: 'wallet',
-      title: 'Digital Wallet',
-      subtitle: 'Pay from your in-app wallet',
+      title: 'ARYV Wallet',
+      subtitle: 'Pay from your in-app wallet balance',
       icon: 'account-balance-wallet',
-      available: false, // Not implemented yet
-      disabled: true,
-      disabledReason: 'Coming soon',
+      available: true,
     },
   ];
 
@@ -221,7 +220,7 @@ Build your trust score by:
   const currentCurrency = selectedCurrency || primaryCurrency;
   const displayAmount = currentCurrency 
     ? CurrencyService.formatAmount(amount, currentCurrency)
-    : `$${amount.toFixed(2)}`;
+    : `P${amount.toFixed(2)}`;
 
   return (
     <View style={styles.container}>
@@ -312,6 +311,15 @@ Build your trust score by:
           <Icon name="info" size={16} color={colors.primary} />
           <Text style={styles.cashNoticeText}>
             You'll pay the driver directly in cash ({displayAmount}). Both you and the driver will confirm the payment.
+          </Text>
+        </View>
+      )}
+
+      {selectedMethod === 'mobile_money' && (
+        <View style={styles.cashNotice}>
+          <Icon name="phone-android" size={16} color={colors.primary} />
+          <Text style={styles.cashNoticeText}>
+            You'll receive a USSD prompt on your phone to confirm the payment of {displayAmount}. Supported: Orange Money, M-Pesa, MTN MoMo, FNB eWallet.
           </Text>
         </View>
       )}

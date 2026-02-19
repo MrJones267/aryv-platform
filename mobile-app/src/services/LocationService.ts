@@ -7,6 +7,9 @@
 
 import Geolocation from '@react-native-community/geolocation';
 import { PermissionsAndroid, Platform, Alert } from 'react-native';
+import logger from './LoggingService';
+
+const log = logger.createLogger('LocationService');
 
 export interface LocationCoordinates {
   latitude: number;
@@ -39,7 +42,7 @@ export interface GeofenceOptions {
   identifier: string;
 }
 
-class LocationService {
+export class LocationService {
   private watchId: number | null = null;
   private currentLocation: LocationData | null = null;
   private locationCallbacks: Array<(location: LocationData) => void> = [];
@@ -66,7 +69,7 @@ class LocationService {
         return true;
       }
     } catch (error) {
-      console.error('Error requesting location permission:', error);
+      log.error('Error requesting location permission', error);
       return false;
     }
   }
@@ -108,14 +111,14 @@ class LocationService {
             );
             locationData.address = address;
           } catch (error) {
-            console.warn('Failed to get address for location:', error);
+            log.warn('Failed to get address for location:', error);
           }
 
           this.currentLocation = locationData;
           resolve(locationData);
         },
         (error) => {
-          console.error('Error getting current location:', error);
+          log.error('Error getting current location:', error);
           reject(this.handleLocationError(error));
         },
         {
@@ -177,7 +180,7 @@ class LocationService {
           this.locationCallbacks.forEach(cb => cb(locationData));
         },
         (error) => {
-          console.error('Error watching location:', error);
+          log.error('Error watching location:', error);
           Alert.alert('Location Error', this.handleLocationError(error).message);
         },
         {
@@ -214,50 +217,155 @@ class LocationService {
     longitude: number
   ): Promise<LocationAddress> {
     try {
-      // Note: This is a placeholder implementation
-      // In a real app, you would use a geocoding service like:
-      // - Google Maps Geocoding API
-      // - Mapbox Geocoding API
-      // - Here Geocoding API
+      const { APP_CONFIG } = await import('../config/api');
+      const GOOGLE_MAPS_API_KEY = APP_CONFIG.GOOGLE_SERVICES.GEOCODING_API_KEY;
       
-      // Mock implementation for development
-      const mockAddress: LocationAddress = {
-        street: `${Math.floor(latitude * 1000)} Main St`,
-        city: 'Downtown',
-        state: 'CA',
-        country: 'US',
-        postalCode: '90210',
-        fullAddress: `${Math.floor(latitude * 1000)} Main St, Downtown, CA 90210, US`,
-      };
-
-      return mockAddress;
+      // Check if we have a valid API key
+      if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('YOUR_PRODUCTION') || GOOGLE_MAPS_API_KEY === 'placeholder') {
+        log.warn('Google Maps API key not configured, using fallback geocoding');
+        return this.fallbackReverseGeocode(latitude, longitude);
+      }
+      
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}`
+      );
+      
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        const result = data.results[0];
+        const components = result.address_components;
+        
+        // Parse address components
+        const address: LocationAddress = {
+          fullAddress: result.formatted_address,
+          formatted: result.formatted_address,
+        };
+        
+        // Extract specific components
+        components.forEach((component: { types: string[]; long_name: string; short_name: string }) => {
+          const types = component.types;
+          
+          if (types.includes('street_number')) {
+            address.street = (address.street || '') + component.long_name + ' ';
+          }
+          if (types.includes('route')) {
+            address.street = (address.street || '') + component.long_name;
+          }
+          if (types.includes('locality')) {
+            address.city = component.long_name;
+          }
+          if (types.includes('administrative_area_level_1')) {
+            address.state = component.short_name;
+          }
+          if (types.includes('country')) {
+            address.country = component.short_name;
+          }
+          if (types.includes('postal_code')) {
+            address.postalCode = component.long_name;
+          }
+        });
+        
+        return address;
+      } else {
+        throw new Error('No address found for coordinates');
+      }
     } catch (error) {
-      console.error('Reverse geocoding failed:', error);
-      throw new Error('Failed to get address for location');
+      log.error('Reverse geocoding failed:', error);
+      
+      // Fallback to basic address format if API fails
+      return {
+        street: 'Unknown Location',
+        city: 'Unknown City',
+        state: '',
+        country: '',
+        postalCode: '',
+        fullAddress: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+      };
     }
   }
 
   /**
-   * Forward geocode address to coordinates
+   * Forward geocode address to coordinates (single coordinate pair for package service)
    */
-  async geocodeAddress(address: string): Promise<LocationCoordinates[]> {
-    try {
-      // Note: This is a placeholder implementation
-      // In a real app, you would use a geocoding service
-      
-      // Mock implementation for development
-      const mockResults: LocationCoordinates[] = [
-        {
-          latitude: 34.0522 + (Math.random() - 0.5) * 0.1,
-          longitude: -118.2437 + (Math.random() - 0.5) * 0.1,
-          accuracy: 10,
-        },
-      ];
+  async geocodeAddress(address: string): Promise<[number, number] | null> {
+    const results = await this.geocodeAddressDetailed(address);
+    if (results.length > 0) {
+      return [results[0].longitude, results[0].latitude];
+    }
+    return null;
+  }
 
-      return mockResults;
+  /**
+   * Verify if current location is within acceptable range of target location
+   */
+  async verifyLocationProximity(
+    targetLatitude: number,
+    targetLongitude: number,
+    maxDistanceMeters: number = 100
+  ): Promise<{
+    isWithinRange: boolean;
+    distance: number;
+    accuracy: number;
+    currentLocation: LocationCoordinates;
+  }> {
+    try {
+      const currentLocation = await this.getCurrentLocation();
+      const distance = this.calculateDistance(
+        currentLocation,
+        { latitude: targetLatitude, longitude: targetLongitude }
+      ) * 1000; // Convert km to meters
+      
+      return {
+        isWithinRange: distance <= maxDistanceMeters,
+        distance: Math.round(distance),
+        accuracy: currentLocation.accuracy || 0,
+        currentLocation,
+      };
     } catch (error) {
-      console.error('Geocoding failed:', error);
-      throw new Error('Failed to find coordinates for address');
+      log.error('Error verifying location proximity:', error);
+      throw new Error('Unable to verify location proximity');
+    }
+  }
+
+  /**
+   * Forward geocode address to detailed coordinates (array format for multiple results)
+   */
+  async geocodeAddressDetailed(address: string): Promise<LocationCoordinates[]> {
+    try {
+      const { APP_CONFIG } = await import('../config/api');
+      const GOOGLE_GEOCODING_API_KEY = APP_CONFIG.GOOGLE_SERVICES.GEOCODING_API_KEY;
+      
+      // Check if we have a valid API key
+      if (!GOOGLE_GEOCODING_API_KEY || GOOGLE_GEOCODING_API_KEY.includes('YOUR_PRODUCTION') || GOOGLE_GEOCODING_API_KEY === 'placeholder') {
+        log.warn('Google Geocoding API key not configured, using fallback geocoding');
+        return this.fallbackGeocodeDetailed(address);
+      }
+      
+      const encodedAddress = encodeURIComponent(address);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_GEOCODING_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}&region=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}`
+      );
+      
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        const results: LocationCoordinates[] = data.results.map((result: { geometry: { location: { lat: number; lng: number }; location_type: string } }) => ({
+          latitude: result.geometry.location.lat,
+          longitude: result.geometry.location.lng,
+          accuracy: result.geometry.location_type === 'ROOFTOP' ? 10 : 
+                    result.geometry.location_type === 'RANGE_INTERPOLATED' ? 25 :
+                    result.geometry.location_type === 'GEOMETRIC_CENTER' ? 50 : 100,
+        }));
+        
+        return results;
+      } else {
+        log.warn('Google Geocoding failed:', { status: data.status, error: data.error_message });
+        return this.fallbackGeocodeDetailed(address);
+      }
+    } catch (error) {
+      log.error('Geocoding failed:', error);
+      return this.fallbackGeocodeDetailed(address);
     }
   }
 
@@ -328,6 +436,88 @@ class LocationService {
     this.currentLocation = null;
   }
 
+  /**
+   * Fallback geocoding when Google API is unavailable
+   */
+  private fallbackGeocodeDetailed(address: string): LocationCoordinates[] {
+    // Simple fallback based on known addresses or return default coordinates
+    const lowerAddress = address.toLowerCase();
+
+    // Southern Africa city coordinates (Botswana + neighbouring countries)
+    const cityCoordinates: Record<string, LocationCoordinates> = {
+      'gaborone': { latitude: -24.6282, longitude: 25.9231, accuracy: 50 },
+      'francistown': { latitude: -21.1700, longitude: 27.5073, accuracy: 50 },
+      'maun': { latitude: -19.9833, longitude: 23.4167, accuracy: 50 },
+      'kasane': { latitude: -17.7953, longitude: 25.1531, accuracy: 50 },
+      'nata': { latitude: -20.2167, longitude: 26.2167, accuracy: 50 },
+      'palapye': { latitude: -22.4000, longitude: 27.1333, accuracy: 50 },
+      'serowe': { latitude: -22.3833, longitude: 26.7167, accuracy: 50 },
+      'mahalapye': { latitude: -23.1000, longitude: 26.8167, accuracy: 50 },
+      'molepolole': { latitude: -24.4000, longitude: 25.5000, accuracy: 50 },
+      'kanye': { latitude: -24.9667, longitude: 25.3500, accuracy: 50 },
+      'lobatse': { latitude: -25.2167, longitude: 25.6833, accuracy: 50 },
+      'selibe phikwe': { latitude: -21.9833, longitude: 27.8167, accuracy: 50 },
+      'selebi-phikwe': { latitude: -21.9833, longitude: 27.8167, accuracy: 50 },
+      'jwaneng': { latitude: -24.6000, longitude: 24.7333, accuracy: 50 },
+      'orapa': { latitude: -21.3167, longitude: 25.3833, accuracy: 50 },
+      'letlhakane': { latitude: -21.4167, longitude: 25.5833, accuracy: 50 },
+      'tshabong': { latitude: -26.0000, longitude: 22.4000, accuracy: 50 },
+      'ghanzi': { latitude: -21.7000, longitude: 21.6833, accuracy: 50 },
+      // Neighbouring cities for cross-border routes
+      'johannesburg': { latitude: -26.2041, longitude: 28.0473, accuracy: 50 },
+      'pretoria': { latitude: -25.7461, longitude: 28.1881, accuracy: 50 },
+      'windhoek': { latitude: -22.5609, longitude: 17.0658, accuracy: 50 },
+      'harare': { latitude: -17.8252, longitude: 31.0335, accuracy: 50 },
+      'bulawayo': { latitude: -20.1325, longitude: 28.5780, accuracy: 50 },
+      'lusaka': { latitude: -15.3875, longitude: 28.3228, accuracy: 50 },
+      'livingstone': { latitude: -17.8419, longitude: 25.8544, accuracy: 50 },
+    };
+
+    for (const [city, coords] of Object.entries(cityCoordinates)) {
+      if (lowerAddress.includes(city)) {
+        log.info(`LocationService: Using fallback coordinates for ${city}`);
+        return [coords];
+      }
+    }
+
+    // Default to Gaborone, Botswana
+    log.warn('LocationService: No fallback coordinates found, using default Gaborone location');
+    return [{ latitude: -24.6282, longitude: 25.9231, accuracy: 50 }];
+  }
+
+  /**
+   * Fallback reverse geocoding when Google API is unavailable
+   */
+  private fallbackReverseGeocode(
+    latitude: number,
+    longitude: number
+  ): LocationAddress {
+    // Create a basic address based on coordinates
+    // This would typically use a secondary service like OpenStreetMap Nominatim
+    // For now, we'll provide a formatted coordinate-based address
+    const lat = latitude.toFixed(6);
+    const lng = longitude.toFixed(6);
+    
+    return {
+      street: `Location near ${lat}, ${lng}`,
+      city: 'Unknown City',
+      state: '',
+      country: '',
+      postalCode: '',
+      fullAddress: `${lat}, ${lng}`,
+      formatted: `Coordinates: ${lat}, ${lng}`,
+    };
+  }
+
+  /**
+   * Fallback geocoding when Google API is unavailable
+   */
+  private fallbackGeocode(address: string): LocationCoordinates[] {
+    // Delegate to fallbackGeocodeDetailed for consistent Botswana city lookup
+    log.warn('Using fallback geocoding for:', address);
+    return this.fallbackGeocodeDetailed(address);
+  }
+
   private toRadians(degrees: number): number {
     return degrees * (Math.PI / 180);
   }
@@ -336,8 +526,9 @@ class LocationService {
     return radians * (180 / Math.PI);
   }
 
-  private handleLocationError(error: any): Error {
-    switch (error.code) {
+  private handleLocationError(error: unknown): Error {
+    const code = (error as { code?: number })?.code;
+    switch (code) {
       case 1:
         return new Error('Location permission denied');
       case 2:

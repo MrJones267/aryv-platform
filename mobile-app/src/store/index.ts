@@ -16,13 +16,15 @@ import userSlice, { UserState } from './slices/userSlice';
 import ridesSlice, { RidesState } from './slices/ridesSlice';
 import locationSlice, { LocationState } from './slices/locationSlice';
 import appSlice, { AppState } from './slices/appSlice';
+import packageSlice, { PackageState } from './slices/packageSlice';
+import courierSlice, { CourierState } from './slices/courierSlice';
 
 // Persist configuration
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,
-  whitelist: ['auth', 'user'], // Only persist auth and user data
-  blacklist: ['rides', 'location', 'app'], // Don't persist temporary data
+  whitelist: ['auth', 'user', 'courier'], // Persist auth, user, and courier data
+  blacklist: ['rides', 'location', 'app', 'package'], // Don't persist temporary data
 };
 
 // Root reducer
@@ -32,6 +34,8 @@ const rootReducer = combineReducers({
   rides: ridesSlice.reducer,
   location: locationSlice.reducer,
   app: appSlice.reducer,
+  package: packageSlice.reducer,
+  courier: courierSlice.reducer,
 });
 
 // Persisted reducer
@@ -74,6 +78,8 @@ export interface RootState {
   rides: RidesState;
   location: LocationState;
   app: AppState;
+  package: PackageState;
+  courier: CourierState;
   _persist?: {
     version: number;
     rehydrated: boolean;

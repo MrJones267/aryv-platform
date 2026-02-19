@@ -18,6 +18,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import packageService, { DeliveryTier, PricingSuggestion, DemandInfo } from '../../services/PackageService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('DeliveryTierSelector');
 
 interface DeliveryTierSelectorProps {
   pickupCoordinates?: [number, number];
@@ -66,13 +69,13 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
     setLoading(true);
     try {
       const response = await packageService.getDeliveryTiers();
-      if (response.success && response.data) {
-        setDeliveryTiers(response.data);
+      if (response.success && (response.tiers || response.data)) {
+        setDeliveryTiers(response.tiers || response.data || []);
       } else {
         Alert.alert('Error', response.error || 'Failed to load delivery tiers');
       }
     } catch (error) {
-      console.error('Error loading delivery tiers:', error);
+      log.error('Error loading delivery tiers:', error);
       Alert.alert('Error', 'Failed to load delivery tiers');
     } finally {
       setLoading(false);
@@ -97,10 +100,10 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
         setPricingSuggestions(response.data.pricingSuggestions);
         setDemandInfo(response.data.demandInfo);
       } else {
-        console.error('Failed to load pricing suggestions:', response.error);
+        log.error('Failed to load pricing suggestions:', response.error);
       }
     } catch (error) {
-      console.error('Error loading pricing suggestions:', error);
+      log.error('Error loading pricing suggestions:', error);
     } finally {
       setLoadingPricing(false);
     }

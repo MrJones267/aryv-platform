@@ -7,33 +7,40 @@
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authApi } from '../../services/api/authApi';
+import { userApi } from '../../services/api/userApi';
+import userManager from '../../services/UserManager';
+import {
+  User,
+  UpdateProfileData,
+  UserRole,
+  UserVehicle
+} from '../../types/user';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('UserSlice');
 
 // Utility function to transform user data from API
 const transformUserFromApi = (user: any): User => {
   return {
     ...user,
     dateOfBirth: user.dateOfBirth && typeof user.dateOfBirth === 'string' ? new Date(user.dateOfBirth) : user.dateOfBirth,
+    memberSince: typeof user.memberSince === 'string' ? new Date(user.memberSince) : user.memberSince,
     createdAt: typeof user.createdAt === 'string' ? new Date(user.createdAt) : user.createdAt,
     updatedAt: typeof user.updatedAt === 'string' ? new Date(user.updatedAt) : user.updatedAt,
+    lastLoginAt: user.lastLoginAt && typeof user.lastLoginAt === 'string' ? new Date(user.lastLoginAt) : user.lastLoginAt,
+    // Ensure required fields have defaults
+    roles: user.roles || [user.primaryRole || 'passenger'],
+    primaryRole: user.primaryRole || user.roles?.[0] || 'passenger',
+    vehicles: user.vehicles || [],
+    rating: user.rating || 0,
+    totalRides: user.totalRides || 0,
+    totalDeliveries: user.totalDeliveries || 0,
+    isEmailVerified: user.isEmailVerified || false,
+    isPhoneVerified: user.isPhoneVerified || false,
+    isDriverVerified: user.isDriverVerified || false,
+    status: user.status || 'active'
   };
 };
-
-// Types
-export interface User {
-  id: string;
-  email: string;
-  phone: string;
-  firstName: string;
-  lastName: string;
-  role: 'passenger' | 'driver' | 'admin' | 'courier';
-  status: 'active' | 'suspended' | 'pending_verification' | 'deactivated';
-  profilePicture?: string;
-  dateOfBirth?: Date;
-  isEmailVerified: boolean;
-  isPhoneVerified: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
 export interface UserState {
   profile: User | null;
@@ -41,23 +48,8 @@ export interface UserState {
   error: string | null;
   updateLoading: boolean;
   updateError: string | null;
-}
-
-export interface UpdateProfileData {
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-  dateOfBirth?: Date;
-  profilePicture?: string;
-  bio?: string;
-  interests?: string[];
-  vehicleInfo?: any;
-  driverLicense?: any;
-  emergencyContact?: {
-    name: string;
-    phone: string;
-    relationship: string;
-  };
+  isSyncing: boolean;
+  lastSyncAt: Date | null;
 }
 
 // Initial state
@@ -67,17 +59,32 @@ const initialState: UserState = {
   error: null,
   updateLoading: false,
   updateError: null,
+  isSyncing: false,
+  lastSyncAt: null,
 };
 
-// Async thunks
+// Async thunks with UserManager integration
 export const fetchUserProfile = createAsyncThunk(
   'user/fetchUserProfile',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await authApi.getProfile();
+      // Try to get from UserManager first (cached data)
+      const cachedUser = userManager.getCurrentUser();
+      if (cachedUser) {
+        log.info('Using cached user profile');
+        return cachedUser;
+      }
+
+      // Fetch from API if no cached data
+      const response = await userApi.getProfile();
       
-      if (response.success) {
-        return response.data;
+      if (response.success && response.data) {
+        const user = transformUserFromApi(response.data);
+        
+        // Update UserManager with fresh data
+        await userManager.setUser(user);
+        
+        return user;
       } else {
         return rejectWithValue(response.error || 'Failed to fetch profile');
       }
@@ -91,15 +98,25 @@ export const updateUserProfile = createAsyncThunk(
   'user/updateUserProfile',
   async (updateData: UpdateProfileData, { rejectWithValue }) => {
     try {
-      const response = await authApi.updateProfile(updateData);
-      
-      if (response.success) {
-        return response.data;
-      } else {
-        return rejectWithValue(response.error || 'Failed to update profile');
-      }
+      // Use UserManager for coordinated updates
+      // Cast to UserManager's UpdateProfileData (excludes 'admin' from primaryRole)
+      const updatedUser = await userManager.updateProfile(updateData as import('../../services/UserManager').UpdateProfileData);
+      return updatedUser;
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Network error');
+      return rejectWithValue(error.message || 'Failed to update profile');
+    }
+  }
+);
+
+export const syncUserData = createAsyncThunk(
+  'user/syncUserData',
+  async (_, { rejectWithValue }) => {
+    try {
+      await userManager.syncFromServer();
+      const user = userManager.getCurrentUser();
+      return user;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Sync failed');
     }
   }
 );
@@ -183,6 +200,45 @@ const userSlice = createSlice({
     },
     setUpdateLoading: (state, action: PayloadAction<boolean>) => {
       state.updateLoading = action.payload;
+    },
+    // Vehicle management actions
+    addVehicle: (state, action: PayloadAction<UserVehicle>) => {
+      if (state.profile) {
+        state.profile.vehicles = [...(state.profile.vehicles || []), action.payload];
+      }
+    },
+    updateVehicle: (state, action: PayloadAction<{ vehicleId: string; updates: Partial<UserVehicle> }>) => {
+      if (state.profile?.vehicles) {
+        const index = state.profile.vehicles.findIndex(v => v.id === action.payload.vehicleId);
+        if (index !== -1) {
+          state.profile.vehicles[index] = { ...state.profile.vehicles[index], ...action.payload.updates };
+        }
+      }
+    },
+    removeVehicle: (state, action: PayloadAction<string>) => {
+      if (state.profile?.vehicles) {
+        state.profile.vehicles = state.profile.vehicles.filter(v => v.id !== action.payload);
+      }
+    },
+    // Role management actions
+    addRole: (state, action: PayloadAction<UserRole>) => {
+      if (state.profile && !state.profile.roles.includes(action.payload)) {
+        state.profile.roles.push(action.payload);
+      }
+    },
+    removeRole: (state, action: PayloadAction<UserRole>) => {
+      if (state.profile) {
+        state.profile.roles = state.profile.roles.filter(role => role !== action.payload);
+        // Update primary role if removed role was primary
+        if (state.profile.primaryRole === action.payload && state.profile.roles.length > 0) {
+          state.profile.primaryRole = state.profile.roles[0];
+        }
+      }
+    },
+    setPrimaryRole: (state, action: PayloadAction<UserRole>) => {
+      if (state.profile && state.profile.roles.includes(action.payload)) {
+        state.profile.primaryRole = action.payload;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -272,6 +328,14 @@ export const {
   clearUserError,
   setUserLoading,
   setUpdateLoading,
+  // Vehicle management actions
+  addVehicle,
+  updateVehicle,
+  removeVehicle,
+  // Role management actions
+  addRole,
+  removeRole,
+  setPrimaryRole,
 } = userSlice.actions;
 
 export default userSlice;

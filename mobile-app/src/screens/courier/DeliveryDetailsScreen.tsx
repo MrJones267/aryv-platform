@@ -21,8 +21,12 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import PackageService, { DeliveryAgreement } from '../../services/PackageService';
+import locationService from '../../services/LocationService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('DeliveryDetailsScreen');
 
 type DeliveryDetailsRouteProp = RouteProp<CourierStackParamList, 'DeliveryDetails'>;
 
@@ -71,8 +75,17 @@ const DeliveryDetailsScreen: React.FC = () => {
           text: 'Confirm',
           onPress: async () => {
             try {
-              // TODO: Get current location
-              const response = await PackageService.confirmPickup(delivery.id);
+              // Get current location for pickup confirmation
+              let location: [number, number] | undefined;
+              try {
+                const currentLocation = await locationService.getCurrentLocation();
+                location = [currentLocation.latitude, currentLocation.longitude];
+              } catch (locationError) {
+                log.warn('Could not get location for pickup confirmation:', locationError);
+                // Continue without location if unavailable
+              }
+
+              const response = await PackageService.confirmPickup(delivery.id, location);
               if (response.success) {
                 Alert.alert('Success', 'Pickup confirmed! You can now proceed to delivery.');
                 loadDeliveryDetails(); // Refresh data
@@ -89,7 +102,7 @@ const DeliveryDetailsScreen: React.FC = () => {
   };
 
   const handleOpenQRScanner = () => {
-    (navigation as any).navigate('QRScanner', { agreementId: delivery?.id });
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('QRScanner', { agreementId: delivery?.id });
   };
 
   const handleCallContact = (phoneNumber: string) => {
@@ -197,7 +210,7 @@ const DeliveryDetailsScreen: React.FC = () => {
           <View style={styles.earningsRow}>
             <Text style={styles.earningsLabel}>Your Earnings</Text>
             <Text style={styles.earningsValue}>
-              ${(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
+              P{(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
             </Text>
           </View>
         </View>
@@ -265,10 +278,10 @@ const DeliveryDetailsScreen: React.FC = () => {
               <Text style={styles.actionText}>Directions</Text>
             </TouchableOpacity>
             
-            {(delivery.package as any)?.pickupContactPhone && (
+            {!!(delivery.package as unknown as Record<string, unknown>)?.pickupContactPhone && (
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => handleCallContact((delivery.package as any)?.pickupContactPhone || '')}
+                onPress={() => handleCallContact((delivery.package as unknown as Record<string, unknown>)?.pickupContactPhone as string || '')}
               >
                 <Icon name="phone" size={20} color={colors.primary} />
                 <Text style={styles.actionText}>Call</Text>
@@ -300,10 +313,10 @@ const DeliveryDetailsScreen: React.FC = () => {
               <Text style={styles.actionText}>Directions</Text>
             </TouchableOpacity>
             
-            {(delivery.package as any)?.dropoffContactPhone && (
+            {!!(delivery.package as unknown as Record<string, unknown>)?.dropoffContactPhone && (
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => handleCallContact((delivery.package as any)?.dropoffContactPhone || '')}
+                onPress={() => handleCallContact((delivery.package as unknown as Record<string, unknown>)?.dropoffContactPhone as string || '')}
               >
                 <Icon name="phone" size={20} color={colors.primary} />
                 <Text style={styles.actionText}>Call</Text>
@@ -318,18 +331,18 @@ const DeliveryDetailsScreen: React.FC = () => {
           
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Package Price</Text>
-            <Text style={styles.paymentValue}>${delivery.agreedPrice.toFixed(2)}</Text>
+            <Text style={styles.paymentValue}>P{(delivery.agreedPrice ?? 0).toFixed(2)}</Text>
           </View>
-          
+
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Platform Fee</Text>
-            <Text style={styles.paymentValue}>-${delivery.platformFee.toFixed(2)}</Text>
+            <Text style={styles.paymentValue}>-P{(delivery.platformFee ?? 0).toFixed(2)}</Text>
           </View>
-          
+
           <View style={[styles.paymentRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Your Earnings</Text>
             <Text style={styles.totalValue}>
-              ${(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
+              P{((delivery.agreedPrice ?? 0) - (delivery.platformFee ?? 0)).toFixed(2)}
             </Text>
           </View>
 

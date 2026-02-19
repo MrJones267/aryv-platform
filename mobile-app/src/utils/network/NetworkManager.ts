@@ -7,6 +7,9 @@
 
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { AppState, AppStateStatus } from 'react-native';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('NetworkManager');
 
 export interface NetworkState {
   isConnected: boolean;
@@ -67,13 +70,13 @@ class NetworkManager {
       try {
         listener.callback(networkState);
       } catch (error) {
-        console.error('Error in network listener callback:', error);
+        log.error('Error in network listener callback:', error);
       }
     });
 
     // Log significant network changes
     if (wasConnected !== isNowConnected) {
-      console.log(`Network state changed: ${isNowConnected ? 'Connected' : 'Disconnected'}`);
+      log.info(`Network state changed: ${isNowConnected ? 'Connected' : 'Disconnected'}`);
     }
   }
 
@@ -131,7 +134,7 @@ class NetworkManager {
       this.handleNetworkStateChange(state);
       return this.currentState;
     } catch (error) {
-      console.error('Error fetching network state:', error);
+      log.error('Error fetching network state:', error);
       return this.currentState;
     }
   }
@@ -164,7 +167,7 @@ class NetworkManager {
     try {
       callback(this.currentState);
     } catch (error) {
-      console.error('Error in initial network listener callback:', error);
+      log.error('Error in initial network listener callback:', error);
     }
     
     return id;
@@ -300,7 +303,7 @@ class NetworkManager {
   getNetworkStats(): {
     currentState: NetworkState;
     connectionHistory: Array<{ timestamp: number; isConnected: boolean }>;
-    stability: ReturnType<typeof this.getConnectionStability>;
+    stability: ReturnType<NetworkManager['getConnectionStability']>;
   } {
     return {
       currentState: this.getCurrentState(),

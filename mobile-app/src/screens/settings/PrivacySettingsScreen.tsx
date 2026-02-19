@@ -18,9 +18,12 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('PrivacySettingsScreen');
 
 interface PrivacySettingsScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 interface PrivacySetting {
@@ -57,7 +60,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
     {
       id: 'contact_sync',
       title: 'Contact Synchronization',
-      description: 'Sync contacts to find friends on Hitch',
+      description: 'Sync contacts to find friends on ARYV',
       enabled: false,
       icon: 'contacts',
     },
@@ -115,7 +118,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
             {
               text: 'Delete',
               style: 'destructive',
-              onPress: () => console.log('Account deletion requested'),
+              onPress: () => log.info('Account deletion requested'),
             },
           ]
         );
@@ -165,7 +168,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
         <View style={styles.actionContent}>
           <Text style={styles.actionTitle}>Download My Data</Text>
           <Text style={styles.actionDescription}>
-            Get a copy of all your data stored in Hitch
+            Get a copy of all your data stored in ARYV
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -196,7 +199,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Privacy Controls</Text>
           <Text style={styles.sectionDescription}>
-            Control how your information is shared and used within the Hitch platform.
+            Control how your information is shared and used within the ARYV platform.
           </Text>
           {settings.map(renderPrivacySetting)}
         </View>

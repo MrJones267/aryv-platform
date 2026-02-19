@@ -7,6 +7,9 @@
 
 import { AuthService } from './AuthService';
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('PackageService');
 
 export interface PackageCreationData {
   title: string;
@@ -66,6 +69,17 @@ export interface DemandInfo {
   lastUpdated: string;
 }
 
+export interface PackageTrackingData {
+  package: Package;
+  deliveryAgreement?: DeliveryAgreement;
+  courierLocations?: {
+    location: [number, number];
+    timestamp: string;
+    accuracy?: number;
+    speed?: number;
+  }[];
+}
+
 export interface Package {
   id: string;
   senderId: string;
@@ -121,6 +135,7 @@ class PackageService {
    */
   async getDeliveryTiers(): Promise<{
     success: boolean;
+    tiers?: DeliveryTier[];
     data?: DeliveryTier[];
     error?: string;
   }> {
@@ -130,19 +145,37 @@ class PackageService {
       if (!authToken) {
         throw new Error('Authentication required');
       }
+      
+      // Validate token format and expiration
+      const tokenValid = await this.authService.validateToken(authToken);
+      if (!tokenValid) {
+        throw new Error('Invalid or expired authentication token');
+      }
 
       const response = await this.apiClient.get('/api/courier/delivery-tiers', {
         headers: {
-          'Authorization': `Bearer ${authToken}`
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
         }
       });
 
-      return response;
+      if (response.success) {
+        return {
+          success: true,
+          tiers: response.data,
+          data: response.data
+        };
+      } else {
+        return {
+          success: false,
+          error: response.error || 'Failed to fetch delivery tiers'
+        };
+      }
     } catch (error) {
-      console.error('Error fetching delivery tiers:', error);
-      return { 
-        success: false, 
-        error: (error as Error).message 
+      log.error('Error fetching delivery tiers', error);
+      return {
+        success: false,
+        error: (error as Error).message
       };
     }
   }
@@ -183,7 +216,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error fetching pricing suggestions:', error);
+      log.error('Error fetching pricing suggestions:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -196,6 +229,7 @@ class PackageService {
    */
   async createPackage(packageData: PackageCreationData): Promise<{
     success: boolean;
+    package?: Package;
     data?: Package;
     error?: string;
   }> {
@@ -213,9 +247,14 @@ class PackageService {
         }
       });
 
-      return response;
+      return {
+        success: response.success,
+        package: response.data,
+        data: response.data,
+        error: response.error
+      };
     } catch (error) {
-      console.error('Error creating package:', error);
+      log.error('Error creating package:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -246,7 +285,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error fetching user packages:', error);
+      log.error('Error fetching user packages:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -268,6 +307,7 @@ class PackageService {
     offset?: number;
   }): Promise<{
     success: boolean;
+    packages?: Package[];
     data?: Package[];
     error?: string;
   }> {
@@ -300,29 +340,85 @@ class PackageService {
         }
       );
 
-      return response;
+      return {
+        success: response.success,
+        packages: response.data || [],
+        data: response.data || [],
+        error: response.error
+      };
     } catch (error) {
-      console.error('Error fetching available packages:', error);
-      return { 
-        success: false, 
-        error: (error as Error).message 
+      log.error('Error fetching available packages:', error);
+      return {
+        success: false,
+        packages: [],
+        data: [],
+        error: (error as Error).message
       };
     }
   }
 
   /**
-   * Accept a package for delivery (courier action)
+   * Get a single package by ID
+   */
+  async getPackageById(packageId: string): Promise<{
+    success: boolean;
+    data?: Package;
+    error?: string;
+  }> {
+    try {
+      const authToken = await this.authService.getValidToken();
+
+      if (!authToken) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await this.apiClient.get(
+        `/api/courier/packages/${packageId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        }
+      );
+
+      return {
+        success: response.success,
+        data: response.data,
+        error: response.error
+      };
+    } catch (error) {
+      log.error('Error fetching package by ID:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  }
+
+  /**
+   * Accept a package for delivery with conflict resolution
    */
   async acceptPackage(packageId: string): Promise<{
     success: boolean;
-    data?: DeliveryAgreement;
+    agreement?: DeliveryAgreement;
     error?: string;
+    conflictResolution?: {
+      alreadyAccepted: boolean;
+      acceptedBy?: string;
+      suggestedAlternatives?: string[];
+    };
   }> {
     try {
       const authToken = await this.authService.getValidToken();
       
       if (!authToken) {
         throw new Error('Authentication required');
+      }
+      
+      // Validate token format and expiration
+      const tokenValid = await this.authService.validateToken(authToken);
+      if (!tokenValid) {
+        throw new Error('Invalid or expired authentication token');
       }
 
       const response = await this.apiClient.post(
@@ -331,14 +427,36 @@ class PackageService {
         {
           headers: {
             'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Request-ID': `accept_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
           }
         }
       );
 
+      // Handle conflict resolution responses
+      if (!response.success && response.error?.includes('already accepted')) {
+        const conflictData = response.data as { acceptedBy?: string; suggestedAlternatives?: string[] } | undefined;
+        return {
+          success: false,
+          error: response.error,
+          conflictResolution: {
+            alreadyAccepted: true,
+            acceptedBy: conflictData?.acceptedBy,
+            suggestedAlternatives: conflictData?.suggestedAlternatives || []
+          }
+        };
+      }
+
+      if (response.success) {
+        return {
+          success: true,
+          agreement: response.data
+        };
+      }
+
       return response;
     } catch (error) {
-      console.error('Error accepting package:', error);
+      log.error('Error accepting package:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -374,7 +492,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error confirming pickup:', error);
+      log.error('Error confirming pickup:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -387,7 +505,8 @@ class PackageService {
    */
   async verifyDeliveryQR(qrToken: string, location?: [number, number]): Promise<{
     success: boolean;
-    data?: any;
+    packageId?: string;
+    data?: unknown;
     error?: string;
   }> {
     try {
@@ -410,7 +529,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error verifying delivery QR:', error);
+      log.error('Error verifying delivery QR:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -429,7 +548,7 @@ class PackageService {
     heading?: number
   ): Promise<{
     success: boolean;
-    data?: any;
+    data?: unknown;
     error?: string;
   }> {
     try {
@@ -452,7 +571,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error updating courier location:', error);
+      log.error('Error updating courier location:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -465,6 +584,7 @@ class PackageService {
    */
   async getCourierDeliveries(): Promise<{
     success: boolean;
+    deliveries?: DeliveryAgreement[];
     data?: DeliveryAgreement[];
     error?: string;
   }> {
@@ -483,7 +603,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error fetching courier deliveries:', error);
+      log.error('Error fetching courier deliveries:', error);
       return { 
         success: false, 
         error: (error as Error).message 
@@ -496,16 +616,8 @@ class PackageService {
    */
   async getPackageTracking(packageId: string): Promise<{
     success: boolean;
-    data?: {
-      package: Package;
-      deliveryAgreement?: DeliveryAgreement;
-      courierLocations?: Array<{
-        location: [number, number];
-        timestamp: string;
-        accuracy?: number;
-        speed?: number;
-      }>;
-    };
+    trackingData?: PackageTrackingData;
+    data?: PackageTrackingData;
     error?: string;
   }> {
     try {
@@ -523,7 +635,7 @@ class PackageService {
 
       return response;
     } catch (error) {
-      console.error('Error fetching package tracking:', error);
+      log.error('Error fetching package tracking:', error);
       return { 
         success: false, 
         error: (error as Error).message 

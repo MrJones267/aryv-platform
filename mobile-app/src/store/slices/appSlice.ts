@@ -17,8 +17,18 @@ export interface NotificationSettings {
   vibrationEnabled: boolean;
 }
 
+export interface OnboardingProgress {
+  completedSteps: string[];
+  currentStep: string | null;
+  userRole: 'passenger' | 'driver' | 'courier' | null;
+  tutorialCompleted: boolean;
+  profileCompleted: boolean;
+  permissionsGranted: boolean;
+}
+
 export interface AppState {
   isOnboarded: boolean;
+  onboardingProgress: OnboardingProgress;
   theme: 'light' | 'dark' | 'system';
   language: 'en' | 'es' | 'fr';
   notificationSettings: NotificationSettings;
@@ -37,6 +47,14 @@ export interface AppState {
 // Initial state
 const initialState: AppState = {
   isOnboarded: false,
+  onboardingProgress: {
+    completedSteps: [],
+    currentStep: null,
+    userRole: null,
+    tutorialCompleted: false,
+    profileCompleted: false,
+    permissionsGranted: false,
+  },
   theme: 'system',
   language: 'en',
   notificationSettings: {
@@ -66,6 +84,35 @@ const appSlice = createSlice({
   reducers: {
     setOnboarded: (state, action: PayloadAction<boolean>) => {
       state.isOnboarded = action.payload;
+      if (action.payload) {
+        state.onboardingProgress.tutorialCompleted = true;
+      }
+    },
+    updateOnboardingProgress: (state, action: PayloadAction<Partial<OnboardingProgress>>) => {
+      state.onboardingProgress = {
+        ...state.onboardingProgress,
+        ...action.payload,
+      };
+    },
+    completeOnboardingStep: (state, action: PayloadAction<string>) => {
+      const step = action.payload;
+      if (!state.onboardingProgress.completedSteps.includes(step)) {
+        state.onboardingProgress.completedSteps.push(step);
+      }
+    },
+    setOnboardingUserRole: (state, action: PayloadAction<'passenger' | 'driver' | 'courier'>) => {
+      state.onboardingProgress.userRole = action.payload;
+    },
+    resetOnboardingProgress: (state) => {
+      state.onboardingProgress = {
+        completedSteps: [],
+        currentStep: null,
+        userRole: null,
+        tutorialCompleted: false,
+        profileCompleted: false,
+        permissionsGranted: false,
+      };
+      state.isOnboarded = false;
     },
     setTheme: (state, action: PayloadAction<'light' | 'dark' | 'system'>) => {
       state.theme = action.payload;
@@ -127,6 +174,10 @@ const appSlice = createSlice({
 
 export const {
   setOnboarded,
+  updateOnboardingProgress,
+  completeOnboardingStep,
+  setOnboardingUserRole,
+  resetOnboardingProgress,
   setTheme,
   setLanguage,
   setNotificationSettings,

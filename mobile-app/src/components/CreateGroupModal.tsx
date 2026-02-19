@@ -20,11 +20,14 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { colors, spacing, typography } from '../theme';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('CreateGroupModal');
 
 interface CreateGroupModalProps {
   visible: boolean;
   onClose: () => void;
-  onCreateGroup: (groupData: any) => void;
+  onCreateGroup: (groupData: { name: string; description?: string; type: string; isPublic: boolean; maxParticipants: number }) => void;
 }
 
 const GROUP_TYPES = [
@@ -125,13 +128,13 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
       await onCreateGroup(groupData);
       resetForm();
     } catch (error) {
-      console.error('Error creating group:', error);
+      log.error('Error creating group:', error);
     } finally {
       setCreating(false);
     }
   };
 
-  const renderGroupTypeOption = (type: any) => (
+  const renderGroupTypeOption = (type: typeof GROUP_TYPES[number]) => (
     <TouchableOpacity
       key={type.key}
       style={[

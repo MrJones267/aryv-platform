@@ -22,7 +22,7 @@ interface DriverMatchCardProps {
   match: DriverMatch;
   onSelect: (match: DriverMatch) => void;
   onMessage?: (driverId: string) => void;
-  style?: any;
+  style?: object;
 }
 
 export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
@@ -147,7 +147,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
         </View>
         <View style={styles.tripInfo}>
           <Icon name="attach-money" size={16} color="#666666" />
-          <Text style={styles.tripText}>${match.pricing.finalPrice.toFixed(2)}</Text>
+          <Text style={styles.tripText}>P{match.pricing.finalPrice.toFixed(2)}</Text>
         </View>
         <View style={styles.tripInfo}>
           <Icon name="airline-seat-recline-normal" size={16} color="#666666" />

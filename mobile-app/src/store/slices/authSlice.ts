@@ -9,6 +9,11 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../../services/api/authApi';
 import AuthService from '../../services/AuthService';
+import { DemoAuthService } from '../../services/DemoAuthService';
+import { APP_CONFIG } from '../../config/api';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('AuthSlice');
 
 // Types
 export interface AuthState {
@@ -35,6 +40,8 @@ export interface RegisterData {
   lastName: string;
   role?: 'passenger' | 'driver';
   dateOfBirth?: Date;
+  country?: string;
+  currency?: string;
 }
 
 export interface AuthResponse {
@@ -71,6 +78,22 @@ export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials: LoginCredentials, { rejectWithValue }) => {
     try {
+      // Use demo mode if enabled
+      if (APP_CONFIG.ENABLE_DEMO_MODE) {
+        const demoResponse = await DemoAuthService.login(credentials.email, credentials.password);
+        return {
+          success: true,
+          data: {
+            accessToken: demoResponse.accessToken,
+            refreshToken: demoResponse.refreshToken,
+            user: demoResponse.user,
+            expiresIn: demoResponse.expiresIn,
+          },
+          message: demoResponse.message,
+        };
+      }
+
+      // Try real API first
       const response = await authApi.login(credentials);
       
       if (response.success && response.data) {
@@ -83,6 +106,24 @@ export const loginUser = createAsyncThunk(
         return rejectWithValue(response.error || 'Login failed');
       }
     } catch (error: any) {
+      // Fallback to demo mode if real API fails
+      if (APP_CONFIG.ENABLE_DEMO_MODE) {
+        try {
+          const demoResponse = await DemoAuthService.login(credentials.email, credentials.password);
+          return {
+            success: true,
+            data: {
+              accessToken: demoResponse.accessToken,
+              refreshToken: demoResponse.refreshToken,
+              user: demoResponse.user,
+              expiresIn: demoResponse.expiresIn,
+            },
+            message: 'Connected in demo mode - API unavailable',
+          };
+        } catch (demoError) {
+          return rejectWithValue('Authentication service unavailable');
+        }
+      }
       return rejectWithValue(error.message || 'Network error');
     }
   }
@@ -92,6 +133,22 @@ export const registerUser = createAsyncThunk(
   'auth/registerUser',
   async (userData: RegisterData, { rejectWithValue }) => {
     try {
+      // Use demo mode if enabled
+      if (APP_CONFIG.ENABLE_DEMO_MODE) {
+        const demoResponse = await DemoAuthService.register(userData);
+        return {
+          success: true,
+          data: {
+            accessToken: demoResponse.accessToken,
+            refreshToken: demoResponse.refreshToken,
+            user: demoResponse.user,
+            expiresIn: demoResponse.expiresIn,
+          },
+          message: demoResponse.message,
+        };
+      }
+
+      // Try real API first
       const response = await authApi.register(userData);
       
       if (response.success && response.data) {
@@ -104,6 +161,24 @@ export const registerUser = createAsyncThunk(
         return rejectWithValue(response.error || 'Registration failed');
       }
     } catch (error: any) {
+      // Fallback to demo mode if real API fails
+      if (APP_CONFIG.ENABLE_DEMO_MODE) {
+        try {
+          const demoResponse = await DemoAuthService.register(userData);
+          return {
+            success: true,
+            data: {
+              accessToken: demoResponse.accessToken,
+              refreshToken: demoResponse.refreshToken,
+              user: demoResponse.user,
+              expiresIn: demoResponse.expiresIn,
+            },
+            message: 'Registered in demo mode - API unavailable',
+          };
+        } catch (demoError) {
+          return rejectWithValue('Registration service unavailable');
+        }
+      }
       return rejectWithValue(error.message || 'Network error');
     }
   }
@@ -139,22 +214,94 @@ export const refreshTokens = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logoutUser',
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { getState, rejectWithValue, dispatch }) => {
     try {
+      log.info('🚪 Starting complete logout process...');
+      
       const state = getState() as { auth: AuthState };
       const { accessToken } = state.auth;
       
+      // Call API logout if authenticated
       if (accessToken) {
-        await authApi.logout();
+        try {
+          await authApi.logout();
+          log.info('✅ API logout successful');
+        } catch (apiError) {
+          log.info('⚠️ API logout failed, continuing with local cleanup');
+        }
       }
       
-      // Clear stored tokens
-      await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
+      // Call AuthService logout to handle Google signout and clear service data
+      try {
+        await AuthService.logout();
+        log.info('✅ AuthService logout successful');
+      } catch (serviceError) {
+        log.info('⚠️ AuthService logout failed:', serviceError);
+      }
       
+      // Call DemoAuthService logout if demo mode is enabled
+      if (APP_CONFIG.ENABLE_DEMO_MODE) {
+        try {
+          await DemoAuthService.logout();
+          log.info('✅ DemoAuthService logout successful');
+        } catch (demoError) {
+          log.info('⚠️ DemoAuthService logout failed:', demoError);
+        }
+      }
+      
+      // Clear ALL stored tokens and user data
+      const keysToRemove = [
+        'accessToken', 
+        'refreshToken',
+        // AuthService keys
+        '@aryv_auth_token',
+        '@aryv_refresh_token', 
+        '@aryv_user_data',
+        // Demo keys  
+        '@aryv_demo_auth_token',
+        '@aryv_demo_user',
+        // Other user-related data
+        '@emergency_contacts',
+        '@user_preferences',
+        '@ride_history',
+        '@search_history'
+      ];
+      
+      await AsyncStorage.multiRemove(keysToRemove);
+      log.info('✅ AsyncStorage cleared');
+      
+      // Clear user profile data from userSlice 
+      dispatch({ type: 'user/clearUser' });
+      log.info('✅ User profile cleared');
+      
+      log.info('🎉 Complete logout process finished');
       return true;
     } catch (error: any) {
-      // Even if logout API fails, clear local storage
-      await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
+      log.error('❌ Logout error:', error);
+      
+      // Even if logout fails, force clear everything
+      try {
+        const keysToRemove = [
+          'accessToken', 
+          'refreshToken',
+          '@aryv_auth_token',
+          '@aryv_refresh_token', 
+          '@aryv_user_data',
+          '@aryv_demo_auth_token',
+          '@aryv_demo_user',
+          '@emergency_contacts',
+          '@user_preferences',
+          '@ride_history',
+          '@search_history'
+        ];
+        
+        await AsyncStorage.multiRemove(keysToRemove);
+        dispatch({ type: 'user/clearUser' });
+        log.info('✅ Force cleanup completed');
+      } catch (cleanupError) {
+        log.error('❌ Force cleanup failed:', cleanupError);
+      }
+      
       return rejectWithValue(error.message || 'Logout error');
     }
   }
@@ -164,12 +311,12 @@ export const googleLogin = createAsyncThunk(
   'auth/googleLogin',
   async (googleData: GoogleLoginData, { rejectWithValue }) => {
     try {
-      console.log('🔐 Redux: Processing Google login...');
+      log.info('🔐 Redux: Processing Google login...');
       
       const result = await AuthService.loginWithGoogle();
       
       if (result.success && result.data) {
-        console.log('✅ Redux: Google login successful');
+        log.info('✅ Redux: Google login successful');
         
         // Store tokens in AsyncStorage
         await AsyncStorage.setItem('accessToken', result.data.token);
@@ -188,7 +335,7 @@ export const googleLogin = createAsyncThunk(
         return rejectWithValue(result.error || 'Google authentication failed');
       }
     } catch (error: any) {
-      console.error('❌ Redux: Google login error:', error);
+      log.error('❌ Redux: Google login error:', error);
       return rejectWithValue(error.message || 'Google authentication error');
     }
   }
@@ -361,7 +508,7 @@ const authSlice = createSlice({
           state.error = null;
           state.loginAttempts = 0;
           state.lastLoginAttempt = null;
-          console.log('Auth: Google login successful');
+          log.info('Auth: Google login successful');
         }
       })
       .addCase(googleLogin.rejected, (state, action) => {
@@ -384,9 +531,9 @@ const authSlice = createSlice({
           state.refreshToken = refreshToken;
           state.expiresAt = Date.now() + (expiresIn * 1000);
           state.error = null;
-          console.log('Auth: Successfully restored authentication state');
+          log.info('Auth: Successfully restored authentication state');
         } else {
-          console.log('Auth: No valid tokens found, user will need to login');
+          log.info('Auth: No valid tokens found, user will need to login');
         }
       })
       .addCase(initializeAuth.rejected, (state) => {

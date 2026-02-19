@@ -8,6 +8,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiClient } from './ApiClient';
 import { AuthService } from './AuthService';
+import logger from './LoggingService';
+
+const log = logger.createLogger('OTPService');
 
 export interface OTPRequest {
   type: 'sms' | 'email';
@@ -40,7 +43,12 @@ export interface OTPVerificationResponse {
   data?: {
     verified: boolean;
     token?: string; // JWT token for successful verification
-    user?: any; // User data if applicable
+    user?: {
+      id: string;
+      email?: string;
+      phone?: string;
+      verified: boolean;
+    }; // User data if applicable
   };
   error?: string;
 }
@@ -130,12 +138,12 @@ class OTPService {
         message: response.error || 'Failed to send SMS verification code',
         error: 'SMS_SEND_FAILED',
       };
-    } catch (error: any) {
-      console.error('SMS OTP send error:', error);
+    } catch (error) {
+      log.error('SMS OTP send error', error);
       return {
         success: false,
         message: 'Failed to send verification code',
-        error: error.message || 'UNKNOWN_ERROR',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
       };
     }
   }
@@ -198,12 +206,12 @@ class OTPService {
         message: response.error || 'Failed to send email verification code',
         error: 'EMAIL_SEND_FAILED',
       };
-    } catch (error: any) {
-      console.error('Email OTP send error:', error);
+    } catch (error) {
+      log.error('Email OTP send error', error);
       return {
         success: false,
         message: 'Failed to send verification code',
-        error: error.message || 'UNKNOWN_ERROR',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
       };
     }
   }
@@ -268,12 +276,12 @@ class OTPService {
         message: response.error || 'Invalid verification code',
         error: 'VERIFICATION_FAILED',
       };
-    } catch (error: any) {
-      console.error('OTP verification error:', error);
+    } catch (error) {
+      log.error('OTP verification error', error);
       return {
         success: false,
         message: 'Verification failed',
-        error: error.message || 'UNKNOWN_ERROR',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
       };
     }
   }
@@ -286,7 +294,7 @@ class OTPService {
       const response = await this.apiClient.get('/otp/settings');
       return response.success ? response.data : this.DEFAULT_SETTINGS;
     } catch (error) {
-      console.error('Failed to get OTP settings:', error);
+      log.error('Failed to get OTP settings:', error);
       return this.DEFAULT_SETTINGS;
     }
   }
@@ -324,7 +332,7 @@ class OTPService {
       await AsyncStorage.removeItem(key);
       return { allowed: true, remainingTime: 0 };
     } catch (error) {
-      console.error('Cooldown check error:', error);
+      log.error('Cooldown check error:', error);
       return { allowed: true, remainingTime: 0 };
     }
   }
@@ -342,7 +350,7 @@ class OTPService {
       };
       await AsyncStorage.setItem(key, JSON.stringify(data));
     } catch (error) {
-      console.error('Set cooldown error:', error);
+      log.error('Set cooldown error:', error);
     }
   }
 
@@ -367,7 +375,7 @@ class OTPService {
       
       return count || 0;
     } catch (error) {
-      console.error('Get attempt count error:', error);
+      log.error('Get attempt count error:', error);
       return 0;
     }
   }
@@ -387,7 +395,7 @@ class OTPService {
       };
       await AsyncStorage.setItem(key, JSON.stringify(data));
     } catch (error) {
-      console.error('Increment attempt count error:', error);
+      log.error('Increment attempt count error:', error);
     }
   }
 
@@ -399,7 +407,7 @@ class OTPService {
       const key = `${this.STORAGE_PREFIX}attempts_${type}_${recipient}`;
       await AsyncStorage.removeItem(key);
     } catch (error) {
-      console.error('Clear attempt count error:', error);
+      log.error('Clear attempt count error:', error);
     }
   }
 
@@ -431,8 +439,8 @@ class OTPService {
    * Mock SMS OTP for development
    */
   private async sendMockSMSOTP(request: OTPRequest): Promise<OTPResponse> {
-    console.log('🔐 Mock SMS OTP sent to:', request.recipient);
-    console.log('📱 Development OTP Code: 123456');
+    log.info('🔐 Mock SMS OTP sent to:', request.recipient);
+    log.info('📱 Development OTP Code: 123456');
     
     // Store cooldown for mock
     await this.setCooldown(request.recipient, 'sms');
@@ -451,8 +459,8 @@ class OTPService {
    * Mock Email OTP for development
    */
   private async sendMockEmailOTP(request: OTPRequest): Promise<OTPResponse> {
-    console.log('🔐 Mock Email OTP sent to:', request.recipient);
-    console.log('📧 Development OTP Code: 123456');
+    log.info('🔐 Mock Email OTP sent to:', request.recipient);
+    log.info('📧 Development OTP Code: 123456');
     
     // Store cooldown for mock
     await this.setCooldown(request.recipient, 'email');
@@ -510,7 +518,7 @@ class OTPService {
       ];
       await Promise.all(keys.map(key => AsyncStorage.removeItem(key)));
     } catch (error) {
-      console.error('Clear OTP data error:', error);
+      log.error('Clear OTP data error:', error);
     }
   }
 
@@ -532,7 +540,7 @@ class OTPService {
         attemptsRemaining: Math.max(0, this.DEFAULT_SETTINGS.maxAttempts - attempts),
       };
     } catch (error) {
-      console.error('Get OTP status error:', error);
+      log.error('Get OTP status error:', error);
       return {
         canSend: true,
         cooldownRemaining: 0,

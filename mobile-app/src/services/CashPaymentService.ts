@@ -6,6 +6,9 @@
  */
 
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('CashPaymentService');
 
 export interface CashPaymentRequest {
   bookingId: string;
@@ -124,7 +127,7 @@ export class CashPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error creating cash payment:', error);
+      log.error('Error creating cash payment:', error);
       return {
         success: false,
         error: 'Network error. Please try again.',
@@ -170,7 +173,7 @@ export class CashPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error confirming cash received:', error);
+      log.error('Error confirming cash received:', error);
       return {
         success: false,
         status: 'error',
@@ -207,7 +210,7 @@ export class CashPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error confirming cash paid:', error);
+      log.error('Error confirming cash paid:', error);
       return {
         success: false,
         status: 'error',
@@ -226,11 +229,11 @@ export class CashPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get transaction details:', response.error);
+        log.error('Failed to get transaction details:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting transaction details:', error);
+      log.error('Error getting transaction details:', error);
       return null;
     }
   }
@@ -255,11 +258,11 @@ export class CashPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get transaction history:', response.error);
+        log.error('Failed to get transaction history:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting transaction history:', error);
+      log.error('Error getting transaction history:', error);
       return null;
     }
   }
@@ -274,11 +277,11 @@ export class CashPaymentService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to get wallet info:', response.error);
+        log.error('Failed to get wallet info:', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error getting wallet info:', error);
+      log.error('Error getting wallet info:', error);
       return null;
     }
   }
@@ -312,7 +315,7 @@ export class CashPaymentService {
         };
       }
     } catch (error) {
-      console.error('Error reporting dispute:', error);
+      log.error('Error reporting dispute:', error);
       return {
         success: false,
         disputeId: '',
@@ -348,7 +351,7 @@ export class CashPaymentService {
       if (walletInfo.dailyCashUsed + amount > walletInfo.dailyCashLimit) {
         return {
           canPay: false,
-          reason: `Daily limit exceeded. Available: $${(walletInfo.dailyCashLimit - walletInfo.dailyCashUsed).toFixed(2)}`,
+          reason: `Daily limit exceeded. Available: P${(walletInfo.dailyCashLimit - walletInfo.dailyCashUsed).toFixed(2)}`,
           trustScore: walletInfo.trustScore,
         };
       }
@@ -368,7 +371,7 @@ export class CashPaymentService {
         trustScore: walletInfo.trustScore,
       };
     } catch (error) {
-      console.error('Error checking payment eligibility:', error);
+      log.error('Error checking payment eligibility:', error);
       return {
         canPay: false,
         reason: 'Unable to verify payment eligibility',

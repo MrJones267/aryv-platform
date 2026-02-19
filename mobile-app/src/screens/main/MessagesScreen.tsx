@@ -15,15 +15,21 @@ import {
   RefreshControl,
   SafeAreaView,
   TextInput,
-  Image,
+  Alert,
+  Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
 import { MessagesScreenProps } from '../../navigation/types';
+import { useSocketEvent } from '../../hooks/useSocket';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('MessagesScreen');
 
 interface Message {
   id: string;
-  type: 'ride' | 'booking' | 'support';
+  type: 'ride' | 'booking' | 'courier' | 'support';
   title: string;
   lastMessage: string;
   timestamp: string;
@@ -33,6 +39,8 @@ interface Message {
   rideId?: string;
   bookingId?: string;
   isOnline?: boolean;
+  routeOrigin?: string;
+  routeDestination?: string;
 }
 
 const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
@@ -41,54 +49,102 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'ride' | 'booking' | 'support'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'ride' | 'booking' | 'courier' | 'support'>('all');
+
+  // Listen for new incoming messages via socket
+  useSocketEvent('new_message', (data: Record<string, unknown>) => {
+    if (data?.chatId || data?.rideId) {
+      const chatKey = (data.chatId as string) || `ride_${data.rideId}`;
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === chatKey || msg.rideId === (data.rideId as string)) {
+          return {
+            ...msg,
+            lastMessage: (data.message as string) || (data.content as string) || msg.lastMessage,
+            timestamp: (data.timestamp as string) || new Date().toISOString(),
+            unreadCount: msg.unreadCount + 1,
+          };
+        }
+        return msg;
+      }));
+    }
+  });
+
+  // Listen for online status updates
+  useSocketEvent('online_users', (data: Record<string, unknown>) => {
+    if (data?.users) {
+      const onlineUsers = data.users as string[];
+      setMessages(prev => prev.map(msg => ({
+        ...msg,
+        isOnline: onlineUsers.includes(msg.id),
+      })));
+    }
+  });
 
   useEffect(() => {
     loadMessages();
   }, []);
 
   const loadMessages = async (): Promise<void> => {
-    // Mock data for now - replace with actual API call
+    // Mock data — replace with actual API call
     const mockMessages: Message[] = [
       {
         id: '1',
         type: 'ride',
-        title: 'Trip to Downtown',
-        lastMessage: 'I\'ll be there in 5 minutes',
-        timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+        title: 'Gaborone to Francistown',
+        lastMessage: 'I\'ll pick you up at Game City in 5 minutes',
+        timestamp: new Date(Date.now() - 300000).toISOString(),
         unreadCount: 2,
-        participantName: 'John Smith',
+        participantName: 'Thabo Mokoena',
         rideId: 'ride-123',
         isOnline: true,
+        routeOrigin: 'Gaborone',
+        routeDestination: 'Francistown',
       },
       {
         id: '2',
         type: 'booking',
-        title: 'Airport Transfer',
-        lastMessage: 'Thank you for the ride!',
-        timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+        title: 'Maun to Kasane',
+        lastMessage: 'Thank you for the ride! Safe travels.',
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
         unreadCount: 0,
-        participantName: 'Sarah Johnson',
+        participantName: 'Kelebogile Motswana',
         bookingId: 'booking-456',
         isOnline: false,
+        routeOrigin: 'Maun',
+        routeDestination: 'Kasane',
       },
       {
         id: '3',
         type: 'ride',
-        title: 'University Commute',
-        lastMessage: 'Are you still offering this ride?',
-        timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+        title: 'Gaborone to Palapye',
+        lastMessage: 'Are you still offering this ride tomorrow?',
+        timestamp: new Date(Date.now() - 7200000).toISOString(),
         unreadCount: 1,
-        participantName: 'Mike Chen',
+        participantName: 'Mpho Radebe',
         rideId: 'ride-789',
         isOnline: true,
+        routeOrigin: 'Gaborone',
+        routeDestination: 'Palapye',
+      },
+      {
+        id: '5',
+        type: 'courier',
+        title: 'Package to Serowe',
+        lastMessage: 'Package has been picked up',
+        timestamp: new Date(Date.now() - 43200000).toISOString(),
+        unreadCount: 0,
+        participantName: 'Lesego Moagi',
+        rideId: 'pkg-321',
+        isOnline: false,
+        routeOrigin: 'Gaborone',
+        routeDestination: 'Serowe',
       },
       {
         id: '4',
         type: 'support',
         title: 'Hitch Support',
-        lastMessage: 'Your issue has been resolved',
-        timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+        lastMessage: 'Your issue has been resolved. Let us know if you need further assistance.',
+        timestamp: new Date(Date.now() - 86400000).toISOString(),
         unreadCount: 0,
         participantName: 'Support Team',
         isOnline: false,
@@ -106,7 +162,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
 
   const handleMessagePress = (message: Message): void => {
     // Navigate to chat screen
-    (navigation as any).navigate('Chat', {
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Chat', {
       chatId: message.id,
       recipientName: message.participantName,
       rideId: message.rideId,
@@ -116,7 +172,71 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
 
   const handleNewMessage = (): void => {
     // Navigate to new message screen or show contacts
-    console.log('Create new message');
+    log.info('Create new message');
+  };
+
+  const handleDeleteMessage = (messageId: string): void => {
+    Alert.alert(
+      'Delete Conversation',
+      'Are you sure you want to delete this conversation? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' as const },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setMessages(prev => prev.filter(msg => msg.id !== messageId));
+          }
+        }
+      ]
+    );
+  };
+
+  const handleMessageLongPress = (message: Message): void => {
+    const actions = [
+      {
+        text: 'Delete Conversation',
+        style: 'destructive' as const,
+        onPress: () => handleDeleteMessage(message.id)
+      },
+      {
+        text: 'Mark as Unread',
+        onPress: () => {
+          setMessages(prev => prev.map(msg => 
+            msg.id === message.id 
+              ? { ...msg, unreadCount: Math.max(1, msg.unreadCount) }
+              : msg
+          ));
+        }
+      },
+      {
+        text: 'Mute Conversation',
+        onPress: () => {
+          Alert.alert('Muted', `${message.participantName} conversation has been muted.`);
+        }
+      },
+      { text: 'Cancel', style: 'cancel' as const }
+    ];
+    
+    Alert.alert('Message Options', 'Choose an action', actions);
+  };
+
+  const handleClearAllSampleMessages = (): void => {
+    Alert.alert(
+      'Clear All Messages',
+      'This will remove all sample/demo messages. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' as const },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: () => {
+            setMessages([]);
+            Alert.alert('Cleared', 'All sample messages have been removed.');
+          }
+        }
+      ]
+    );
   };
 
   const getFilteredMessages = (): Message[] => {
@@ -159,6 +279,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     switch (type) {
       case 'ride': return 'drive-eta';
       case 'booking': return 'person';
+      case 'courier': return 'local-shipping';
       case 'support': return 'support-agent';
       default: return 'message';
     }
@@ -168,6 +289,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     switch (type) {
       case 'ride': return '#2196F3';
       case 'booking': return '#FF9800';
+      case 'courier': return '#9C27B0';
       case 'support': return '#4CAF50';
       default: return '#666666';
     }
@@ -175,7 +297,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
 
   const renderFilterBar = (): React.JSX.Element => (
     <View style={styles.filterBar}>
-      {(['all', 'ride', 'booking', 'support'] as const).map((filter) => (
+      {(['all', 'ride', 'booking', 'courier', 'support'] as const).map((filter) => (
         <TouchableOpacity
           key={filter}
           style={[
@@ -202,58 +324,93 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     </View>
   );
 
-  const renderMessageItem = ({ item }: { item: Message }): React.JSX.Element => (
-    <TouchableOpacity
-      style={styles.messageItem}
-      onPress={() => handleMessagePress(item)}
-      activeOpacity={0.8}
-    >
-      <View style={styles.avatarContainer}>
-        <View style={[styles.avatar, { backgroundColor: getTypeColor(item.type) }]}>
-          <Text style={styles.avatarText}>
-            {item.participantName.charAt(0)}
-          </Text>
-        </View>
-        {item.isOnline && <View style={styles.onlineIndicator} />}
-        <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]}>
-          <Icon name={getTypeIcon(item.type)} size={10} color="#FFFFFF" />
-        </View>
-      </View>
+  const renderRightActions = (messageId: string) => {
+    return (
+      <Animated.View style={styles.deleteAction}>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleDeleteMessage(messageId)}
+        >
+          <Icon name="delete" size={24} color="#FFFFFF" />
+          <Text style={styles.deleteButtonText}>Delete</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
-      <View style={styles.messageContent}>
-        <View style={styles.messageHeader}>
-          <Text style={styles.participantName} numberOfLines={1}>
-            {item.participantName}
-          </Text>
-          <View style={styles.messageTime}>
-            <Text style={styles.timestampText}>
-              {formatTimestamp(item.timestamp)}
+  const renderMessageItem = ({ item }: { item: Message }): React.JSX.Element => (
+    <Swipeable
+      renderRightActions={() => renderRightActions(item.id)}
+      rightThreshold={40}
+    >
+      <TouchableOpacity
+        style={styles.messageItem}
+        onPress={() => handleMessagePress(item)}
+        onLongPress={() => handleMessageLongPress(item)}
+        activeOpacity={0.8}
+        delayLongPress={500}
+      >
+        <View style={styles.avatarContainer}>
+          <View style={[styles.avatar, { backgroundColor: getTypeColor(item.type) }]}>
+            <Text style={styles.avatarText}>
+              {item.participantName.charAt(0)}
             </Text>
-            {item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>
-                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                </Text>
-              </View>
-            )}
+          </View>
+          {item.isOnline && <View style={styles.onlineIndicator} />}
+          <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]}>
+            <Icon name={getTypeIcon(item.type)} size={10} color="#FFFFFF" />
           </View>
         </View>
 
-        <Text style={styles.messageTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
+        <View style={styles.messageContent}>
+          <View style={styles.messageHeader}>
+            <Text style={styles.participantName} numberOfLines={1}>
+              {item.participantName}
+            </Text>
+            <View style={styles.messageTime}>
+              <Text style={styles.timestampText}>
+                {formatTimestamp(item.timestamp)}
+              </Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>
+                    {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
 
-        <Text
-          style={[
-            styles.lastMessage,
-            item.unreadCount > 0 && styles.unreadLastMessage,
-          ]}
-          numberOfLines={2}
-        >
-          {item.lastMessage}
-        </Text>
-      </View>
-    </TouchableOpacity>
+          {item.routeOrigin && item.routeDestination ? (
+            <View style={styles.routeRow}>
+              <Icon name="radio-button-checked" size={10} color="#4CAF50" />
+              <Text style={styles.routeText} numberOfLines={1}>
+                {item.routeOrigin}
+              </Text>
+              <Icon name="arrow-forward" size={10} color="#999999" />
+              <Icon name="location-on" size={10} color="#F44336" />
+              <Text style={styles.routeText} numberOfLines={1}>
+                {item.routeDestination}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.messageTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+          )}
+
+          <Text
+            style={[
+              styles.lastMessage,
+              item.unreadCount > 0 && styles.unreadLastMessage,
+            ]}
+            numberOfLines={2}
+          >
+            {item.lastMessage}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
   );
 
   const renderEmptyState = (): React.JSX.Element => (
@@ -295,6 +452,15 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
         <TouchableOpacity style={styles.newMessageButton} onPress={handleNewMessage}>
           <Icon name="add" size={20} color="#2196F3" />
         </TouchableOpacity>
+        
+        {messages.length > 0 && (
+          <TouchableOpacity 
+            style={styles.clearAllButton} 
+            onPress={handleClearAllSampleMessages}
+          >
+            <Icon name="delete-sweep" size={20} color="#FF5722" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {renderFilterBar()}
@@ -356,6 +522,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#E3F2FD',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearAllButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFEBEE',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -478,6 +652,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#666666',
   },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  routeText: {
+    fontSize: 12,
+    color: '#666666',
+    fontWeight: '500',
+  },
   lastMessage: {
     fontSize: 14,
     color: '#999999',
@@ -514,6 +698,25 @@ const styles = StyleSheet.create({
     color: '#999999',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  deleteAction: {
+    flex: 1,
+    backgroundColor: '#FF5722',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 20,
+  },
+  deleteButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
   },
 });
 

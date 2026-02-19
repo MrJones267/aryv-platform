@@ -8,6 +8,9 @@
 import { Image, ImageResizeMode, Dimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ImageOptimizer');
 
 export interface ImageOptimizationOptions {
   maxWidth?: number;
@@ -68,9 +71,9 @@ class ImageOptimizer {
       // Clean up old cache files
       await this.cleanupOldCache();
       
-      console.log('ImageOptimizer initialized');
+      log.info('ImageOptimizer initialized');
     } catch (error) {
-      console.error('Error initializing ImageOptimizer:', error);
+      log.error('Error initializing ImageOptimizer:', error);
     }
   }
 
@@ -94,7 +97,7 @@ class ImageOptimizer {
         this.updateMetrics();
       }
     } catch (error) {
-      console.error('Error loading cache metadata:', error);
+      log.error('Error loading cache metadata:', error);
     }
   }
 
@@ -103,7 +106,7 @@ class ImageOptimizer {
       const cacheArray = Array.from(this.cache.values());
       await AsyncStorage.setItem(this.CACHE_KEY, JSON.stringify(cacheArray));
     } catch (error) {
-      console.error('Error saving cache metadata:', error);
+      log.error('Error saving cache metadata:', error);
     }
   }
 
@@ -122,7 +125,7 @@ class ImageOptimizer {
               await RNFS.unlink(cached.localPath);
             }
           } catch (error) {
-            console.warn('Error deleting cached file:', error);
+            log.warn('Error deleting cached file:', error);
           }
         }
       }
@@ -132,13 +135,13 @@ class ImageOptimizer {
 
       if (expiredKeys.length > 0) {
         await this.saveCacheMetadata();
-        console.log(`Cleaned up ${expiredKeys.length} expired cached images`);
+        log.info(`Cleaned up ${expiredKeys.length} expired cached images`);
       }
 
       // Check total cache size
       await this.enforceCacheSizeLimit();
     } catch (error) {
-      console.error('Error cleaning up cache:', error);
+      log.error('Error cleaning up cache:', error);
     }
   }
 
@@ -164,15 +167,15 @@ class ImageOptimizer {
             }
             this.cache.delete(uri);
           } catch (error) {
-            console.warn('Error removing cached file during size enforcement:', error);
+            log.warn('Error removing cached file during size enforcement:', error);
           }
         }
 
         await this.saveCacheMetadata();
-        console.log(`Enforced cache size limit: removed ${removedSize} bytes`);
+        log.info(`Enforced cache size limit: removed ${removedSize} bytes`);
       }
     } catch (error) {
-      console.error('Error enforcing cache size limit:', error);
+      log.error('Error enforcing cache size limit:', error);
     }
   }
 
@@ -249,7 +252,7 @@ class ImageOptimizer {
 
       return `file://${localPath}`;
     } catch (error) {
-      console.error('Error downloading and optimizing image:', error);
+      log.error('Error downloading and optimizing image:', error);
       throw error;
     }
   }
@@ -394,7 +397,7 @@ class ImageOptimizer {
   async preloadImages(uris: string[], options: ImageOptimizationOptions = {}): Promise<void> {
     const promises = uris.map(uri => 
       this.optimizeImage(uri, options).catch(error => {
-        console.warn(`Failed to preload image ${uri}:`, error);
+        log.warn(`Failed to preload image ${uri}:`, error);
       })
     );
 
@@ -423,7 +426,7 @@ class ImageOptimizer {
             await RNFS.unlink(cached.localPath);
           }
         } catch (error) {
-          console.warn('Error deleting cached file:', error);
+          log.warn('Error deleting cached file:', error);
         }
       }
 
@@ -441,9 +444,9 @@ class ImageOptimizer {
         cacheHitRate: 0,
       };
 
-      console.log('Image cache cleared');
+      log.info('Image cache cleared');
     } catch (error) {
-      console.error('Error clearing image cache:', error);
+      log.error('Error clearing image cache:', error);
     }
   }
 

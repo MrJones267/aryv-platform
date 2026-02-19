@@ -145,11 +145,11 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   };
 
   const formatCurrency = (amount: number, category: Transaction['category']) => {
-    const formatted = new Intl.NumberFormat('en-US', {
+    const formatted = new Intl.NumberFormat('en-BW', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'BWP'
     }).format(Math.abs(amount));
-    
+
     return category === 'income' ? `+${formatted}` : `-${formatted}`;
   };
 

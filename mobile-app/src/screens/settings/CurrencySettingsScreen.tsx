@@ -22,8 +22,12 @@ import { useNavigation } from '@react-navigation/native';
 import { colors } from '../../theme';
 import { Button } from '../../components/ui';
 import { Currency, CurrencyService, CurrencyPreferences } from '../../services/CurrencyService';
+import UserPreferencesService from '../../services/UserPreferencesService';
 import CurrencySelector from '../../components/currency/CurrencySelector';
 import CurrencyConverter from '../../components/currency/CurrencyConverter';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CurrencySettingsScreen');
 
 const CurrencySettingsScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -54,7 +58,7 @@ const CurrencySettingsScreen: React.FC = () => {
         setSelectedPaymentCurrencies(paymentCurrencyCodes);
       }
     } catch (error) {
-      console.error('Error loading currency preferences:', error);
+      log.error('Error loading currency preferences:', error);
       Alert.alert('Error', 'Failed to load currency settings');
     } finally {
       setLoading(false);
@@ -77,6 +81,10 @@ const CurrencySettingsScreen: React.FC = () => {
           setSelectedPaymentCurrencies(prev => new Set([...prev, currency.code]));
         }
         
+        // Update UserPreferencesService for profile display
+        const preferencesService = UserPreferencesService.getInstance();
+        await preferencesService.updateCurrency(currency.code);
+        
         Alert.alert('Success', `Primary currency changed to ${currency.name}`);
         
         // Reload preferences to get updated data
@@ -85,7 +93,7 @@ const CurrencySettingsScreen: React.FC = () => {
         Alert.alert('Error', 'Failed to update primary currency');
       }
     } catch (error) {
-      console.error('Error updating primary currency:', error);
+      log.error('Error updating primary currency:', error);
       Alert.alert('Error', 'Failed to update primary currency');
     } finally {
       setSaving(false);
@@ -125,7 +133,7 @@ const CurrencySettingsScreen: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error toggling payment currency:', error);
+      log.error('Error toggling payment currency:', error);
       Alert.alert('Error', 'Failed to update payment currency');
     } finally {
       setSaving(false);

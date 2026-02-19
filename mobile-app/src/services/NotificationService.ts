@@ -9,12 +9,15 @@ import { Platform, Alert, PermissionsAndroid, Linking } from 'react-native';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 import { AuthService } from './AuthService';
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('NotificationService');
 
 export interface NotificationPayload {
   id?: string;
   title: string;
   body: string;
-  data?: Record<string, any>;
+  data?: Record<string, string | number | boolean | undefined>;
   type: 'ride_request' | 'ride_matched' | 'driver_arrived' | 'ride_started' | 'ride_completed' | 
         'booking_update' | 'delivery_update' | 'payment_received' | 'chat_message' | 'system_alert';
   priority?: 'high' | 'normal' | 'low';
@@ -53,12 +56,12 @@ class NotificationService {
         return true;
       }
 
-      console.log('Initializing NotificationService with FCM:', this.useFCM);
+      log.info('Initializing NotificationService', { useFCM: this.useFCM });
 
       // Request permissions
       const hasPermission = await this.requestNotificationPermissions();
       if (!hasPermission) {
-        console.warn('Notification permissions denied');
+        log.warn('Notification permissions denied');
         return false;
       }
 
@@ -74,13 +77,13 @@ class NotificationService {
         await this.registerTokenWithBackend(token);
         this.setupNotificationHandlers();
         this.isInitialized = true;
-        console.log('NotificationService initialized successfully');
+        log.info('NotificationService initialized successfully');
         return true;
       }
 
       return false;
     } catch (error) {
-      console.error('Failed to initialize notification service:', error);
+      log.error('Failed to initialize notification service', error);
       return false;
     }
   }
@@ -112,7 +115,7 @@ class NotificationService {
         }
       }
     } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+      log.error('Error requesting notification permissions', error);
       return false;
     }
   }
@@ -128,16 +131,16 @@ class NotificationService {
           await messaging().registerDeviceForRemoteMessages();
         }
         const token = await messaging().getToken();
-        console.log('FCM token obtained:', token.substring(0, 20) + '...');
+        log.info('FCM token obtained', { tokenPrefix: token.substring(0, 20) + '...' });
         return token;
       } else {
         // Mock implementation for development
         const mockToken = `mock_device_token_${Platform.OS}_${Date.now()}`;
-        console.log('Mock device token generated:', mockToken);
+        log.info('Mock device token generated', { mockToken });
         return mockToken;
       }
     } catch (error) {
-      console.error('Error getting device token:', error);
+      log.error('Error getting device token', error);
       return null;
     }
   }
@@ -167,7 +170,7 @@ class NotificationService {
 
       return response.success;
     } catch (error) {
-      console.error('Failed to register token with backend:', error);
+      log.error('Failed to register token with backend', error);
       return false;
     }
   }
@@ -179,7 +182,7 @@ class NotificationService {
     try {
       // Handle background messages
       messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-        console.log('FCM background message:', remoteMessage);
+        log.info('FCM background message received', { messageId: remoteMessage.messageId });
         const notification = this.parseFirebaseMessage(remoteMessage);
         this.handleNotificationReceived(notification, false);
       });
@@ -187,12 +190,12 @@ class NotificationService {
       // Handle initial notification (when app opened from quit state)
       const initialNotification = await messaging().getInitialNotification();
       if (initialNotification) {
-        console.log('FCM initial notification:', initialNotification);
+        log.info('FCM initial notification:', initialNotification);
         const notification = this.parseFirebaseMessage(initialNotification);
         this.handleNotificationTap(notification);
       }
     } catch (error) {
-      console.error('Error initializing FCM:', error);
+      log.error('Error initializing FCM:', error);
     }
   }
 
@@ -203,38 +206,38 @@ class NotificationService {
     if (this.useFCM) {
       // Setup FCM handlers
       this.unsubscribeForegroundMessages = messaging().onMessage(async (remoteMessage) => {
-        console.log('FCM foreground message:', remoteMessage);
+        log.info('FCM foreground message:', remoteMessage);
         const notification = this.parseFirebaseMessage(remoteMessage);
         this.handleNotificationReceived(notification, true);
       });
 
       // Handle notification opened app
       messaging().onNotificationOpenedApp((remoteMessage) => {
-        console.log('FCM notification opened app:', remoteMessage);
+        log.info('FCM notification opened app:', remoteMessage);
         const notification = this.parseFirebaseMessage(remoteMessage);
         this.handleNotificationTap(notification);
       });
 
       // Handle token refresh
       this.unsubscribeTokenRefresh = messaging().onTokenRefresh(async (token) => {
-        console.log('FCM token refreshed:', token.substring(0, 20) + '...');
+        log.info('FCM token refreshed:', token.substring(0, 20) + '...');
         this.notificationToken = token;
         await this.registerTokenWithBackend(token);
       });
     } else {
       // Mock notification handlers for development
       this.onForegroundNotification = (notification: NotificationPayload) => {
-        console.log('Mock foreground notification received:', notification);
+        log.info('Mock foreground notification received:', notification);
         this.handleNotificationReceived(notification, true);
       };
 
       this.onBackgroundNotification = (notification: NotificationPayload) => {
-        console.log('Mock background notification received:', notification);
+        log.info('Mock background notification received:', notification);
         this.handleNotificationReceived(notification, false);
       };
 
       this.onNotificationTap = (notification: NotificationPayload) => {
-        console.log('Mock notification tapped:', notification);
+        log.info('Mock notification tapped:', notification);
         this.handleNotificationTap(notification);
       };
     }
@@ -256,7 +259,7 @@ class NotificationService {
       // Trigger any registered callbacks
       this.notifyListeners('notification_received', notification);
     } catch (error) {
-      console.error('Error handling notification:', error);
+      log.error('Error handling notification:', error);
     }
   }
 
@@ -268,41 +271,42 @@ class NotificationService {
       const { type, data } = notification;
 
       // Navigate based on notification type
+      const dataStr = data as Record<string, string | undefined> | undefined;
       switch (type) {
         case 'ride_request':
-          this.navigateToRideRequest(data?.rideId);
+          this.navigateToRideRequest(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
           break;
         case 'ride_matched':
-          this.navigateToActiveRide(data?.rideId);
+          this.navigateToActiveRide(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
           break;
         case 'driver_arrived':
-          this.navigateToPickup(data?.rideId);
+          this.navigateToPickup(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
           break;
         case 'ride_started':
-          this.navigateToTripTracking(data?.rideId);
+          this.navigateToTripTracking(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
           break;
         case 'ride_completed':
-          this.navigateToTripSummary(data?.rideId);
+          this.navigateToTripSummary(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
           break;
         case 'booking_update':
-          this.navigateToBooking(data?.bookingId);
+          this.navigateToBooking(dataStr?.bookingId != null ? String(dataStr.bookingId) : undefined);
           break;
         case 'delivery_update':
-          this.navigateToDelivery(data?.deliveryId);
+          this.navigateToDelivery(dataStr?.deliveryId != null ? String(dataStr.deliveryId) : undefined);
           break;
         case 'payment_received':
           this.navigateToPayments();
           break;
         case 'chat_message':
-          this.navigateToChat(data?.chatId);
+          this.navigateToChat(dataStr?.chatId != null ? String(dataStr.chatId) : undefined);
           break;
         default:
-          console.log('Unknown notification type:', type);
+          log.info('Unknown notification type:', type);
       }
 
       this.notifyListeners('notification_tapped', notification);
     } catch (error) {
-      console.error('Error handling notification tap:', error);
+      log.error('Error handling notification tap:', error);
     }
   }
 
@@ -333,13 +337,13 @@ class NotificationService {
   async sendLocalNotification(notification: NotificationPayload): Promise<void> {
     try {
       // Mock local notification - in production, use appropriate library
-      console.log('Sending local notification:', notification);
+      log.info('Sending local notification:', notification);
       
       setTimeout(() => {
         this.handleNotificationReceived(notification, true);
       }, 100);
     } catch (error) {
-      console.error('Error sending local notification:', error);
+      log.error('Error sending local notification:', error);
     }
   }
 
@@ -368,7 +372,7 @@ class NotificationService {
 
       return response.success;
     } catch (error) {
-      console.error('Failed to update notification preferences:', error);
+      log.error('Failed to update notification preferences:', error);
       return false;
     }
   }
@@ -376,7 +380,7 @@ class NotificationService {
   /**
    * Get current notification preferences
    */
-  async getNotificationPreferences(): Promise<any> {
+  async getNotificationPreferences(): Promise<unknown> {
     try {
       const authToken = await this.authService.getValidToken();
       if (!authToken) {
@@ -391,7 +395,7 @@ class NotificationService {
 
       return response.data || {};
     } catch (error) {
-      console.error('Failed to get notification preferences:', error);
+      log.error('Failed to get notification preferences:', error);
       return {};
     }
   }
@@ -405,9 +409,9 @@ class NotificationService {
       this.updateBadgeCount(0);
 
       // Clear notification center (mock implementation)
-      console.log('Clearing all notifications');
+      log.info('Clearing all notifications');
     } catch (error) {
-      console.error('Error clearing notifications:', error);
+      log.error('Error clearing notifications:', error);
     }
   }
 
@@ -417,9 +421,9 @@ class NotificationService {
   private updateBadgeCount(count?: number): void {
     try {
       // Mock badge update - in production, use appropriate library
-      console.log('Updating badge count:', count || 'increment');
+      log.info('Updating badge count:', count || 'increment');
     } catch (error) {
-      console.error('Error updating badge count:', error);
+      log.error('Error updating badge count:', error);
     }
   }
 
@@ -433,7 +437,7 @@ class NotificationService {
       id: messageId || `fcm_${Date.now()}`,
       title: notification?.title || 'Hitch Notification',
       body: notification?.body || 'You have a new notification',
-      data: data || {},
+      data: (data || {}) as Record<string, string | number | boolean | undefined>,
       type: (data?.type as NotificationPayload['type']) || 'system_alert',
       priority: (data?.priority as NotificationPayload['priority']) || 'normal',
       timestamp: new Date().toISOString(),
@@ -449,7 +453,7 @@ class NotificationService {
       // Try to access Firebase messaging
       return messaging() !== null;
     } catch (error) {
-      console.warn('Firebase is not available:', error);
+      log.warn('Firebase is not available:', error);
       return false;
     }
   }
@@ -460,15 +464,15 @@ class NotificationService {
   async subscribeToTopic(topic: string): Promise<boolean> {
     try {
       if (!this.useFCM) {
-        console.log(`Mock subscribe to topic: ${topic}`);
+        log.info(`Mock subscribe to topic: ${topic}`);
         return true;
       }
 
       await messaging().subscribeToTopic(topic);
-      console.log(`Subscribed to FCM topic: ${topic}`);
+      log.info(`Subscribed to FCM topic: ${topic}`);
       return true;
     } catch (error) {
-      console.error(`Failed to subscribe to topic ${topic}:`, error);
+      log.error(`Failed to subscribe to topic ${topic}:`, error);
       return false;
     }
   }
@@ -479,15 +483,15 @@ class NotificationService {
   async unsubscribeFromTopic(topic: string): Promise<boolean> {
     try {
       if (!this.useFCM) {
-        console.log(`Mock unsubscribe from topic: ${topic}`);
+        log.info(`Mock unsubscribe from topic: ${topic}`);
         return true;
       }
 
       await messaging().unsubscribeFromTopic(topic);
-      console.log(`Unsubscribed from FCM topic: ${topic}`);
+      log.info(`Unsubscribed from FCM topic: ${topic}`);
       return true;
     } catch (error) {
-      console.error(`Failed to unsubscribe from topic ${topic}:`, error);
+      log.error(`Failed to unsubscribe from topic ${topic}:`, error);
       return false;
     }
   }
@@ -502,47 +506,47 @@ class NotificationService {
 
   // Navigation helpers (these would integrate with your navigation system)
   private navigateToRideRequest(rideId?: string): void {
-    console.log('Navigate to ride request:', rideId);
+    log.info('Navigate to ride request:', rideId);
     // Implement navigation to ride request screen
   }
 
   private navigateToActiveRide(rideId?: string): void {
-    console.log('Navigate to active ride:', rideId);
+    log.info('Navigate to active ride:', rideId);
     // Implement navigation to active ride screen
   }
 
   private navigateToPickup(rideId?: string): void {
-    console.log('Navigate to pickup:', rideId);
+    log.info('Navigate to pickup:', rideId);
     // Implement navigation to pickup screen
   }
 
   private navigateToTripTracking(rideId?: string): void {
-    console.log('Navigate to trip tracking:', rideId);
+    log.info('Navigate to trip tracking:', rideId);
     // Implement navigation to trip tracking screen
   }
 
   private navigateToTripSummary(rideId?: string): void {
-    console.log('Navigate to trip summary:', rideId);
+    log.info('Navigate to trip summary:', rideId);
     // Implement navigation to trip summary screen
   }
 
   private navigateToBooking(bookingId?: string): void {
-    console.log('Navigate to booking:', bookingId);
+    log.info('Navigate to booking:', bookingId);
     // Implement navigation to booking screen
   }
 
   private navigateToDelivery(deliveryId?: string): void {
-    console.log('Navigate to delivery:', deliveryId);
+    log.info('Navigate to delivery:', deliveryId);
     // Implement navigation to delivery screen
   }
 
   private navigateToPayments(): void {
-    console.log('Navigate to payments');
+    log.info('Navigate to payments');
     // Implement navigation to payments screen
   }
 
   private navigateToChat(chatId?: string): void {
-    console.log('Navigate to chat:', chatId);
+    log.info('Navigate to chat:', chatId);
     // Implement navigation to chat screen
   }
 
@@ -566,14 +570,14 @@ class NotificationService {
     }
   }
 
-  private notifyListeners(event: string, data: any): void {
+  private notifyListeners(event: string, data: unknown): void {
     const eventListeners = this.listeners.get(event);
     if (eventListeners) {
       eventListeners.forEach(callback => {
         try {
           callback(data);
         } catch (error) {
-          console.error('Error in notification listener:', error);
+          log.error('Error in notification listener:', error);
         }
       });
     }
@@ -608,7 +612,7 @@ class NotificationService {
     }
     this.listeners.clear();
     this.isInitialized = false;
-    console.log('NotificationService disposed');
+    log.info('NotificationService disposed');
   }
 
   /**
@@ -624,7 +628,7 @@ class NotificationService {
         return true; // Mock always has permission
       }
     } catch (error) {
-      console.error('Error checking notification permission:', error);
+      log.error('Error checking notification permission:', error);
       return false;
     }
   }
@@ -640,7 +644,7 @@ class NotificationService {
         await Linking.openSettings();
       }
     } catch (error) {
-      console.error('Failed to open notification settings:', error);
+      log.error('Failed to open notification settings:', error);
     }
   }
 }

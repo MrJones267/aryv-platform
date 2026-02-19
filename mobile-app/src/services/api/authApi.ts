@@ -279,7 +279,7 @@ class AuthApiService extends BaseApiService {
       uri: imageUri,
       type: 'image/jpeg',
       name: 'profile.jpg',
-    } as any);
+    } as unknown as Blob);
 
     return this.upload<{ profilePictureUrl: string }>('/auth/upload-profile-picture', formData);
   }

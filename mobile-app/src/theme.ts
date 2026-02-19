@@ -11,12 +11,15 @@ import { COLORS } from './utils/constants/colors';
 // Extended colors with missing properties
 export const colors = {
   ...COLORS,
+  danger: COLORS.error, // Alias for danger color
   info: COLORS.primary,
   textSecondary: COLORS.text.secondary,
+  textPrimary: COLORS.text.primary, // Alias for textPrimary
   surface: COLORS.background.card,
   surfaceSecondary: COLORS.background.secondary,
   primaryLight: COLORS.primary + '20', // 20% opacity
   white: '#FFFFFF',
+  black: '#000000', // Add black color
   shadow: 'rgba(0, 0, 0, 0.1)',
 };
 
@@ -41,6 +44,8 @@ export const typography = {
     heading: 28,
     body: 14,
     caption: 12,
+    h1: 32,
+    h2: 28,
     h3: 20,
     h4: 18,
   },
@@ -48,6 +53,7 @@ export const typography = {
     light: '300' as const,
     regular: 'normal' as const,
     medium: '500' as const,
+    semibold: '600' as const,
     bold: 'bold' as const,
   },
 };

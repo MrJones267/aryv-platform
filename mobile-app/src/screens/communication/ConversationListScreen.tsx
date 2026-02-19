@@ -20,6 +20,9 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ConversationListScreen');
 
 interface Conversation {
   id: string;
@@ -112,7 +115,7 @@ const ConversationListScreen: React.FC = () => {
 
       setConversations(mockConversations);
     } catch (error) {
-      console.error('Error loading conversations:', error);
+      log.error('Error loading conversations:', error);
       Alert.alert('Error', 'Failed to load conversations');
     } finally {
       setLoading(false);
@@ -133,7 +136,7 @@ const ConversationListScreen: React.FC = () => {
     markConversationAsRead(conversation.id);
     
     // Navigate to chat screen
-    (navigation as any).navigate('ChatScreen', {
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('ChatScreen', {
       packageId: conversation.packageId,
       otherUserId: conversation.otherUserId,
       otherUserName: conversation.otherUserName,

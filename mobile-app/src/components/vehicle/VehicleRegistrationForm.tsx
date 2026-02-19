@@ -14,16 +14,21 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { launchCamera, launchImageLibrary, ImagePickerResponse } from 'react-native-image-picker';
 import { colors } from '../../theme';
 import { CreateVehicleData } from '../../services/api/vehicleApi';
 
 interface VehicleRegistrationFormProps {
-  onVehicleRegister: (vehicleData: CreateVehicleData) => Promise<void>;
+  onVehicleRegister: (vehicleData: CreateVehicleData, photos: string[]) => Promise<void>;
   isLoading?: boolean;
   onSkip?: () => void;
 }
+
+const MAX_PHOTOS = 5;
 
 export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = ({
   onVehicleRegister,
@@ -41,6 +46,8 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const vehicleTypes = [
     { value: 'sedan', label: 'Sedan', icon: 'drive-eta' },
@@ -83,13 +90,54 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
     return Object.keys(newErrors).length === 0;
   };
 
+  const handlePhotoResponse = (response: ImagePickerResponse) => {
+    if (response.didCancel || response.errorCode) return;
+    const asset = response.assets?.[0];
+    if (asset?.uri) {
+      setPhotos(prev => [...prev, asset.uri!]);
+    }
+  };
+
+  const handleAddPhoto = () => {
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert('Limit reached', `Maximum ${MAX_PHOTOS} photos allowed`);
+      return;
+    }
+
+    Alert.alert('Add Vehicle Photo', 'Choose a source', [
+      {
+        text: 'Camera',
+        onPress: () => {
+          launchCamera(
+            { mediaType: 'photo', quality: 0.8, maxWidth: 1200, maxHeight: 1200 },
+            handlePhotoResponse
+          );
+        },
+      },
+      {
+        text: 'Gallery',
+        onPress: () => {
+          launchImageLibrary(
+            { mediaType: 'photo', quality: 0.8, maxWidth: 1200, maxHeight: 1200 },
+            handlePhotoResponse
+          );
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) {
       return;
     }
 
     try {
-      await onVehicleRegister(formData);
+      await onVehicleRegister(formData, photos);
     } catch (error) {
       Alert.alert(
         'Registration Failed',
@@ -198,7 +246,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
                   styles.typeOption,
                   formData.type === type.value && styles.selectedType,
                 ]}
-                onPress={() => updateFormData('type', type.value as any)}
+                onPress={() => updateFormData('type', type.value as CreateVehicleData['type'])}
               >
                 <Icon
                   name={type.icon}
@@ -243,6 +291,47 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
             ))}
           </View>
           {errors.capacity && <Text style={styles.errorText}>{errors.capacity}</Text>}
+        </View>
+
+        {/* Vehicle Photos */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Vehicle Photos</Text>
+          <Text style={styles.photoHint}>
+            Add up to {MAX_PHOTOS} photos of your vehicle. Clear photos help passengers recognise your car.
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.photoRow}
+          >
+            {photos.map((uri, index) => (
+              <View key={index} style={styles.photoWrap}>
+                <Image source={{ uri }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.photoRemoveBtn}
+                  onPress={() => handleRemovePhoto(index)}
+                >
+                  <Icon name="close" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length < MAX_PHOTOS && (
+              <TouchableOpacity
+                style={styles.addPhotoBtn}
+                onPress={handleAddPhoto}
+                disabled={uploadingPhoto}
+              >
+                {uploadingPhoto ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Icon name="add-a-photo" size={28} color={colors.primary} />
+                    <Text style={styles.addPhotoText}>Add Photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </ScrollView>
         </View>
       </View>
 
@@ -403,6 +492,52 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 16,
     color: colors.text.secondary,
+  },
+  photoHint: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  photoRow: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  photoWrap: {
+    position: 'relative',
+  },
+  photoThumb: {
+    width: 100,
+    height: 75,
+    borderRadius: 10,
+  },
+  photoRemoveBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPhotoBtn: {
+    width: 100,
+    height: 75,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '40',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '08',
+  },
+  addPhotoText: {
+    fontSize: 11,
+    color: colors.primary,
+    marginTop: 4,
+    fontWeight: '500',
   },
 });
 

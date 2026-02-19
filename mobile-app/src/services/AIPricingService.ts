@@ -8,6 +8,9 @@
 import { LocationCoordinates } from './LocationService';
 import { ApiClient } from './ApiClient';
 import { AuthService } from './AuthService';
+import logger from './LoggingService';
+
+const log = logger.createLogger('AIPricingService');
 
 export interface PricingRequest {
   origin: LocationCoordinates & { address?: string };
@@ -165,20 +168,22 @@ class AIPricingService {
         return cached;
       }
 
-      // In production, this would call the ML service
-      if (!__DEV__) {
-        return await this.callMLPricingAPI(request);
+      // Try to call the ML pricing API first
+      let pricing: PricingResponse;
+      try {
+        pricing = await this.callMLPricingAPI(request);
+      } catch (apiError) {
+        log.warn('ML Pricing API unavailable, using local simulation', { error: String(apiError) });
+        // Fallback to local ML simulation
+        pricing = await this.simulateMLPricing(request);
       }
 
-      // Development: Use local ML simulation
-      const pricing = await this.simulateMLPricing(request);
-      
       // Cache the result
       this.cachePrice(cacheKey, pricing);
-      
+
       return pricing;
     } catch (error) {
-      console.error('AI Pricing calculation error:', error);
+      log.error('AI Pricing calculation error', error);
       // Fallback to basic pricing
       return this.calculateFallbackPrice(request);
     }
@@ -197,7 +202,7 @@ class AIPricingService {
       // Mock surge zones for development
       return this.getMockSurgeZones();
     } catch (error) {
-      console.error('Failed to get surge zones:', error);
+      log.error('Failed to get surge zones', error);
       return [];
     }
   }
@@ -222,7 +227,7 @@ class AIPricingService {
       // Mock price history for development
       return this.getMockPriceHistory(origin, destination, days);
     } catch (error) {
-      console.error('Failed to get price history:', error);
+      log.error('Failed to get price history', error);
       return [];
     }
   }
@@ -251,7 +256,7 @@ class AIPricingService {
 
       return response.success;
     } catch (error) {
-      console.error('Failed to submit price feedback:', error);
+      log.error('Failed to submit price feedback', error);
       return false;
     }
   }
@@ -291,7 +296,7 @@ class AIPricingService {
       basePrice,
       surgeFactor,
       finalPrice: Math.round(finalPrice * 100) / 100,
-      currency: 'USD',
+      currency: 'BWP',
       breakdown,
       estimatedDuration: Math.round(estimatedDuration),
       estimatedDistance: Math.round(distance * 100) / 100,
@@ -686,7 +691,7 @@ class AIPricingService {
           surgeFactor: 1 + Math.random() * 1.5,
           actualDuration: 15 + Math.random() * 30,
           actualDistance: 5 + Math.random() * 10,
-          feedback: Math.random() > 0.7 ? ['too_high', 'fair', 'good_value'][Math.floor(Math.random() * 3)] as any : undefined,
+          feedback: Math.random() > 0.7 ? (['too_high', 'fair', 'good_value'] as const)[Math.floor(Math.random() * 3)] : undefined,
         });
       }
     }
@@ -716,7 +721,7 @@ class AIPricingService {
       basePrice,
       surgeFactor: 1.0,
       finalPrice: Math.max(basePrice, this.BASE_RATES[request.rideType].minFare),
-      currency: 'USD',
+      currency: 'BWP',
       breakdown: {
         baseFare: basePrice * 0.4,
         distanceFare: basePrice * 0.4,

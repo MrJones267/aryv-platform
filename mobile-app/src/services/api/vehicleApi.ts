@@ -104,10 +104,37 @@ class VehicleApiService extends BaseApiService {
       uri: imageUri,
       type: 'image/jpeg',
       name: `${documentType}.jpg`,
-    } as any);
+    } as unknown as Blob);
     formData.append('documentType', documentType);
 
     return this.upload<{ documentUrl: string }>(`/users/vehicles/${vehicleId}/documents`, formData);
+  }
+
+  /**
+   * Upload vehicle photo
+   */
+  async uploadVehiclePhoto(
+    vehicleId: string,
+    imageUri: string
+  ): Promise<ApiResponse<{ photoUrl: string }>> {
+    const formData = new FormData();
+    formData.append('photo', {
+      uri: imageUri,
+      type: 'image/jpeg',
+      name: `vehicle-photo-${Date.now()}.jpg`,
+    } as unknown as Blob);
+
+    return this.upload<{ photoUrl: string }>(`/users/vehicles/${vehicleId}/photos`, formData);
+  }
+
+  /**
+   * Delete a vehicle photo
+   */
+  async deleteVehiclePhoto(
+    vehicleId: string,
+    photoUrl: string
+  ): Promise<ApiResponse<void>> {
+    return this.post<void>(`/users/vehicles/${vehicleId}/photos/delete`, { photoUrl });
   }
 }
 

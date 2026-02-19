@@ -17,7 +17,6 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -27,6 +26,13 @@ import PackageService, { PackageCreationData, PricingSuggestion } from '../../se
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ImagePicker from '../../components/common/ImagePicker';
 import DeliveryTierSelector from '../../components/courier/DeliveryTierSelector';
+import LocationService from '../../services/LocationService';
+import EscrowPaymentService from '../../services/EscrowPaymentService';
+import { useAppDispatch } from '../../store/hooks';
+import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CreatePackageScreen');
 
 interface PackageFormData {
   title: string;
@@ -54,6 +60,7 @@ interface PackageFormData {
 
 const CreatePackageScreen: React.FC = () => {
   const navigation = useNavigation();
+  const dispatch = useAppDispatch();
   const scrollViewRef = useRef<ScrollView>(null);
   
   const [currentStep, setCurrentStep] = useState(1);
@@ -81,7 +88,7 @@ const CreatePackageScreen: React.FC = () => {
 
   const totalSteps = 5; // Added pricing step
 
-  const updateFormData = (field: string, value: any) => {
+  const updateFormData = (field: string, value: string | number | boolean | string[] | Date | undefined) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -151,9 +158,15 @@ const CreatePackageScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      // Mock coordinates for now - in production, use geocoding
-      const pickupCoordinates: [number, number] = [-74.0060, 40.7128];
-      const dropoffCoordinates: [number, number] = [-73.9851, 40.7589];
+      // Get real coordinates from geocoding service
+      const [pickupCoordinates, dropoffCoordinates] = await Promise.all([
+        LocationService.geocodeAddress(formData.pickupAddress),
+        LocationService.geocodeAddress(formData.dropoffAddress),
+      ]);
+      
+      if (!pickupCoordinates || !dropoffCoordinates) {
+        throw new Error('Unable to find coordinates for provided addresses');
+      }
 
       const packageData: PackageCreationData = {
         title: formData.title,
@@ -162,7 +175,7 @@ const CreatePackageScreen: React.FC = () => {
         dimensionsWidth: formData.dimensionsWidth,
         dimensionsHeight: formData.dimensionsHeight,
         weight: formData.weight,
-        packageSize: formData.packageSize as any,
+        packageSize: formData.packageSize as PackageCreationData['packageSize'],
         fragile: formData.fragile || false,
         valuable: formData.valuable || false,
         specialInstructions: formData.specialInstructions || undefined,
@@ -180,9 +193,30 @@ const CreatePackageScreen: React.FC = () => {
         urgencyLevel: formData.urgencyLevel,
       };
 
-      const response = await PackageService.createPackage(packageData);
+      // Create package through Redux action
+      const response = await (dispatch(createPackageAction(packageData)) as unknown as Promise<{ type?: string; payload?: { id?: string }; error?: string }>);
       
-      if (response.success) {
+      if (response.type?.endsWith('/fulfilled')) {
+        // Create escrow transaction for the package
+        if (response.payload?.id) {
+          const escrowResult = await EscrowPaymentService.createEscrowTransaction({
+            rideId: response.payload.id, // Use package ID as ride ID
+            bookingId: `package_${response.payload.id}`,
+            payeeId: '', // Will be set when courier accepts
+            amount: formData.senderPriceOffer,
+            paymentMethod: 'card', // Default payment method
+            metadata: {
+              rideDetails: { type: 'package_delivery', packageId: response.payload.id },
+              autoReleaseHours: 24,
+              requiresBothConfirmation: true,
+            },
+          });
+          
+          if (!escrowResult.success) {
+            log.warn('Failed to create escrow transaction:', escrowResult.error);
+          }
+        }
+        
         Alert.alert(
           'Success!',
           'Your package has been created and is now available for couriers.',
@@ -283,7 +317,7 @@ const CreatePackageScreen: React.FC = () => {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Offered Price *</Text>
         <View style={styles.priceInput}>
-          <Text style={styles.currencySymbol}>$</Text>
+          <Text style={styles.currencySymbol}>P</Text>
           <TextInput
             style={styles.priceField}
             value={formData.senderPriceOffer.toString()}
@@ -494,78 +528,6 @@ const CreatePackageScreen: React.FC = () => {
     </View>
   );
 
-  const renderStep4 = () => (
-    <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Review & Submit</Text>
-      
-      <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Package Details</Text>
-        <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Title:</Text>
-          <Text style={styles.reviewValue}>{formData.title}</Text>
-        </View>
-        <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Size:</Text>
-          <Text style={styles.reviewValue}>{formData.packageSize}</Text>
-        </View>
-        <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Price Offered:</Text>
-          <Text style={styles.reviewValue}>${formData.senderPriceOffer}</Text>
-        </View>
-      </View>
-
-      <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Locations</Text>
-        <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Pickup:</Text>
-          <Text style={styles.reviewValue}>{formData.pickupAddress}</Text>
-        </View>
-        <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Delivery:</Text>
-          <Text style={styles.reviewValue}>{formData.dropoffAddress}</Text>
-        </View>
-      </View>
-
-      {(formData.fragile || formData.valuable) && (
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Special Handling</Text>
-          {formData.fragile && (
-            <View style={styles.reviewTag}>
-              <Icon name="warning" size={16} color={colors.warning} />
-              <Text style={styles.reviewTagText}>Fragile</Text>
-            </View>
-          )}
-          {formData.valuable && (
-            <View style={styles.reviewTag}>
-              <Icon name="diamond" size={16} color={colors.primary} />
-              <Text style={styles.reviewTagText}>Valuable</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {formData.images && formData.images.length > 0 && (
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Package Photos</Text>
-          <View style={styles.reviewImagesContainer}>
-            {formData.images.slice(0, 3).map((imageUri: any, index: any) => (
-              <Image
-                key={index}
-                source={{ uri: imageUri }}
-                style={styles.reviewImage}
-              />
-            ))}
-            {formData.images.length > 3 && (
-              <View style={styles.moreImagesIndicator}>
-                <Text style={styles.moreImagesText}>+{formData.images.length - 3}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      )}
-    </View>
-  );
-
   const renderStep5 = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Pricing & Delivery Speed</Text>
@@ -576,7 +538,7 @@ const CreatePackageScreen: React.FC = () => {
       <DeliveryTierSelector
         pickupCoordinates={undefined}
         dropoffCoordinates={undefined}
-        packageSize={formData.packageSize as any}
+        packageSize={formData.packageSize as 'small' | 'medium' | 'large' | 'custom'}
         fragile={formData.fragile}
         valuable={formData.valuable}
         requestedDeliveryTime={formData.requestedDeliveryTime}
@@ -593,7 +555,7 @@ const CreatePackageScreen: React.FC = () => {
           value={formData.senderPriceOffer.toString()}
           onChangeText={(value) => updateFormData('senderPriceOffer', parseFloat(value) || 0)}
           placeholder="0.00"
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.text.secondary}
           keyboardType="decimal-pad"
         />
         <Text style={styles.label}>
@@ -1059,12 +1021,12 @@ const styles = StyleSheet.create({
   },
   stepSubtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: colors.text.secondary,
     marginBottom: 16,
     lineHeight: 22,
   },
   tierSummary: {
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: colors.background.secondary,
     borderRadius: 8,
     padding: 12,
     marginTop: 16,
@@ -1083,7 +1045,7 @@ const styles = StyleSheet.create({
   },
   tierSummaryLabel: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: colors.text.secondary,
   },
   tierSummaryValue: {
     fontSize: 14,

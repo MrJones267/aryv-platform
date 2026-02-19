@@ -1,11 +1,11 @@
 /**
- * @fileoverview Search screen for finding rides
+ * @fileoverview Search screen for finding intercity rides
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2025-02-05
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,15 +16,33 @@ import {
   Alert,
   SafeAreaView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useNavigation } from '@react-navigation/native';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { searchRides, setSearchFilters } from '../../store/slices/ridesSlice';
 import { getCurrentLocation } from '../../store/slices/locationSlice';
+import { locationService } from '../../services/LocationService';
+import { ridesApi } from '../../services/api/ridesApi';
+import type { Location } from '../../services/api/ridesApi';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('SearchScreen');
+
+const VEHICLE_TYPES = ['Any', 'Sedan', 'SUV', 'Minivan', 'Pickup'] as const;
+
+interface PopularRoute {
+  origin: Location;
+  destination: Location;
+  count: number;
+  averagePrice: number;
+}
 
 const SearchScreen: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigation = useNavigation<{ navigate: (screen: string, params?: Record<string, unknown>) => void }>();
   const { searchResults, searchLoading, searchFilters } = useAppSelector((state) => state.rides);
   const { currentLocation } = useAppSelector((state) => state.location);
 
@@ -38,27 +56,54 @@ const SearchScreen: React.FC = () => {
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isFormValid, setIsFormValid] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
+  // Filters
+  const [selectedVehicleType, setSelectedVehicleType] = useState<string>('Any');
+  const [flexibleDates, setFlexibleDates] = useState(false);
+
+  // Popular routes
+  const [popularRoutes, setPopularRoutes] = useState<PopularRoute[]>([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
 
   useEffect(() => {
-    // Load current location
     if (!currentLocation) {
       dispatch(getCurrentLocation());
     }
   }, [currentLocation, dispatch]);
 
   useEffect(() => {
-    // Validate form
-    const isValid = formData.origin.length > 0 && 
+    loadPopularRoutes();
+  }, []);
+
+  useEffect(() => {
+    const isValid = formData.origin.length > 0 &&
                    formData.destination.length > 0 &&
                    formData.passengers > 0;
     setIsFormValid(isValid);
   }, [formData]);
 
-  const handleInputChange = (field: keyof typeof formData, value: any): void => {
+  const loadPopularRoutes = useCallback(async () => {
+    setLoadingRoutes(true);
+    try {
+      const response = await ridesApi.getPopularRoutes();
+      if (response.success && response.data) {
+        setPopularRoutes(response.data);
+      }
+    } catch (error) {
+      // Silently fail - popular routes are optional
+      log.warn('Failed to load popular routes:', error);
+    } finally {
+      setLoadingRoutes(false);
+    }
+  }, []);
+
+  const handleInputChange = (field: keyof typeof formData, value: string | number | boolean): void => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date): void => {
+  const handleDateChange = (_event: unknown, selectedDate?: Date): void => {
     setShowDatePicker(false);
     if (selectedDate) {
       setFormData(prev => ({ ...prev, departureDate: selectedDate }));
@@ -84,38 +129,133 @@ const SearchScreen: React.FC = () => {
     }));
   };
 
+  const handlePopularRoutePress = (route: PopularRoute): void => {
+    setFormData(prev => ({
+      ...prev,
+      origin: route.origin.address,
+      destination: route.destination.address,
+    }));
+  };
+
+  const geocodeAddress = async (address: string): Promise<{ latitude: number; longitude: number }> => {
+    const results = await locationService.geocodeAddressDetailed(address);
+    if (results.length > 0) {
+      return { latitude: results[0].latitude, longitude: results[0].longitude };
+    }
+    throw new Error(`Could not find location: "${address}"`);
+  };
+
   const handleSearch = async (): Promise<void> => {
     if (!isFormValid) return;
 
+    setIsGeocoding(true);
+    setHasSearched(true);
+
     try {
-      // Update search filters in store
+      // Geocode origin - use current GPS coords if available and address matches
+      let originCoords: { latitude: number; longitude: number };
+      if (currentLocation?.address && formData.origin === currentLocation.address) {
+        originCoords = {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+        };
+      } else {
+        originCoords = await geocodeAddress(formData.origin);
+      }
+
+      // Geocode destination
+      const destCoords = await geocodeAddress(formData.destination);
+
+      setIsGeocoding(false);
+
       dispatch(setSearchFilters({
         passengers: formData.passengers,
         maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) : undefined,
       }));
 
-      // Perform search
       const searchParams = {
         origin: {
-          latitude: currentLocation?.latitude || 0,
-          longitude: currentLocation?.longitude || 0,
+          latitude: originCoords.latitude,
+          longitude: originCoords.longitude,
           address: formData.origin,
         },
         destination: {
-          latitude: 0, // TODO: Geocode destination
-          longitude: 0,
+          latitude: destCoords.latitude,
+          longitude: destCoords.longitude,
           address: formData.destination,
         },
         departureDate: formData.departureDate,
         passengers: formData.passengers,
         maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) : undefined,
+        maxDistance: 500,
       };
 
       await dispatch(searchRides(searchParams)).unwrap();
-    } catch (error: any) {
-      Alert.alert('Search Failed', error.message || 'Unable to search for rides');
+    } catch (error: unknown) {
+      setIsGeocoding(false);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Search Failed', errMsg || 'Unable to search for rides');
     }
   };
+
+  const handleRidePress = (rideId: string): void => {
+    navigation.navigate('RideDetails', { rideId });
+  };
+
+  const handleBookPress = (rideId: string): void => {
+    navigation.navigate('Booking', { rideId });
+  };
+
+  const formatPrice = (amount: number): string => {
+    return `P${amount.toFixed(2)}`;
+  };
+
+  const renderFilters = (): React.ReactNode => (
+    <View style={styles.filtersSection}>
+      {/* Vehicle type chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterChipsRow}
+      >
+        {VEHICLE_TYPES.map((type) => (
+          <TouchableOpacity
+            key={type}
+            style={[
+              styles.filterChip,
+              selectedVehicleType === type && styles.filterChipActive,
+            ]}
+            onPress={() => setSelectedVehicleType(type)}
+          >
+            <Text style={[
+              styles.filterChipText,
+              selectedVehicleType === type && styles.filterChipTextActive,
+            ]}>
+              {type}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Flexible dates toggle */}
+      <TouchableOpacity
+        style={[styles.flexDateToggle, flexibleDates && styles.flexDateToggleActive]}
+        onPress={() => setFlexibleDates(!flexibleDates)}
+      >
+        <Icon
+          name="date-range"
+          size={16}
+          color={flexibleDates ? '#FFFFFF' : '#3B82F6'}
+        />
+        <Text style={[
+          styles.flexDateText,
+          flexibleDates && styles.flexDateTextActive,
+        ]}>
+          +/- 1 day
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderPassengerSelector = (): React.ReactNode => (
     <View style={styles.passengerSelector}>
@@ -129,11 +269,11 @@ const SearchScreen: React.FC = () => {
           onPress={() => handleInputChange('passengers', Math.max(1, formData.passengers - 1))}
           disabled={formData.passengers <= 1}
         >
-          <Icon name="remove" size={20} color={formData.passengers <= 1 ? '#CCCCCC' : '#2196F3'} />
+          <Icon name="remove" size={20} color={formData.passengers <= 1 ? '#CCCCCC' : '#3B82F6'} />
         </TouchableOpacity>
-        
+
         <Text style={styles.passengerCount}>{formData.passengers}</Text>
-        
+
         <TouchableOpacity
           style={[
             styles.passengerButton,
@@ -142,21 +282,73 @@ const SearchScreen: React.FC = () => {
           onPress={() => handleInputChange('passengers', Math.min(7, formData.passengers + 1))}
           disabled={formData.passengers >= 7}
         >
-          <Icon name="add" size={20} color={formData.passengers >= 7 ? '#CCCCCC' : '#2196F3'} />
+          <Icon name="add" size={20} color={formData.passengers >= 7 ? '#CCCCCC' : '#3B82F6'} />
         </TouchableOpacity>
       </View>
     </View>
   );
 
+  const renderPopularRoutes = (): React.ReactNode => {
+    if (hasSearched || popularRoutes.length === 0) return null;
+
+    return (
+      <View style={styles.popularSection}>
+        <Text style={styles.sectionTitle}>Popular Routes</Text>
+        {loadingRoutes ? (
+          <ActivityIndicator size="small" color="#3B82F6" style={{ marginVertical: 12 }} />
+        ) : (
+          popularRoutes.slice(0, 5).map((route, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.popularRouteCard}
+              onPress={() => handlePopularRoutePress(route)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.popularRouteIcon}>
+                <Icon name="trending-up" size={20} color="#3B82F6" />
+              </View>
+              <View style={styles.popularRouteInfo}>
+                <Text style={styles.popularRouteText} numberOfLines={1}>
+                  {route.origin.address} → {route.destination.address}
+                </Text>
+                <View style={styles.popularRouteMeta}>
+                  <Text style={styles.popularRouteMetaText}>
+                    {route.count} rides
+                  </Text>
+                  <Text style={styles.popularRouteDot}>·</Text>
+                  <Text style={styles.popularRouteMetaText}>
+                    avg {formatPrice(route.averagePrice)}
+                  </Text>
+                </View>
+              </View>
+              <Icon name="chevron-right" size={20} color="#CCCCCC" />
+            </TouchableOpacity>
+          ))
+        )}
+      </View>
+    );
+  };
+
   const renderSearchResults = (): React.ReactNode => {
+    if (isGeocoding) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Finding location...</Text>
+        </View>
+      );
+    }
+
     if (searchLoading) {
       return (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2196F3" />
+          <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Searching for rides...</Text>
         </View>
       );
     }
+
+    if (!hasSearched) return null;
 
     if (searchResults.length === 0) {
       return (
@@ -164,102 +356,155 @@ const SearchScreen: React.FC = () => {
           <Icon name="search-off" size={48} color="#CCCCCC" />
           <Text style={styles.emptyStateText}>No rides found</Text>
           <Text style={styles.emptyStateSubtext}>
-            Try adjusting your search criteria or check back later
+            Try adjusting your search criteria, or post a ride request so drivers can find you
           </Text>
+          <TouchableOpacity
+            style={styles.requestRideButton}
+            onPress={() => navigation.navigate('RideRequest', {
+              origin: formData.origin,
+              destination: formData.destination,
+            })}
+          >
+            <Icon name="add-circle-outline" size={18} color="#3B82F6" />
+            <Text style={styles.requestRideText}>Post a Ride Request</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
+    // Filter results by vehicle type if selected
+    const filteredResults = selectedVehicleType === 'Any'
+      ? searchResults
+      : searchResults.filter(ride =>
+          ride.vehicle?.model?.toLowerCase().includes(selectedVehicleType.toLowerCase()) ||
+          ride.description?.toLowerCase().includes(selectedVehicleType.toLowerCase())
+        );
+
     return (
       <View style={styles.resultsContainer}>
         <Text style={styles.resultsHeader}>
-          {searchResults.length} rides found
+          {filteredResults.length} ride{filteredResults.length !== 1 ? 's' : ''} found
         </Text>
-        
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {searchResults.map((ride) => (
-            <TouchableOpacity
-              key={ride.id}
-              style={styles.rideResultCard}
-              activeOpacity={0.8}
-            >
-              <View style={styles.rideResultHeader}>
-                <View style={styles.driverInfo}>
-                  <View style={styles.driverAvatar}>
+        {flexibleDates && (
+          <View style={styles.flexDateNotice}>
+            <Icon name="info-outline" size={14} color="#3B82F6" />
+            <Text style={styles.flexDateNoticeText}>
+              Showing rides within 1 day of your selected date
+            </Text>
+          </View>
+        )}
+
+        {filteredResults.map((ride) => (
+          <TouchableOpacity
+            key={ride.id}
+            style={styles.rideResultCard}
+            activeOpacity={0.8}
+            onPress={() => handleRidePress(ride.id)}
+          >
+            <View style={styles.rideResultHeader}>
+              <View style={styles.driverInfo}>
+                <View style={styles.driverAvatar}>
+                  {ride.driver?.profilePicture ? (
+                    <Image
+                      source={{ uri: ride.driver.profilePicture }}
+                      style={styles.driverAvatarImage}
+                    />
+                  ) : (
                     <Text style={styles.driverInitial}>
                       {ride.driver?.firstName?.charAt(0) || 'U'}
                     </Text>
-                  </View>
-                  <View>
-                    <Text style={styles.driverName}>
-                      {ride.driver?.firstName} {ride.driver?.lastName}
-                    </Text>
-                    <View style={styles.ratingContainer}>
-                      <Icon name="star" size={14} color="#FF9800" />
-                      <Text style={styles.rating}>{ride.driver?.rating || '4.5'}</Text>
-                    </View>
-                  </View>
+                  )}
                 </View>
-                <View style={styles.priceContainer}>
-                  <Text style={styles.price}>${ride.pricePerSeat}</Text>
-                  <Text style={styles.priceLabel}>per seat</Text>
+                <View>
+                  <Text style={styles.driverName}>
+                    {ride.driver?.firstName} {ride.driver?.lastName?.charAt(0)}.
+                  </Text>
+                  <View style={styles.ratingContainer}>
+                    <Icon name="star" size={14} color="#F59E0B" />
+                    <Text style={styles.rating}>{ride.driver?.rating || '4.5'}</Text>
+                  </View>
                 </View>
               </View>
+              <View style={styles.priceContainer}>
+                <Text style={styles.price}>{formatPrice(ride.pricePerSeat)}</Text>
+                <Text style={styles.priceLabel}>per seat</Text>
+              </View>
+            </View>
 
-              <View style={styles.routeContainer}>
-                <View style={styles.timeInfo}>
-                  <Text style={styles.timeText}>
-                    {new Date(ride.departureTime).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+            <View style={styles.routeContainer}>
+              <View style={styles.timeInfo}>
+                <Text style={styles.timeText}>
+                  {new Date(ride.departureTime).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+                <Text style={styles.dateSmall}>
+                  {new Date(ride.departureTime).toLocaleDateString([], {
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </Text>
+              </View>
+
+              <View style={styles.routeInfo}>
+                <View style={styles.routePoint}>
+                  <Icon name="radio-button-checked" size={12} color="#10B981" />
+                  <Text style={styles.routeText} numberOfLines={1}>
+                    {ride.origin?.address || 'Origin'}
                   </Text>
                 </View>
-                
-                <View style={styles.routeInfo}>
-                  <View style={styles.routePoint}>
-                    <Icon name="radio-button-checked" size={12} color="#4CAF50" />
-                    <Text style={styles.routeText} numberOfLines={1}>
-                      {ride.origin?.address || 'Origin'}
-                    </Text>
-                  </View>
-                  <View style={styles.routeLine} />
-                  <View style={styles.routePoint}>
-                    <Icon name="location-on" size={12} color="#F44336" />
-                    <Text style={styles.routeText} numberOfLines={1}>
-                      {ride.destination?.address || 'Destination'}
-                    </Text>
-                  </View>
+                <View style={styles.routeLine} />
+                <View style={styles.routePoint}>
+                  <Icon name="location-on" size={12} color="#EF4444" />
+                  <Text style={styles.routeText} numberOfLines={1}>
+                    {ride.destination?.address || 'Destination'}
+                  </Text>
                 </View>
+              </View>
+            </View>
+
+            <View style={styles.rideFooter}>
+              <View style={styles.rideDetails}>
+                <View style={styles.detailItem}>
+                  <Icon name="event-seat" size={14} color="#666666" />
+                  <Text style={styles.detailText}>{ride.availableSeats} left</Text>
+                </View>
+                {ride.distance && (
+                  <View style={styles.detailItem}>
+                    <Icon name="straighten" size={14} color="#666666" />
+                    <Text style={styles.detailText}>{Math.round(ride.distance)}km</Text>
+                  </View>
+                )}
+                {ride.estimatedDuration && (
+                  <View style={styles.detailItem}>
+                    <Icon name="schedule" size={14} color="#666666" />
+                    <Text style={styles.detailText}>
+                      {ride.estimatedDuration >= 60
+                        ? `${Math.floor(ride.estimatedDuration / 60)}h${ride.estimatedDuration % 60 > 0 ? ` ${ride.estimatedDuration % 60}m` : ''}`
+                        : `${ride.estimatedDuration}m`}
+                    </Text>
+                  </View>
+                )}
+                {ride.vehicle && (
+                  <View style={styles.detailItem}>
+                    <Icon name="directions-car" size={14} color="#666666" />
+                    <Text style={styles.detailText}>
+                      {ride.vehicle.make} {ride.vehicle.model}
+                    </Text>
+                  </View>
+                )}
               </View>
 
-              <View style={styles.rideFooter}>
-                <View style={styles.rideDetails}>
-                  <View style={styles.detailItem}>
-                    <Icon name="person" size={14} color="#666666" />
-                    <Text style={styles.detailText}>{ride.availableSeats} seats</Text>
-                  </View>
-                  {ride.distance && (
-                    <View style={styles.detailItem}>
-                      <Icon name="straighten" size={14} color="#666666" />
-                      <Text style={styles.detailText}>{ride.distance}km</Text>
-                    </View>
-                  )}
-                  {ride.estimatedDuration && (
-                    <View style={styles.detailItem}>
-                      <Icon name="schedule" size={14} color="#666666" />
-                      <Text style={styles.detailText}>{ride.estimatedDuration}min</Text>
-                    </View>
-                  )}
-                </View>
-                
-                <TouchableOpacity style={styles.bookButton}>
-                  <Text style={styles.bookButtonText}>Book</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              <TouchableOpacity
+                style={styles.bookButton}
+                onPress={() => handleBookPress(ride.id)}
+              >
+                <Text style={styles.bookButtonText}>Book</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        ))}
       </View>
     );
   };
@@ -273,10 +518,11 @@ const SearchScreen: React.FC = () => {
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>From</Text>
             <View style={styles.inputWrapper}>
-              <Icon name="radio-button-checked" size={16} color="#4CAF50" style={styles.inputIcon} />
+              <Icon name="radio-button-checked" size={16} color="#10B981" style={styles.inputIcon} />
               <TextInput
                 style={styles.textInput}
-                placeholder="Enter pickup location"
+                placeholder="e.g. Gaborone"
+                placeholderTextColor="#999999"
                 value={formData.origin}
                 onChangeText={(text) => handleInputChange('origin', text)}
                 returnKeyType="next"
@@ -285,7 +531,7 @@ const SearchScreen: React.FC = () => {
                 style={styles.locationButton}
                 onPress={handleUseCurrentLocation}
               >
-                <Icon name="my-location" size={16} color="#2196F3" />
+                <Icon name="my-location" size={16} color="#3B82F6" />
               </TouchableOpacity>
             </View>
           </View>
@@ -301,10 +547,11 @@ const SearchScreen: React.FC = () => {
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>To</Text>
             <View style={styles.inputWrapper}>
-              <Icon name="location-on" size={16} color="#F44336" style={styles.inputIcon} />
+              <Icon name="location-on" size={16} color="#EF4444" style={styles.inputIcon} />
               <TextInput
                 style={styles.textInput}
-                placeholder="Enter destination"
+                placeholder="e.g. Francistown"
+                placeholderTextColor="#999999"
                 value={formData.destination}
                 onChangeText={(text) => handleInputChange('destination', text)}
                 returnKeyType="next"
@@ -322,7 +569,11 @@ const SearchScreen: React.FC = () => {
               >
                 <Icon name="event" size={16} color="#666666" />
                 <Text style={styles.dateText}>
-                  {formData.departureDate.toLocaleDateString()}
+                  {formData.departureDate.toLocaleDateString([], {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -334,12 +585,13 @@ const SearchScreen: React.FC = () => {
 
           {/* Max Price Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Max Price (Optional)</Text>
+            <Text style={styles.inputLabel}>Max Price in BWP (Optional)</Text>
             <View style={styles.inputWrapper}>
-              <Icon name="attach-money" size={16} color="#666666" style={styles.inputIcon} />
+              <Text style={styles.currencyPrefix}>P</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="Maximum price per seat"
+                placeholderTextColor="#999999"
                 value={formData.maxPrice}
                 onChangeText={(text) => handleInputChange('maxPrice', text)}
                 keyboardType="numeric"
@@ -349,22 +601,28 @@ const SearchScreen: React.FC = () => {
             </View>
           </View>
 
+          {/* Filters */}
+          {renderFilters()}
+
           {/* Search Button */}
           <TouchableOpacity
             style={[
               styles.searchButton,
-              (!isFormValid || searchLoading) && styles.searchButtonDisabled,
+              (!isFormValid || searchLoading || isGeocoding) && styles.searchButtonDisabled,
             ]}
             onPress={handleSearch}
-            disabled={!isFormValid || searchLoading}
+            disabled={!isFormValid || searchLoading || isGeocoding}
             activeOpacity={0.8}
           >
             <Icon name="search" size={20} color="#FFFFFF" />
             <Text style={styles.searchButtonText}>
-              {searchLoading ? 'Searching...' : 'Search Rides'}
+              {isGeocoding ? 'Locating...' : searchLoading ? 'Searching...' : 'Search Rides'}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Popular Routes (shown before search) */}
+        {renderPopularRoutes()}
 
         {/* Search Results */}
         {renderSearchResults()}
@@ -420,6 +678,12 @@ const styles = StyleSheet.create({
   inputIcon: {
     marginRight: 12,
   },
+  currencyPrefix: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginRight: 8,
+  },
   textInput: {
     flex: 1,
     fontSize: 16,
@@ -461,7 +725,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   dateText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#333333',
   },
   passengerSelector: {
@@ -493,11 +757,65 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginHorizontal: 20,
   },
+  // Filters
+  filtersSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  filterChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  filterChipActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: '#666666',
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  flexDateToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    gap: 4,
+  },
+  flexDateToggleActive: {
+    backgroundColor: '#3B82F6',
+  },
+  flexDateText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+  flexDateTextActive: {
+    color: '#FFFFFF',
+  },
   searchButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2196F3',
+    backgroundColor: '#3B82F6',
     borderRadius: 12,
     paddingVertical: 16,
     gap: 8,
@@ -511,6 +829,58 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  // Popular Routes
+  popularSection: {
+    padding: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 12,
+  },
+  popularRouteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    gap: 12,
+  },
+  popularRouteIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EBF5FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popularRouteInfo: {
+    flex: 1,
+  },
+  popularRouteText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 2,
+  },
+  popularRouteMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  popularRouteMetaText: {
+    fontSize: 12,
+    color: '#999999',
+  },
+  popularRouteDot: {
+    fontSize: 12,
+    color: '#CCCCCC',
+  },
+  // Loading / Empty
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -537,7 +907,38 @@ const styles = StyleSheet.create({
     color: '#999999',
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 20,
   },
+  requestRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  requestRideText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  flexDateNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EBF5FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  flexDateNoticeText: {
+    fontSize: 12,
+    color: '#3B82F6',
+  },
+  // Results
   resultsContainer: {
     padding: 20,
   },
@@ -575,9 +976,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#2196F3',
+    backgroundColor: '#3B82F6',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  driverAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   driverInitial: {
     fontSize: 16,
@@ -604,7 +1011,7 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2196F3',
+    color: '#3B82F6',
   },
   priceLabel: {
     fontSize: 12,
@@ -618,11 +1025,17 @@ const styles = StyleSheet.create({
   },
   timeInfo: {
     alignItems: 'center',
+    minWidth: 48,
   },
   timeText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#333333',
+  },
+  dateSmall: {
+    fontSize: 11,
+    color: '#999999',
+    marginTop: 2,
   },
   routeInfo: {
     flex: 1,
@@ -652,7 +1065,9 @@ const styles = StyleSheet.create({
   },
   rideDetails: {
     flexDirection: 'row',
-    gap: 16,
+    flexWrap: 'wrap',
+    gap: 12,
+    flex: 1,
   },
   detailItem: {
     flexDirection: 'row',
@@ -664,10 +1079,11 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
   bookButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#3B82F6',
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
+    marginLeft: 8,
   },
   bookButtonText: {
     fontSize: 14,

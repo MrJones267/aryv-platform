@@ -64,15 +64,15 @@ export interface Ride {
 
 export interface CreateRideData {
   vehicleId: string;
-  origin: Location | any;
-  destination: Location | any;
+  origin: Location;
+  destination: Location;
   departureTime: string;
   availableSeats: number;
   pricePerSeat: number;
   description?: string;
   estimatedDuration?: number;
   distance?: number;
-  preferences?: any;
+  preferences?: Record<string, unknown>;
   amenities?: string[];
 }
 
@@ -134,7 +134,7 @@ class RidesApiService extends BaseApiService {
         destinationLng: params.destination.longitude,
         departureDate: params.departureDate,
         passengers: params.passengers,
-        maxDistance: params.maxDistance || 10,
+        maxDistance: params.maxDistance || 500,
         maxPrice: params.maxPrice,
         page: params.page || 1,
         limit: params.limit || 20,
@@ -401,6 +401,25 @@ class RidesApiService extends BaseApiService {
     }>;
   }>> {
     return this.get(`/rides/${rideId}/updates`);
+  }
+
+  /**
+   * Get ride by ID (alias for getRideDetails)
+   */
+  async getRideById(rideId: string): Promise<ApiResponse<Ride>> {
+    return this.get<Ride>(`/rides/${rideId}`);
+  }
+
+  /**
+   * Rate a ride
+   */
+  async rateRide(rideId: string, ratingData: {
+    rating: number;
+    tags?: string[];
+    comment?: string;
+    role?: string;
+  }): Promise<ApiResponse<{ message: string }>> {
+    return this.post<{ message: string }>(`/rides/${rideId}/rate`, ratingData);
   }
 }
 

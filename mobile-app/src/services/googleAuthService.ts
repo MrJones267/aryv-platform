@@ -3,9 +3,12 @@
  * Handles Google Sign-In integration
  */
 
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { GoogleSignin, statusCodes, type SignInResponse } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiConfig } from '../config/api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('GoogleAuthService');
 
 export interface GoogleUser {
   id: string;
@@ -17,9 +20,19 @@ export interface GoogleUser {
   idToken: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  picture?: string;
+  role?: string;
+}
+
 export interface AuthResponse {
   success: boolean;
-  user?: any;
+  user?: AuthUser;
   tokens?: {
     accessToken: string;
     refreshToken: string;
@@ -43,15 +56,15 @@ class GoogleAuthService {
       GoogleSignin.configure({
         webClientId: process.env.GOOGLE_WEB_CLIENT_ID || '306893979998-g6oetretorc1smcuc9lkiuc3hnjhvtet.apps.googleusercontent.com',
         scopes: ['email', 'profile'],
-        offlineAccess: false,
-        hostedDomain: '', // Restrict to domain if needed
-        forceCodeForRefreshToken: false,
+        offlineAccess: true,
+        hostedDomain: '',
+        forceCodeForRefreshToken: true,
       });
       
       this.isConfigured = true;
-      console.log('✅ Google Sign-In configured');
+      log.info('Google Sign-In configured');
     } catch (error) {
-      console.error('❌ Google Sign-In configuration failed:', error);
+      log.error('Google Sign-In configuration failed', error);
       this.isConfigured = false;
     }
   }
@@ -64,7 +77,7 @@ class GoogleAuthService {
       await GoogleSignin.hasPlayServices();
       return true;
     } catch (error) {
-      console.warn('Google Play Services not available:', error);
+      log.warn('Google Play Services not available:', error);
       return false;
     }
   }
@@ -97,36 +110,70 @@ class GoogleAuthService {
         throw new Error('No ID token received from Google');
       }
 
-      console.log('🎉 Google Sign-In successful:', userInfo.data.user.email);
+      log.info('🎉 Google Sign-In successful:', userInfo.data.user.email);
 
       // Verify with backend
-      const authResponse = await this.verifyWithBackend(userInfo);
-      
+      const authResponse = await this.verifyWithBackend(userInfo as unknown as { data: { idToken: string } });
+
       if (authResponse.success) {
-        // Store tokens
+        // Store tokens from backend
         await this.storeTokens(authResponse.tokens!);
-        
+
         return {
           success: true,
           user: authResponse.user,
           tokens: authResponse.tokens
         };
       } else {
-        // Sign out from Google if backend verification fails
-        await this.signOut();
-        return authResponse;
+        // Backend verification failed
+        if (__DEV__) {
+          // In dev mode only, create a local fallback session
+          log.warn('Backend verification failed, creating local session (dev only)');
+          const googleUser = userInfo.data.user;
+          const localUser = {
+            id: googleUser.id || `google_${Date.now()}`,
+            email: googleUser.email,
+            firstName: googleUser.givenName || googleUser.name?.split(' ')[0] || '',
+            lastName: googleUser.familyName || googleUser.name?.split(' ').slice(1).join(' ') || '',
+            fullName: googleUser.name || googleUser.email,
+            picture: googleUser.photo || undefined,
+            role: 'passenger',
+          };
+
+          const localTokens = {
+            accessToken: `dev-google-${Date.now()}`,
+            refreshToken: `dev-refresh-google-${Date.now()}`,
+            expiresIn: 86400,
+          };
+
+          await this.storeTokens(localTokens);
+          await AsyncStorage.setItem('@aryv_auth_token', localTokens.accessToken);
+          await AsyncStorage.setItem('@aryv_user_data', JSON.stringify(localUser));
+
+          return {
+            success: true,
+            user: localUser,
+            tokens: localTokens,
+          };
+        }
+        // In production, fail properly so user can retry
+        return {
+          success: false,
+          error: 'Google sign-in could not be verified. Please try again.',
+        };
       }
 
-    } catch (error: any) {
-      console.error('Google Sign-In error:', error);
+    } catch (error: unknown) {
+      log.error('Google Sign-In error:', error);
 
       let errorMessage = 'Sign in failed';
-      
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      const errorCode = (error as { code?: string })?.code;
+
+      if (errorCode === statusCodes.SIGN_IN_CANCELLED) {
         errorMessage = 'Sign in cancelled';
-      } else if (error.code === statusCodes.IN_PROGRESS) {
+      } else if (errorCode === statusCodes.IN_PROGRESS) {
         errorMessage = 'Sign in already in progress';
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      } else if (errorCode === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         errorMessage = 'Google Play Services not available';
       }
 
@@ -140,7 +187,7 @@ class GoogleAuthService {
   /**
    * Verify Google token with backend
    */
-  private async verifyWithBackend(userInfo: any): Promise<AuthResponse> {
+  private async verifyWithBackend(userInfo: { data: { idToken: string } }): Promise<AuthResponse> {
     try {
       const apiConfig = getApiConfig();
       const endpoint = `${apiConfig.apiUrl}/auth/google/verify`;
@@ -163,7 +210,7 @@ class GoogleAuthService {
       const result = await response.json();
 
       if (result.success) {
-        console.log('✅ Backend verification successful');
+        log.info('✅ Backend verification successful');
         return {
           success: true,
           user: result.data.user,
@@ -174,7 +221,7 @@ class GoogleAuthService {
           }
         };
       } else {
-        console.error('❌ Backend verification failed:', result.message);
+        log.error('❌ Backend verification failed:', result.message);
         return {
           success: false,
           error: result.message || 'Backend verification failed'
@@ -182,7 +229,7 @@ class GoogleAuthService {
       }
 
     } catch (error) {
-      console.error('Backend verification error:', error);
+      log.error('Backend verification error:', error);
       return {
         success: false,
         error: 'Network error during verification'
@@ -197,9 +244,9 @@ class GoogleAuthService {
     try {
       await GoogleSignin.signOut();
       await this.clearStoredTokens();
-      console.log('✅ Google Sign-Out successful');
+      log.info('✅ Google Sign-Out successful');
     } catch (error) {
-      console.error('Google Sign-Out error:', error);
+      log.error('Google Sign-Out error:', error);
     }
   }
 
@@ -237,7 +284,7 @@ class GoogleAuthService {
         ['tokenExpiresAt', (Date.now() + tokens.expiresIn * 1000).toString()]
       ]);
     } catch (error) {
-      console.error('Token storage error:', error);
+      log.error('Token storage error:', error);
     }
   }
 
@@ -248,7 +295,7 @@ class GoogleAuthService {
     try {
       await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'tokenExpiresAt']);
     } catch (error) {
-      console.error('Token clearing error:', error);
+      log.error('Token clearing error:', error);
     }
   }
 
@@ -271,7 +318,7 @@ class GoogleAuthService {
 
       return token[1];
     } catch (error) {
-      console.error('Token retrieval error:', error);
+      log.error('Token retrieval error:', error);
       return null;
     }
   }
@@ -312,7 +359,7 @@ class GoogleAuthService {
         return null;
       }
     } catch (error) {
-      console.error('Token refresh error:', error);
+      log.error('Token refresh error:', error);
       await this.clearStoredTokens();
       return null;
     }

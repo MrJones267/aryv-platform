@@ -20,9 +20,21 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import EmergencyService, { EmergencyContact } from '../../services/EmergencyServiceSimple';
+import PhoneInput from '../../components/ui/PhoneInput';
+import logger from '../../services/LoggingService';
+
+/** Lightweight country shape matching what PhoneInput emits */
+interface PhoneCountry {
+  code: string;
+  name: string;
+  dialCode: string;
+  flag: string;
+}
+
+const log = logger.createLogger('EmergencyContactsScreen');
 
 interface EmergencyContactsScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navigation }) => {
@@ -35,6 +47,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
     relationship: '',
     isPrimary: false,
   });
+  const [selectedCountry, setSelectedCountry] = useState<PhoneCountry | null>(null);
 
   useEffect(() => {
     loadEmergencyContacts();
@@ -46,7 +59,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       const emergencyContacts = await EmergencyService.getEmergencyContacts();
       setContacts(emergencyContacts);
     } catch (error) {
-      console.error('Error loading emergency contacts:', error);
+      log.error('Error loading emergency contacts:', error);
       Alert.alert('Error', 'Failed to load emergency contacts');
     } finally {
       setIsLoading(false);
@@ -59,16 +72,32 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       return;
     }
 
+    // Construct full phone number with country code
+    const fullPhoneNumber = selectedCountry?.dialCode
+      ? `${selectedCountry.dialCode}${newContact.phoneNumber.replace(/\s/g, '')}`
+      : newContact.phoneNumber.replace(/\s/g, '');
+
     try {
+      // Create the contact with full phone number
+      const contactToAdd = {
+        ...newContact,
+        phoneNumber: fullPhoneNumber
+      };
+      
       await EmergencyService.getEmergencyContacts(); // Mock implementation
       setShowAddModal(false);
       setNewContact({ name: '', phoneNumber: '', relationship: '', isPrimary: false });
+      setSelectedCountry(null);
       await loadEmergencyContacts();
       Alert.alert('Success', 'Emergency contact added successfully');
     } catch (error) {
-      console.error('Error adding contact:', error);
+      log.error('Error adding contact:', error);
       Alert.alert('Error', 'Failed to add emergency contact');
     }
+  };
+
+  const handleCountryChange = (country: PhoneCountry): void => {
+    setSelectedCountry(country);
   };
 
   const handleRemoveContact = (contact: EmergencyContact): void => {
@@ -93,7 +122,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       setContacts(updatedContacts);
       Alert.alert('Success', 'Emergency contact removed');
     } catch (error) {
-      console.error('Error removing contact:', error);
+      log.error('Error removing contact:', error);
       Alert.alert('Error', 'Failed to remove contact');
     }
   };
@@ -104,7 +133,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       `Call ${contact.name} at ${contact.phoneNumber}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => console.log(`Calling ${contact.phoneNumber}`) },
+        { text: 'Call', onPress: () => log.info(`Calling ${contact.phoneNumber}`) },
       ]
     );
   };
@@ -174,13 +203,13 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone Number *</Text>
-              <TextInput
-                style={styles.textInput}
+              <PhoneInput
                 value={newContact.phoneNumber}
                 onChangeText={(text) => setNewContact({ ...newContact, phoneNumber: text })}
+                onCountryChange={handleCountryChange}
+                label="Phone Number *"
                 placeholder="Enter phone number"
-                keyboardType="phone-pad"
+                defaultCountry="BW"
               />
             </View>
 

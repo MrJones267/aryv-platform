@@ -27,7 +27,7 @@ interface PricingDisplayProps {
   onSelectAlternative?: (alternative: AlternativePricing) => void;
   onRefresh?: () => void;
   showBreakdown?: boolean;
-  style?: any;
+  style?: object;
 }
 
 export const PricingDisplay: React.FC<PricingDisplayProps> = ({
@@ -121,7 +121,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
         
         <View style={styles.mainPriceRow}>
           <Text style={styles.finalPrice}>
-            ${pricing.finalPrice.toFixed(2)}
+            P{pricing.finalPrice.toFixed(2)}
           </Text>
           <View style={styles.priceDetails}>
             <Text style={styles.currency}>{pricing.currency}</Text>
@@ -253,21 +253,21 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Base Fare</Text>
                 <Text style={styles.breakdownValue}>
-                  ${breakdown.baseFare.toFixed(2)}
+                  P{breakdown.baseFare.toFixed(2)}
                 </Text>
               </View>
               
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Distance ({pricing.estimatedDistance.toFixed(1)} km)</Text>
                 <Text style={styles.breakdownValue}>
-                  ${breakdown.distanceFare.toFixed(2)}
+                  P{breakdown.distanceFare.toFixed(2)}
                 </Text>
               </View>
               
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Time ({pricing.estimatedDuration} min)</Text>
                 <Text style={styles.breakdownValue}>
-                  ${breakdown.timeFare.toFixed(2)}
+                  P{breakdown.timeFare.toFixed(2)}
                 </Text>
               </View>
             </View>
@@ -279,7 +279,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Demand Adjustment</Text>
                   <Text style={[styles.breakdownValue, { color: '#F44336' }]}>
-                    +${breakdown.demandAdjustment.toFixed(2)}
+                    +P{breakdown.demandAdjustment.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -288,7 +288,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Traffic Adjustment</Text>
                   <Text style={[styles.breakdownValue, { color: '#F44336' }]}>
-                    +${breakdown.trafficAdjustment.toFixed(2)}
+                    +P{breakdown.trafficAdjustment.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -297,7 +297,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Weather Adjustment</Text>
                   <Text style={[styles.breakdownValue, { color: '#F44336' }]}>
-                    +${breakdown.weatherAdjustment.toFixed(2)}
+                    +P{breakdown.weatherAdjustment.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -306,7 +306,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Surge Pricing</Text>
                   <Text style={[styles.breakdownValue, { color: '#F44336' }]}>
-                    +${breakdown.surgeMultiplier.toFixed(2)}
+                    +P{breakdown.surgeMultiplier.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -319,7 +319,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Tolls</Text>
                   <Text style={styles.breakdownValue}>
-                    ${breakdown.tolls.toFixed(2)}
+                    P{breakdown.tolls.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -327,14 +327,14 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Platform Fee</Text>
                 <Text style={styles.breakdownValue}>
-                  ${breakdown.fees.toFixed(2)}
+                  P{breakdown.fees.toFixed(2)}
                 </Text>
               </View>
               
               <View style={styles.breakdownItem}>
                 <Text style={styles.breakdownLabel}>Taxes</Text>
                 <Text style={styles.breakdownValue}>
-                  ${breakdown.taxes.toFixed(2)}
+                  P{breakdown.taxes.toFixed(2)}
                 </Text>
               </View>
               
@@ -342,7 +342,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Discount</Text>
                   <Text style={[styles.breakdownValue, { color: '#4CAF50' }]}>
-                    -${breakdown.discount.toFixed(2)}
+                    -P{breakdown.discount.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -351,7 +351,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
             <View style={[styles.breakdownItem, styles.totalItem]}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>
-                ${pricing.finalPrice.toFixed(2)}
+                P{pricing.finalPrice.toFixed(2)}
               </Text>
             </View>
           </ScrollView>
@@ -399,7 +399,7 @@ export const PricingDisplay: React.FC<PricingDisplayProps> = ({
                   </View>
                   <View style={styles.alternativePrice}>
                     <Text style={styles.alternativePriceText}>
-                      ${alternative.price.toFixed(2)}
+                      P{alternative.price.toFixed(2)}
                     </Text>
                     <Text style={styles.alternativeWait}>
                       ~{alternative.estimatedWaitTime} min

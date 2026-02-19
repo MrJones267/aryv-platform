@@ -1,14 +1,30 @@
 /**
+ * @deprecated This service is deprecated. Use SocketService.ts instead for all real-time features.
  * Simple WebSocket Service for ARYV Real-time Features
  * Compatible with Cloudflare Durable Objects WebSocket implementation
+ *
+ * MIGRATION: Replace calls to SimpleWebSocketService with SocketService.getInstance()
  */
+
+import logger from './LoggingService';
+
+const log = logger.createLogger('SimpleWebSocketService');
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  heading?: number;
+  speed?: number;
+  timestamp?: number;
+}
 
 interface WebSocketMessage {
   type: string;
-  data?: any;
+  data?: Record<string, unknown>;
   room?: string;
   message?: string;
-  location?: any;
+  location?: LocationData;
 }
 
 class SimpleWebSocketService {
@@ -29,12 +45,12 @@ class SimpleWebSocketService {
   async connect(userId: string, token: string): Promise<boolean> {
     try {
       if (this.isConnected) {
-        console.log('WebSocket already connected');
+        log.info('WebSocket already connected');
         return true;
       }
 
       const wsUrl = `${this.getWebSocketUrl()}?userId=${userId}&token=${token}`;
-      console.log('Connecting to WebSocket:', wsUrl);
+      log.info('Connecting to WebSocket:', wsUrl);
 
       this.ws = new WebSocket(wsUrl);
 
@@ -45,7 +61,7 @@ class SimpleWebSocketService {
         }
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected successfully');
+          log.info('WebSocket connected successfully');
           this.isConnected = true;
           this.reconnectAttempts = 0;
           
@@ -60,7 +76,7 @@ class SimpleWebSocketService {
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          log.error('WebSocket error:', error);
           this.isConnected = false;
           
           if (this.reconnectAttempts === 0) {
@@ -69,7 +85,7 @@ class SimpleWebSocketService {
         };
 
         this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
+          log.info('WebSocket disconnected');
           this.isConnected = false;
           this.attemptReconnect(userId, token);
         };
@@ -83,7 +99,7 @@ class SimpleWebSocketService {
       });
 
     } catch (error) {
-      console.error('WebSocket connection error:', error);
+      log.error('WebSocket connection error:', error);
       return false;
     }
   }
@@ -104,12 +120,12 @@ class SimpleWebSocketService {
         try {
           handler(message.data || message);
         } catch (error) {
-          console.error('Error in message handler:', error);
+          log.error('Error in message handler:', error);
         }
       });
 
     } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
+      log.error('Error parsing WebSocket message:', error);
     }
   }
 
@@ -118,7 +134,7 @@ class SimpleWebSocketService {
       try {
         this.ws.send(JSON.stringify(message));
       } catch (error) {
-        console.error('Error sending WebSocket message:', error);
+        log.error('Error sending WebSocket message:', error);
       }
     }
   }
@@ -149,7 +165,7 @@ class SimpleWebSocketService {
   }
 
   // Send location update
-  sendLocationUpdate(roomId: string, location: any) {
+  sendLocationUpdate(roomId: string, location: LocationData) {
     this.send({
       type: 'location_update',
       room: roomId,
@@ -189,14 +205,14 @@ class SimpleWebSocketService {
 
   private attemptReconnect(userId: string, token: string) {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached');
+      log.info('Max reconnection attempts reached');
       return;
     }
 
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
 
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    log.info(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     this.reconnectTimeout = setTimeout(() => {
       this.connect(userId, token);

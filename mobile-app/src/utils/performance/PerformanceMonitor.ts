@@ -28,8 +28,8 @@ try {
       // Complete fallback using Date.now()
       performanceAPI = {
         now: () => Date.now(),
-        mark: (name: string) => console.log(`Performance mark: ${name} at ${Date.now()}`),
-        measure: (name: string, startMark?: string) => console.log(`Performance measure: ${name}`)
+        mark: (name: string) => log.info(`Performance mark: ${name} at ${Date.now()}`),
+        measure: (name: string, startMark?: string) => log.info(`Performance measure: ${name}`)
       };
       PerformanceObserver = null;
       PerformanceEntry = null;
@@ -47,6 +47,9 @@ try {
 }
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('PerformanceMonitor');
 
 export interface PerformanceMetric {
   id: string;
@@ -105,16 +108,16 @@ class PerformanceMonitor {
       // Load previous session metrics
       this.loadStoredMetrics();
 
-      console.log('PerformanceMonitor initialized');
+      log.info('PerformanceMonitor initialized');
     } catch (error) {
-      console.error('Error initializing PerformanceMonitor:', error);
+      log.error('Error initializing PerformanceMonitor:', error);
       this.isEnabled = false;
     }
   }
 
   private setupNavigationObserver(): void {
     if (!PerformanceObserver) {
-      console.warn('Navigation observer not supported: PerformanceObserver not available');
+      log.warn('Navigation observer not supported: PerformanceObserver not available');
       return;
     }
 
@@ -140,13 +143,13 @@ class PerformanceMonitor {
       observer.observe({ entryTypes: ['navigation'] });
       this.observers.push(observer);
     } catch (error) {
-      console.warn('Navigation observer not supported:', error);
+      log.warn('Navigation observer not supported:', error);
     }
   }
 
   private setupRenderObserver(): void {
     if (!PerformanceObserver) {
-      console.warn('Render observer not supported: PerformanceObserver not available');
+      log.warn('Render observer not supported: PerformanceObserver not available');
       return;
     }
 
@@ -171,7 +174,7 @@ class PerformanceMonitor {
       observer.observe({ entryTypes: ['measure', 'mark'] });
       this.observers.push(observer);
     } catch (error) {
-      console.warn('Render observer not supported:', error);
+      log.warn('Render observer not supported:', error);
     }
   }
 
@@ -197,7 +200,7 @@ class PerformanceMonitor {
         },
       });
     } catch (error) {
-      console.warn('Memory monitoring not available:', error);
+      log.warn('Memory monitoring not available:', error);
     }
   }
 
@@ -221,7 +224,7 @@ class PerformanceMonitor {
         this.metrics = parsedMetrics.filter(metric => metric.timestamp > oneDayAgo);
       }
     } catch (error) {
-      console.error('Error loading stored metrics:', error);
+      log.error('Error loading stored metrics:', error);
     }
   }
 
@@ -231,7 +234,7 @@ class PerformanceMonitor {
       const metricsToSave = this.metrics.slice(-500);
       await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(metricsToSave));
     } catch (error) {
-      console.error('Error saving metrics to storage:', error);
+      log.error('Error saving metrics to storage:', error);
     }
   }
 
@@ -259,7 +262,7 @@ class PerformanceMonitor {
   endTiming(id: string, metadata?: Record<string, any>): void {
     const metricIndex = this.metrics.findIndex(m => m.id === id);
     if (metricIndex === -1) {
-      console.warn(`Metric with id ${id} not found`);
+      log.warn(`Metric with id ${id} not found`);
       return;
     }
 
@@ -340,7 +343,7 @@ class PerformanceMonitor {
 
     // Log slow operations
     if (fullMetric.duration && fullMetric.duration > 1000) {
-      console.warn(`Slow operation detected: ${fullMetric.name} took ${fullMetric.duration}ms`);
+      log.warn(`Slow operation detected: ${fullMetric.name} took ${fullMetric.duration}ms`);
     }
   }
 
@@ -418,7 +421,7 @@ class PerformanceMonitor {
       try {
         observer.disconnect();
       } catch (error) {
-        console.warn('Error disconnecting observer:', error);
+        log.warn('Error disconnecting observer:', error);
       }
     });
     this.observers = [];

@@ -72,7 +72,43 @@ const PackageTrackingScreen: React.FC = () => {
   const navigation = useNavigation();
   const { packageId } = route.params;
   
-  const [trackingData, setTrackingData] = useState<any>(null);
+  interface PackageData {
+    id: string;
+    title: string;
+    pickupAddress: string;
+    dropoffAddress: string;
+    packageSize: string;
+    fragile: boolean;
+    valuable: boolean;
+    senderPriceOffer: number;
+    createdAt: string;
+  }
+  interface CourierData {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+  }
+  interface DeliveryAgreementData {
+    id: string;
+    status: string;
+    courierId: string;
+    agreedPrice: number;
+    platformFee: number;
+    courier?: CourierData;
+  }
+  interface CourierLocationData {
+    location: [number, number];
+    timestamp: string;
+    accuracy?: number;
+    speed?: number;
+  }
+  interface TrackingData {
+    package: PackageData;
+    deliveryAgreement?: DeliveryAgreementData;
+    courierLocations?: CourierLocationData[];
+  }
+  const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -213,7 +249,7 @@ const PackageTrackingScreen: React.FC = () => {
       <MockMapView
         pickup={[-74.0060, 40.7128]}
         dropoff={[-73.9851, 40.7589]}
-        courierLocations={courierLocations}
+        courierLocations={courierLocations as Array<{ location: [number, number]; timestamp: string }>}
       />
 
       <ScrollView style={styles.content}>
@@ -222,10 +258,10 @@ const PackageTrackingScreen: React.FC = () => {
           <View style={styles.statusHeader}>
             <View style={[
               styles.statusBadge,
-              { backgroundColor: getStatusColor(deliveryAgreement?.status) }
+              { backgroundColor: getStatusColor(deliveryAgreement?.status as string) }
             ]}>
               <Text style={styles.statusText}>
-                {getStatusText(deliveryAgreement?.status)}
+                {getStatusText(deliveryAgreement?.status as string)}
               </Text>
             </View>
             <TouchableOpacity
@@ -268,13 +304,13 @@ const PackageTrackingScreen: React.FC = () => {
               <View style={styles.speedItem}>
                 <Text style={styles.speedLabel}>Speed</Text>
                 <Text style={styles.speedValue}>
-                  {courierLocations[courierLocations.length - 1]?.speed || 0} km/h
+                  {(courierLocations[courierLocations.length - 1]?.speed as number) || 0} km/h
                 </Text>
               </View>
               <View style={styles.speedItem}>
                 <Text style={styles.speedLabel}>Last Update</Text>
                 <Text style={styles.speedValue}>
-                  {formatTime(courierLocations[courierLocations.length - 1]?.timestamp)}
+                  {formatTime(courierLocations[courierLocations.length - 1]?.timestamp as string)}
                 </Text>
               </View>
             </View>

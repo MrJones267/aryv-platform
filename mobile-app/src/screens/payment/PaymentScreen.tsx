@@ -191,22 +191,22 @@ const PaymentScreen: React.FC = () => {
     }
   };
 
-  const handlePaymentMethodSelect = (method: any) => {
-    setSelectedPaymentMethod(method.id);
-    Alert.alert('Payment Method Selected', `${method.title} has been selected as your payment method.`);
+  const handlePaymentMethodSelect = (method: string) => {
+    setSelectedPaymentMethod(method);
+    Alert.alert('Payment Method Selected', `${method} has been selected as your payment method.`);
   };
 
   const handleTransactionPress = (transaction: Transaction) => {
     Alert.alert(
       'Transaction Details',
-      `Transaction ID: ${transaction.id}\nAmount: $${transaction.amount}\nStatus: ${transaction.status}`
+      `Transaction ID: ${transaction.id}\nAmount: P${transaction.amount}\nStatus: ${transaction.status}`
     );
   };
 
   const handleEscrowPress = (escrow: EscrowData) => {
     Alert.alert(
       'Escrow Details',
-      `Escrow ID: ${escrow.id}\nAmount: $${escrow.amount}\nStatus: ${escrow.status}`
+      `Escrow ID: ${escrow.id}\nAmount: P${escrow.amount}\nStatus: ${escrow.status}`
     );
   };
 
@@ -237,7 +237,7 @@ const PaymentScreen: React.FC = () => {
           <Icon name="account-balance-wallet" size={24} color={colors.primary} />
           <Text style={styles.balanceTitle}>Wallet Balance</Text>
         </View>
-        <Text style={styles.balanceAmount}>${getWalletBalance().toFixed(2)}</Text>
+        <Text style={styles.balanceAmount}>P{getWalletBalance().toFixed(2)}</Text>
         <TouchableOpacity style={styles.topUpButton}>
           <Text style={styles.topUpButtonText}>Top Up Wallet</Text>
         </TouchableOpacity>
@@ -248,7 +248,7 @@ const PaymentScreen: React.FC = () => {
         <View style={styles.escrowSummary}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Active Escrows</Text>
-            <Text style={styles.escrowTotal}>${getTotalEscrowAmount().toFixed(2)}</Text>
+            <Text style={styles.escrowTotal}>P{getTotalEscrowAmount().toFixed(2)}</Text>
           </View>
           <Text style={styles.escrowSubtitle}>
             {activeEscrows.length} package{activeEscrows.length > 1 ? 's' : ''} pending delivery

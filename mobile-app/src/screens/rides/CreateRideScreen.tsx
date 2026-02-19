@@ -40,7 +40,11 @@ interface CreateRideFormData {
   vehicleId?: string;
 }
 
-const CreateRideScreen: React.FC = ({ navigation }: any) => {
+interface CreateRideScreenProps {
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void; replace: (screen: string, params?: Record<string, unknown>) => void };
+}
+
+const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -74,6 +78,14 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
     { id: 'luggage', label: 'Luggage Space', icon: 'luggage' },
   ];
 
+  // Auto-select user's first vehicle
+  useEffect(() => {
+    if (user?.vehicles && user.vehicles.length > 0 && !formData.vehicleId) {
+      const activeVehicle = user.vehicles.find((v: { id: string; status?: string }) => v.status === 'active') || user.vehicles[0];
+      setFormData(prev => ({ ...prev, vehicleId: activeVehicle.id }));
+    }
+  }, [user]);
+
   useEffect(() => {
     validateForm();
   }, [formData]);
@@ -100,8 +112,8 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
     const price = parseFloat(formData.pricePerSeat);
     if (!formData.pricePerSeat || isNaN(price) || price < 0) {
       newErrors.pricePerSeat = 'Valid price is required';
-    } else if (price > 1000) {
-      newErrors.pricePerSeat = 'Price cannot exceed $1000';
+    } else if (price > 5000) {
+      newErrors.pricePerSeat = 'Price cannot exceed P5,000';
     }
 
     setErrors(newErrors);
@@ -119,7 +131,7 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
     setShowLocationPicker(null);
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
+  const handleDateChange = (event: unknown, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       const newDateTime = new Date(formData.departureDateTime);
@@ -130,7 +142,7 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
     }
   };
 
-  const handleTimeChange = (event: any, selectedTime?: Date) => {
+  const handleTimeChange = (event: unknown, selectedTime?: Date) => {
     setShowTimePicker(false);
     if (selectedTime) {
       const newDateTime = new Date(formData.departureDateTime);
@@ -176,9 +188,19 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
 
     setIsCreating(true);
     try {
+      const originData = formData.origin!;
+      const destData = formData.destination!;
       const rideData = {
-        origin: formData.origin!,
-        destination: formData.destination!,
+        origin: {
+          latitude: originData.latitude,
+          longitude: originData.longitude,
+          address: originData.address?.fullAddress || 'Unknown location',
+        },
+        destination: {
+          latitude: destData.latitude,
+          longitude: destData.longitude,
+          address: destData.address?.fullAddress || 'Unknown location',
+        },
         departureTime: formData.departureDateTime.toISOString(),
         availableSeats: formData.availableSeats,
         pricePerSeat: parseFloat(formData.pricePerSeat),
@@ -226,8 +248,9 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
       } else {
         Alert.alert('Error', response.error || 'Failed to create ride');
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to create ride');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Failed to create ride');
     } finally {
       setIsCreating(false);
     }
@@ -324,7 +347,7 @@ const CreateRideScreen: React.FC = ({ navigation }: any) => {
         <View style={styles.priceSection}>
           <Input
             label="Price per Seat"
-            placeholder="$25"
+            placeholder="P25"
             value={formData.pricePerSeat}
             onChangeText={(text) => setFormData(prev => ({ ...prev, pricePerSeat: text }))}
             keyboardType="numeric"

@@ -5,7 +5,7 @@
  * @lastModified 2025-01-21
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,19 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Button, Card } from '../../components/ui';
 import locationService from '../../services/LocationService';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { updateOnboardingProgress, completeOnboardingStep, setOnboarded } from '../../store/slices/appSlice';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('OnboardingPermissionsScreen');
 
 interface OnboardingPermissionsScreenProps {
-  navigation: any;
+  navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  route?: {
+    params?: {
+      selectedRole?: 'passenger' | 'driver' | 'courier';
+    };
+  };
 }
 
 interface Permission {
@@ -30,25 +40,62 @@ interface Permission {
   granted: boolean;
 }
 
-const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = ({ navigation }) => {
-  const [permissions, setPermissions] = useState<Permission[]>([
-    {
-      id: 'location',
-      title: 'Location Access',
-      description: 'Find nearby rides and provide accurate pickup locations',
-      icon: 'location-on',
-      required: true,
-      granted: false,
-    },
-    {
-      id: 'notifications',
-      title: 'Push Notifications',
-      description: 'Get real-time updates about your rides and messages',
-      icon: 'notifications',
-      required: false,
-      granted: false,
-    },
-  ]);
+const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = ({ navigation, route }) => {
+  const dispatch = useAppDispatch();
+  const { onboardingProgress } = useAppSelector((state) => state.app);
+  const selectedRole = route?.params?.selectedRole || onboardingProgress.userRole || 'passenger';
+  
+  // Define role-specific permissions
+  const getRolePermissions = () => {
+    const basePermissions = [
+      {
+        id: 'location',
+        title: 'Location Access',
+        description: 'Find nearby rides and provide accurate pickup locations',
+        icon: 'location-on',
+        required: true,
+        granted: false,
+      },
+      {
+        id: 'notifications',
+        title: 'Push Notifications',
+        description: 'Get real-time updates about your rides and messages',
+        icon: 'notifications',
+        required: false,
+        granted: false,
+      },
+    ];
+    
+    const roleSpecificPermissions = selectedRole === 'driver' || selectedRole === 'courier' ? [
+      {
+        id: 'camera',
+        title: 'Camera Access',
+        description: 'Take photos for identity verification and trip documentation',
+        icon: 'camera-alt',
+        required: true,
+        granted: false,
+      },
+      {
+        id: 'contacts',
+        title: 'Contacts Access',
+        description: 'Share ride details with your emergency contacts',
+        icon: 'contacts',
+        required: false,
+        granted: false,
+      },
+    ] : [];
+    
+    return [...basePermissions, ...roleSpecificPermissions];
+  };
+  const [permissions, setPermissions] = useState<Permission[]>(getRolePermissions());
+  
+  useEffect(() => {
+    // Update permissions based on role
+    setPermissions(getRolePermissions());
+  }, [selectedRole]);
+  
+  const [isCompleting, setIsCompleting] = useState(false);
+  
 
   const [isRequesting, setIsRequesting] = useState(false);
 
@@ -66,7 +113,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
             try {
               await locationService.getCurrentLocation();
             } catch (error) {
-              console.warn('Location access granted but unable to get location:', error);
+              log.warn('Location access granted but unable to get location:', error);
             }
           }
           break;
@@ -74,6 +121,17 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
         case 'notifications':
           // In a real app, you would request notification permissions here
           // For now, we'll simulate granting the permission
+          granted = true;
+          break;
+          
+        case 'camera':
+          // Request camera permission for drivers/couriers
+          // In a real app, you would use PermissionsAndroid or react-native-permissions
+          granted = true;
+          break;
+          
+        case 'contacts':
+          // Request contacts permission
           granted = true;
           break;
       }
@@ -91,8 +149,9 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
           [{ text: 'OK' }]
         );
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to request permission');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Failed to request permission');
     } finally {
       setIsRequesting(false);
     }
@@ -106,22 +165,40 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
     }
   };
 
-  const handleContinue = () => {
-    const requiredPermissionsGranted = permissions
-      .filter(p => p.required)
-      .every(p => p.granted);
+  const completeOnboarding = () => {
+    dispatch(completeOnboardingStep('permissions'));
+    dispatch(setOnboarded(true));
+    // AppNavigator will automatically show MainTab when isAuthenticated is true
+    // No explicit navigation needed — the auth state drives the navigator
+  };
 
-    if (!requiredPermissionsGranted) {
-      Alert.alert(
-        'Required Permissions',
-        'Some required permissions are not granted. The app may not work properly. Continue anyway?',
-        [
-          { text: 'Go Back', style: 'cancel' },
-          { text: 'Continue', onPress: () => navigation.navigate('OnboardingProfile') },
-        ]
-      );
-    } else {
-      navigation.navigate('OnboardingProfile');
+  const handleContinue = async () => {
+    setIsCompleting(true);
+
+    try {
+      const requiredPermissionsGranted = permissions
+        .filter(p => p.required)
+        .every(p => p.granted);
+
+      dispatch(updateOnboardingProgress({
+        permissionsGranted: requiredPermissionsGranted,
+        currentStep: 'complete',
+      }));
+
+      if (!requiredPermissionsGranted) {
+        Alert.alert(
+          'Required Permissions',
+          'Some required permissions are not granted. The app may not work properly. Continue anyway?',
+          [
+            { text: 'Go Back', style: 'cancel' },
+            { text: 'Continue', onPress: completeOnboarding },
+          ]
+        );
+      } else {
+        completeOnboarding();
+      }
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -131,7 +208,17 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
       'You can set up permissions later in the app settings. Some features may not work without proper permissions.',
       [
         { text: 'Go Back', style: 'cancel' },
-        { text: 'Skip', onPress: () => navigation.navigate('Main') },
+        {
+          text: 'Skip',
+          onPress: () => {
+            dispatch(updateOnboardingProgress({
+              permissionsGranted: false,
+              currentStep: 'complete',
+            }));
+            dispatch(completeOnboardingStep('permissions_skipped'));
+            dispatch(setOnboarded(true));
+          }
+        },
       ]
     );
   };

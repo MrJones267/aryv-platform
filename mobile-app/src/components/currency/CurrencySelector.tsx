@@ -20,6 +20,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import { Currency, CurrencyService } from '../../services/CurrencyService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CurrencySelector');
 
 interface CurrencySelectorProps {
   selectedCurrency: Currency | null;
@@ -67,7 +70,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       setCurrencies(currencyList);
       setFilteredCurrencies(currencyList);
     } catch (error) {
-      console.error('Error loading currencies:', error);
+      log.error('Error loading currencies:', error);
     } finally {
       setLoading(false);
     }

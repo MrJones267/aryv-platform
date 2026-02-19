@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { RTCView } from 'react-native-webrtc';
 import {
   View,
   Text,
@@ -20,15 +21,36 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { colors } from '../../theme';
-import CallService, { Call } from '../../services/CallService';
+import CallService, { Call, CallEventCallback } from '../../services/CallService';
 import { ActiveCallScreenProps } from '../../navigation/types';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ActiveCallScreen');
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+interface ActiveCallParams {
+  callId: string;
+  callType: 'voice' | 'video';
+  isIncoming: boolean;
+}
+
+interface CallStreamData {
+  stream: { toURL: () => string } | null;
+}
+
+interface CallToggleData {
+  enabled: boolean;
+}
+
+interface ConnectionStateData {
+  state: string;
+}
 
 const ActiveCallScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { callId, callType, isIncoming } = route.params as any;
+  const { callId, callType, isIncoming } = route.params as ActiveCallParams;
 
   const [call, setCall] = useState<Call | null>(null);
   const [callDuration, setCallDuration] = useState(0);
@@ -39,8 +61,8 @@ const ActiveCallScreen: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
   const callTimerRef = useRef<NodeJS.Timeout>();
-  const localStreamRef = useRef<any>(null);
-  const remoteStreamRef = useRef<any>(null);
+  const localStreamRef = useRef<CallStreamData['stream']>(null);
+  const remoteStreamRef = useRef<CallStreamData['stream']>(null);
 
   useEffect(() => {
     // Prevent back button from ending call accidentally
@@ -56,13 +78,14 @@ const ActiveCallScreen: React.FC = () => {
     }
 
     // Setup call event listeners
-    CallService.addEventListener('call_ended', handleCallEnded);
-    CallService.addEventListener('call_error', handleCallError);
-    CallService.addEventListener('connection_state_changed', handleConnectionStateChanged);
-    CallService.addEventListener('local_stream_received', handleLocalStreamReceived);
-    CallService.addEventListener('remote_stream_received', handleRemoteStreamReceived);
-    CallService.addEventListener('audio_toggled', handleAudioToggled);
-    CallService.addEventListener('video_toggled', handleVideoToggled);
+    CallService.addEventListener('call_ended', handleCallEnded as CallEventCallback);
+    CallService.addEventListener('call_error', handleCallError as CallEventCallback);
+    CallService.addEventListener('connection_state_changed', handleConnectionStateChanged as CallEventCallback);
+    CallService.addEventListener('local_stream_received', handleLocalStreamReceived as CallEventCallback);
+    CallService.addEventListener('remote_stream_received', handleRemoteStreamReceived as CallEventCallback);
+    CallService.addEventListener('audio_toggled', handleAudioToggled as CallEventCallback);
+    CallService.addEventListener('video_toggled', handleVideoToggled as CallEventCallback);
+    CallService.addEventListener('speaker_toggled', handleSpeakerToggled as CallEventCallback);
 
     // Start call timer
     startCallTimer();
@@ -74,13 +97,14 @@ const ActiveCallScreen: React.FC = () => {
       }
       
       // Remove event listeners
-      CallService.removeEventListener('call_ended', handleCallEnded);
-      CallService.removeEventListener('call_error', handleCallError);
-      CallService.removeEventListener('connection_state_changed', handleConnectionStateChanged);
-      CallService.removeEventListener('local_stream_received', handleLocalStreamReceived);
-      CallService.removeEventListener('remote_stream_received', handleRemoteStreamReceived);
-      CallService.removeEventListener('audio_toggled', handleAudioToggled);
-      CallService.removeEventListener('video_toggled', handleVideoToggled);
+      CallService.removeEventListener('call_ended', handleCallEnded as CallEventCallback);
+      CallService.removeEventListener('call_error', handleCallError as CallEventCallback);
+      CallService.removeEventListener('connection_state_changed', handleConnectionStateChanged as CallEventCallback);
+      CallService.removeEventListener('local_stream_received', handleLocalStreamReceived as CallEventCallback);
+      CallService.removeEventListener('remote_stream_received', handleRemoteStreamReceived as CallEventCallback);
+      CallService.removeEventListener('audio_toggled', handleAudioToggled as CallEventCallback);
+      CallService.removeEventListener('video_toggled', handleVideoToggled as CallEventCallback);
+      CallService.removeEventListener('speaker_toggled', handleSpeakerToggled as CallEventCallback);
     };
   }, []);
 
@@ -104,39 +128,44 @@ const ActiveCallScreen: React.FC = () => {
   };
 
   const handleCallEnded = (): void => {
-    console.log('Call ended, navigating back');
+    log.info('Call ended, navigating back');
     navigation.goBack();
   };
 
-  const handleCallError = (error: any): void => {
-    console.error('Call error:', error);
+  const handleCallError = (error: unknown): void => {
+    log.error('Call error:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
     Alert.alert(
       'Call Error',
-      error.message || 'An error occurred during the call',
+      errMsg || 'An error occurred during the call',
       [{ text: 'OK', onPress: () => navigation.goBack() }]
     );
   };
 
-  const handleConnectionStateChanged = (data: any): void => {
+  const handleConnectionStateChanged = (data: ConnectionStateData): void => {
     setConnectionStatus(data.state === 'connected' ? 'connected' : 
                       data.state === 'failed' || data.state === 'disconnected' ? 'disconnected' : 'connecting');
   };
 
-  const handleLocalStreamReceived = (data: any): void => {
+  const handleLocalStreamReceived = (data: CallStreamData): void => {
     localStreamRef.current = data.stream;
   };
 
-  const handleRemoteStreamReceived = (data: any): void => {
+  const handleRemoteStreamReceived = (data: CallStreamData): void => {
     remoteStreamRef.current = data.stream;
     setConnectionStatus('connected');
   };
 
-  const handleAudioToggled = (data: any): void => {
+  const handleAudioToggled = (data: CallToggleData): void => {
     setIsAudioMuted(!data.enabled);
   };
 
-  const handleVideoToggled = (data: any): void => {
+  const handleVideoToggled = (data: CallToggleData): void => {
     setIsVideoEnabled(data.enabled);
+  };
+
+  const handleSpeakerToggled = (data: CallToggleData): void => {
+    setIsSpeakerEnabled(data.enabled);
   };
 
   const handleEndCall = async (): Promise<void> => {
@@ -144,7 +173,7 @@ const ActiveCallScreen: React.FC = () => {
       await CallService.endCall('ended_by_user');
       navigation.goBack();
     } catch (error) {
-      console.error('Error ending call:', error);
+      log.error('Error ending call:', error);
       navigation.goBack();
     }
   };
@@ -162,8 +191,8 @@ const ActiveCallScreen: React.FC = () => {
   };
 
   const handleToggleSpeaker = (): void => {
-    setIsSpeakerEnabled(!isSpeakerEnabled);
-    // TODO: Implement speaker toggle in CallService
+    const enabled = CallService.toggleSpeaker();
+    setIsSpeakerEnabled(enabled);
   };
 
   const handleSwitchCamera = async (): Promise<void> => {
@@ -225,15 +254,32 @@ const ActiveCallScreen: React.FC = () => {
         <View style={styles.videoContainer}>
           {/* Remote Video */}
           <View style={styles.remoteVideo}>
-            <Text style={styles.videoPlaceholder}>
-              {connectionStatus === 'connected' ? 'Remote Video' : 'Connecting...'}
-            </Text>
+            {remoteStreamRef.current ? (
+              <RTCView
+                style={styles.rtcView}
+                streamURL={remoteStreamRef.current.toURL()}
+                objectFit="cover"
+              />
+            ) : (
+              <Text style={styles.videoPlaceholder}>
+                {connectionStatus === 'connected' ? 'Remote Video' : 'Connecting...'}
+              </Text>
+            )}
           </View>
           
           {/* Local Video (Picture-in-Picture) */}
           {isVideoEnabled && (
             <View style={styles.localVideo}>
-              <Text style={styles.localVideoPlaceholder}>You</Text>
+              {localStreamRef.current ? (
+                <RTCView
+                  style={styles.localRtcView}
+                  streamURL={localStreamRef.current.toURL()}
+                  objectFit="cover"
+                  mirror={true}
+                />
+              ) : (
+                <Text style={styles.localVideoPlaceholder}>You</Text>
+              )}
               
               {/* Switch Camera Button */}
               <TouchableOpacity
@@ -360,6 +406,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  rtcView: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#000000',
+  },
   videoPlaceholder: {
     fontSize: 18,
     color: '#FFFFFF',
@@ -377,6 +428,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  localRtcView: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
   },
   localVideoPlaceholder: {
     fontSize: 14,

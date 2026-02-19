@@ -22,7 +22,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { authApi } from '../../services/api';
 
 interface ForgotPasswordScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation }) => {
@@ -61,8 +61,9 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
       } else {
         Alert.alert('Error', response.error || 'Failed to send reset email');
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Network error occurred');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Network error occurred');
     } finally {
       setIsLoading(false);
     }

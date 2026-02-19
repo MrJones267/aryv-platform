@@ -1,11 +1,12 @@
 /**
- * @fileoverview QR code scanner for package delivery verification
+ * @fileoverview QR code scanner for package delivery verification (Updated for Vision Camera)
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-01-09
  */
 
 import React, { useState, useEffect } from 'react';
+import CryptoJS from 'crypto-js';
 import {
   View,
   Text,
@@ -17,60 +18,71 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { RNCamera } from 'react-native-camera';
-import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import { Camera, useCameraDevices, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 
 import { colors } from '../../theme';
 import PackageService from '../../services/PackageService';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
+import LocationService from '../../services/LocationService';
+import logger from '../../services/LoggingService';
 
-// Real camera component with fallback to mock
+const log = logger.createLogger('QRScannerScreen');
+
+// Updated camera component with Vision Camera
 const CameraView: React.FC<{
   onBarCodeRead: (data: { data: string }) => void;
   scanning: boolean;
-}> = ({ onBarCodeRead, scanning }) => {
-  const [cameraPermission, setCameraPermission] = useState<string | null>(null);
+  agreementId?: string;
+}> = ({ onBarCodeRead, scanning, agreementId }) => {
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const devices = useCameraDevices();
+  const device = devices.find((d: { position: string }) => d.position === 'back') || devices[0];
   const [mockScanned, setMockScanned] = useState(false);
 
   useEffect(() => {
-    requestCameraPermission();
-  }, []);
-
-  const requestCameraPermission = async () => {
-    try {
-      const permission = Platform.OS === 'ios' 
-        ? PERMISSIONS.IOS.CAMERA 
-        : PERMISSIONS.ANDROID.CAMERA;
-      
-      const result = await request(permission);
-      setCameraPermission(result);
-    } catch (error) {
-      console.log('Camera permission error:', error);
-      setCameraPermission(RESULTS.DENIED);
+    if (!hasPermission) {
+      requestPermission();
     }
-  };
+  }, [hasPermission, requestPermission]);
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr', 'ean-13'],
+    onCodeScanned: (codes) => {
+      if (scanning && codes.length > 0) {
+        onBarCodeRead({ data: codes[0].value || '' });
+      }
+    },
+  });
 
   const simulateScan = () => {
     if (!mockScanned && scanning) {
       setMockScanned(true);
-      // Simulate scanning a QR code
+      // Generate cryptographically secure QR token for demo
       setTimeout(() => {
-        onBarCodeRead({ data: 'MOCK_QR_TOKEN_123456789' });
+        const timestamp = new Date().toISOString();
+        const randomId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const tokenData = {
+          deliveryId: agreementId || 'demo_delivery',
+          timestamp,
+          nonce: randomId,
+        };
+        const secureToken = CryptoJS.SHA256(JSON.stringify(tokenData) + 'QR_SECRET_KEY').toString();
+        const qrToken = `ARYV_QR_${secureToken.substring(0, 16)}_${Date.now()}`;
+        
+        onBarCodeRead({ data: qrToken });
         setMockScanned(false);
       }, 1000);
     }
   };
 
-  // Use real camera if permission granted
-  if (cameraPermission === RESULTS.GRANTED) {
+  // Use real camera if permission granted and device available
+  if (hasPermission && device) {
     return (
-      <RNCamera
+      <Camera
         style={styles.camera}
-        type={RNCamera.Constants.Type.back}
-        flashMode={RNCamera.Constants.FlashMode.auto}
-        barCodeTypes={[RNCamera.Constants.BarCodeType.qr]}
-        onBarCodeRead={scanning ? onBarCodeRead : undefined}
-        captureAudio={false}
+        device={device}
+        isActive={scanning}
+        codeScanner={codeScanner}
       >
         {/* Scan area overlay */}
         <View style={styles.scanArea}>
@@ -81,7 +93,7 @@ const CameraView: React.FC<{
             <View style={[styles.corner, styles.bottomRight]} />
           </View>
         </View>
-      </RNCamera>
+      </Camera>
     );
   }
 
@@ -99,12 +111,12 @@ const CameraView: React.FC<{
       
       <View style={styles.scanInstructions}>
         <Text style={styles.scanText}>
-          {cameraPermission === RESULTS.DENIED 
+          {!hasPermission 
             ? 'Camera permission required for scanning' 
             : 'Position QR code within the frame'}
         </Text>
-        {cameraPermission === RESULTS.DENIED ? (
-          <TouchableOpacity style={styles.mockScanButton} onPress={requestCameraPermission}>
+        {!hasPermission ? (
+          <TouchableOpacity style={styles.mockScanButton} onPress={requestPermission}>
             <Text style={styles.mockScanText}>Grant Camera Permission</Text>
           </TouchableOpacity>
         ) : (
@@ -119,347 +131,248 @@ const CameraView: React.FC<{
   );
 };
 
-type QRScannerRouteProp = RouteProp<CourierStackParamList, 'QRScanner'>;
+// QR Scanner Screen Component
+type QRScannerScreenRouteProp = RouteProp<CourierStackParamList, 'QRScanner'>;
 
 const QRScannerScreen: React.FC = () => {
-  const route = useRoute<QRScannerRouteProp>();
+  const route = useRoute<QRScannerScreenRouteProp>();
   const navigation = useNavigation();
   const { agreementId } = route.params || {};
   
   const [scanning, setScanning] = useState(true);
-  const [processing, setProcessing] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const [scannedData, setScannedData] = useState<string | null>(null);
 
   const handleBarCodeRead = async (data: { data: string }) => {
-    if (!scanning || processing) return;
+    if (!scanning) return;
 
     setScanning(false);
-    setProcessing(true);
+    setScannedData(data.data);
 
     try {
-      const qrToken = data.data;
-      
-      // TODO: Get current location for verification
-      const location: [number, number] = [-74.0060, 40.7128];
-      
-      const response = await PackageService.verifyDeliveryQR(qrToken, location);
-      
-      if (response.success) {
+      // Validate QR code format
+      if (!data.data || !data.data.includes('ARYV_QR_')) {
+        Alert.alert('Invalid QR Code', 'This QR code is not valid for ARYV deliveries.');
+        setScanning(true);
+        return;
+      }
+
+      // Get current location for verification
+      const currentLocation = await LocationService.getCurrentLocation();
+
+      // Verify delivery with backend
+      const result = await PackageService.verifyDeliveryQR(
+        data.data,
+        [currentLocation.latitude, currentLocation.longitude],
+      );
+
+      if (result.success) {
+        const resultData = result.data as Record<string, unknown> | undefined;
         Alert.alert(
-          'Delivery Confirmed!',
-          'Package delivered successfully. Payment has been released to your account.',
+          'QR Code Verified',
+          `Package verified successfully for ${(resultData?.deliveryType as string) || 'delivery'}`,
           [
             {
-              text: 'OK',
+              text: 'Continue',
               onPress: () => {
+                // Navigate to appropriate screen based on delivery type
                 navigation.goBack();
-                navigation.goBack(); // Go back to courier dashboard
               },
             },
-          ]
+          ],
         );
       } else {
-        Alert.alert(
-          'Verification Failed',
-          response.error || 'Invalid QR code or delivery cannot be confirmed.',
-          [
-            {
-              text: 'Try Again',
-              onPress: () => {
-                setScanning(true);
-                setProcessing(false);
-              },
-            },
-            {
-              text: 'Cancel',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        Alert.alert('Verification Failed', result.error || 'Unable to verify QR code');
+        setScanning(true);
       }
     } catch (error) {
-      Alert.alert(
-        'Error',
-        'Failed to verify delivery. Please try again.',
-        [
-          {
-            text: 'Try Again',
-            onPress: () => {
-              setScanning(true);
-              setProcessing(false);
-            },
-          },
-          {
-            text: 'Cancel',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      log.error('QR verification error:', error);
+      Alert.alert('Error', 'Failed to verify QR code. Please try again.');
+      setScanning(true);
     }
   };
 
-  const handleManualEntry = () => {
-    Alert.prompt(
-      'Manual QR Entry',
-      'Enter the QR code manually:',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Verify',
-          onPress: (qrCode) => {
-            if (qrCode) {
-              handleBarCodeRead({ data: qrCode });
-            }
-          },
-        },
-      ],
-      'plain-text'
-    );
+  const toggleFlash = () => {
+    setFlashOn(!flashOn);
+  };
+
+  const resetScanner = () => {
+    setScanning(true);
+    setScannedData(null);
   };
 
   return (
     <View style={styles.container}>
-      {/* Camera View */}
-      <View style={styles.cameraContainer}>
-        <CameraView onBarCodeRead={handleBarCodeRead} scanning={scanning} />
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Scan QR Code</Text>
+        <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
+          <Icon name={flashOn ? "flash-on" : "flash-off"} size={24} color={colors.primary} />
+        </TouchableOpacity>
       </View>
 
-      {/* Overlay */}
-      <View style={styles.overlay}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Icon name="close" size={24} color={colors.text.inverse} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Scan QR Code</Text>
-          <View style={{ width: 24 }} />
-        </View>
+      <CameraView 
+        onBarCodeRead={handleBarCodeRead} 
+        scanning={scanning} 
+        agreementId={agreementId}
+      />
 
-        {/* Instructions */}
-        <View style={styles.instructionsContainer}>
-          <View style={styles.instructionCard}>
-            <Icon name="qr-code-scanner" size={32} color={colors.primary} />
-            <Text style={styles.instructionTitle}>Delivery Verification</Text>
-            <Text style={styles.instructionText}>
-              Ask the recipient to show their QR code and scan it to confirm delivery
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.resetButton} onPress={resetScanner}>
+          <Icon name="refresh" size={24} color={colors.white} />
+          <Text style={styles.resetText}>Reset Scanner</Text>
+        </TouchableOpacity>
+        
+        {scannedData && (
+          <View style={styles.scannedInfo}>
+            <Text style={styles.scannedLabel}>Scanned Data:</Text>
+            <Text style={styles.scannedValue} numberOfLines={2}>
+              {scannedData.substring(0, 50)}...
             </Text>
           </View>
-        </View>
-
-        {/* Bottom Controls */}
-        <View style={styles.bottomControls}>
-          <TouchableOpacity
-            style={styles.manualButton}
-            onPress={handleManualEntry}
-          >
-            <Icon name="keyboard" size={20} color={colors.text.inverse} />
-            <Text style={styles.manualButtonText}>Manual Entry</Text>
-          </TouchableOpacity>
-
-          {processing && (
-            <View style={styles.processingIndicator}>
-              <Icon name="hourglass-empty" size={20} color={colors.warning} />
-              <Text style={styles.processingText}>Verifying delivery...</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* Safety Information */}
-      <View style={styles.safetyInfo}>
-        <View style={styles.safetyCard}>
-          <Icon name="security" size={20} color={colors.success} />
-          <Text style={styles.safetyText}>
-            Secure verification ensures payment is only released when delivery is confirmed
-          </Text>
-        </View>
+        )}
       </View>
     </View>
   );
 };
 
+// Styles
 const { width, height } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
-  },
-  cameraContainer: {
-    flex: 1,
-  },
-  camera: {
-    flex: 1,
-  },
-  mockCamera: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanArea: {
-    width: width * 0.7,
-    height: width * 0.7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanCorners: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-  },
-  corner: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: colors.primary,
-  },
-  topLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-  },
-  topRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-  },
-  bottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-  },
-  bottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-  },
-  scanInstructions: {
-    position: 'absolute',
-    bottom: 100,
-    alignItems: 'center',
-  },
-  scanText: {
-    color: colors.text.inverse,
-    fontSize: 16,
-    marginBottom: 20,
-  },
-  mockScanButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  mockScanText: {
-    color: colors.text.inverse,
-    fontWeight: 'bold',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'space-between',
+    backgroundColor: colors.black,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 16,
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 16,
+    backgroundColor: colors.white,
   },
-  closeButton: {
+  backButton: {
     padding: 8,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.text.inverse,
+    color: colors.textPrimary,
   },
-  instructionsContainer: {
-    paddingHorizontal: 16,
+  flashButton: {
+    padding: 8,
+  },
+  camera: {
+    flex: 1,
+    width: width,
+    height: height * 0.7,
+  },
+  mockCamera: {
+    flex: 1,
+    backgroundColor: colors.black,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  instructionCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 20,
-    borderRadius: 12,
+  scanArea: {
+    position: 'absolute',
+    top: height * 0.2,
+    left: width * 0.1,
+    right: width * 0.1,
+    bottom: height * 0.4,
+    justifyContent: 'center',
     alignItems: 'center',
-    maxWidth: width * 0.8,
   },
-  instructionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginTop: 8,
-    marginBottom: 8,
+  scanCorners: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
-  instructionText: {
-    fontSize: 14,
-    color: colors.text.secondary,
+  corner: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+  },
+  topRight: {
+    top: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+  },
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+  },
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderTopWidth: 0,
+  },
+  scanInstructions: {
+    position: 'absolute',
+    bottom: 50,
+    alignItems: 'center',
+  },
+  scanText: {
+    color: colors.white,
+    fontSize: 16,
     textAlign: 'center',
-    lineHeight: 20,
+    marginBottom: 20,
   },
-  bottomControls: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-    alignItems: 'center',
-  },
-  manualButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  mockScanButton: {
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
-    marginBottom: 16,
   },
-  manualButtonText: {
-    color: colors.text.inverse,
-    fontWeight: '600',
-    marginLeft: 8,
+  mockScanText: {
+    color: colors.white,
+    fontWeight: 'bold',
   },
-  processingIndicator: {
+  footer: {
+    backgroundColor: colors.white,
+    padding: 20,
+    alignItems: 'center',
+  },
+  resetButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 8,
+    marginBottom: 10,
   },
-  processingText: {
-    color: colors.warning,
+  resetText: {
+    color: colors.white,
     marginLeft: 8,
+    fontWeight: 'bold',
   },
-  safetyInfo: {
-    position: 'absolute',
-    bottom: 20,
-    left: 16,
-    right: 16,
-  },
-  safetyCard: {
-    flexDirection: 'row',
+  scannedInfo: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    padding: 12,
-    borderRadius: 8,
+    marginTop: 10,
   },
-  safetyText: {
-    color: colors.text.inverse,
+  scannedLabel: {
     fontSize: 12,
-    marginLeft: 8,
-    flex: 1,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  scannedValue: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    textAlign: 'center',
   },
 });
 

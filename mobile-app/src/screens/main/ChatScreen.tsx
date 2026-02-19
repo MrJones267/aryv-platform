@@ -1,11 +1,12 @@
 /**
  * @fileoverview Chat screen for driver-passenger communication
+ * Integrates with Socket.io for real-time messaging and ride context
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2025-01-25
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,11 +18,18 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Clipboard,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
 import { ChatScreenProps } from '../../navigation/types';
-import { CallIntegrationService } from '../../services/CallIntegrationService';
+import { useSocket, useSocketEvent, useChatMessages } from '../../hooks/useSocket';
+import locationService from '../../services/LocationService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ChatScreen');
 
 interface ChatMessage {
   id: string;
@@ -40,29 +48,77 @@ interface ChatMessage {
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const { chatId, recipientName } = route.params;
-  // Additional params that might be passed from ride context
-  const rideId = (route.params as any)?.rideId;
-  const bookingId = (route.params as any)?.bookingId;
+  const rideId = (route.params as Record<string, unknown>)?.rideId as string | undefined;
+  const bookingId = (route.params as Record<string, unknown>)?.bookingId as string | undefined;
   const { profile: user } = useAppSelector((state) => state.user);
-  
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  
+  const [isOnline, setIsOnline] = useState(false);
+  const [isSharingLocation, setIsSharingLocation] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
+
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Socket integration
+  const { connected, joinRide, leaveRide } = useSocket();
+  const chatRoom = rideId || chatId;
+  const {
+    messages: socketMessages,
+    typing: typingUsers,
+    sendMessage: sendSocketMessage,
+    sendTyping: sendSocketTyping,
+  } = useChatMessages(chatRoom);
+
+  // Join ride room on mount
+  useEffect(() => {
+    if (chatRoom && connected) {
+      joinRide(chatRoom);
+    }
+    return () => {
+      if (chatRoom) {
+        leaveRide(chatRoom);
+      }
+    };
+  }, [chatRoom, connected]);
+
+  // Listen for online status
+  useSocketEvent('online_users', (data: Record<string, unknown>) => {
+    if (data?.users) {
+      const recipientId = (route.params as Record<string, unknown>)?.recipientId as string | undefined;
+      setIsOnline((data.users as string[]).includes(recipientId || ''));
+    }
+  });
+
+  // Merge socket messages into local state
+  useEffect(() => {
+    if (socketMessages.length > 0) {
+      const newSocketMsgs: ChatMessage[] = socketMessages
+        .filter((sm: Record<string, unknown>) => !localMessages.find(lm => lm.id === sm.id))
+        .map((sm: Record<string, unknown>) => ({
+          id: (sm.id as string) || Date.now().toString(),
+          senderId: (sm.senderId as string) || (sm.userId as string) || '',
+          senderName: (sm.senderName as string) || recipientName,
+          message: (sm.message as string) || (sm.content as string) || '',
+          timestamp: (sm.timestamp as string) || new Date().toISOString(),
+          type: (sm.type as ChatMessage['type']) || 'text',
+          isRead: false,
+          location: sm.location as ChatMessage['location'],
+        }));
+
+      if (newSocketMsgs.length > 0) {
+        setLocalMessages(prev => [...prev, ...newSocketMsgs]);
+        scrollToBottom();
+      }
+    }
+  }, [socketMessages]);
 
   useEffect(() => {
     navigation.setOptions({
       headerTitle: recipientName,
       headerRight: () => (
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton} onPress={handleVideoCall}>
-            <Icon name="videocam" size={24} color="#4CAF50" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={handleVoiceCall}>
-            <Icon name="call" size={24} color="#2196F3" />
-          </TouchableOpacity>
           <TouchableOpacity style={styles.headerButton} onPress={handleMoreOptions}>
             <Icon name="more-vert" size={24} color="#666666" />
           </TouchableOpacity>
@@ -71,23 +127,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     });
 
     loadMessages();
-    
-    // Simulate real-time updates
-    const interval = setInterval(() => {
-      simulateIncomingMessage();
-    }, 30000); // Every 30 seconds
-
-    return () => clearInterval(interval);
   }, []);
 
   const loadMessages = (): void => {
-    // Mock chat data - replace with actual API call
+    // Initial mock messages — these would be fetched from API in production
     const mockMessages: ChatMessage[] = [
       {
         id: '1',
         senderId: 'other-user-id',
         senderName: recipientName,
-        message: 'Hi! I\'m interested in your ride to downtown.',
+        message: 'Hi! I\'m interested in your ride.',
         timestamp: new Date(Date.now() - 3600000).toISOString(),
         type: 'text',
         isRead: true,
@@ -96,7 +145,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         id: '2',
         senderId: user?.id || 'current-user',
         senderName: user?.firstName || 'You',
-        message: 'Great! I have 2 seats available. When do you need to leave?',
+        message: 'Great! I have seats available. When do you need to leave?',
         timestamp: new Date(Date.now() - 3300000).toISOString(),
         type: 'text',
         isRead: true,
@@ -139,31 +188,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       },
     ];
 
-    setMessages(mockMessages);
-  };
-
-  const simulateIncomingMessage = (): void => {
-    const randomMessages = [
-      'I\'m running a few minutes late, is that okay?',
-      'Just arrived at the pickup location',
-      'Thank you for the smooth ride!',
-      'Could you please share your location?',
-    ];
-
-    if (Math.random() > 0.7) { // 30% chance
-      const newMsg: ChatMessage = {
-        id: Date.now().toString(),
-        senderId: 'other-user-id',
-        senderName: recipientName,
-        message: randomMessages[Math.floor(Math.random() * randomMessages.length)],
-        timestamp: new Date().toISOString(),
-        type: 'text',
-        isRead: false,
-      };
-
-      setMessages(prev => [...prev, newMsg]);
-      scrollToBottom();
-    }
+    setLocalMessages(mockMessages);
   };
 
   const handleSendMessage = (): void => {
@@ -179,93 +204,172 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       isRead: false,
     };
 
-    setMessages(prev => [...prev, message]);
+    setLocalMessages(prev => [...prev, message]);
     setNewMessage('');
+
+    // Send via socket
+    if (connected && chatRoom) {
+      sendSocketMessage(newMessage.trim(), 'text');
+    }
+
+    // Clear typing indicator
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (connected && chatRoom) {
+      sendSocketTyping(false);
+    }
+
     scrollToBottom();
   };
 
-  const handleVoiceCall = async (): Promise<void> => {
-    try {
-      const callIntegration = CallIntegrationService.getInstance();
-      
-      // Check if already in a call
-      if (callIntegration.isInCall()) {
-        Alert.alert(
-          'Call in Progress',
-          'You are already in an active call. Please end the current call first.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
+  const handleTextChange = (text: string): void => {
+    setNewMessage(text);
 
-      // Get the participant ID from route params
-      const participantId = chatId;
-      
-      // Initiate voice call
-      const success = await callIntegration.initiateCall(participantId, 'voice', {
-        participantId,
-        participantName: 'Chat Participant',
-        participantRole: 'driver', // Assume this is driver chat
-        rideId: rideId,
-      });
-      
-      if (!success) {
-        Alert.alert(
-          'Call Failed',
-          'Unable to initiate call. Please try again.',
-          [{ text: 'OK' }]
-        );
+    // Send typing indicator via socket
+    if (connected && chatRoom) {
+      sendSocketTyping(true);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
-    } catch (error) {
-      console.error('Error initiating voice call:', error);
-      Alert.alert(
-        'Call Error',
-        'Something went wrong. Please try again.',
-        [{ text: 'OK' }]
-      );
+      typingTimeoutRef.current = setTimeout(() => {
+        sendSocketTyping(false);
+      }, 2000);
     }
   };
 
-  const handleVideoCall = async (): Promise<void> => {
+  const handleShareLocation = async (): Promise<void> => {
+    setIsSharingLocation(true);
     try {
-      const callIntegration = CallIntegrationService.getInstance();
-      
-      // Check if already in a call
-      if (callIntegration.isInCall()) {
-        Alert.alert(
-          'Call in Progress',
-          'You are already in an active call. Please end the current call first.',
-          [{ text: 'OK' }]
+      const location = await locationService.getCurrentLocation();
+      if (location) {
+        const addressData = await locationService.reverseGeocode(
+          location.latitude,
+          location.longitude,
         );
-        return;
-      }
+        const addressStr = addressData?.fullAddress || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
 
-      // Get the participant ID from route params
-      const participantId = chatId;
-      
-      // Initiate video call
-      const success = await callIntegration.initiateCall(participantId, 'video', {
-        participantId,
-        participantName: 'Chat Participant',
-        participantRole: 'driver', // Assume this is driver chat
-        rideId: rideId,
-      });
-      
-      if (!success) {
-        Alert.alert(
-          'Video Call Failed',
-          'Unable to initiate video call. Please try again.',
-          [{ text: 'OK' }]
-        );
+        const locationMsg: ChatMessage = {
+          id: Date.now().toString(),
+          senderId: user?.id || 'current-user',
+          senderName: user?.firstName || 'You',
+          message: `📍 Shared location: ${addressStr}`,
+          timestamp: new Date().toISOString(),
+          type: 'location',
+          isRead: false,
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            address: addressStr,
+          },
+        };
+
+        setLocalMessages(prev => [...prev, locationMsg]);
+
+        if (connected && chatRoom) {
+          sendSocketMessage(locationMsg.message, 'location');
+        }
+
+        scrollToBottom();
+      } else {
+        Alert.alert('Location Unavailable', 'Unable to get your current location. Please check location permissions.');
       }
     } catch (error) {
-      console.error('Error initiating video call:', error);
-      Alert.alert(
-        'Video Call Error',
-        'Something went wrong. Please try again.',
-        [{ text: 'OK' }]
-      );
+      log.error('Error sharing location:', error);
+      Alert.alert('Error', 'Failed to share location. Please try again.');
+    } finally {
+      setIsSharingLocation(false);
     }
+  };
+
+  const handleSendQuickMessage = (text: string): void => {
+    setShowQuickActions(false);
+    const message: ChatMessage = {
+      id: Date.now().toString(),
+      senderId: user?.id || 'current-user',
+      senderName: user?.firstName || 'You',
+      message: text,
+      timestamp: new Date().toISOString(),
+      type: 'text',
+      isRead: false,
+    };
+
+    setLocalMessages(prev => [...prev, message]);
+
+    if (connected && chatRoom) {
+      sendSocketMessage(text, 'text');
+    }
+
+    scrollToBottom();
+  };
+
+  const handleOpenLocationInMaps = (location: ChatMessage['location']): void => {
+    if (!location) return;
+    const url = Platform.select({
+      ios: `maps:0,0?q=${location.latitude},${location.longitude}`,
+      android: `geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(${encodeURIComponent(location.address)})`,
+    });
+    if (url) {
+      Linking.openURL(url).catch(() => {
+        Alert.alert('Error', 'Unable to open maps application.');
+      });
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string): Promise<void> => {
+    setLocalMessages(prev => prev.filter(msg => msg.id !== messageId));
+  };
+
+  const handleMessageLongPress = (message: ChatMessage): void => {
+    const isCurrentUser = message.senderId === user?.id || message.senderId === 'current-user';
+    const isSystem = message.type === 'system';
+
+    if (isSystem) return;
+
+    const actions: Array<{ text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }> = [];
+
+    if (isCurrentUser) {
+      actions.push({
+        text: 'Delete Message',
+        style: 'destructive' as const,
+        onPress: () => {
+          Alert.alert(
+            'Delete Message',
+            'Are you sure you want to delete this message?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => handleDeleteMessage(message.id),
+              },
+            ],
+          );
+        },
+      });
+    }
+
+    actions.push(
+      {
+        text: 'Copy Message',
+        onPress: () => {
+          Clipboard.setString(message.message);
+          Alert.alert('Copied', 'Message copied to clipboard');
+        },
+      },
+      {
+        text: 'Report Message',
+        style: 'destructive' as const,
+        onPress: () => {
+          Alert.alert('Report Message', 'Thank you for reporting. We will review this message.');
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    );
+
+    Alert.alert('Message Options', 'Choose an action', actions);
   };
 
   const handleMoreOptions = (): void => {
@@ -274,17 +378,29 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       'Choose an action',
       [
         { text: 'Share Location', onPress: handleShareLocation },
+        { text: 'Clear Chat History', onPress: handleClearChat, style: 'destructive' },
         { text: 'Report User', onPress: handleReportUser, style: 'destructive' },
         { text: 'Block User', onPress: handleBlockUser, style: 'destructive' },
         { text: 'Cancel', style: 'cancel' },
-      ]
+      ],
     );
   };
 
-  const handleShareLocation = (): void => {
-    // Share current location
-    console.log('Sharing location...');
-    Alert.alert('Location Shared', 'Your current location has been shared.');
+  const handleClearChat = (): void => {
+    Alert.alert(
+      'Clear Chat History',
+      'Are you sure you want to clear all messages? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: () => {
+            setLocalMessages([]);
+          },
+        },
+      ],
+    );
   };
 
   const handleReportUser = (): void => {
@@ -298,7 +414,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Block', style: 'destructive', onPress: () => navigation.goBack() },
-      ]
+      ],
     );
   };
 
@@ -314,21 +430,85 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     const diffMs = now.getTime() - date.getTime();
     const diffMinutes = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
 
     if (diffMinutes < 1) return 'now';
     if (diffMinutes < 60) return `${diffMinutes}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return date.toLocaleDateString();
     return date.toLocaleDateString();
+  };
+
+  const quickActions = [
+    { icon: 'schedule', label: 'On my way', message: "I'm on my way!" },
+    { icon: 'hourglass-empty', label: 'Running late', message: "I'm running a few minutes late, sorry!" },
+    { icon: 'check-circle', label: 'I\'m here', message: "I've arrived at the pickup point." },
+    { icon: 'thumb-up', label: 'Thanks', message: 'Thank you! See you soon.' },
+  ];
+
+  const renderRideContext = (): React.ReactNode => {
+    if (!rideId && !bookingId) return null;
+
+    return (
+      <TouchableOpacity
+        style={styles.rideContext}
+        onPress={() => {
+          if (rideId) {
+            (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideDetails', { rideId });
+          }
+        }}
+      >
+        <Icon name="directions-car" size={16} color="#2196F3" />
+        <Text style={styles.rideContextText} numberOfLines={1}>
+          {bookingId ? 'Booking' : 'Ride'} conversation
+        </Text>
+        <Icon name="chevron-right" size={16} color="#999999" />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderQuickActions = (): React.ReactNode => {
+    if (!showQuickActions) return null;
+
+    return (
+      <View style={styles.quickActionsContainer}>
+        <View style={styles.quickActionsRow}>
+          {quickActions.map((action, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.quickActionButton}
+              onPress={() => handleSendQuickMessage(action.message)}
+            >
+              <Icon name={action.icon} size={18} color="#2196F3" />
+              <Text style={styles.quickActionText} numberOfLines={1}>
+                {action.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.quickActionShareLocation}
+          onPress={handleShareLocation}
+          disabled={isSharingLocation}
+        >
+          {isSharingLocation ? (
+            <ActivityIndicator size="small" color="#2196F3" />
+          ) : (
+            <Icon name="my-location" size={18} color="#2196F3" />
+          )}
+          <Text style={styles.quickActionText}>
+            {isSharingLocation ? 'Getting location...' : 'Share my location'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }): React.JSX.Element => {
     const isCurrentUser = item.senderId === user?.id || item.senderId === 'current-user';
     const isSystem = item.type === 'system';
-    const showTimestamp = index === 0 || 
-      (messages[index - 1] && 
-       new Date(item.timestamp).getTime() - new Date(messages[index - 1].timestamp).getTime() > 300000); // 5 minutes
+    const isLocation = item.type === 'location';
+    const showTimestamp = index === 0 ||
+      (localMessages[index - 1] &&
+        new Date(item.timestamp).getTime() - new Date(localMessages[index - 1].timestamp).getTime() > 300000);
 
     if (isSystem) {
       return (
@@ -350,20 +530,52 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
             {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString()}
           </Text>
         )}
-        
-        <View style={[
-          styles.messageBubble,
-          isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
-        ]}>
+
+        <TouchableOpacity
+          style={[
+            styles.messageBubble,
+            isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
+            isLocation && styles.locationBubble,
+          ]}
+          onLongPress={() => handleMessageLongPress(item)}
+          onPress={isLocation && item.location ? () => handleOpenLocationInMaps(item.location) : undefined}
+          activeOpacity={0.8}
+          delayLongPress={500}
+        >
           {!isCurrentUser && (
             <Text style={styles.senderName}>{item.senderName}</Text>
           )}
-          <Text style={[
-            styles.messageText,
-            isCurrentUser ? styles.currentUserText : styles.otherUserText,
-          ]}>
-            {item.message}
-          </Text>
+
+          {isLocation && item.location && (
+            <View style={styles.locationPreview}>
+              <Icon name="place" size={20} color={isCurrentUser ? '#FFFFFF' : '#2196F3'} />
+              <Text style={[
+                styles.locationAddress,
+                isCurrentUser ? styles.currentUserText : styles.otherUserText,
+              ]} numberOfLines={2}>
+                {item.location.address}
+              </Text>
+            </View>
+          )}
+
+          {!isLocation && (
+            <Text style={[
+              styles.messageText,
+              isCurrentUser ? styles.currentUserText : styles.otherUserText,
+            ]}>
+              {item.message}
+            </Text>
+          )}
+
+          {isLocation && (
+            <Text style={[
+              styles.locationTapHint,
+              { color: isCurrentUser ? 'rgba(255,255,255,0.6)' : '#999999' },
+            ]}>
+              Tap to open in maps
+            </Text>
+          )}
+
           <View style={styles.messageFooter}>
             <Text style={[
               styles.messageTime,
@@ -378,11 +590,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
               <Icon
                 name={item.isRead ? 'done-all' : 'done'}
                 size={14}
-                color={item.isRead ? '#2196F3' : '#CCCCCC'}
+                color={item.isRead ? '#81D4FA' : 'rgba(255,255,255,0.5)'}
               />
             )}
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -390,23 +602,30 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const renderInputBar = (): React.JSX.Element => (
     <View style={styles.inputContainer}>
       <View style={styles.inputRow}>
-        <TouchableOpacity style={styles.attachButton}>
-          <Icon name="attach-file" size={24} color="#666666" />
+        <TouchableOpacity
+          style={styles.attachButton}
+          onPress={() => setShowQuickActions(!showQuickActions)}
+        >
+          <Icon
+            name={showQuickActions ? 'close' : 'add-circle-outline'}
+            size={24}
+            color={showQuickActions ? '#F44336' : '#666666'}
+          />
         </TouchableOpacity>
-        
+
         <TextInput
           style={styles.textInput}
           placeholder="Type a message..."
           placeholderTextColor="#999999"
           value={newMessage}
-          onChangeText={setNewMessage}
+          onChangeText={handleTextChange}
           multiline
           maxLength={500}
           returnKeyType="send"
           onSubmitEditing={handleSendMessage}
           blurOnSubmit={false}
         />
-        
+
         <TouchableOpacity
           style={[
             styles.sendButton,
@@ -432,18 +651,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         style={styles.keyboardAvoidingView}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
+        {/* Ride Context Banner */}
+        {renderRideContext()}
+
         {/* Online Status */}
-        {isOnline && (
-          <View style={styles.onlineStatus}>
-            <View style={styles.onlineIndicator} />
-            <Text style={styles.onlineText}>{recipientName} is online</Text>
-          </View>
-        )}
+        <View style={styles.statusBar}>
+          {connected ? (
+            <View style={styles.onlineStatus}>
+              <View style={[styles.statusDot, isOnline ? styles.onlineDot : styles.offlineDot]} />
+              <Text style={styles.statusText}>
+                {isOnline ? `${recipientName} is online` : 'Offline'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.onlineStatus}>
+              <Icon name="cloud-off" size={14} color="#FF9800" />
+              <Text style={[styles.statusText, { color: '#FF9800' }]}>
+                Connecting...
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* Messages List */}
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={localMessages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           style={styles.messagesList}
@@ -454,11 +687,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         />
 
         {/* Typing Indicator */}
-        {isTyping && (
+        {typingUsers.length > 0 && (
           <View style={styles.typingContainer}>
+            <View style={styles.typingDots}>
+              <View style={[styles.dot, styles.dot1]} />
+              <View style={[styles.dot, styles.dot2]} />
+              <View style={[styles.dot, styles.dot3]} />
+            </View>
             <Text style={styles.typingText}>{recipientName} is typing...</Text>
           </View>
         )}
+
+        {/* Quick Actions */}
+        {renderQuickActions()}
 
         {renderInputBar()}
       </KeyboardAvoidingView>
@@ -482,25 +723,49 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 8,
   },
+  rideContext: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#E3F2FD',
+    borderBottomWidth: 1,
+    borderBottomColor: '#BBDEFB',
+    gap: 8,
+  },
+  rideContextText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1565C0',
+    fontWeight: '500',
+  },
+  statusBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
   onlineStatus: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    backgroundColor: '#F0F8FF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
     gap: 6,
   },
-  onlineIndicator: {
+  statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  onlineDot: {
     backgroundColor: '#4CAF50',
   },
-  onlineText: {
+  offlineDot: {
+    backgroundColor: '#BDBDBD',
+  },
+  statusText: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: '#666666',
     fontWeight: '500',
   },
   messagesList: {
@@ -541,6 +806,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
   },
+  locationBubble: {
+    minWidth: '60%',
+  },
   senderName: {
     fontSize: 12,
     fontWeight: '600',
@@ -556,6 +824,22 @@ const styles = StyleSheet.create({
   },
   otherUserText: {
     color: '#333333',
+  },
+  locationPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  locationAddress: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  locationTapHint: {
+    fontSize: 11,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -596,15 +880,69 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   typingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
+    gap: 8,
   },
+  typingDots: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#BDBDBD',
+  },
+  dot1: { opacity: 0.4 },
+  dot2: { opacity: 0.7 },
+  dot3: { opacity: 1.0 },
   typingText: {
     fontSize: 14,
     color: '#666666',
     fontStyle: 'italic',
+  },
+  quickActionsContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  quickActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    gap: 6,
+  },
+  quickActionShareLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 20,
+    gap: 6,
+  },
+  quickActionText: {
+    fontSize: 13,
+    color: '#333333',
+    fontWeight: '500',
   },
   inputContainer: {
     borderTopWidth: 1,

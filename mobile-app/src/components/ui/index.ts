@@ -21,6 +21,20 @@ export type { AvatarSize } from './Avatar';
 export { Badge, DotBadge } from './Badge';
 export type { BadgeVariant, BadgeSize } from './Badge';
 
+export { Skeleton, SkeletonCircle, RideCardSkeleton, ProfileSkeleton, MessageListSkeleton, ScreenSkeleton } from './Skeleton';
+export { ToastProvider, useToast } from './Toast';
+export { FadeIn, ScaleIn, SlideIn, StaggeredList, PulseView } from './AnimatedComponents';
+
+// PhoneInput - exported separately when needed
+// export { default as PhoneInput } from './PhoneInput';
+
+// Common Components - exported separately when needed
+// export { default as FileUpload } from '../common/FileUpload';
+// export type { FileUploadProps } from '../common/FileUpload';
+
+// Priority 3 components - Analytics and Admin - exported separately when needed
+// export { default as AdminDashboard } from '../../screens/admin/AdminDashboardScreen';
+
 // Design System Constants
 export const colors = {
   // Primary Colors

@@ -7,6 +7,9 @@
 
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('MemoryManager');
 
 export interface MemoryWarning {
   timestamp: number;
@@ -58,9 +61,9 @@ class MemoryManager {
       // Register default cleanup functions
       this.registerDefaultCleanupFunctions();
 
-      console.log('MemoryManager initialized');
+      log.info('MemoryManager initialized');
     } catch (error) {
-      console.error('Error initializing MemoryManager:', error);
+      log.error('Error initializing MemoryManager:', error);
       this.isEnabled = false;
     }
   }
@@ -79,7 +82,7 @@ class MemoryManager {
       id: 'clear_image_cache',
       cleanup: async () => {
         // This would integrate with ImageOptimizer
-        console.log('Clearing image cache for memory');
+        log.info('Clearing image cache for memory');
       },
       priority: 'medium',
       description: 'Clear cached images to free memory',
@@ -89,7 +92,7 @@ class MemoryManager {
     this.registerCleanupFunction({
       id: 'clear_old_logs',
       cleanup: async () => {
-        console.log('Clearing old logs');
+        log.info('Clearing old logs');
       },
       priority: 'low',
       description: 'Clear old log entries',
@@ -102,7 +105,7 @@ class MemoryManager {
         if (global.gc) {
           global.gc();
           this.gcCount++;
-          console.log('Forced garbage collection');
+          log.info('Forced garbage collection');
         }
       },
       priority: 'high',
@@ -118,10 +121,10 @@ class MemoryManager {
           const tempKeys = keys.filter(key => key.startsWith('temp_') || key.startsWith('cache_'));
           if (tempKeys.length > 0) {
             await AsyncStorage.multiRemove(tempKeys);
-            console.log(`Cleared ${tempKeys.length} temporary storage items`);
+            log.info(`Cleared ${tempKeys.length} temporary storage items`);
           }
         } catch (error) {
-          console.error('Error clearing temp storage:', error);
+          log.error('Error clearing temp storage:', error);
         }
       },
       priority: 'medium',
@@ -138,7 +141,7 @@ class MemoryManager {
         this.handleMemoryWarning(memoryInfo.warningLevel, memoryInfo);
       }
     } catch (error) {
-      console.error('Error checking memory usage:', error);
+      log.error('Error checking memory usage:', error);
     }
   }
 
@@ -186,7 +189,7 @@ class MemoryManager {
 
     this.addMemoryWarning(warning);
 
-    console.warn(`Memory warning (${level}):`, memoryInfo);
+    log.warn(`Memory warning (${level}):`, memoryInfo);
 
     // Trigger cleanup based on severity
     if (level === 'critical') {
@@ -208,12 +211,12 @@ class MemoryManager {
   }
 
   private async performEmergencyCleanup(): Promise<void> {
-    console.log('Performing emergency memory cleanup');
+    log.info('Performing emergency memory cleanup');
     await this.runCleanupByPriority(['critical', 'high', 'medium', 'low']);
   }
 
   private async performAggressiveCleanup(): Promise<void> {
-    console.log('Performing aggressive memory cleanup');
+    log.info('Performing aggressive memory cleanup');
     await this.runCleanupByPriority(['high', 'medium']);
   }
 
@@ -223,7 +226,7 @@ class MemoryManager {
       return;
     }
 
-    console.log('Performing standard memory cleanup');
+    log.info('Performing standard memory cleanup');
     await this.runCleanupByPriority(['medium']);
   }
 
@@ -239,14 +242,14 @@ class MemoryManager {
             const promise = Promise.resolve(cleanupFunction.cleanup());
             cleanupPromises.push(promise);
           } catch (error) {
-            console.error(`Error in cleanup function ${cleanupFunction.id}:`, error);
+            log.error(`Error in cleanup function ${cleanupFunction.id}:`, error);
           }
         }
       }
     }
 
     await Promise.allSettled(cleanupPromises);
-    console.log(`Completed cleanup for priorities: ${priorities.join(', ')}`);
+    log.info(`Completed cleanup for priorities: ${priorities.join(', ')}`);
   }
 
   private handleAppStateChange(nextAppState: AppStateStatus): void {
@@ -349,7 +352,7 @@ class MemoryManager {
     this.memoryWarnings = [];
     this.isEnabled = false;
     
-    console.log('MemoryManager destroyed');
+    log.info('MemoryManager destroyed');
   }
 }
 

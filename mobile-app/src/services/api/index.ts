@@ -14,6 +14,7 @@ export { authApi, default as AuthApiService } from './authApi';
 // export { userApi, default as UserApiService } from './userApi'; // Using authApi instead
 export { ridesApi, default as RidesApiService } from './ridesApi';
 export { vehicleApi, default as VehicleApiService } from './vehicleApi';
+export { paymentApi, default as PaymentApiService } from './paymentApi';
 
 // Re-export types for convenience
 export type {
@@ -46,3 +47,15 @@ export type {
   CreateVehicleData,
   UpdateVehicleData,
 } from './vehicleApi';
+
+export type {
+  SavedPaymentMethod,
+  PaymentIntent,
+  CreatePaymentIntentData,
+  ConfirmPaymentData,
+  WalletBalance,
+  PaymentTransaction,
+  PaymentMethodType as PaymentMethodTypeApi,
+  PaymentProvider,
+  TransactionStatus,
+} from './paymentApi';

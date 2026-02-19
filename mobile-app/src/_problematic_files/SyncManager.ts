@@ -8,6 +8,9 @@
 import OfflineStorage, { OfflineAction } from '../storage/OfflineStorage';
 import NetworkManager, { NetworkState } from '../network/NetworkManager';
 import baseApi from '../../services/api/baseApi';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('SyncManager');
 
 export interface SyncItem {
   id: string;
@@ -59,19 +62,19 @@ class SyncManager {
       await this.syncWhenReady();
 
       this.isInitialized = true;
-      console.log('SyncManager initialized');
+      log.info('SyncManager initialized');
     } catch (error) {
-      console.error('Error initializing SyncManager:', error);
+      log.error('Error initializing SyncManager:', error);
     }
   }
 
   private handleNetworkChange(networkState: NetworkState): void {
     if (networkState.isConnected && networkState.isInternetReachable) {
-      console.log('Network connected - starting sync');
+      log.info('Network connected - starting sync');
       this.startPeriodicSync();
       this.syncWhenReady();
     } else {
-      console.log('Network disconnected - stopping periodic sync');
+      log.info('Network disconnected - stopping periodic sync');
       this.stopPeriodicSync();
     }
   }
@@ -110,15 +113,15 @@ class SyncManager {
         this.syncWhenReady();
       }
 
-      console.log(`Added ${syncItem.entityType} to sync queue with ${syncItem.priority} priority`);
+      log.info(`Added ${syncItem.entityType} to sync queue with ${syncItem.priority} priority`);
     } catch (error) {
-      console.error('Error adding item to sync queue:', error);
+      log.error('Error adding item to sync queue:', error);
     }
   }
 
   async syncWhenReady(): Promise<SyncResult> {
     if (this.isSyncing) {
-      console.log('Sync already in progress, skipping');
+      log.info('Sync already in progress, skipping');
       return {
         success: true,
         syncedCount: 0,
@@ -128,7 +131,7 @@ class SyncManager {
     }
 
     if (!NetworkManager.isConnected()) {
-      console.log('No network connection, skipping sync');
+      log.info('No network connection, skipping sync');
       return {
         success: false,
         syncedCount: 0,
@@ -150,17 +153,17 @@ class SyncManager {
     };
 
     try {
-      console.log('Starting sync process');
+      log.info('Starting sync process');
 
       // Get all pending sync items
       const syncQueue = await OfflineStorage.getSyncQueue();
       
       if (syncQueue.length === 0) {
-        console.log('No items to sync');
+        log.info('No items to sync');
         return result;
       }
 
-      console.log(`Found ${syncQueue.length} items to sync`);
+      log.info(`Found ${syncQueue.length} items to sync`);
 
       // Sort by priority and timestamp
       const sortedItems = this.sortSyncItems(syncQueue);
@@ -173,7 +176,7 @@ class SyncManager {
 
         // Check if we're still connected between batches
         if (!NetworkManager.isConnected()) {
-          console.log('Lost connection during sync, stopping');
+          log.info('Lost connection during sync, stopping');
           break;
         }
 
@@ -183,9 +186,9 @@ class SyncManager {
         }
       }
 
-      console.log(`Sync completed: ${result.syncedCount} succeeded, ${result.failedCount} failed`);
+      log.info(`Sync completed: ${result.syncedCount} succeeded, ${result.failedCount} failed`);
     } catch (error) {
-      console.error('Error during sync process:', error);
+      log.error('Error during sync process:', error);
       result.success = false;
     } finally {
       this.isSyncing = false;
@@ -217,7 +220,7 @@ class SyncManager {
 
   private async syncItem(item: SyncItem, result: SyncResult): Promise<void> {
     try {
-      console.log(`Syncing ${item.entityType} (${item.method} ${item.endpoint})`);
+      log.info(`Syncing ${item.entityType} (${item.method} ${item.endpoint})`);
 
       let response;
       switch (item.method) {
@@ -241,13 +244,13 @@ class SyncManager {
       await OfflineStorage.removeFromSyncQueue(item.id);
       result.syncedCount++;
 
-      console.log(`Successfully synced ${item.entityType}`);
+      log.info(`Successfully synced ${item.entityType}`);
 
       // Handle specific entity types
       await this.handleSyncSuccess(item, response);
 
     } catch (error) {
-      console.error(`Failed to sync ${item.entityType}:`, error);
+      log.error(`Failed to sync ${item.entityType}:`, error);
       
       item.retryCount++;
       
@@ -275,7 +278,7 @@ class SyncManager {
           await OfflineStorage.addToSyncQueue(queueItem, queueItem.endpoint, queueItem.method);
         }
         
-        console.log(`Will retry ${item.entityType} (attempt ${item.retryCount}/${item.maxRetries})`);
+        log.info(`Will retry ${item.entityType} (attempt ${item.retryCount}/${item.maxRetries})`);
       }
     }
   }
@@ -300,7 +303,7 @@ class SyncManager {
           break;
       }
     } catch (error) {
-      console.error('Error handling sync success:', error);
+      log.error('Error handling sync success:', error);
     }
   }
 
@@ -317,7 +320,7 @@ class SyncManager {
           break;
       }
     } catch (handlingError) {
-      console.error('Error handling sync failure:', handlingError);
+      log.error('Error handling sync failure:', handlingError);
     }
   }
 
@@ -377,7 +380,7 @@ class SyncManager {
 
   private async handleBookingSyncFailure(item: SyncItem, error: Error): Promise<void> {
     // Handle booking-specific failure logic
-    console.error(`Booking sync failed for ${item.entityId}:`, error.message);
+    log.error(`Booking sync failed for ${item.entityId}:`, error.message);
   }
 
   // Listener management
@@ -396,20 +399,20 @@ class SyncManager {
       try {
         listener.callback(result);
       } catch (error) {
-        console.error('Error in sync listener callback:', error);
+        log.error('Error in sync listener callback:', error);
       }
     });
   }
 
   // Public methods
   async forcSync(): Promise<SyncResult> {
-    console.log('Force sync requested');
+    log.info('Force sync requested');
     return this.syncWhenReady();
   }
 
   async clearSyncQueue(): Promise<void> {
     await OfflineStorage.clearSyncQueue();
-    console.log('Sync queue cleared');
+    log.info('Sync queue cleared');
   }
 
   async getSyncQueueSize(): Promise<number> {
@@ -445,7 +448,7 @@ class SyncManager {
     
     this.syncListeners = [];
     this.isInitialized = false;
-    console.log('SyncManager destroyed');
+    log.info('SyncManager destroyed');
   }
 }
 

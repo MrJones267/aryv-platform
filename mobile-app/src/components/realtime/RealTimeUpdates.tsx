@@ -7,9 +7,20 @@
 
 import React, { useEffect } from 'react';
 import { Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RealTimeUpdates');
 import { useSocket, useSocketEvent } from '../../hooks/useSocket';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { MessageData, RideUpdate, BookingUpdate } from '../../services/SocketService';
+
+interface RideUpdateWithDetails extends RideUpdate {
+  rideId: string;
+  driverName?: string;
+  origin?: string;
+  destination?: string;
+}
 
 interface RealTimeUpdatesProps {
   children: React.ReactNode;
@@ -21,6 +32,7 @@ interface RealTimeUpdatesProps {
  */
 export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) => {
   const dispatch = useAppDispatch();
+  const navigation = useNavigation<{ navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void }>();
   const { isAuthenticated } = useAppSelector(state => state.auth);
   const { profile: user } = useAppSelector(state => state.user);
   
@@ -31,12 +43,12 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
 
   // Handle connection status
   useEffect(() => {
-    console.log('Socket connection status:', connected);
+    log.info('Socket connection status:', connected);
   }, [connected]);
 
   // Handle incoming messages
   useSocketEvent<MessageData>('message_received', (message) => {
-    console.log('Received message:', message);
+    log.info('Received message:', message);
     
     // Update message store/state here if needed
     // dispatch(addMessage(message));
@@ -44,13 +56,13 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     // Show notification for messages when app is active
     if (message.type === 'text') {
       // Could show in-app notification here
-      console.log(`New message from ${message.senderId}: ${message.message}`);
+      log.info(`New message from ${message.senderId}: ${message.message}`);
     }
   });
 
   // Handle ride updates
   useSocketEvent<RideUpdate>('ride_update', (rideUpdate) => {
-    console.log('Received ride update:', rideUpdate);
+    log.info('Received ride update:', rideUpdate);
     
     // Update rides store
     // dispatch(updateRideStatus(rideUpdate));
@@ -72,7 +84,26 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
       case 'completed':
         Alert.alert(
           'Ride Completed',
-          rideUpdate.message || 'Your ride has been completed. Thank you for using Hitch!'
+          rideUpdate.message || 'Your ride has been completed. Would you like to rate your trip?',
+          [
+            {
+              text: 'Rate Now',
+              onPress: () => {
+                try {
+                  const details = rideUpdate as RideUpdateWithDetails;
+                  navigation.navigate('RideRating', {
+                    rideId: details.rideId || '',
+                    driverName: details.driverName,
+                    origin: details.origin,
+                    destination: details.destination,
+                  });
+                } catch (e) {
+                  log.info('Could not navigate to rating:', e);
+                }
+              },
+            },
+            { text: 'Later', style: 'cancel' },
+          ]
         );
         break;
       case 'cancelled':
@@ -86,7 +117,7 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
 
   // Handle booking updates
   useSocketEvent<BookingUpdate>('booking_update', (bookingUpdate) => {
-    console.log('Received booking update:', bookingUpdate);
+    log.info('Received booking update:', bookingUpdate);
     
     // Update bookings store
     // dispatch(updateBookingStatus(bookingUpdate));
@@ -113,16 +144,16 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     type: 'info' | 'success' | 'warning' | 'error';
     title: string;
     message: string;
-    data?: any;
+    data?: unknown;
   }>('notification', (notification) => {
-    console.log('Received notification:', notification);
+    log.info('Received notification:', notification);
     
     Alert.alert(notification.title, notification.message);
   });
 
   // Handle socket errors
   useSocketEvent<{ message: string; code?: string }>('socket_error', (error) => {
-    console.error('Socket error received:', error);
+    log.error('Socket error received:', error);
     
     // Don't show alert for every error as it might be spammy
     // Only show for critical errors
@@ -149,7 +180,7 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     isTyping: boolean;
     userName?: string;
   }>('typing', (typingData) => {
-    console.log('Typing indicator:', typingData);
+    log.info('Typing indicator:', typingData);
     
     // This would be handled by individual chat components
     // Global handling isn't necessary for typing indicators
@@ -159,10 +190,10 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
   useSocketEvent<{
     rideId: string;
     userId: string;
-    location: any;
+    location: { latitude: number; longitude: number };
     timestamp: string;
   }>('location_update', (locationUpdate) => {
-    console.log('Location update:', locationUpdate);
+    log.info('Location update:', locationUpdate);
     
     // Update location in relevant components
     // dispatch(updateUserLocation(locationUpdate));
@@ -171,10 +202,10 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
   // Reconnection handling
   useEffect(() => {
     if (isAuthenticated && !connected) {
-      console.log('Attempting to reconnect socket...');
+      log.info('Attempting to reconnect socket...');
       connect();
     } else if (!isAuthenticated && connected) {
-      console.log('User not authenticated, disconnecting socket...');
+      log.info('User not authenticated, disconnecting socket...');
       disconnect();
     }
   }, [isAuthenticated, connected, connect, disconnect]);

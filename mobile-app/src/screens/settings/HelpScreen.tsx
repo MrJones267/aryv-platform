@@ -20,7 +20,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 
 interface HelpScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 interface FAQItem {
@@ -216,7 +216,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
               </Text>
               <TouchableOpacity
                 style={styles.emergencyButton}
-                onPress={() => Linking.openURL('tel:911')}
+                onPress={() => Linking.openURL('tel:999')}
               >
                 <Text style={styles.emergencyButtonText}>Call Emergency Services</Text>
               </TouchableOpacity>

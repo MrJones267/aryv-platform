@@ -8,6 +8,9 @@
 import { LocationCoordinates } from './LocationService';
 import { ApiClient } from './ApiClient';
 import { AuthService } from './AuthService';
+import logger from './LoggingService';
+
+const log = logger.createLogger('AIRecommendationsService');
 
 export interface UserBehaviorProfile {
   userId: string;
@@ -103,7 +106,7 @@ export interface AIRecommendation {
   impact: 'high' | 'medium' | 'low';
   reasoning: string[];
   actionable: boolean;
-  data?: any;
+  data?: unknown;
   expiresAt?: string;
 }
 
@@ -290,7 +293,7 @@ class AIRecommendationsService {
       // Development: Use local ML simulation
       return await this.simulateMLRecommendations(request);
     } catch (error) {
-      console.error('AI Recommendations error:', error);
+      log.error('AI Recommendations error', error);
       throw new Error('Failed to get recommendations');
     }
   }
@@ -333,7 +336,7 @@ class AIRecommendationsService {
         await this.syncUserProfileToBackend();
       }
     } catch (error) {
-      console.error('Failed to update user behavior profile:', error);
+      log.error('Failed to update user behavior profile', error);
     }
   }
 
@@ -833,28 +836,32 @@ class AIRecommendationsService {
     ];
   }
 
-  private updateTravelPatterns(rideData: any): void {
+  private updateTravelPatterns(rideData: Record<string, unknown>): void {
     // Update travel patterns based on new ride data
     // This would be more sophisticated in production
   }
 
-  private updateDriverPreferences(rideData: any): void {
+  private updateDriverPreferences(rideData: Record<string, unknown>): void {
     if (!this.userProfile) return;
-    
-    const existingPref = this.userProfile.driverPreferences.find(p => p.driverId === rideData.driverId);
-    
+
+    const driverId = rideData.driverId as string;
+    const rating = rideData.rating as number;
+    const timestamp = rideData.timestamp as string;
+
+    const existingPref = this.userProfile.driverPreferences.find(p => p.driverId === driverId);
+
     if (existingPref) {
       existingPref.rideCount++;
-      existingPref.averageRating = (existingPref.averageRating + rideData.rating) / 2;
-      existingPref.lastRideDate = rideData.timestamp;
-      existingPref.preferenceScore = Math.min(1, existingPref.preferenceScore + (rideData.rating - 3) * 0.1);
+      existingPref.averageRating = (existingPref.averageRating + rating) / 2;
+      existingPref.lastRideDate = timestamp;
+      existingPref.preferenceScore = Math.min(1, existingPref.preferenceScore + (rating - 3) * 0.1);
     } else {
       this.userProfile.driverPreferences.push({
-        driverId: rideData.driverId,
-        preferenceScore: rideData.rating / 5,
+        driverId,
+        preferenceScore: rating / 5,
         rideCount: 1,
-        averageRating: rideData.rating,
-        lastRideDate: rideData.timestamp,
+        averageRating: rating,
+        lastRideDate: timestamp,
         preferenceReasons: [],
       });
     }

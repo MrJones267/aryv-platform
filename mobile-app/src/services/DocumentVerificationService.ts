@@ -7,6 +7,9 @@
 
 import { ApiClient } from './ApiClient';
 import { AuthService } from './AuthService';
+import logger from './LoggingService';
+
+const log = logger.createLogger('DocumentVerificationService');
 
 export interface DocumentUploadRequest {
   userId: string;
@@ -314,14 +317,14 @@ class DocumentVerificationService {
 
       // Development: Simulate document processing
       return await this.simulateDocumentProcessing(request);
-    } catch (error: any) {
-      console.error('Document upload error:', error);
+    } catch (error: unknown) {
+      log.error('Document upload error', error);
       return {
         success: false,
         documentId: '',
         status: 'pending_upload',
         message: 'Upload failed. Please try again.',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -337,8 +340,8 @@ class DocumentVerificationService {
 
       // Development: Generate mock verification status
       return this.generateMockVerificationStatus(userId);
-    } catch (error: any) {
-      console.error('Error fetching verification status:', error);
+    } catch (error: unknown) {
+      log.error('Error fetching verification status', error);
       throw new Error('Failed to fetch verification status');
     }
   }
@@ -374,8 +377,8 @@ class DocumentVerificationService {
 
       // Development: Generate mock progress
       return this.generateMockVerificationProgress(userId);
-    } catch (error: any) {
-      console.error('Error fetching verification progress:', error);
+    } catch (error: unknown) {
+      log.error('Error fetching verification progress', error);
       throw new Error('Failed to fetch verification progress');
     }
   }
@@ -406,8 +409,8 @@ class DocumentVerificationService {
       };
 
       return await this.uploadDocument(resubmitRequest);
-    } catch (error: any) {
-      console.error('Document resubmission error:', error);
+    } catch (error: unknown) {
+      log.error('Document resubmission error', error);
       throw new Error('Failed to resubmit document');
     }
   }
@@ -430,7 +433,7 @@ class DocumentVerificationService {
           return false;
       }
     } catch (error) {
-      console.error('Error checking user permissions:', error);
+      log.error('Error checking user permissions', error);
       return false;
     }
   }

@@ -21,18 +21,66 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { fetchMyRides } from '../../store/slices/ridesSlice';
 import { ridesApi } from '../../services/api';
 import { RidesScreenProps } from '../../navigation/types';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RidesScreen');
 
 type TabType = 'driving' | 'riding';
 type RideStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 
+interface RideLocation {
+  address?: string;
+  lat?: number;
+  lng?: number;
+}
+
+interface RideDriver {
+  id?: string;
+  firstName?: string;
+  lastName?: string;
+  rating?: string | number;
+}
+
+interface RideBooking {
+  id: string;
+  status: string;
+}
+
+interface RideRecord {
+  id: string;
+  status: string;
+  departureTime: string;
+  origin?: RideLocation;
+  destination?: RideLocation;
+  availableSeats: number;
+  totalSeats: number;
+  pricePerSeat: number;
+  bookings?: RideBooking[];
+}
+
+interface BookingRecord {
+  id: string;
+  status: string;
+  seatsBooked: number;
+  totalAmount: number;
+  ride: {
+    id: string;
+    departureTime: string;
+    origin?: RideLocation;
+    destination?: RideLocation;
+    driver?: RideDriver;
+  };
+}
+
 const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
+  const nav = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void };
   const dispatch = useAppDispatch();
   const { myRides, isLoading } = useAppSelector((state) => state.rides);
   const { profile: user } = useAppSelector((state) => state.user);
 
   const [activeTab, setActiveTab] = useState<TabType>('driving');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [filterStatus, setFilterStatus] = useState<RideStatus | 'all'>('all');
 
   useEffect(() => {
@@ -50,7 +98,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         }
       }
     } catch (error) {
-      console.log('Error loading rides data:', error);
+      log.info('Error loading rides data:', error);
     }
   }, [activeTab, dispatch]);
 
@@ -78,8 +126,9 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               } else {
                 Alert.alert('Error', response.error || 'Failed to cancel ride');
               }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to cancel ride');
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              Alert.alert('Error', errMsg || 'Failed to cancel ride');
             }
           },
         },
@@ -105,8 +154,9 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               } else {
                 Alert.alert('Error', response.error || 'Failed to cancel booking');
               }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to cancel booking');
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              Alert.alert('Error', errMsg || 'Failed to cancel booking');
             }
           },
         },
@@ -196,7 +246,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             styles.filterChip,
             filterStatus === status && styles.activeFilterChip
           ]}
-          onPress={() => setFilterStatus(status as any)}
+          onPress={() => setFilterStatus(status as RideStatus | 'all')}
         >
           <Text style={[
             styles.filterChipText,
@@ -209,7 +259,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
     </ScrollView>
   );
 
-  const renderRideCard = (ride: any): React.ReactNode => (
+  const renderRideCard = (ride: RideRecord): React.ReactNode => (
     <View key={ride.id} style={styles.rideCard}>
       {/* Header */}
       <View style={styles.rideHeader}>
@@ -270,7 +320,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.detailItem}>
           <Icon name="attach-money" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            ${ride.pricePerSeat} per seat
+            P{ride.pricePerSeat} per seat
           </Text>
         </View>
         {ride.bookings && ride.bookings.length > 0 && (
@@ -293,15 +343,49 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.primaryButton}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => nav.navigate('RideDetails', { rideId: ride.id })}
+          >
             <Text style={styles.primaryButtonText}>View Details</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* In-progress ride actions */}
+      {ride.status === 'in_progress' && (
+        <View style={styles.actionContainer}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => nav.navigate('RideDetails', { rideId: ride.id })}
+          >
+            <Text style={styles.primaryButtonText}>View Active Ride</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Rate button for completed rides */}
+      {ride.status === 'completed' && (
+        <View style={styles.actionContainer}>
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: '#F59E0B' }]}
+            onPress={() => nav.navigate('RideRating', {
+              rideId: ride.id,
+              origin: ride.origin?.address,
+              destination: ride.destination?.address,
+              rideFare: ride.pricePerSeat * (ride.totalSeats - ride.availableSeats),
+              currency: 'BWP',
+              role: 'driver',
+            })}
+          >
+            <Text style={styles.primaryButtonText}>Rate Passengers</Text>
           </TouchableOpacity>
         </View>
       )}
     </View>
   );
 
-  const renderBookingCard = (booking: any): React.ReactNode => (
+  const renderBookingCard = (booking: BookingRecord): React.ReactNode => (
     <View key={booking.id} style={styles.rideCard}>
       {/* Header */}
       <View style={styles.rideHeader}>
@@ -382,7 +466,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.detailItem}>
           <Icon name="attach-money" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            ${booking.totalAmount} total
+            P{booking.totalAmount} total
           </Text>
         </View>
       </View>
@@ -396,9 +480,62 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
           >
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.primaryButton}>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => {
+              const driverName = `${booking.ride.driver?.firstName || ''} ${booking.ride.driver?.lastName || ''}`.trim() || 'Driver';
+              nav.navigate('Messages', {
+                screen: 'Chat',
+                params: {
+                  chatId: `ride_${booking.ride.id}_${booking.id}`,
+                  recipientName: driverName,
+                  rideId: booking.ride.id,
+                  bookingId: booking.id,
+                },
+              });
+            }}
+          >
             <Text style={styles.primaryButtonText}>Contact Driver</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* In-progress booking actions */}
+      {booking.status === 'in_progress' && (
+        <View style={styles.actionContainer}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
+          >
+            <Text style={styles.primaryButtonText}>Track Ride</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Rate ride for completed bookings */}
+      {booking.status === 'completed' && (
+        <View style={styles.actionContainer}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
+          >
+            <Text style={styles.secondaryButtonText}>View Details</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: '#F59E0B' }]}
+            onPress={() => nav.navigate('RideRating', {
+              rideId: booking.ride.id,
+              driverId: booking.ride.driver?.id,
+              driverName: `${booking.ride.driver?.firstName || ''} ${booking.ride.driver?.lastName || ''}`.trim(),
+              origin: booking.ride.origin?.address,
+              destination: booking.ride.destination?.address,
+              rideFare: booking.totalAmount,
+              currency: 'BWP',
+              role: 'passenger',
+            })}
+          >
+            <Text style={styles.primaryButtonText}>Rate Ride</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -438,7 +575,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
       >
         {activeTab === 'driving' ? (
           filteredRides.length > 0 ? (
-            filteredRides.map(renderRideCard)
+            filteredRides.map((ride) => renderRideCard(ride as unknown as RideRecord))
           ) : (
             renderEmptyState()
           )
@@ -455,7 +592,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
       {activeTab === 'driving' && (
         <TouchableOpacity
           style={styles.fab}
-          onPress={() => (navigation as any).navigate('CreateRide')}
+          onPress={() => nav.navigate('CreateRide')}
           activeOpacity={0.8}
         >
           <Icon name="add" size={24} color="#FFFFFF" />

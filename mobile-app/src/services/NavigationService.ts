@@ -6,6 +6,10 @@
  */
 
 import { LocationCoordinates } from './LocationService';
+import { APP_CONFIG } from '../config/api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('NavigationService');
 
 export interface NavigationRoute {
   coordinates: LocationCoordinates[];
@@ -39,8 +43,9 @@ class NavigationService {
    */
   async getDirections(request: DirectionsRequest): Promise<NavigationRoute> {
     try {
-      // For development/testing, provide mock directions
-      if (__DEV__ && !this.hasGoogleMapsApiKey()) {
+      // Check if Google Maps API key is available
+      if (!this.hasGoogleMapsApiKey()) {
+        log.warn('Google Maps API key not configured, using calculated route');
         return this.getMockDirections(request);
       }
 
@@ -71,8 +76,8 @@ class NavigationService {
 
       return this.parseDirectionsResponse(data);
     } catch (error) {
-      console.error('Navigation Service Error:', error);
-      // Fallback to mock directions
+      log.error('Navigation Service Error', error);
+      // Fallback to calculated route based on coordinates
       return this.getMockDirections(request);
     }
   }
@@ -125,7 +130,7 @@ class NavigationService {
         await Linking.openURL(webUrl);
       }
     } catch (error) {
-      console.error('External navigation error:', error);
+      log.error('External navigation error', error);
       throw new Error('Failed to open navigation app');
     }
   }
@@ -168,21 +173,30 @@ class NavigationService {
   }
 
   private hasGoogleMapsApiKey(): boolean {
-    // Check if Google Maps API key is configured
-    return process.env.GOOGLE_MAPS_API_KEY !== 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
+    const apiKey = APP_CONFIG.GOOGLE_SERVICES.MAPS_API_KEY;
+    // Check if Google Maps API key is configured and valid
+    return !!(apiKey && 
+             apiKey !== 'YOUR_GOOGLE_MAPS_API_KEY_HERE' && 
+             !apiKey.includes('YOUR_PRODUCTION') &&
+             apiKey.length > 30 && 
+             apiKey.startsWith('AIza'));
   }
 
   private getGoogleMapsApiKey(): string {
-    return process.env.GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
+    const apiKey = APP_CONFIG.GOOGLE_SERVICES.MAPS_API_KEY;
+    if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY_HERE' || apiKey.includes('YOUR_PRODUCTION')) {
+      throw new Error('Google Maps API key not configured');
+    }
+    return apiKey;
   }
 
   private getMockDirections(request: DirectionsRequest): NavigationRoute {
     const distance = this.calculateDistance(request.origin, request.destination);
     const duration = this.calculateEstimatedTravelTime(distance, request.mode);
     
-    // Generate simple route coordinates (straight line with some interpolation)
+    // Generate route coordinates with realistic path interpolation
     const coordinates: LocationCoordinates[] = [];
-    const steps = 10;
+    const steps = Math.max(10, Math.min(50, Math.floor(distance / 1000))); // More steps for longer distances
     
     for (let i = 0; i <= steps; i++) {
       const ratio = i / steps;
@@ -224,15 +238,16 @@ class NavigationService {
     };
   }
 
-  private parseDirectionsResponse(data: any): NavigationRoute {
-    const route = data.routes[0];
+  private parseDirectionsResponse(data: Record<string, unknown>): NavigationRoute {
+    const routeData = data as { routes: Array<{ legs: Array<any>; overview_polyline: { points: Array<{ lat: number; lng: number }> } }> };
+    const route = routeData.routes[0];
     const leg = route.legs[0];
     
     const coordinates: LocationCoordinates[] = [];
     const instructions: NavigationInstruction[] = [];
     
     // Parse polyline coordinates
-    route.overview_polyline.points.forEach((point: any) => {
+    route.overview_polyline.points.forEach((point: { lat: number; lng: number }) => {
       coordinates.push({
         latitude: point.lat,
         longitude: point.lng,
@@ -240,7 +255,7 @@ class NavigationService {
     });
     
     // Parse step instructions
-    leg.steps.forEach((step: any) => {
+    leg.steps.forEach((step: { html_instructions: string; distance: { value: number }; duration: { value: number }; start_location: { lat: number; lng: number }; maneuver?: string }) => {
       instructions.push({
         text: step.html_instructions.replace(/<[^>]*>/g, ''), // Strip HTML
         distance: step.distance.value,

@@ -18,10 +18,19 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Input, Card, Avatar } from '../../components/ui';
+import PhoneInput from '../../components/ui/PhoneInput';
 import { updateUserProfile } from '../../store/slices/userSlice';
+import { updateOnboardingProgress, completeOnboardingStep } from '../../store/slices/appSlice';
+/** Lightweight country shape matching what PhoneInput emits */
+interface PhoneCountry {
+  code: string;
+  name: string;
+  dialCode: string;
+  flag: string;
+}
 
 interface OnboardingProfileScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 interface ProfileFormData {
@@ -48,6 +57,8 @@ interface ProfileFormData {
 const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
+  const { onboardingProgress } = useAppSelector((state) => state.app);
+  const selectedRole = onboardingProgress.userRole || 'passenger';
   
   const [formData, setFormData] = useState<ProfileFormData>({
     firstName: user?.firstName || '',
@@ -61,6 +72,8 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       relationship: '',
     },
   });
+  
+  const [selectedCountry, setSelectedCountry] = useState<PhoneCountry | null>(null);
 
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -86,10 +99,13 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       newErrors.lastName = 'Last name is required';
     }
 
-    if (!formData.phone.trim()) {
+    // Phone validation (simplified since PhoneInput handles country code)
+    if (!formData.phone) {
       newErrors.phone = 'Phone number is required';
-    } else if (!/^\+?[\d\s-()]+$/.test(formData.phone)) {
-      newErrors.phone = 'Invalid phone number format';
+    } else if (formData.phone.replace(/\s/g, '').length < 6) {
+      newErrors.phone = 'Phone number must be at least 6 digits';
+    } else if (!/^\d+$/.test(formData.phone.replace(/[\s\-]/g, ''))) {
+      newErrors.phone = 'Phone number can only contain digits, spaces, and dashes';
     }
 
     if (formData.bio.length > 500) {
@@ -126,7 +142,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
            formData.phone.trim();
   };
 
-  const handleInputChange = (field: keyof ProfileFormData, value: any) => {
+  const handleInputChange = (field: keyof ProfileFormData, value: string | number | boolean | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -175,6 +191,12 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
     setShowVehicleForm(!showVehicleForm);
   };
 
+  const handleCountryChange = (country: PhoneCountry) => {
+    setSelectedCountry(country);
+    // Clear phone field when country changes to allow fresh input
+    setFormData(prev => ({ ...prev, phone: '' }));
+  };
+
   const handleCompleteProfile = async () => {
     if (!isFormValid()) {
       Alert.alert('Form Error', 'Please fix all errors before continuing');
@@ -188,26 +210,23 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         lastName: formData.lastName.trim(),
         phone: formData.phone.trim(),
         bio: formData.bio.trim(),
-        interests: formData.interests,
-        vehicleInfo: formData.vehicleInfo,
-        driverLicense: formData.driverLicense,
-        emergencyContact: formData.emergencyContact.name 
-          ? formData.emergencyContact 
-          : undefined,
-      })).unwrap();
+      } as import('../../types/user').UpdateProfileData)).unwrap();
 
-      Alert.alert(
-        'Profile Complete!',
-        'Your profile has been set up successfully. Welcome to Hitch!',
-        [
-          {
-            text: 'Start Using Hitch',
-            onPress: () => navigation.navigate('Main'),
-          },
-        ]
-      );
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update profile');
+      // Update onboarding progress
+      dispatch(updateOnboardingProgress({
+        profileCompleted: true,
+        currentStep: 'feature_tutorial',
+      }));
+      dispatch(completeOnboardingStep('profile_setup'));
+
+      // Navigate to feature tutorial after profile completion
+      navigation.navigate('FeatureTutorial', {
+        userRole: selectedRole,
+        skipToFeatures: false,
+      });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Failed to update profile');
     } finally {
       setIsUpdating(false);
     }
@@ -219,7 +238,21 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       'You can complete your profile later in the settings. Some features may be limited without a complete profile.',
       [
         { text: 'Go Back', style: 'cancel' },
-        { text: 'Skip', onPress: () => navigation.navigate('Main') },
+        { 
+          text: 'Skip', 
+          onPress: () => {
+            dispatch(updateOnboardingProgress({
+              profileCompleted: false,
+              currentStep: 'feature_tutorial',
+            }));
+            dispatch(completeOnboardingStep('profile_skipped'));
+            
+            navigation.navigate('FeatureTutorial', {
+              userRole: selectedRole,
+              skipToFeatures: true,
+            });
+          }
+        },
       ]
     );
   };
@@ -261,15 +294,14 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         />
       </View>
 
-      <Input
-        label="Phone Number"
-        placeholder="+1 (555) 123-4567"
+      <PhoneInput
         value={formData.phone}
         onChangeText={(text) => handleInputChange('phone', text)}
-        keyboardType="phone-pad"
-        leftIcon="phone"
+        onCountryChange={handleCountryChange}
+        label="Phone Number"
+        placeholder="Enter phone number"
         error={errors.phone}
-        required
+        defaultCountry="BW"
       />
 
       <Input

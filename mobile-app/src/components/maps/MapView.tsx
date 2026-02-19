@@ -24,6 +24,9 @@ import MapView, {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LocationCoordinates, LocationData } from '../../services/LocationService';
 import NavigationService, { NavigationRoute } from '../../services/NavigationService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('MapView');
 
 export interface RideMapData {
   id: string;
@@ -47,7 +50,7 @@ interface MapViewProps {
   onMarkerPress?: (rideId: string) => void;
   onCurrentLocationPress?: () => void;
   onStartNavigation?: (destination: LocationCoordinates) => void;
-  style?: any;
+  style?: object;
 }
 
 export const HitchMapView: React.FC<MapViewProps> = ({
@@ -67,12 +70,19 @@ export const HitchMapView: React.FC<MapViewProps> = ({
 }) => {
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
-    initialRegion || {
-      latitude: 37.7749,
-      longitude: -122.4194,
+    initialRegion || 
+    (currentLocation ? {
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
-    }
+    } : {
+      // Default to center of world map if no location available
+      latitude: 0,
+      longitude: 0,
+      latitudeDelta: 90,
+      longitudeDelta: 180,
+    })
   );
   const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
   const [loadingNavigation, setLoadingNavigation] = useState(false);
@@ -122,7 +132,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
         });
       }
     } catch (error) {
-      console.error('Failed to load navigation route:', error);
+      log.error('Failed to load navigation route:', error);
     } finally {
       setLoadingNavigation(false);
     }

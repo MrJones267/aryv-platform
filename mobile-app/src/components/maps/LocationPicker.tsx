@@ -19,6 +19,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Input, Button } from '../ui';
 import HitchMapView from './MapView';
 import locationService, { LocationCoordinates, LocationData } from '../../services/LocationService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('LocationPicker');
 
 interface LocationPickerProps {
   visible: boolean;
@@ -59,9 +62,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       if (!initialLocation) {
         setSelectedLocation(location);
       }
-    } catch (error: any) {
-      console.error('Failed to get current location:', error);
-      Alert.alert('Location Error', error.message || 'Unable to get current location');
+    } catch (error: unknown) {
+      log.error('Failed to get current location:', error);
+      Alert.alert('Location Error', error instanceof Error ? error.message : 'Unable to get current location');
     } finally {
       setIsLoadingCurrentLocation(false);
     }
@@ -84,7 +87,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       
       setSelectedLocation(locationData);
     } catch (error) {
-      console.error('Failed to get address for location:', error);
+      log.error('Failed to get address for location:', error);
       // Still allow selection without address
       setSelectedLocation({
         ...coordinate,
@@ -107,14 +110,14 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     setIsSearching(true);
     try {
       const results = await locationService.geocodeAddress(searchQuery.trim());
-      if (results.length > 0) {
-        const coordinate = results[0];
-        await handleMapPress(coordinate);
+      if (results && results.length > 0) {
+        const [longitude, latitude] = results;
+        await handleMapPress({ latitude, longitude });
       } else {
         Alert.alert('No Results', 'No locations found for your search');
       }
-    } catch (error: any) {
-      Alert.alert('Search Error', error.message || 'Failed to search location');
+    } catch (error: unknown) {
+      Alert.alert('Search Error', error instanceof Error ? error.message : 'Failed to search location');
     } finally {
       setIsSearching(false);
     }
@@ -154,11 +157,12 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       };
     }
 
+    // Default to world map if no location available
     return {
-      latitude: 37.7749,
-      longitude: -122.4194,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
+      latitude: 0,
+      longitude: 0,
+      latitudeDelta: 90,
+      longitudeDelta: 180,
     };
   };
 

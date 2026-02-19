@@ -9,6 +9,9 @@ import { Linking, Alert, Platform } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from './api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('EmergencyService');
 
 export interface EmergencyContact {
   id: string;
@@ -104,7 +107,7 @@ class EmergencyService {
       this.showEmergencyInterface(alert);
 
     } catch (error) {
-      console.error('Emergency trigger failed:', error);
+      log.error('Emergency trigger failed', error);
       Alert.alert('Emergency Alert Failed', 'Unable to send emergency alert. Please call emergency services directly.');
     }
   }
@@ -124,7 +127,7 @@ class EmergencyService {
           });
         },
         (error) => {
-          console.error('Location error:', error);
+          log.error('Location error', error);
           reject(new Error('Unable to get location'));
         },
         { 
@@ -152,7 +155,7 @@ class EmergencyService {
         // Send location update to server
         this.updateEmergencyLocation(alertId, location);
       },
-      (error) => console.error('Location tracking error:', error),
+      (error) => log.error('Location tracking error', error),
       { 
         enableHighAccuracy: true, 
         distanceFilter: 10, // Update every 10 meters
@@ -189,12 +192,12 @@ class EmergencyService {
           return response.data;
         }
       } catch (serverError) {
-        console.warn('Server request failed, using local data only:', serverError);
+        log.warn('Server request failed, using local data only', { error: serverError instanceof Error ? serverError.message : String(serverError) });
       }
       
       return [];
     } catch (error) {
-      console.error('Error getting emergency contacts:', error);
+      log.error('Error getting emergency contacts', error);
       return [];
     }
   }
@@ -218,10 +221,10 @@ class EmergencyService {
       try {
         await apiClient.post('/user/emergency-contacts', newContact);
       } catch (serverError) {
-        console.warn('Failed to sync contact with server:', serverError);
+        log.warn('Failed to sync contact with server', { error: serverError instanceof Error ? serverError.message : String(serverError) });
       }
     } catch (error) {
-      console.error('Error adding emergency contact:', error);
+      log.error('Error adding emergency contact', error);
       throw error;
     }
   }
@@ -240,16 +243,16 @@ class EmergencyService {
       try {
         await apiClient.delete(`/user/emergency-contacts/${contactId}`);
       } catch (serverError) {
-        console.warn('Failed to remove contact from server:', serverError);
+        log.warn('Failed to remove contact from server', { error: serverError instanceof Error ? serverError.message : String(serverError) });
       }
     } catch (error) {
-      console.error('Error removing emergency contact:', error);
+      log.error('Error removing emergency contact', error);
       throw error;
     }
   }
 
   /**
-   * Call emergency services (911, local emergency number)
+   * Call emergency services (999, local emergency number)
    */
   async callEmergencyServices(): Promise<void> {
     const emergencyNumber = this.getLocalEmergencyNumber();
@@ -274,9 +277,8 @@ class EmergencyService {
    * Get local emergency number based on region
    */
   private getLocalEmergencyNumber(): string {
-    // In a real app, this would be determined by device locale/location
-    // For now, defaulting to US emergency number
-    return '911';
+    // Default to Botswana/SADC emergency number
+    return '999';
   }
 
   /**
@@ -306,7 +308,7 @@ class EmergencyService {
         ]
       );
     } catch (error) {
-      console.error('Error calling primary contact:', error);
+      log.error('Error calling primary contact:', error);
       Alert.alert('Error', 'Unable to call emergency contact.');
     }
   }
@@ -325,11 +327,11 @@ class EmergencyService {
           const smsUrl = `sms:${contact.phoneNumber}?body=${encodeURIComponent(message)}`;
           await Linking.openURL(smsUrl);
         } catch (contactError) {
-          console.warn(`Failed to notify contact ${contact.name}:`, contactError);
+          log.warn(`Failed to notify contact ${contact.name}:`, contactError);
         }
       }
     } catch (error) {
-      console.error('Error notifying contacts:', error);
+      log.error('Error notifying contacts:', error);
     }
   }
 
@@ -343,12 +345,12 @@ class EmergencyService {
       // Also store locally for offline capability
       await AsyncStorage.setItem(`@emergency_alert_${alert.id}`, JSON.stringify(alert));
     } catch (error) {
-      console.error('Error sending emergency alert:', error);
+      log.error('Error sending emergency alert:', error);
       // Still store locally even if server fails
       try {
         await AsyncStorage.setItem(`@emergency_alert_${alert.id}`, JSON.stringify(alert));
       } catch (storageError) {
-        console.error('Failed to store emergency alert locally:', storageError);
+        log.error('Failed to store emergency alert locally:', storageError);
       }
     }
   }
@@ -360,7 +362,7 @@ class EmergencyService {
     try {
       await apiClient.put(`/emergency/alerts/${alertId}/location`, { location });
     } catch (error) {
-      console.error('Error updating emergency location:', error);
+      log.error('Error updating emergency location:', error);
     }
   }
 
@@ -394,7 +396,7 @@ class EmergencyService {
         ]
       );
     } catch (error) {
-      console.error('Error resolving emergency:', error);
+      log.error('Error resolving emergency:', error);
       Alert.alert('Error', 'Unable to resolve emergency.');
     }
   }
@@ -406,7 +408,7 @@ class EmergencyService {
     try {
       await apiClient.put(`/emergency/alerts/${alertId}`, { status: 'resolved' });
     } catch (error) {
-      console.error('Error marking emergency resolved:', error);
+      log.error('Error marking emergency resolved:', error);
     }
   }
 
@@ -418,7 +420,7 @@ class EmergencyService {
       const stored = await AsyncStorage.getItem(`@emergency_alert_${alertId}`);
       return stored ? JSON.parse(stored) : null;
     } catch (error) {
-      console.error('Error getting emergency alert:', error);
+      log.error('Error getting emergency alert:', error);
       return null;
     }
   }
@@ -435,7 +437,7 @@ class EmergencyService {
       }
       return 'unknown';
     } catch (error) {
-      console.error('Error getting user ID:', error);
+      log.error('Error getting user ID:', error);
       return 'unknown';
     }
   }
@@ -445,7 +447,7 @@ class EmergencyService {
    */
   private navigateToEmergencySettings(): void {
     // This would navigate to emergency settings screen
-    console.log('Navigate to emergency settings');
+    log.info('Navigate to emergency settings');
   }
 
   /**

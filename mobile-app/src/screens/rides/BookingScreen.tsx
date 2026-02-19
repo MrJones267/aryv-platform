@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -22,6 +23,12 @@ import { ridesApi } from '../../services/api';
 import { BookingScreenProps } from '../../navigation/types';
 import AIPricingService, { PricingRequest, PricingResponse } from '../../services/AIPricingService';
 import PricingDisplay from '../../components/pricing/PricingDisplay';
+import PaymentMethodSelector, { PaymentMethodType } from '../../components/payment/PaymentMethodSelector';
+import { paymentApi } from '../../services/api';
+import { CurrencyService, Currency } from '../../services/CurrencyService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('BookingScreen');
 
 interface BookingDetails {
   ride: {
@@ -70,8 +77,9 @@ interface BookingDetails {
 }
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
+  const typedNavigation = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
   const { rideId } = route.params;
-  const seatsRequested = (route.params as any).seatsRequested || 1;
+  const seatsRequested = (route.params as Record<string, unknown>).seatsRequested as number || 1;
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -82,6 +90,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [aiPricing, setAiPricing] = useState<PricingResponse | null>(null);
   const [isPricingLoading, setIsPricingLoading] = useState(false);
   const [rideType, setRideType] = useState<'economy' | 'comfort' | 'premium' | 'shared'>('economy');
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodType | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
 
   useEffect(() => {
     loadBookingDetails();
@@ -144,13 +155,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
       // Calculate pricing
       const subtotal = mockBooking.ride.pricePerSeat * selectedSeats;
-      const platformFee = Math.max(1, subtotal * 0.05); // 5% or minimum $1
+      const platformFee = Math.max(1, subtotal * 0.05); // 5% or minimum P1
       mockBooking.totalAmount = subtotal + platformFee;
       mockBooking.platformFee = platformFee;
 
       setBookingDetails(mockBooking);
     } catch (error) {
-      console.error('Error loading booking details:', error);
+      log.error('Error loading booking details:', error);
       Alert.alert('Error', 'Failed to load booking details');
       navigation.goBack();
     } finally {
@@ -190,7 +201,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         platformFee: pricing.breakdown.fees,
       } : null);
     } catch (error) {
-      console.error('AI Pricing calculation failed:', error);
+      log.error('AI Pricing calculation failed:', error);
       // Fallback to basic pricing
       const subtotal = bookingDetails.ride.pricePerSeat * selectedSeats;
       const platformFee = Math.max(1, subtotal * 0.05);
@@ -220,56 +231,94 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   };
 
   const handlePaymentMethodSelect = () => {
-    // Navigate to payment method selection
-    Alert.alert(
-      'Payment Method',
-      'Payment method selection not implemented yet. Using default payment method.',
-      [{ text: 'OK' }]
-    );
-    
+    setShowPaymentSelector(true);
+  };
+
+  const handlePaymentMethodConfirm = (method: PaymentMethodType) => {
+    setSelectedPaymentMethod(method);
+    const methodLabels: Record<PaymentMethodType, string> = {
+      cash: 'Cash',
+      stripe: 'Credit/Debit Card',
+      mobile_money: 'Mobile Money',
+      wallet: 'ARYV Wallet',
+    };
     if (bookingDetails) {
       setBookingDetails(prev => prev ? {
         ...prev,
-        paymentMethod: 'Visa ****1234'
+        paymentMethod: methodLabels[method],
       } : null);
     }
+    setShowPaymentSelector(false);
   };
 
   const handleConfirmBooking = async () => {
     if (!bookingDetails) return;
 
-    if (!bookingDetails.paymentMethod) {
+    if (!bookingDetails.paymentMethod || !selectedPaymentMethod) {
       Alert.alert('Payment Method Required', 'Please select a payment method to continue');
       return;
     }
 
+    const currency = selectedCurrency?.code || 'BWP';
+    const displayAmount = selectedCurrency
+      ? CurrencyService.formatAmount(bookingDetails.totalAmount, selectedCurrency)
+      : `P${bookingDetails.totalAmount.toFixed(2)}`;
+
     Alert.alert(
       'Confirm Booking',
-      `Book ${selectedSeats} seat${selectedSeats > 1 ? 's' : ''} for $${bookingDetails.totalAmount.toFixed(2)}?`,
+      `Book ${selectedSeats} seat${selectedSeats > 1 ? 's' : ''} for ${displayAmount}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'Confirm & Pay',
           onPress: async () => {
             setIsBooking(true);
             try {
+              // Step 1: Create payment intent
+              const paymentMethodMap: Record<PaymentMethodType, string> = {
+                cash: 'cash',
+                stripe: 'card',
+                mobile_money: 'mobile_money',
+                wallet: 'wallet',
+              };
+              const paymentResponse = await paymentApi.createPaymentIntent({
+                amount: bookingDetails.totalAmount,
+                currency,
+                paymentMethod: paymentMethodMap[selectedPaymentMethod] as 'card' | 'mobile_money' | 'cash' | 'wallet',
+                rideId,
+                metadata: {
+                  seats: selectedSeats.toString(),
+                  rideType,
+                },
+              });
+
+              // Step 2: Book the ride
               const response = await ridesApi.bookRide(rideId, selectedSeats);
-              
+
               if (response.success) {
+                // Step 3: Confirm payment (for non-cash methods)
+                if (selectedPaymentMethod !== 'cash' && paymentResponse.data?.id) {
+                  await paymentApi.confirmPayment({
+                    paymentIntentId: paymentResponse.data.id,
+                  });
+                }
+
                 Alert.alert(
                   'Booking Confirmed!',
-                  'Your booking has been confirmed. You can view it in the "Rides" tab.',
+                  selectedPaymentMethod === 'cash'
+                    ? 'Your booking is confirmed. Please pay the driver in cash upon meeting.'
+                    : 'Your booking and payment have been confirmed.',
                   [
                     {
                       text: 'View Booking',
                       onPress: () => {
-                        (navigation as any).navigate('Rides');
+                        typedNavigation.navigate('Rides');
                       },
                     },
                     {
                       text: 'Contact Driver',
                       onPress: () => {
-                        (navigation as any).navigate('Chat', {
+                        typedNavigation.navigate('Chat', {
                           chatId: `ride-${rideId}`,
                           recipientName: `${bookingDetails.ride.driver.firstName} ${bookingDetails.ride.driver.lastName}`,
                           rideId: rideId,
@@ -279,10 +328,15 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   ]
                 );
               } else {
+                // Cancel payment intent if booking fails
+                if (paymentResponse.data?.id) {
+                  await paymentApi.cancelPayment(paymentResponse.data.id).catch(() => {});
+                }
                 Alert.alert('Booking Failed', response.error || 'Unable to complete booking');
               }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Booking failed');
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              Alert.alert('Error', errMsg || 'Booking failed. No payment was charged.');
             } finally {
               setIsBooking(false);
             }
@@ -318,7 +372,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <TouchableOpacity
             style={styles.contactButton}
             onPress={() => {
-              (navigation as any).navigate('Chat', {
+              typedNavigation.navigate('Chat', {
                 chatId: `ride-${rideId}`,
                 recipientName: `${ride.driver.firstName} ${ride.driver.lastName}`,
                 rideId: rideId,
@@ -415,7 +469,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   styles.rideTypeItem,
                   rideType === type.id && styles.rideTypeItemSelected,
                 ]}
-                onPress={() => setRideType(type.id as any)}
+                onPress={() => setRideType(type.id as 'economy' | 'comfort' | 'premium' | 'shared')}
               >
                 <Icon 
                   name={type.icon} 
@@ -546,7 +600,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
       <View style={styles.footer}>
         <Button
-          title={isBooking ? 'Booking...' : 'Confirm Booking'}
+          title={isBooking ? 'Booking...' : 'Confirm & Pay'}
           onPress={handleConfirmBooking}
           disabled={isBooking || !bookingDetails.paymentMethod}
           loading={isBooking}
@@ -556,6 +610,33 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           fullWidth
         />
       </View>
+
+      {/* Payment Method Selector Modal */}
+      <Modal
+        visible={showPaymentSelector}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.paymentModalContainer}>
+          <View style={styles.paymentModalHeader}>
+            <TouchableOpacity onPress={() => setShowPaymentSelector(false)}>
+              <Icon name="close" size={24} color="#333333" />
+            </TouchableOpacity>
+            <Text style={styles.paymentModalTitle}>Payment Method</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView style={styles.paymentModalContent}>
+            <PaymentMethodSelector
+              amount={bookingDetails.totalAmount}
+              selectedMethod={selectedPaymentMethod}
+              onMethodSelect={handlePaymentMethodConfirm}
+              selectedCurrency={selectedCurrency}
+              onCurrencyChange={setSelectedCurrency}
+              showCurrencySelector={true}
+            />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -857,6 +938,28 @@ const styles = StyleSheet.create({
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
+  },
+  paymentModalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  paymentModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  paymentModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  paymentModalContent: {
+    flex: 1,
+    padding: 16,
   },
 });
 

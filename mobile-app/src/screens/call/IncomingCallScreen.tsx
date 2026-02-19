@@ -22,18 +22,20 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors } from '../../theme';
 import CallService from '../../services/CallService';
 import { IncomingCallScreenProps } from '../../navigation/types';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('IncomingCallScreen');
 
 const IncomingCallScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const {
-    callId,
-    sessionId,
-    callType,
-    from,
-    caller,
-    isEmergency,
-  } = route.params as any;
+  const params = route.params as Record<string, unknown>;
+  const callId = params.callId as string;
+  const sessionId = params.sessionId as string;
+  const callType = params.callType as string;
+  const from = params.from as string;
+  const caller = params.caller as { name?: string; avatar?: string } | undefined;
+  const isEmergency = params.isEmergency as boolean;
 
   const [isVibrating, setIsVibrating] = useState(false);
 
@@ -78,7 +80,7 @@ const IncomingCallScreen: React.FC = () => {
       
       if (success) {
         // Navigate to active call screen
-        (navigation as any).replace('ActiveCall', {
+        (navigation as unknown as { replace: (screen: string, params?: Record<string, unknown>) => void }).replace('ActiveCall', {
           callId,
           callType,
           isIncoming: true,
@@ -91,7 +93,7 @@ const IncomingCallScreen: React.FC = () => {
         );
       }
     } catch (error) {
-      console.error('Error accepting call:', error);
+      log.error('Error accepting call:', error);
       Alert.alert(
         'Call Error',
         'Something went wrong while accepting the call.',
@@ -109,7 +111,7 @@ const IncomingCallScreen: React.FC = () => {
       // Navigate back
       navigation.goBack();
     } catch (error) {
-      console.error('Error rejecting call:', error);
+      log.error('Error rejecting call:', error);
       navigation.goBack();
     }
   };

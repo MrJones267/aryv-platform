@@ -23,6 +23,9 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { loginUser, clearAuthError, googleLogin } from '../../store/slices/authSlice';
 import { LoginScreenProps } from '../../navigation/types';
 import GoogleSignInButton from '../../components/auth/GoogleSignInButton';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('LoginScreen');
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
@@ -87,7 +90,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
       })).unwrap();
     } catch (err) {
       // Error is handled by the useEffect above
-      console.log('Login error handled by useEffect');
+      log.info('Login error handled by useEffect');
     }
   };
 
@@ -103,7 +106,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     navigation.goBack();
   };
 
-  const handleGoogleSuccess = async (user: any, tokens: any): Promise<void> => {
+  const handleGoogleSuccess = async (user: { id: string; email: string; firstName?: string; lastName?: string; profilePicture?: string }, tokens: { accessToken: string; refreshToken: string; expiresIn: number }): Promise<void> => {
     try {
       // Dispatch Google login action to store
       await dispatch(googleLogin({
@@ -111,9 +114,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
         tokens
       })).unwrap();
       
-      console.log('✅ Google login successful, navigating...');
+      log.info('✅ Google login successful, navigating...');
     } catch (error) {
-      console.error('❌ Google login failed:', error);
+      log.error('❌ Google login failed:', error);
       Alert.alert(
         'Login Failed', 
         'Unable to complete Google sign-in. Please try again.',
@@ -123,7 +126,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   };
 
   const handleGoogleError = (error: string): void => {
-    console.error('Google Sign-In Error:', error);
+    log.error('Google Sign-In Error:', error);
     Alert.alert(
       'Google Sign-In Failed',
       error,

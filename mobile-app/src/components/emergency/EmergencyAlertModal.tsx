@@ -19,6 +19,9 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import EmergencyService, { EmergencyAlert } from '../../services/EmergencyServiceSimple';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('EmergencyAlertModal');
 
 interface EmergencyAlertModalProps {
   visible: boolean;
@@ -138,7 +141,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
 
       onClose();
     } catch (error) {
-      console.error('Emergency trigger failed:', error);
+      log.error('Emergency trigger failed:', error);
       Alert.alert('Emergency Failed', 'Unable to trigger emergency alert. Please call emergency services directly.');
       setIsTriggering(false);
     }
@@ -238,7 +241,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
                 onPress={() => EmergencyService.callEmergencyServices()}
               >
                 <Icon name="phone" size={20} color="#FFFFFF" />
-                <Text style={styles.quickActionText}>Call 911</Text>
+                <Text style={styles.quickActionText}>Call 999</Text>
               </TouchableOpacity>
               
               <TouchableOpacity

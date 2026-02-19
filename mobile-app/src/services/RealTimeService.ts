@@ -8,6 +8,9 @@
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import logger from './LoggingService';
+
+const log = logger.createLogger('RealTimeService');
 
 // Types
 export interface LocationUpdate {
@@ -36,7 +39,7 @@ export interface NotificationData {
   type: string;
   title: string;
   message: string;
-  data?: any;
+  data?: Record<string, unknown>;
   timestamp?: string;
 }
 
@@ -48,15 +51,38 @@ export interface PackageUpdate {
   timestamp: string;
 }
 
+export interface DriverAssignedInfo {
+  driverId: string;
+  driverName: string;
+  driverPhoto?: string;
+  vehicleInfo?: {
+    make: string;
+    model: string;
+    color: string;
+    plateNumber: string;
+  };
+  rating?: number;
+  estimatedArrival?: string;
+}
+
+export interface ChatMessage {
+  messageId: string;
+  rideId: string;
+  senderId: string;
+  senderName?: string;
+  message: string;
+  timestamp: string;
+}
+
 // Event callbacks
 export interface RealTimeEvents {
   onLocationUpdate?: (location: LocationUpdate) => void;
   onRideUpdate?: (ride: RideUpdate) => void;
   onNotification?: (notification: NotificationData) => void;
   onPackageUpdate?: (update: PackageUpdate) => void;
-  onDriverAssigned?: (driverInfo: any) => void;
+  onDriverAssigned?: (driverInfo: DriverAssignedInfo) => void;
   onRideStatusChange?: (status: string) => void;
-  onChatMessage?: (message: any) => void;
+  onChatMessage?: (message: ChatMessage) => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
   onError?: (error: string) => void;
@@ -86,7 +112,7 @@ export class RealTimeService {
   async connect(userId: string, events: RealTimeEvents = {}): Promise<boolean> {
     try {
       if (this.socket?.connected) {
-        console.log('🟢 Already connected to real-time server');
+        log.info('Already connected to real-time server');
         return true;
       }
 
@@ -96,7 +122,7 @@ export class RealTimeService {
       const token = await AsyncStorage.getItem('accessToken');
       const serverUrl = this.getServerUrl();
 
-      console.log(`🔌 Connecting to real-time server: ${serverUrl}`);
+      log.info('Connecting to real-time server', { serverUrl });
 
       this.socket = io(serverUrl, {
         transports: ['websocket', 'polling'],
@@ -114,7 +140,7 @@ export class RealTimeService {
 
       return new Promise((resolve) => {
         this.socket?.on('connect', () => {
-          console.log(`✅ Connected to real-time server with ID: ${this.socket?.id}`);
+          log.info('Connected to real-time server', { socketId: this.socket?.id });
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.authenticate(userId, token || '');
@@ -123,7 +149,7 @@ export class RealTimeService {
         });
 
         this.socket?.on('connect_error', (error) => {
-          console.error('❌ Real-time connection error:', error.message);
+          log.error('Real-time connection error', error);
           this.events.onError?.(error.message);
           resolve(false);
         });
@@ -132,7 +158,7 @@ export class RealTimeService {
         setTimeout(() => resolve(false), 12000);
       });
     } catch (error) {
-      console.error('❌ Failed to connect to real-time server:', error);
+      log.error('❌ Failed to connect to real-time server:', error);
       this.events.onError?.('Failed to connect to real-time server');
       return false;
     }
@@ -143,7 +169,7 @@ export class RealTimeService {
    */
   disconnect(): void {
     if (this.socket) {
-      console.log('🔌 Disconnecting from real-time server');
+      log.info('🔌 Disconnecting from real-time server');
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
@@ -177,7 +203,7 @@ export class RealTimeService {
   joinRide(rideId: string): void {
     if (!this.socket) return;
 
-    console.log(`🎯 Joining ride room: ${rideId}`);
+    log.info(`🎯 Joining ride room: ${rideId}`);
     this.socket.emit('join_ride', { rideId });
   }
 
@@ -187,7 +213,7 @@ export class RealTimeService {
   leaveRide(rideId: string): void {
     if (!this.socket) return;
 
-    console.log(`🚪 Leaving ride room: ${rideId}`);
+    log.info(`🚪 Leaving ride room: ${rideId}`);
     this.socket.emit('leave_ride', { rideId });
   }
 
@@ -250,20 +276,20 @@ export class RealTimeService {
 
     // Connection events
     this.socket.on('disconnect', (reason) => {
-      console.log(`🔌 Disconnected from real-time server: ${reason}`);
+      log.info(`🔌 Disconnected from real-time server: ${reason}`);
       this.isConnected = false;
       this.events.onDisconnected?.();
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
-      console.log(`🔄 Reconnected to real-time server (attempt ${attemptNumber})`);
+      log.info(`🔄 Reconnected to real-time server (attempt ${attemptNumber})`);
       this.isConnected = true;
       this.events.onConnected?.();
     });
 
     this.socket.on('reconnect_error', (error) => {
       this.reconnectAttempts++;
-      console.error(`❌ Reconnection error (${this.reconnectAttempts}/${this.maxReconnectAttempts}):`, error.message);
+      log.error(`❌ Reconnection error (${this.reconnectAttempts}/${this.maxReconnectAttempts}):`, error.message);
       
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         this.events.onError?.('Max reconnection attempts reached');
@@ -273,10 +299,10 @@ export class RealTimeService {
     // Authentication response
     this.socket.on('authenticated', (data) => {
       if (data.success) {
-        console.log('🔐 Successfully authenticated with real-time server');
-        console.log(`👥 Connected users: ${data.connectedUsers}`);
+        log.info('🔐 Successfully authenticated with real-time server');
+        log.info(`👥 Connected users: ${data.connectedUsers}`);
       } else {
-        console.error('❌ Authentication failed:', data.message);
+        log.error('❌ Authentication failed:', data.message);
         this.events.onError?.('Authentication failed');
       }
     });
@@ -298,7 +324,7 @@ export class RealTimeService {
     });
 
     this.socket.on('notification', (data) => {
-      console.log('🔔 Received notification:', data.title);
+      log.info('🔔 Received notification:', data.title);
       if (this.events.onNotification) {
         this.events.onNotification(data);
       }
@@ -311,7 +337,7 @@ export class RealTimeService {
     });
 
     this.socket.on('driver_assigned', (data) => {
-      console.log('🚗 Driver assigned:', data.driverName);
+      log.info('🚗 Driver assigned:', data.driverName);
       if (this.events.onDriverAssigned) {
         this.events.onDriverAssigned(data);
       }
@@ -325,16 +351,16 @@ export class RealTimeService {
 
     // Room events
     this.socket.on('joined_ride', (data) => {
-      console.log(`🎯 Successfully joined ride: ${data.rideId}`);
+      log.info(`🎯 Successfully joined ride: ${data.rideId}`);
     });
 
     this.socket.on('left_ride', (data) => {
-      console.log(`🚪 Left ride: ${data.rideId}`);
+      log.info(`🚪 Left ride: ${data.rideId}`);
     });
 
     // Error handling
     this.socket.on('error', (error) => {
-      console.error('❌ Socket error:', error);
+      log.error('❌ Socket error:', error);
       this.events.onError?.(error.message || 'Socket error occurred');
     });
   }

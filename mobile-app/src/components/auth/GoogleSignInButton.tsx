@@ -13,10 +13,13 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { googleAuthService } from '../../services/googleAuthService';
+import { googleAuthService, AuthUser } from '../../services/googleAuthService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('GoogleSignInButton');
 
 interface GoogleSignInButtonProps {
-  onSuccess?: (user: any, tokens: any) => void;
+  onSuccess?: (user: AuthUser, tokens: { accessToken: string; refreshToken: string; expiresIn: number }) => void;
   onError?: (error: string) => void;
   style?: object;
   disabled?: boolean;
@@ -40,12 +43,12 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     setIsLoading(true);
     
     try {
-      console.log('🚀 Starting Google Sign-In...');
+      log.info('Starting Google Sign-In...');
       
       const result = await googleAuthService.signIn();
       
       if (result.success && result.user && result.tokens) {
-        console.log('✅ Google Sign-In completed successfully');
+        log.info('Google Sign-In completed successfully');
         
         // Call success callback
         if (onSuccess) {
@@ -59,7 +62,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
           [{ text: 'OK' }]
         );
       } else {
-        console.error('❌ Google Sign-In failed:', result.error);
+        log.error('❌ Google Sign-In failed:', result.error);
         
         // Call error callback
         if (onError) {
@@ -74,7 +77,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         );
       }
     } catch (error) {
-      console.error('❌ Unexpected Google Sign-In error:', error);
+      log.error('❌ Unexpected Google Sign-In error:', error);
       
       const errorMessage = 'An unexpected error occurred. Please try again.';
       

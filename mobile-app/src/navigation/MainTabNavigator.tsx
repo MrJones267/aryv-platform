@@ -16,11 +16,13 @@ import RideDetailsScreen from '../screens/main/RideDetailsScreen';
 import CreateRideScreen from '../screens/rides/CreateRideScreen';
 import BookingScreen from '../screens/rides/BookingScreen';
 import RideRequestScreen from '../screens/rides/RideRequestScreen';
+import RideRatingScreen from '../screens/rides/RideRatingScreen';
 import RecommendationsScreen from '../screens/ai/RecommendationsScreen';
+import DriverOnboardingScreen from '../screens/onboarding/DriverOnboardingScreen';
 import MessagesScreen from '../screens/main/MessagesScreen';
 import ChatScreen from '../screens/main/ChatScreen';
 import ConversationListScreen from '../screens/communication/ConversationListScreen';
-import { PackageNavigator, CourierNavigator } from './CourierNavigator';
+import { CourierHubNavigator } from './CourierNavigator';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import EditProfileScreen from '../screens/settings/EditProfileScreen';
 import PaymentMethodsScreen from '../screens/settings/PaymentMethodsScreen';
@@ -29,17 +31,22 @@ import VerificationWorkflowScreen from '../screens/verification/VerificationWork
 import EmergencyContactsScreen from '../screens/settings/EmergencyContactsScreen';
 import NotificationSettingsScreen from '../screens/settings/NotificationSettingsScreen';
 import PrivacySettingsScreen from '../screens/settings/PrivacySettingsScreen';
+import CurrencySettingsScreen from '../screens/settings/CurrencySettingsScreen';
+import SecuritySettingsScreen from '../screens/settings/SecuritySettingsScreen';
+import LanguageSettingsScreen from '../screens/settings/LanguageSettingsScreen';
+import DataUsageSettingsScreen from '../screens/settings/DataUsageSettingsScreen';
 import HelpScreen from '../screens/settings/HelpScreen';
 import AboutScreen from '../screens/settings/AboutScreen';
 import TermsScreen from '../screens/settings/TermsScreen';
 import PerformanceDashboard from '../screens/performance/PerformanceDashboard';
+import RevenueAnalyticsScreen from '../screens/RevenueAnalyticsScreen';
+import AIDashboardScreen from '../screens/AIDashboardScreen';
 import { colors } from '../theme';
 
 export type MainTabParamList = {
   Home: undefined;
   Rides: undefined;
   Messages: undefined;
-  Packages: undefined;
   Courier: undefined;
   Profile: undefined;
 };
@@ -51,7 +58,9 @@ export type HomeStackParamList = {
   CreateRide: undefined;
   Booking: { rideId: string };
   RideRequest: { origin?: any; destination?: any };
+  RideRating: { rideId: string; driverName?: string; origin?: string; destination?: string; role?: 'passenger' | 'driver' };
   AIRecommendations: undefined;
+  DriverOnboarding: undefined;
 };
 
 export type MessagesStackParamList = {
@@ -69,10 +78,17 @@ export type ProfileStackParamList = {
   EmergencyContacts: undefined;
   NotificationSettings: undefined;
   PrivacySettings: undefined;
+  CurrencySettings: undefined;
+  SecuritySettings: undefined;
+  LanguageSettings: undefined;
+  DataUsageSettings: undefined;
   Help: undefined;
   About: undefined;
   Terms: undefined;
   PerformanceDashboard: undefined;
+  RevenueAnalytics: undefined;
+  AIDashboard: undefined;
+  DriverOnboarding: undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -117,15 +133,25 @@ const HomeNavigator: React.FC = () => (
       component={BookingScreen}
       options={{ title: 'Book Ride' }}
     />
-    <HomeStack.Screen 
-      name="RideRequest" 
+    <HomeStack.Screen
+      name="RideRequest"
       component={RideRequestScreen}
       options={{ title: 'Request Ride', headerShown: false }}
     />
-    <HomeStack.Screen 
-      name="AIRecommendations" 
+    <HomeStack.Screen
+      name="RideRating"
+      component={RideRatingScreen}
+      options={{ title: 'Rate Trip', headerShown: false }}
+    />
+    <HomeStack.Screen
+      name="AIRecommendations"
       component={RecommendationsScreen}
       options={{ title: 'AI Recommendations', headerShown: false }}
+    />
+    <HomeStack.Screen
+      name="DriverOnboarding"
+      component={DriverOnboardingScreen}
+      options={{ title: 'Become a Driver', headerShown: false }}
     />
   </HomeStack.Navigator>
 );
@@ -213,6 +239,26 @@ const ProfileNavigator: React.FC = () => (
       options={{ title: 'Privacy', headerShown: false }}
     />
     <ProfileStack.Screen 
+      name="CurrencySettings" 
+      component={CurrencySettingsScreen}
+      options={{ title: 'Currency & Region', headerShown: false }}
+    />
+    <ProfileStack.Screen 
+      name="SecuritySettings" 
+      component={SecuritySettingsScreen}
+      options={{ title: 'Security', headerShown: false }}
+    />
+    <ProfileStack.Screen 
+      name="LanguageSettings" 
+      component={LanguageSettingsScreen}
+      options={{ title: 'Language & Region', headerShown: false }}
+    />
+    <ProfileStack.Screen 
+      name="DataUsageSettings" 
+      component={DataUsageSettingsScreen}
+      options={{ title: 'Data Usage', headerShown: false }}
+    />
+    <ProfileStack.Screen 
       name="Help" 
       component={HelpScreen}
       options={{ title: 'Help & Support', headerShown: false }}
@@ -227,10 +273,25 @@ const ProfileNavigator: React.FC = () => (
       component={TermsScreen}
       options={{ title: 'Terms & Conditions', headerShown: false }}
     />
-    <ProfileStack.Screen 
-      name="PerformanceDashboard" 
+    <ProfileStack.Screen
+      name="PerformanceDashboard"
       component={PerformanceDashboard}
       options={{ title: 'Performance Dashboard', headerShown: false }}
+    />
+    <ProfileStack.Screen
+      name="RevenueAnalytics"
+      component={RevenueAnalyticsScreen}
+      options={{ title: 'Revenue Analytics', headerShown: false }}
+    />
+    <ProfileStack.Screen
+      name="AIDashboard"
+      component={AIDashboardScreen}
+      options={{ title: 'AI Dashboard', headerShown: false }}
+    />
+    <ProfileStack.Screen
+      name="DriverOnboarding"
+      component={DriverOnboardingScreen}
+      options={{ title: 'Become a Driver', headerShown: false }}
     />
   </ProfileStack.Navigator>
 );
@@ -252,11 +313,8 @@ const MainTabNavigator: React.FC = () => {
             case 'Messages':
               iconName = 'message';
               break;
-            case 'Packages':
-              iconName = 'local-shipping';
-              break;
             case 'Courier':
-              iconName = 'delivery-dining';
+              iconName = 'local-shipping';
               break;
             case 'Profile':
               iconName = 'person';
@@ -297,15 +355,10 @@ const MainTabNavigator: React.FC = () => {
         component={MessagesNavigator}
         options={{ title: 'Messages', headerShown: false }}
       />
-      <Tab.Screen 
-        name="Packages" 
-        component={PackageNavigator}
-        options={{ title: 'Send Package', headerShown: false }}
-      />
-      <Tab.Screen 
-        name="Courier" 
-        component={CourierNavigator}
-        options={{ title: 'Deliver', headerShown: false }}
+      <Tab.Screen
+        name="Courier"
+        component={CourierHubNavigator}
+        options={{ title: 'Courier', headerShown: false }}
       />
       <Tab.Screen 
         name="Profile" 

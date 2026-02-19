@@ -28,6 +28,9 @@ const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: '
 // import { useLocation } from '../hooks/useLocation';
 const useLocation = () => ({ location: { latitude: 0, longitude: 0 }, loading: false });
 import { colors, spacing, typography } from '../theme';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('AIDashboardScreen');
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - (spacing.md * 2);
@@ -78,7 +81,7 @@ export const AIDashboardScreen: React.FC = () => {
       generateMockHistoricalData();
 
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      log.error('Error loading dashboard data:', error);
       Alert.alert(
         'Error',
         'Failed to load AI dashboard data. Some features may be unavailable.',
@@ -288,7 +291,7 @@ export const AIDashboardScreen: React.FC = () => {
           {stats.map((stat, index) => (
             <View key={index} style={styles.statCard}>
               <View style={styles.statHeader}>
-                <MaterialIcons name={stat.icon as any} size={24} color={stat.color} />
+                <MaterialIcons name={stat.icon as string} size={24} color={stat.color} />
                 <View style={styles.confidenceIndicator}>
                   <View 
                     style={[

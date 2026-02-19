@@ -21,6 +21,13 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import { Country, CountryService } from '../../services/CountryService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CountrySelector');
+
+type SectionItem =
+  | { type: 'header'; continent: string; countries: Country[]; key: string }
+  | ({ type: 'country'; key: string } & Country);
 
 interface CountrySelectorProps {
   selectedCountry: Country | null;
@@ -69,7 +76,7 @@ const CountrySelector: React.FC<CountrySelectorProps> = ({
       setCountries(countryList);
       setFilteredCountries(countryList);
     } catch (error) {
-      console.error('Error loading countries:', error);
+      log.error('Error loading countries:', error);
       Alert.alert('Error', 'Failed to load countries. Please try again.');
     } finally {
       setLoading(false);
@@ -119,7 +126,7 @@ const CountrySelector: React.FC<CountrySelectorProps> = ({
           );
         }
       } catch (error) {
-        console.error('Error getting currency suggestion:', error);
+        log.error('Error getting currency suggestion:', error);
       }
     }
   };
@@ -191,7 +198,7 @@ const CountrySelector: React.FC<CountrySelectorProps> = ({
 
   const renderGroupedList = () => {
     const grouped = groupCountriesByContinent();
-    const sections: any[] = [];
+    const sections: SectionItem[] = [];
 
     Object.keys(grouped).sort().forEach(continent => {
       sections.push({
@@ -200,7 +207,7 @@ const CountrySelector: React.FC<CountrySelectorProps> = ({
         countries: grouped[continent],
         key: `header-${continent}`,
       });
-      
+
       grouped[continent].forEach(country => {
         sections.push({
           type: 'country',
@@ -213,7 +220,7 @@ const CountrySelector: React.FC<CountrySelectorProps> = ({
     return sections;
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderItem = ({ item }: { item: SectionItem }) => {
     if (item.type === 'header') {
       return renderSectionHeader(item.continent, item.countries);
     }

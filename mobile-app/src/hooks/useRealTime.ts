@@ -7,6 +7,9 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('useRealTime');
 import realTimeService, { 
   RealTimeEvents, 
   LocationUpdate, 
@@ -61,7 +64,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
     try {
       const events: RealTimeEvents = {
         onConnected: () => {
-          console.log('🟢 Real-time service connected');
+          log.info('🟢 Real-time service connected');
           setState(prev => ({
             ...prev,
             connected: true,
@@ -73,7 +76,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
         },
 
         onDisconnected: () => {
-          console.log('🔴 Real-time service disconnected');
+          log.info('🔴 Real-time service disconnected');
           setState(prev => ({
             ...prev,
             connected: false,
@@ -83,7 +86,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
         },
 
         onError: (error: string) => {
-          console.error('❌ Real-time service error:', error);
+          log.error('❌ Real-time service error:', error);
           setState(prev => ({
             ...prev,
             error,
@@ -118,7 +121,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
             type: 'driver_assigned',
             title: 'Driver Assigned',
             message: `${driverInfo.driverName} will be your driver`,
-            data: driverInfo,
+            data: driverInfo as unknown as Record<string, unknown>,
             timestamp: new Date().toISOString(),
           };
           setNotifications(prev => [...prev.slice(-19), notification]);
@@ -139,8 +142,8 @@ export const useRealTime = (options: UseRealTimeOptions) => {
           const notification: NotificationData = {
             type: 'chat',
             title: 'New Message',
-            message: message.content || 'You have a new message',
-            data: message,
+            message: message.message || 'You have a new message',
+            data: message as unknown as Record<string, unknown>,
             timestamp: new Date().toISOString(),
           };
           setNotifications(prev => [...prev.slice(-19), notification]);
@@ -159,7 +162,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
 
       return success;
     } catch (error) {
-      console.error('❌ Failed to connect to real-time service:', error);
+      log.error('❌ Failed to connect to real-time service:', error);
       setState(prev => ({
         ...prev,
         connecting: false,
@@ -188,7 +191,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
   const joinRide = useCallback((rideId: string) => {
     currentRideId.current = rideId;
     realTimeService.joinRide(rideId);
-    console.log(`🎯 Joined ride room: ${rideId}`);
+    log.info(`🎯 Joined ride room: ${rideId}`);
   }, []);
 
   /**
@@ -197,7 +200,7 @@ export const useRealTime = (options: UseRealTimeOptions) => {
   const leaveRide = useCallback(() => {
     if (currentRideId.current) {
       realTimeService.leaveRide(currentRideId.current);
-      console.log(`🚪 Left ride room: ${currentRideId.current}`);
+      log.info(`🚪 Left ride room: ${currentRideId.current}`);
       currentRideId.current = null;
     }
   }, []);
@@ -276,12 +279,12 @@ export const useRealTime = (options: UseRealTimeOptions) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to the foreground
         if (!state.connected && userId) {
-          console.log('📱 App foregrounded, reconnecting to real-time service');
+          log.info('📱 App foregrounded, reconnecting to real-time service');
           connect();
         }
       } else if (nextAppState.match(/inactive|background/)) {
         // App has gone to the background
-        console.log('📱 App backgrounded, keeping real-time connection');
+        log.info('📱 App backgrounded, keeping real-time connection');
         // Keep connection alive for notifications
       }
 

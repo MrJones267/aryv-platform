@@ -16,14 +16,16 @@ export const COLORS = {
     primary: '#1F2937',    // Dark gray
     secondary: '#6B7280',  // Medium gray
     light: '#9CA3AF',      // Light gray
-    inverse: '#FFFFFF'     // White
+    inverse: '#FFFFFF',    // White
+    disabled: '#9CA3AF'    // Light gray for disabled state
   },
   
   background: {
     primary: '#FFFFFF',    // White
     secondary: '#F9FAFB',  // Light gray
     card: '#FFFFFF',       // White
-    modal: 'rgba(0,0,0,0.5)' // Semi-transparent
+    modal: 'rgba(0,0,0,0.5)', // Semi-transparent
+    disabled: '#F3F4F6'    // Light gray for disabled state
   },
   
   border: {

@@ -48,7 +48,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'driver_confirmed' | 'completed' | 'failed'>('pending');
   const [trustScore, setTrustScore] = useState<number>(50);
 
-  const currentUser = useAppSelector((state) => (state.auth as any).user);
+  const currentUser = useAppSelector((state) => (state.auth as { user?: Record<string, unknown> }).user);
 
   useEffect(() => {
     createCashPayment();
@@ -120,7 +120,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
             [
               {
                 text: 'OK',
-                onPress: () => (navigation as any).navigate('RideComplete'),
+                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideComplete'),
               },
             ]
           );
@@ -213,7 +213,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Amount to Pay:</Text>
-          <Text style={styles.amountValue}>${amount.toFixed(2)}</Text>
+          <Text style={styles.amountValue}>P{amount.toFixed(2)}</Text>
         </View>
       </View>
 
@@ -251,7 +251,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
             <Text style={styles.stepNumberText}>1</Text>
           </View>
           <Text style={styles.stepText}>
-            Pay exactly ${amount.toFixed(2)} in cash to your driver
+            Pay exactly P{amount.toFixed(2)} in cash to your driver
           </Text>
         </View>
         <View style={styles.instructionStep}>

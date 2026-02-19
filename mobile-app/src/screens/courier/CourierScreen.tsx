@@ -78,11 +78,11 @@ const CourierScreen: React.FC = () => {
   };
 
   const navigateToDeliveryDetails = (agreementId: string) => {
-    (navigation as any).navigate('DeliveryDetails', { agreementId });
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('DeliveryDetails', { agreementId });
   };
 
-  const navigateToPackageTracking = (packageId: string) => {
-    (navigation as any).navigate('PackageTracking', { packageId });
+  const navigateToPackageDetails = (packageId: string) => {
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('PackageDetails', { packageId });
   };
 
   const renderAvailablePackageCard = (package_: Package) => (
@@ -92,7 +92,7 @@ const CourierScreen: React.FC = () => {
           <Icon name="local-shipping" size={20} color={colors.primary} />
           <Text style={styles.packageTitle}>{package_.title}</Text>
         </View>
-        <Text style={styles.priceText}>${package_.senderPriceOffer.toFixed(2)}</Text>
+        <Text style={styles.priceText}>P{(package_.senderPriceOffer ?? 0).toFixed(2)}</Text>
       </View>
 
       <View style={styles.packageDetails}>
@@ -138,7 +138,7 @@ const CourierScreen: React.FC = () => {
       <View style={styles.cardActions}>
         <TouchableOpacity
           style={styles.detailsButton}
-          onPress={() => navigateToPackageTracking(package_.id)}
+          onPress={() => navigateToPackageDetails(package_.id)}
         >
           <Text style={styles.detailsButtonText}>Details</Text>
         </TouchableOpacity>
@@ -204,7 +204,7 @@ const CourierScreen: React.FC = () => {
 
       <View style={styles.deliveryFooter}>
         <Text style={styles.earningsText}>
-          Earnings: ${(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
+          Earnings: P{(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
         </Text>
         {delivery.qrCodeToken && (
           <View style={styles.qrInfo}>

@@ -108,9 +108,9 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-BW', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'BWP'
     }).format(amount);
   };
 

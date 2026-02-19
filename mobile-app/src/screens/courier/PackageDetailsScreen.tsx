@@ -40,18 +40,12 @@ const PackageDetailsScreen: React.FC = () => {
 
   const loadPackageDetails = async () => {
     try {
-      // TODO: Add API endpoint for single package details
-      const response = await PackageService.getAvailablePackages();
+      const response = await PackageService.getPackageById(packageId);
       if (response.success && response.data) {
-        const foundPackage = response.data.find(p => p.id === packageId);
-        if (foundPackage) {
-          setPackage(foundPackage);
-        } else {
-          Alert.alert('Error', 'Package not found');
-          navigation.goBack();
-        }
+        setPackage(response.data);
       } else {
-        Alert.alert('Error', response.error || 'Failed to load package details');
+        Alert.alert('Error', response.error || 'Package not found');
+        navigation.goBack();
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load package details');
@@ -65,7 +59,7 @@ const PackageDetailsScreen: React.FC = () => {
 
     Alert.alert(
       'Accept Delivery',
-      `Accept this package delivery for $${package_.senderPriceOffer.toFixed(2)}?`,
+      `Accept this package delivery for P${(package_.senderPriceOffer ?? 0).toFixed(2)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -139,13 +133,13 @@ const PackageDetailsScreen: React.FC = () => {
           
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Offered Amount</Text>
-            <Text style={styles.priceValue}>${package_.senderPriceOffer.toFixed(2)}</Text>
+            <Text style={styles.priceValue}>P{(package_.senderPriceOffer ?? 0).toFixed(2)}</Text>
           </View>
 
           {package_.systemSuggestedPrice && (
             <View style={styles.suggestionRow}>
               <Text style={styles.suggestionLabel}>Suggested Price</Text>
-              <Text style={styles.suggestionValue}>${package_.systemSuggestedPrice.toFixed(2)}</Text>
+              <Text style={styles.suggestionValue}>P{(package_.systemSuggestedPrice ?? 0).toFixed(2)}</Text>
             </View>
           )}
         </View>
@@ -243,22 +237,22 @@ const PackageDetailsScreen: React.FC = () => {
               <View style={styles.tripItem}>
                 <Icon name="attach-money" size={20} color={colors.success} />
                 <Text style={styles.tripLabel}>Earnings</Text>
-                <Text style={styles.tripValue}>${(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
+                <Text style={styles.tripValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
               </View>
             </View>
             
             <View style={styles.feeBreakdown}>
               <View style={styles.feeRow}>
                 <Text style={styles.feeLabel}>Package Price</Text>
-                <Text style={styles.feeValue}>${package_.senderPriceOffer.toFixed(2)}</Text>
+                <Text style={styles.feeValue}>P{package_.senderPriceOffer.toFixed(2)}</Text>
               </View>
               <View style={styles.feeRow}>
                 <Text style={styles.feeLabel}>Platform Fee (10%)</Text>
-                <Text style={styles.feeValue}>-${(package_.senderPriceOffer * 0.1).toFixed(2)}</Text>
+                <Text style={styles.feeValue}>-P{(package_.senderPriceOffer * 0.1).toFixed(2)}</Text>
               </View>
               <View style={[styles.feeRow, styles.totalRow]}>
                 <Text style={styles.totalLabel}>Your Earnings</Text>
-                <Text style={styles.totalValue}>${(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
+                <Text style={styles.totalValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
               </View>
             </View>
           </View>

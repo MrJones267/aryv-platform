@@ -142,7 +142,7 @@ const ChatList: React.FC<ChatListProps> = ({
   const renderScrollToBottom = () => {
     const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
 
-    const handleScroll = (event: any) => {
+    const handleScroll = (event: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       const isNearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 100;
       setShowScrollToBottom(!isNearBottom && messages.length > 10);
@@ -206,11 +206,11 @@ const ChatList: React.FC<ChatListProps> = ({
 
   const messagesWithDates = addDateSeparators(messages);
 
-  const renderItem = ({ item, index }: { item: any; index: number }) => {
-    if (item.type === 'date') {
+  const renderItem = ({ item, index }: { item: MessageData | { type: 'date'; date: string }; index: number }) => {
+    if ('date' in item && item.type === 'date') {
       return renderDateSeparator(item.date);
     }
-    return renderMessage({ item, index });
+    return renderMessage({ item: item as MessageData, index });
   };
 
   return (
@@ -219,8 +219,8 @@ const ChatList: React.FC<ChatListProps> = ({
         ref={flatListRef}
         data={messagesWithDates}
         renderItem={renderItem}
-        keyExtractor={(item, index) => 
-          item.type === 'date' ? `date-${index}` : item.id
+        keyExtractor={(item, index) =>
+          'date' in item && item.type === 'date' ? `date-${index}` : (item as MessageData).id
         }
         ListHeaderComponent={renderLoadMoreHeader}
         ListEmptyComponent={renderEmptyState}

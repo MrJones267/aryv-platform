@@ -6,6 +6,9 @@
  */
 
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('CountryService');
 
 export interface Country {
   id: string;
@@ -37,6 +40,298 @@ export interface UserCountryInfo {
 
 export class CountryService {
   private static apiClient = new ApiClient();
+  
+  // Fallback country data for offline/error scenarios
+  private static fallbackCountries: Country[] = [
+    // SADC countries (primary market)
+    {
+      id: '1',
+      code: 'BW',
+      name: 'Botswana',
+      nameOfficial: 'Republic of Botswana',
+      flag: '🇧🇼',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Southern Africa',
+      capital: 'Gaborone',
+      phonePrefix: '+267',
+      timezones: ['Africa/Gaborone'],
+      languages: ['en', 'tn'],
+      isActive: true
+    },
+    {
+      id: '2',
+      code: 'ZA',
+      name: 'South Africa',
+      nameOfficial: 'Republic of South Africa',
+      flag: '🇿🇦',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Southern Africa',
+      capital: 'Pretoria',
+      phonePrefix: '+27',
+      timezones: ['Africa/Johannesburg'],
+      languages: ['en', 'af', 'zu', 'xh', 'st', 'tn'],
+      isActive: true
+    },
+    {
+      id: '3',
+      code: 'NA',
+      name: 'Namibia',
+      nameOfficial: 'Republic of Namibia',
+      flag: '🇳🇦',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Southern Africa',
+      capital: 'Windhoek',
+      phonePrefix: '+264',
+      timezones: ['Africa/Windhoek'],
+      languages: ['en', 'af'],
+      isActive: true
+    },
+    {
+      id: '4',
+      code: 'ZM',
+      name: 'Zambia',
+      nameOfficial: 'Republic of Zambia',
+      flag: '🇿🇲',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Lusaka',
+      phonePrefix: '+260',
+      timezones: ['Africa/Lusaka'],
+      languages: ['en'],
+      isActive: true
+    },
+    {
+      id: '5',
+      code: 'ZW',
+      name: 'Zimbabwe',
+      nameOfficial: 'Republic of Zimbabwe',
+      flag: '🇿🇼',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Harare',
+      phonePrefix: '+263',
+      timezones: ['Africa/Harare'],
+      languages: ['en', 'sn', 'nd'],
+      isActive: true
+    },
+    {
+      id: '6',
+      code: 'MZ',
+      name: 'Mozambique',
+      nameOfficial: 'Republic of Mozambique',
+      flag: '🇲🇿',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Maputo',
+      phonePrefix: '+258',
+      timezones: ['Africa/Maputo'],
+      languages: ['pt'],
+      isActive: true
+    },
+    {
+      id: '7',
+      code: 'MW',
+      name: 'Malawi',
+      nameOfficial: 'Republic of Malawi',
+      flag: '🇲🇼',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Lilongwe',
+      phonePrefix: '+265',
+      timezones: ['Africa/Blantyre'],
+      languages: ['en', 'ny'],
+      isActive: true
+    },
+    {
+      id: '8',
+      code: 'SZ',
+      name: 'Eswatini',
+      nameOfficial: 'Kingdom of Eswatini',
+      flag: '🇸🇿',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Southern Africa',
+      capital: 'Mbabane',
+      phonePrefix: '+268',
+      timezones: ['Africa/Mbabane'],
+      languages: ['en', 'ss'],
+      isActive: true
+    },
+    {
+      id: '9',
+      code: 'LS',
+      name: 'Lesotho',
+      nameOfficial: 'Kingdom of Lesotho',
+      flag: '🇱🇸',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Southern Africa',
+      capital: 'Maseru',
+      phonePrefix: '+266',
+      timezones: ['Africa/Maseru'],
+      languages: ['en', 'st'],
+      isActive: true
+    },
+    {
+      id: '10',
+      code: 'AO',
+      name: 'Angola',
+      nameOfficial: 'Republic of Angola',
+      flag: '🇦🇴',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Middle Africa',
+      capital: 'Luanda',
+      phonePrefix: '+244',
+      timezones: ['Africa/Luanda'],
+      languages: ['pt'],
+      isActive: true
+    },
+    {
+      id: '11',
+      code: 'TZ',
+      name: 'Tanzania',
+      nameOfficial: 'United Republic of Tanzania',
+      flag: '🇹🇿',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Dodoma',
+      phonePrefix: '+255',
+      timezones: ['Africa/Dar_es_Salaam'],
+      languages: ['sw', 'en'],
+      isActive: true
+    },
+    {
+      id: '12',
+      code: 'CD',
+      name: 'DR Congo',
+      nameOfficial: 'Democratic Republic of the Congo',
+      flag: '🇨🇩',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Middle Africa',
+      capital: 'Kinshasa',
+      phonePrefix: '+243',
+      timezones: ['Africa/Kinshasa', 'Africa/Lubumbashi'],
+      languages: ['fr'],
+      isActive: true
+    },
+    {
+      id: '13',
+      code: 'MG',
+      name: 'Madagascar',
+      nameOfficial: 'Republic of Madagascar',
+      flag: '🇲🇬',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Antananarivo',
+      phonePrefix: '+261',
+      timezones: ['Indian/Antananarivo'],
+      languages: ['mg', 'fr'],
+      isActive: true
+    },
+    {
+      id: '14',
+      code: 'MU',
+      name: 'Mauritius',
+      nameOfficial: 'Republic of Mauritius',
+      flag: '🇲🇺',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Port Louis',
+      phonePrefix: '+230',
+      timezones: ['Indian/Mauritius'],
+      languages: ['en', 'fr'],
+      isActive: true
+    },
+    {
+      id: '15',
+      code: 'SC',
+      name: 'Seychelles',
+      nameOfficial: 'Republic of Seychelles',
+      flag: '🇸🇨',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Victoria',
+      phonePrefix: '+248',
+      timezones: ['Indian/Mahe'],
+      languages: ['en', 'fr'],
+      isActive: true
+    },
+    // Other African countries
+    {
+      id: '16',
+      code: 'KE',
+      name: 'Kenya',
+      nameOfficial: 'Republic of Kenya',
+      flag: '🇰🇪',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Eastern Africa',
+      capital: 'Nairobi',
+      phonePrefix: '+254',
+      timezones: ['Africa/Nairobi'],
+      languages: ['en', 'sw'],
+      isActive: true
+    },
+    {
+      id: '17',
+      code: 'NG',
+      name: 'Nigeria',
+      nameOfficial: 'Federal Republic of Nigeria',
+      flag: '🇳🇬',
+      continent: 'Africa',
+      region: 'Africa',
+      subRegion: 'Western Africa',
+      capital: 'Abuja',
+      phonePrefix: '+234',
+      timezones: ['Africa/Lagos'],
+      languages: ['en'],
+      isActive: true
+    },
+    // International
+    {
+      id: '18',
+      code: 'GB',
+      name: 'United Kingdom',
+      nameOfficial: 'United Kingdom of Great Britain and Northern Ireland',
+      flag: '🇬🇧',
+      continent: 'Europe',
+      region: 'Europe',
+      subRegion: 'Northern Europe',
+      capital: 'London',
+      phonePrefix: '+44',
+      timezones: ['Europe/London'],
+      languages: ['en'],
+      isActive: true
+    },
+    {
+      id: '19',
+      code: 'US',
+      name: 'United States',
+      nameOfficial: 'United States of America',
+      flag: '🇺🇸',
+      continent: 'North America',
+      region: 'Americas',
+      subRegion: 'Northern America',
+      capital: 'Washington D.C.',
+      phonePrefix: '+1',
+      timezones: ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'],
+      languages: ['en'],
+      isActive: true
+    },
+  ];
 
   /**
    * Get all available countries
@@ -45,15 +340,15 @@ export class CountryService {
     try {
       const response = await this.apiClient.get('/countries');
       
-      if (response.success) {
+      if (response.success && response.data?.countries) {
         return response.data.countries;
       } else {
-        console.error('Failed to fetch countries:', response.error);
-        return [];
+        log.warn('API countries not available, using fallback data');
+        return this.fallbackCountries;
       }
     } catch (error) {
-      console.error('Error fetching countries:', error);
-      return [];
+      log.warn('Error fetching countries, using fallback data', { error: error instanceof Error ? error.message : String(error) });
+      return this.fallbackCountries;
     }
   }
 
@@ -64,15 +359,15 @@ export class CountryService {
     try {
       const response = await this.apiClient.get('/countries/popular');
       
-      if (response.success) {
+      if (response.success && response.data?.countries) {
         return response.data.countries;
       } else {
-        console.error('Failed to fetch popular countries:', response.error);
-        return [];
+        log.warn('API popular countries not available, using fallback data');
+        return this.fallbackCountries.slice(0, 6); // Return top 6 countries
       }
     } catch (error) {
-      console.error('Error fetching popular countries:', error);
-      return [];
+      log.warn('Error fetching popular countries, using fallback data', { error: error instanceof Error ? error.message : String(error) });
+      return this.fallbackCountries.slice(0, 6);
     }
   }
 
@@ -86,11 +381,11 @@ export class CountryService {
       if (response.success) {
         return response.data.countries;
       } else {
-        console.error('Failed to fetch countries by region:', response.error);
+        log.error('Failed to fetch countries by region', response.error);
         return [];
       }
     } catch (error) {
-      console.error('Error fetching countries by region:', error);
+      log.error('Error fetching countries by region', error);
       return [];
     }
   }
@@ -105,11 +400,11 @@ export class CountryService {
       if (response.success) {
         return response.data.country;
       } else {
-        console.error('Failed to fetch country:', response.error);
+        log.error('Failed to fetch country', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error fetching country:', error);
+      log.error('Error fetching country', error);
       return null;
     }
   }
@@ -128,11 +423,11 @@ export class CountryService {
       if (response.success) {
         return response.data.countries;
       } else {
-        console.error('Failed to search countries:', response.error);
+        log.error('Failed to search countries', response.error);
         return [];
       }
     } catch (error) {
-      console.error('Error searching countries:', error);
+      log.error('Error searching countries', error);
       return [];
     }
   }
@@ -150,11 +445,11 @@ export class CountryService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to set user country:', response.error);
+        log.error('Failed to set user country', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error setting user country:', error);
+      log.error('Error setting user country', error);
       return null;
     }
   }
@@ -169,11 +464,11 @@ export class CountryService {
       if (response.success) {
         return response.data;
       } else {
-        console.error('Failed to fetch user country:', response.error);
+        log.error('Failed to fetch user country', response.error);
         return null;
       }
     } catch (error) {
-      console.error('Error fetching user country:', error);
+      log.error('Error fetching user country', error);
       return null;
     }
   }
@@ -191,7 +486,7 @@ export class CountryService {
         return null;
       }
     } catch (error) {
-      console.error('Error getting suggested currency:', error);
+      log.error('Error getting suggested currency:', error);
       return null;
     }
   }
@@ -209,7 +504,7 @@ export class CountryService {
         return [];
       }
     } catch (error) {
-      console.error('Error getting countries by phone:', error);
+      log.error('Error getting countries by phone:', error);
       return [];
     }
   }
@@ -230,7 +525,7 @@ export class CountryService {
         timeZoneName: 'short'
       });
     } catch (error) {
-      console.error('Error formatting local time:', error);
+      log.error('Error formatting local time:', error);
       return new Date().toLocaleString();
     }
   }
@@ -245,7 +540,7 @@ export class CountryService {
       const targetTime = new Date(utc.toLocaleString('en-US', { timeZone: timezone }));
       return (targetTime.getTime() - utc.getTime()) / (1000 * 60 * 60); // Hours
     } catch (error) {
-      console.error('Error calculating timezone offset:', error);
+      log.error('Error calculating timezone offset:', error);
       return 0;
     }
   }
@@ -269,7 +564,7 @@ export class CountryService {
       
       return { region };
     } catch (error) {
-      console.error('Error detecting user country:', error);
+      log.error('Error detecting user country:', error);
       return {};
     }
   }
@@ -340,7 +635,7 @@ export class CountryService {
       'Americas': ['US', 'CA', 'BR', 'MX', 'AR', 'CO', 'CL', 'PE'],
       'Europe': ['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CH', 'SE', 'NO'],
       'Asia': ['JP', 'CN', 'IN', 'KR', 'SG', 'TH', 'MY', 'ID', 'PH', 'VN'],
-      'Africa': ['ZA', 'NG', 'KE', 'EG', 'MA', 'GH'],
+      'Africa': ['BW', 'ZA', 'NA', 'ZM', 'ZW', 'MZ', 'MW', 'SZ', 'LS', 'AO', 'TZ', 'KE', 'NG'],
       'Oceania': ['AU', 'NZ'],
     };
 

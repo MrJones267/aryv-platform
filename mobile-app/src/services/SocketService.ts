@@ -8,6 +8,10 @@
 import io, { Socket } from 'socket.io-client';
 import { store } from '../store';
 import { LocationData } from './LocationService';
+import { getApiConfig } from '../config/api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('SocketService');
 
 export interface MessageData {
   id: string;
@@ -42,6 +46,47 @@ export interface TypingData {
   isTyping: boolean;
 }
 
+// Additional interfaces from other services for consolidation
+export interface LocationUpdate {
+  packageId?: number;
+  rideId?: number | string;
+  latitude: number;
+  longitude: number;
+  speed?: number;
+  heading?: number;
+  timestamp: string;
+}
+
+export interface ChatMessage {
+  packageId?: number;
+  rideId?: number | string;
+  message: string;
+  type: 'text' | 'image' | 'location';
+  sender: string;
+  senderId: string;
+  timestamp: string;
+}
+
+export interface StatusUpdate {
+  packageId?: number;
+  rideId?: number | string;
+  status: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  timestamp: string;
+}
+
+export interface NotificationData {
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  data?: Record<string, unknown>;
+  timestamp: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SocketEventCallback = (...args: any[]) => void;
 
 class SocketService {
@@ -81,8 +126,12 @@ class SocketService {
           return;
         }
 
-        // Connect to Socket.io server
-        const socketUrl = `https://api.aryv-app.com`;
+        // Get proper API configuration
+        const config = getApiConfig();
+        const socketUrl = config.socketUrl || config.apiUrl.replace('/api', '');
+        
+        log.info('Connecting to Socket.io server', { socketUrl });
+        
         this.socket = io(socketUrl, {
           auth: {
             token,
@@ -93,10 +142,12 @@ class SocketService {
           reconnectionAttempts: this.maxReconnectAttempts,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
+          forceNew: false,
+          upgrade: true,
         });
 
         this.socket.on('connect', () => {
-          console.log('Socket connected:', this.socket?.id);
+          log.info('Socket connected', { socketId: this.socket?.id });
           this.isConnected = true;
           this.reconnectAttempts = 0;
           
@@ -110,13 +161,13 @@ class SocketService {
         });
 
         this.socket.on('disconnect', (reason) => {
-          console.log('Socket disconnected:', reason);
+          log.info('Socket disconnected', { reason });
           this.isConnected = false;
-          
+
           // Only attempt reconnection for certain disconnect reasons
           if (reason === 'io client disconnect' || reason === 'io server disconnect') {
             // Intentional disconnect, don't reconnect
-            console.log('Intentional disconnect, not attempting reconnection');
+            log.info('Intentional disconnect, not attempting reconnection');
           } else {
             // Network or server issues, attempt reconnection
             this.handleReconnection();
@@ -124,14 +175,14 @@ class SocketService {
         });
 
         this.socket.on('connect_error', (error) => {
-          console.error('Socket connection error:', error);
+          log.error('Socket connection error', error);
           this.isConnected = false;
           reject(error);
         });
 
         this.setupSocketEventHandlers();
       } catch (error) {
-        console.error('Error connecting to socket:', error);
+        log.error('Error connecting to socket', error);
         reject(error);
       }
     });
@@ -168,7 +219,7 @@ class SocketService {
   joinRide(rideId: string): void {
     if (this.isSocketConnected()) {
       this.socket?.emit('join_ride', { rideId });
-      console.log(`Joined ride: ${rideId}`);
+      log.info('Joined ride', { rideId });
     }
   }
 
@@ -178,7 +229,7 @@ class SocketService {
   leaveRide(rideId: string): void {
     if (this.isSocketConnected()) {
       this.socket?.emit('leave_ride', { rideId });
-      console.log(`Left ride: ${rideId}`);
+      log.info('Left ride', { rideId });
     }
   }
 
@@ -200,7 +251,7 @@ class SocketService {
         });
       }
     } else {
-      console.error('Cannot send message: Socket not connected');
+      log.error('Cannot send message: Socket not connected');
     }
   }
 
@@ -273,6 +324,68 @@ class SocketService {
   }
 
   /**
+   * Additional methods for package/courier functionality
+   */
+  
+  // Package tracking methods
+  joinPackage(packageId: string): void {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('join_package', { packageId });
+      log.info(`Joined package tracking: ${packageId}`);
+    }
+  }
+  
+  leavePackage(packageId: string): void {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('leave_package', { packageId });
+      log.info(`Left package tracking: ${packageId}`);
+    }
+  }
+  
+  updatePackageLocation(packageId: string, location: LocationData): void {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('package_location_update', {
+        packageId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        heading: location.heading,
+        speed: location.speed,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+  
+  updatePackageStatus(packageId: string, status: string): void {
+    if (this.isSocketConnected()) {
+      const state = store.getState();
+      const userId = state.user.profile?.id;
+      
+      if (userId) {
+        this.socket?.emit('package_status_update', {
+          packageId,
+          status,
+          courierId: userId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+  
+  // General notification methods
+  sendNotification(notification: NotificationData): void {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('send_notification', notification);
+    }
+  }
+  
+  // Admin/Broadcasting methods
+  broadcastToRoom(room: string, event: string, data: unknown): void {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('broadcast_to_room', { room, event, data });
+    }
+  }
+
+  /**
    * Subscribe to an event
    */
   on(event: string, callback: SocketEventCallback): void {
@@ -300,7 +413,7 @@ class SocketService {
   /**
    * Emit a custom event
    */
-  emit(event: string, data: any): void {
+  emit(event: string, data: unknown): void {
     if (this.isSocketConnected()) {
       this.socket?.emit(event, data);
     }
@@ -313,74 +426,74 @@ class SocketService {
     if (!this.socket) return;
 
     // Connection events
-    this.socket.on('connected', (data: any) => {
-      console.log('Socket connection confirmed:', data);
+    this.socket.on('connected', (data: unknown) => {
+      log.info('Socket connection confirmed:', data);
       this.notifyListeners('connected', data);
     });
 
-    this.socket.on('joined_ride', (data: any) => {
-      console.log('Joined ride:', data);
+    this.socket.on('joined_ride', (data: unknown) => {
+      log.info('Joined ride:', data);
       this.notifyListeners('joined_ride', data);
     });
 
-    this.socket.on('left_ride', (data: any) => {
-      console.log('Left ride:', data);
+    this.socket.on('left_ride', (data: unknown) => {
+      log.info('Left ride:', data);
       this.notifyListeners('left_ride', data);
     });
 
     // Message events
-    this.socket.on('new_message', (message: any) => {
-      console.log('New message received:', message);
+    this.socket.on('new_message', (message: MessageData) => {
+      log.info('New message received:', message);
       this.notifyListeners('new_message', message);
     });
 
     // Typing indicators
-    this.socket.on('user_typing', (data: any) => {
+    this.socket.on('user_typing', (data: unknown) => {
       this.notifyListeners('user_typing', data);
     });
 
     // Location updates
-    this.socket.on('driver_location', (data: any) => {
-      console.log('Driver location update:', data);
+    this.socket.on('driver_location', (data: unknown) => {
+      log.info('Driver location update:', data);
       this.notifyListeners('driver_location', data);
     });
 
     // Status updates
-    this.socket.on('ride_status_update', (data: any) => {
-      console.log('Ride status update:', data);
+    this.socket.on('ride_status_update', (data: unknown) => {
+      log.info('Ride status update:', data);
       this.notifyListeners('ride_status_update', data);
     });
 
-    this.socket.on('booking_status_update', (data: any) => {
-      console.log('Booking status update:', data);
+    this.socket.on('booking_status_update', (data: unknown) => {
+      log.info('Booking status update:', data);
       this.notifyListeners('booking_status_update', data);
     });
 
     // User events
-    this.socket.on('user_joined_ride', (data: any) => {
-      console.log('User joined ride:', data);
+    this.socket.on('user_joined_ride', (data: unknown) => {
+      log.info('User joined ride:', data);
       this.notifyListeners('user_joined_ride', data);
     });
 
-    this.socket.on('user_left_ride', (data: any) => {
-      console.log('User left ride:', data);
+    this.socket.on('user_left_ride', (data: unknown) => {
+      log.info('User left ride:', data);
       this.notifyListeners('user_left_ride', data);
     });
 
-    this.socket.on('online_users', (data: any) => {
-      console.log('Online users:', data);
+    this.socket.on('online_users', (data: unknown) => {
+      log.info('Online users:', data);
       this.notifyListeners('online_users', data);
     });
 
     // System events
-    this.socket.on('notification', (notification: any) => {
-      console.log('Notification received:', notification);
+    this.socket.on('notification', (notification: NotificationData) => {
+      log.info('Notification received:', notification);
       this.notifyListeners('notification', notification);
     });
 
     // Error handling
-    this.socket.on('error', (error: any) => {
-      console.error('Socket error:', error);
+    this.socket.on('error', (error: unknown) => {
+      log.error('Socket error:', error);
       this.notifyListeners('socket_error', error);
     });
   }
@@ -395,11 +508,11 @@ class SocketService {
       const isAuthenticated = state.auth.isAuthenticated;
       
       if (!isAuthenticated && this.isConnected) {
-        console.log('User logged out, disconnecting socket');
+        log.info('User logged out, disconnecting socket');
         this.disconnect();
       } else if (isAuthenticated && !this.isConnected) {
-        console.log('User logged in, connecting socket');
-        this.connect().catch(console.error);
+        log.info('User logged in, connecting socket');
+        this.connect().catch((err) => log.error('Socket connection error', err));
       }
     });
   }
@@ -409,7 +522,7 @@ class SocketService {
    */
   private handleReconnection(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached');
+      log.info('Max reconnection attempts reached');
       return;
     }
 
@@ -421,14 +534,14 @@ class SocketService {
     this.reconnectAttempts++;
     const delay = Math.min(2000 * this.reconnectAttempts, 10000); // Start with 2s, max 10s
     
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    log.info(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
     
     this.reconnectTimeout = setTimeout(() => {
       const state = store.getState();
       if (state.auth.isAuthenticated && !this.isSocketConnected()) {
-        console.log('Reconnecting to socket...');
+        log.info('Reconnecting to socket...');
         this.connect().catch((error) => {
-          console.error('Reconnection failed:', error);
+          log.error('Reconnection failed:', error);
           // Only retry if we haven't hit max attempts
           if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.handleReconnection();
@@ -441,14 +554,14 @@ class SocketService {
   /**
    * Notify all listeners for a specific event
    */
-  private notifyListeners(event: string, data: any): void {
+  private notifyListeners(event: string, data: unknown): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
       listeners.forEach(callback => {
         try {
           callback(data);
         } catch (error) {
-          console.error(`Error in event listener for ${event}:`, error);
+          log.error(`Error in event listener for ${event}:`, error);
         }
       });
     }

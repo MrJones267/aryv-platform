@@ -33,6 +33,9 @@ import { GroupTypingIndicator } from '../components/GroupTypingIndicator';
 import { GroupParticipantsList } from '../components/GroupParticipantsList';
 import { MessageReactionPicker } from '../components/MessageReactionPicker';
 import { GroupCompletionBanner } from '../components/GroupCompletionBanner';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('GroupChatScreen');
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -43,7 +46,7 @@ interface GroupChat {
   type: string;
   participantCount: number;
   unreadCount: number;
-  lastMessage?: any;
+  lastMessage?: unknown;
   isOnline?: boolean;
 }
 
@@ -54,9 +57,9 @@ interface GroupMessage {
   type: string;
   createdAt: string;
   isRead: boolean;
-  reactions: any;
+  reactions: Record<string, string[]>;
   isPinned: boolean;
-  replyToMessage?: any;
+  replyToMessage?: { sender: { firstName: string }; content: string };
   sender: {
     id: string;
     firstName: string;
@@ -83,14 +86,14 @@ export const GroupChatScreen: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [participants, setParticipants] = useState<any[]>([]);
+  const [participants, setParticipants] = useState<Record<string, unknown>[]>([]);
   const [showParticipants, setShowParticipants] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<GroupMessage | null>(null);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
-  const [rideCompletionData, setRideCompletionData] = useState<any>(null);
-  const [voteData, setVoteData] = useState<any>(null);
+  const [rideCompletionData, setRideCompletionData] = useState<Record<string, unknown> | null>(null);
+  const [voteData, setVoteData] = useState<Record<string, unknown> | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -119,7 +122,7 @@ export const GroupChatScreen: React.FC = () => {
       await GroupChatService.markMessagesAsRead(groupChatId);
       
     } catch (error) {
-      console.error('Error initializing group chat:', error);
+      log.error('Error initializing group chat:', error);
       Alert.alert('Error', 'Failed to load group chat');
     } finally {
       setLoading(false);
@@ -134,11 +137,11 @@ export const GroupChatScreen: React.FC = () => {
       });
       
       if (response.success) {
-        setMessages(response.data.messages);
+        setMessages((response.data as unknown as { messages: GroupMessage[] })?.messages || []);
         scrollToBottom();
       }
     } catch (error) {
-      console.error('Error loading messages:', error);
+      log.error('Error loading messages:', error);
     }
   };
 
@@ -207,7 +210,7 @@ export const GroupChatScreen: React.FC = () => {
     );
   };
 
-  const handleMessageReaction = (data: { messageId: string; reactions: any }) => {
+  const handleMessageReaction = (data: { messageId: string; reactions: Record<string, string[]> }) => {
     setMessages(prev => 
       prev.map(message => 
         message.id === data.messageId 
@@ -237,7 +240,7 @@ export const GroupChatScreen: React.FC = () => {
     setTypingUsers(prev => prev.filter(id => id !== data.userId));
   };
 
-  const handleParticipantJoined = (data: any) => {
+  const handleParticipantJoined = (data: { participant: Record<string, unknown> }) => {
     // Update participants list
     setParticipants(prev => [...prev, data.participant]);
   };
@@ -246,8 +249,8 @@ export const GroupChatScreen: React.FC = () => {
     setParticipants(prev => prev.filter(p => p.userId !== data.userId));
   };
 
-  const handleParticipantUpdated = (data: any) => {
-    setParticipants(prev => 
+  const handleParticipantUpdated = (data: { participant: Record<string, unknown> }) => {
+    setParticipants(prev =>
       prev.map(p => p.id === data.participant.id ? data.participant : p)
     );
   };
@@ -259,7 +262,7 @@ export const GroupChatScreen: React.FC = () => {
     }
   };
 
-  const handleGroupVoteUpdate = (data: any) => {
+  const handleGroupVoteUpdate = (data: Record<string, unknown>) => {
     if (data.groupChatId === groupChatId) {
       setVoteData(data);
     }
@@ -304,7 +307,7 @@ export const GroupChatScreen: React.FC = () => {
       stopTyping();
       
     } catch (error) {
-      console.error('Error sending message:', error);
+      log.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message');
     }
   };
@@ -364,7 +367,7 @@ export const GroupChatScreen: React.FC = () => {
       setShowReactionPicker(false);
       setSelectedMessage(null);
     } catch (error) {
-      console.error('Error adding reaction:', error);
+      log.error('Error adding reaction:', error);
       Alert.alert('Error', 'Failed to add reaction');
     }
   };
@@ -467,8 +470,8 @@ export const GroupChatScreen: React.FC = () => {
         {showCompletionBanner && rideCompletionData && (
           <GroupCompletionBanner
             groupChatId={groupChatId}
-            autoArchiveIn={rideCompletionData.autoArchiveIn}
-            currentVotes={voteData}
+            autoArchiveIn={rideCompletionData.autoArchiveIn as number}
+            currentVotes={voteData as { keepVotes: number; totalVotes: number; requiredVotes: number; userVote?: boolean } | undefined}
             onVoteUpdate={setVoteData}
             onDismiss={() => setShowCompletionBanner(false)}
           />

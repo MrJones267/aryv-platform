@@ -7,30 +7,16 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { googleAuthService } from './googleAuthService';
+import { User, UserSession, LoginCredentials, RegisterData } from '../types/user';
+// jwt-decode is optional - token validation is done manually below
+import { getApiConfig } from '../config/api';
+import logger from './LoggingService';
+
+const log = logger.createLogger('AuthService');
 
 const AUTH_TOKEN_KEY = '@aryv_auth_token';
 const REFRESH_TOKEN_KEY = '@aryv_refresh_token';
 const USER_DATA_KEY = '@aryv_user_data';
-
-export interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  profileImage?: string;
-  userType: 'user' | 'courier';
-  role?: 'passenger' | 'driver' | 'admin' | 'courier';
-  status?: 'active' | 'suspended' | 'pending_verification' | 'deactivated';
-  profilePicture?: string;
-  dateOfBirth?: Date;
-  isEmailVerified?: boolean;
-  isPhoneVerified?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-  authProvider?: 'email' | 'google';
-  googleId?: string;
-}
 
 export class AuthService {
   private token: string | null = null;
@@ -53,7 +39,7 @@ export class AuthService {
       this.refreshToken = refreshToken;
       this.userData = userData ? JSON.parse(userData) : null;
     } catch (error) {
-      console.error('Error initializing auth:', error);
+      log.error('Error initializing auth', error);
     }
   }
 
@@ -66,45 +52,96 @@ export class AuthService {
       return null;
     }
 
-    // Check if token is expired (basic check - in production, decode JWT)
+    // Check if token is expired by decoding JWT
+    const isValid = await this.validateToken(this.token);
+    if (!isValid) {
+      // Attempt to refresh token
+      const refreshed = await this.refreshAuthToken();
+      return refreshed ? this.token : null;
+    }
+
+    return this.token;
+  }
+
+  /**
+   * Validate JWT token structure, expiration, and claims
+   */
+  async validateToken(token: string): Promise<boolean> {
     try {
-      // Handle mock tokens that aren't JWT format
-      if (this.token.startsWith('mock-')) {
-        console.log('AuthService: Using mock token, skipping JWT validation');
-        return this.token;
+      // In production, reject mock tokens entirely
+      if (!__DEV__ && token.startsWith('mock-')) {
+        log.info('Mock token rejected in production');
+        return false;
+      }
+      // In dev mode only, allow mock tokens for testing
+      if (__DEV__ && token.startsWith('mock-')) {
+        log.info('Mock token accepted (dev only)');
+        return true;
       }
       
       // For real JWT tokens
-      const tokenParts = this.token.split('.');
+      const tokenParts = token.split('.');
       if (tokenParts.length !== 3) {
-        console.log('AuthService: Invalid JWT format, using token as-is');
-        return this.token;
+        log.info('Invalid JWT format');
+        return false;
       }
       
       const tokenPayload = JSON.parse(atob(tokenParts[1]));
       const currentTime = Math.floor(Date.now() / 1000);
       
+      // Check expiration
       if (tokenPayload.exp && tokenPayload.exp < currentTime) {
-        // Token expired, try to refresh
-        console.log('AuthService: Token expired, refreshing...');
-        return await this.refreshAuthToken();
+        log.info('Token expired');
+        return false;
       }
       
-      return this.token;
+      // Check issuer and other claims if needed
+      if (tokenPayload.iss && !this.isValidIssuer(tokenPayload.iss)) {
+        log.info('Invalid token issuer');
+        return false;
+      }
+      
+      // Check user role for courier operations
+      if (tokenPayload.role && !this.hasValidRole(tokenPayload.role)) {
+        log.info('Invalid user role for courier operations');
+        return false;
+      }
+      
+      return true;
     } catch (error) {
-      console.log('AuthService: Error validating token, using as-is:', error);
-      return this.token; // Return token as-is if we can't parse it
+      log.error('Error validating token', error);
+      return false;
     }
   }
 
-  private async refreshAuthToken(): Promise<string | null> {
+  /**
+   * Check if issuer is valid
+   */
+  private isValidIssuer(issuer: string): boolean {
+    const validIssuers = [
+      'https://api.aryv-app.com',
+      'aryv-auth-service',
+      'localhost:3000' // for development
+    ];
+    return validIssuers.includes(issuer);
+  }
+
+  /**
+   * Check if user has valid role for operations
+   */
+  private hasValidRole(role: string): boolean {
+    const validRoles = ['passenger', 'driver', 'courier', 'admin'];
+    return validRoles.includes(role.toLowerCase());
+  }
+
+  private async refreshAuthToken(): Promise<boolean> {
     if (!this.refreshToken) {
       await this.logout();
-      return null;
+      return false;
     }
 
     try {
-      const response = await fetch('https://api.aryv-app.com/api/auth/refresh', {
+      const response = await fetch(`${getApiConfig().apiUrl}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,22 +151,22 @@ export class AuthService {
 
       if (!response.ok) {
         await this.logout();
-        return null;
+        return false;
       }
 
       const data = await response.json();
       
       if (data.success && data.data.accessToken) {
         await this.setAuthData(data.data.accessToken, this.refreshToken, this.userData);
-        return data.data.accessToken;
+        return true;
       } else {
         await this.logout();
-        return null;
+        return false;
       }
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      log.error('Error refreshing token', error);
       await this.logout();
-      return null;
+      return false;
     }
   }
 
@@ -139,7 +176,7 @@ export class AuthService {
     error?: string;
   }> {
     try {
-      const response = await fetch('https://api.aryv-app.com/api/auth/login', {
+      const response = await fetch(`${getApiConfig().apiUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -159,7 +196,7 @@ export class AuthService {
         };
       }
     } catch (error) {
-      console.error('Login error:', error);
+      log.error('Login error', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Network error',
@@ -173,37 +210,38 @@ export class AuthService {
     error?: string;
   }> {
     try {
-      console.log('🔐 AuthService: Starting Google login...');
+      log.info('🔐 AuthService: Starting Google login...');
       
       const result = await googleAuthService.signIn();
       
       if (result.success && result.user && result.tokens) {
-        // Store the authentication data
+        // Store the authentication data - cast AuthUser to User for compatibility
+        const userAsUser = result.user as unknown as User;
         await this.setAuthData(
           result.tokens.accessToken,
           result.tokens.refreshToken,
-          result.user
+          userAsUser
         );
-        
-        console.log('✅ AuthService: Google login successful');
-        
+
+        log.info('✅ AuthService: Google login successful');
+
         return {
           success: true,
           data: {
-            user: result.user,
+            user: userAsUser,
             token: result.tokens.accessToken,
             refreshToken: result.tokens.refreshToken
           }
         };
       } else {
-        console.error('❌ AuthService: Google login failed:', result.error);
+        log.error('❌ AuthService: Google login failed:', result.error);
         return {
           success: false,
           error: result.error || 'Google authentication failed'
         };
       }
     } catch (error) {
-      console.error('❌ AuthService: Google login error:', error);
+      log.error('❌ AuthService: Google login error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Google authentication error'
@@ -211,20 +249,13 @@ export class AuthService {
     }
   }
 
-  async register(userData: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    password: string;
-    phone: string;
-    userType: 'user' | 'courier';
-  }): Promise<{
+  async register(userData: RegisterData): Promise<{
     success: boolean;
     data?: { user: User; token: string; refreshToken: string };
     error?: string;
   }> {
     try {
-      const response = await fetch('https://api.aryv-app.com/api/auth/register', {
+      const response = await fetch(`${getApiConfig().apiUrl}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -244,7 +275,7 @@ export class AuthService {
         };
       }
     } catch (error) {
-      console.error('Registration error:', error);
+      log.error('Registration error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Network error',
@@ -268,20 +299,20 @@ export class AuthService {
         user ? AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)) : Promise.resolve(),
       ]);
     } catch (error) {
-      console.error('Error storing auth data:', error);
+      log.error('Error storing auth data:', error);
     }
   }
 
   async logout(): Promise<void> {
     try {
-      console.log('🚪 AuthService: Starting logout...');
+      log.info('🚪 AuthService: Starting logout...');
       
       // Check if user was signed in with Google
-      const isGoogleUser = this.userData?.authProvider === 'google';
+      const isGoogleUser = (this.userData as any)?.authProvider === 'google';
       
       // Sign out from Google if applicable
       if (isGoogleUser) {
-        console.log('🔐 AuthService: Signing out from Google...');
+        log.info('🔐 AuthService: Signing out from Google...');
         await googleAuthService.signOut();
       }
       
@@ -296,9 +327,9 @@ export class AuthService {
         AsyncStorage.removeItem(USER_DATA_KEY),
       ]);
       
-      console.log('✅ AuthService: Logout completed');
+      log.info('✅ AuthService: Logout completed');
     } catch (error) {
-      console.error('❌ AuthService: Error during logout:', error);
+      log.error('❌ AuthService: Error during logout:', error);
       
       // Even if Google signout fails, clear local data
       this.token = null;
@@ -312,7 +343,7 @@ export class AuthService {
           AsyncStorage.removeItem(USER_DATA_KEY),
         ]);
       } catch (storageError) {
-        console.error('Error clearing auth data:', storageError);
+        log.error('Error clearing auth data:', storageError);
       }
     }
   }
@@ -331,7 +362,7 @@ export class AuthService {
 
   // Method to sync AuthService with Redux auth state
   async syncWithReduxState(accessToken: string | null, refreshToken: string | null, user: User | null): Promise<void> {
-    console.log('AuthService: Syncing with Redux state');
+    log.info('AuthService: Syncing with Redux state');
     this.token = accessToken;
     this.refreshToken = refreshToken;
     this.userData = user;
@@ -345,7 +376,7 @@ export class AuthService {
         ]);
       }
     } catch (error) {
-      console.error('AuthService: Error syncing with Redux state:', error);
+      log.error('AuthService: Error syncing with Redux state:', error);
     }
   }
 }

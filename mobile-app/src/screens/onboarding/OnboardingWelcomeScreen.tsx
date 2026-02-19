@@ -20,12 +20,12 @@ import { Button } from '../../components/ui';
 const { width, height } = Dimensions.get('window');
 
 interface OnboardingWelcomeScreenProps {
-  navigation: any;
+  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navigation }) => {
   const handleGetStarted = () => {
-    navigation.navigate('OnboardingPermissions');
+    navigation.navigate('RoleSelection');
   };
 
   const handleSkip = () => {

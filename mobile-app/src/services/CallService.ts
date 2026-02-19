@@ -5,40 +5,41 @@
  * @lastModified 2025-01-25
  */
 
-// WebRTC type declarations
-declare global {
-  interface RTCIceServer {
-    urls: string | string[];
-    username?: string;
-    credential?: string;
-  }
-  
-  class RTCPeerConnection {
-    addIceCandidate: any;
-    addStream: any;
-    createOffer: any;
-    createAnswer: any;
-    setLocalDescription: any;
-    setRemoteDescription: any;
-    onicecandidate: any;
-    onaddstream: any;
-    close: any;
-    getLocalStreams: any;
-    getRemoteStreams: any;
-    constructor(config?: any);
-  }
-  
-  class MediaStream {
-    id: string;
-    active: boolean;
-    getTracks: () => any[];
-    getAudioTracks: () => any[];
-    getVideoTracks: () => any[];
-  }
+import {
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  RTCView,
+  MediaStream,
+  MediaStreamTrack,
+  mediaDevices,
+} from 'react-native-webrtc';
+
+// Define RTCIceServer locally since it's not exported from react-native-webrtc
+interface RTCIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+// Define session description/candidate init types
+interface RTCSessionDescriptionInit {
+  type: string;
+  sdp?: string;
+}
+
+interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMLineIndex?: number | null;
+  sdpMid?: string | null;
 }
 
 import { ApiClient } from './ApiClient';
 import SocketService from './SocketService';
+import { PermissionsAndroid, Platform } from 'react-native';
+import logger from './LoggingService';
+
+const log = logger.createLogger('CallService');
 
 export interface Call {
   id: string;
@@ -79,6 +80,53 @@ export interface WebRTCConfiguration {
   iceCandidatePoolSize?: number;
 }
 
+export interface CallEventData {
+  stream?: MediaStream;
+  state?: string;
+  enabled?: boolean;
+  facingMode?: string;
+  message?: string;
+  callId?: string;
+  from?: string;
+  to?: string;
+  callType?: 'voice' | 'video' | 'emergency';
+  isEmergency?: boolean;
+  caller?: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+  reason?: string;
+}
+
+export interface SignalingData {
+  type: 'offer' | 'answer' | 'ice-candidate';
+  sessionId: string;
+  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+  from?: string;
+  to?: string;
+}
+
+export interface IncomingCallData {
+  callId: string;
+  from: string;
+  to: string;
+  callType: 'voice' | 'video' | 'emergency';
+  isEmergency: boolean;
+  caller?: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+}
+
+export interface CallEndData {
+  reason?: string;
+  callId?: string;
+}
+
+export type CallEventCallback = (data: CallEventData) => void;
+
 export class CallService {
   private static apiClient = new ApiClient();
   private static socketService = SocketService.getInstance();
@@ -86,8 +134,9 @@ export class CallService {
   private static localStream: MediaStream | null = null;
   private static remoteStream: MediaStream | null = null;
   private static activeCall: Call | null = null;
-  private static callEventListeners: Map<string, Function[]> = new Map();
+  private static callEventListeners: Map<string, CallEventCallback[]> = new Map();
   private static isWebRTCAvailable = false;
+  private static isSpeakerEnabled = false;
 
   /**
    * Initialize CallService and check WebRTC availability
@@ -98,16 +147,19 @@ export class CallService {
       this.isWebRTCAvailable = typeof RTCPeerConnection !== 'undefined';
       
       if (!this.isWebRTCAvailable) {
-        console.warn('WebRTC not available - Call features will be limited');
+        log.warn('WebRTC not available - Call features will be limited');
         return;
       }
+      
+      // Request initial permissions
+      await this.requestInitialPermissions();
       
       // Set up socket event listeners for call signaling
       this.setupSocketListeners();
       
-      console.log('CallService initialized with WebRTC support');
-    } catch (error: any) {
-      console.error('CallService initialization failed:', error);
+      log.info('CallService initialized with WebRTC support');
+    } catch (error) {
+      log.error('CallService initialization failed', error);
       this.isWebRTCAvailable = false;
     }
   }
@@ -144,25 +196,24 @@ export class CallService {
         this.peerConnection.close();
       }
 
-      // Check if WebRTC is available
-      if (typeof RTCPeerConnection === 'undefined') {
-        throw new Error('WebRTC native module not found. WebRTC features are disabled.');
-      }
-
       const config = this.getWebRTCConfig();
       this.peerConnection = new RTCPeerConnection(config);
-    } catch (error: any) {
-      console.warn('WebRTC initialization failed:', error);
+    } catch (error) {
+      log.warn('WebRTC initialization failed', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
 
     // Handle ICE candidates
-    this.peerConnection.onicecandidate = (event: any) => {
+    (this.peerConnection as any).onicecandidate = (event: any) => {
       if (event.candidate && this.activeCall) {
         this.socketService.emit('call_signal', {
           type: 'ice-candidate',
           sessionId: this.activeCall.id,
-          data: event.candidate,
+          data: {
+            candidate: event.candidate.candidate,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            sdpMid: event.candidate.sdpMid,
+          },
           to: this.getOtherParticipantId(),
         });
       }
@@ -170,15 +221,17 @@ export class CallService {
 
     // Handle remote stream
     (this.peerConnection as any).ontrack = (event: any) => {
-      this.remoteStream = event.streams[0];
-      this.emitCallEvent('remote_stream_received', { stream: this.remoteStream });
+      if (event.streams && event.streams[0]) {
+        this.remoteStream = event.streams[0];
+        this.emitCallEvent('remote_stream_received', { stream: this.remoteStream });
+      }
     };
 
     // Handle connection state changes
     (this.peerConnection as any).onconnectionstatechange = () => {
       const state = (this.peerConnection as any)?.connectionState;
       this.emitCallEvent('connection_state_changed', { state });
-      
+
       if (state === 'failed' || state === 'disconnected') {
         this.handleCallError('Connection failed');
       }
@@ -193,7 +246,7 @@ export class CallService {
    */
   private static setupSocketListeners(): void {
     // Incoming call notification
-    this.socketService.on('incoming_call', (data: any) => {
+    this.socketService.on('incoming_call', (data: IncomingCallData) => {
       this.activeCall = {
         id: data.callId,
         callerId: data.from,
@@ -205,12 +258,12 @@ export class CallService {
         quality: 5,
         caller: data.caller,
       };
-      
+
       this.emitCallEvent('incoming_call', data);
     });
 
     // Call accepted
-    this.socketService.on('call_accepted', (data: any) => {
+    this.socketService.on('call_accepted', (data: CallEventData) => {
       if (this.activeCall) {
         this.activeCall.status = 'accepted';
         this.emitCallEvent('call_accepted', data);
@@ -218,29 +271,29 @@ export class CallService {
     });
 
     // Call rejected
-    this.socketService.on('call_rejected', (data: any) => {
+    this.socketService.on('call_rejected', (data: CallEndData) => {
       this.handleCallEnd(data);
       this.emitCallEvent('call_rejected', data);
     });
 
     // Call ended
-    this.socketService.on('call_ended', (data: any) => {
+    this.socketService.on('call_ended', (data: CallEndData) => {
       this.handleCallEnd(data);
       this.emitCallEvent('call_ended', data);
     });
 
     // WebRTC signaling
-    this.socketService.on('call_signal', async (data: any) => {
+    this.socketService.on('call_signal', async (data: SignalingData) => {
       await this.handleSignalingData(data);
     });
 
     // Call errors
-    this.socketService.on('call_error', (data: any) => {
-      this.handleCallError(data.message);
+    this.socketService.on('call_error', (data: CallEventData) => {
+      this.handleCallError(data.message || 'Unknown call error');
     });
 
     // Call initiated confirmation
-    this.socketService.on('call_initiated', (data: any) => {
+    this.socketService.on('call_initiated', (data: CallEventData) => {
       if (this.activeCall) {
         this.activeCall.status = 'ringing';
         this.emitCallEvent('call_initiated', data);
@@ -269,8 +322,8 @@ export class CallService {
 
       // Add local stream to peer connection
       if (this.localStream && this.peerConnection) {
-        this.localStream.getTracks().forEach((track: any) => {
-          (this.peerConnection as any)!.addTrack(track, this.localStream!);
+        this.localStream.getTracks().forEach((track: MediaStreamTrack) => {
+          this.peerConnection!.addTrack(track, this.localStream!);
         });
       }
 
@@ -288,21 +341,27 @@ export class CallService {
         quality: 5,
       };
 
-      // Send initiation request via socket
+      // Create and send offer
+      const offer = await this.peerConnection!.createOffer({});
+      await this.peerConnection!.setLocalDescription(offer);
+      
+      // Send initiation request via socket with offer
       this.socketService.emit('call_initiate', {
         to: request.calleeId,
         callType: request.callType,
         rideId: request.rideId,
         deliveryId: request.deliveryId,
         isEmergency: request.isEmergency,
+        offer: offer,
       });
 
       this.emitCallEvent('local_stream_received', { stream: this.localStream });
       return true;
 
-    } catch (error: any) {
-      console.error('Error initiating call:', error);
-      this.handleCallError(error.message);
+    } catch (error: unknown) {
+      log.error('Error initiating call:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.handleCallError(errMsg);
       return false;
     }
   }
@@ -327,8 +386,8 @@ export class CallService {
 
       // Add local stream to peer connection
       if (this.localStream && this.peerConnection) {
-        this.localStream.getTracks().forEach((track: any) => {
-          (this.peerConnection as any)!.addTrack(track, this.localStream!);
+        this.localStream.getTracks().forEach((track: MediaStreamTrack) => {
+          this.peerConnection!.addTrack(track, this.localStream!);
         });
       }
 
@@ -340,9 +399,10 @@ export class CallService {
       this.emitCallEvent('local_stream_received', { stream: this.localStream });
       return true;
 
-    } catch (error: any) {
-      console.error('Error accepting call:', error);
-      this.handleCallError(error.message);
+    } catch (error: unknown) {
+      log.error('Error accepting call:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.handleCallError(errMsg);
       return false;
     }
   }
@@ -363,8 +423,8 @@ export class CallService {
 
       this.handleCallEnd({ reason: 'rejected' });
 
-    } catch (error: any) {
-      console.error('Error rejecting call:', error);
+    } catch (error: unknown) {
+      log.error('Error rejecting call:', error);
     }
   }
 
@@ -384,8 +444,8 @@ export class CallService {
 
       this.handleCallEnd({ reason: reason || 'ended_by_user' });
 
-    } catch (error: any) {
-      console.error('Error ending call:', error);
+    } catch (error: unknown) {
+      log.error('Error ending call:', error);
     }
   }
 
@@ -422,6 +482,24 @@ export class CallService {
   }
 
   /**
+   * Toggle speaker (speakerphone on/off)
+   * Note: For full audio routing control, install react-native-incall-manager
+   * and use InCallManager.setForceSpeakerphoneOn(enabled)
+   */
+  static toggleSpeaker(): boolean {
+    this.isSpeakerEnabled = !this.isSpeakerEnabled;
+    this.emitCallEvent('speaker_toggled', { enabled: this.isSpeakerEnabled });
+    return this.isSpeakerEnabled;
+  }
+
+  /**
+   * Get current speaker state
+   */
+  static getSpeakerEnabled(): boolean {
+    return this.isSpeakerEnabled;
+  }
+
+  /**
    * Switch camera (front/back) for video calls
    */
   static async switchCamera(): Promise<boolean> {
@@ -441,22 +519,22 @@ export class CallService {
       const settings = currentTrack.getSettings();
       const newFacingMode = settings.facingMode === 'user' ? 'environment' : 'user';
 
-      const newStream = await (global as any).navigator.mediaDevices.getUserMedia({
+      const newStream = await mediaDevices.getUserMedia({
         video: { facingMode: newFacingMode },
         audio: false,
       });
 
       // Replace video track in peer connection
-      const sender = (this.peerConnection as any)?.getSenders().find(
-        (s: any) => s.track && s.track.kind === 'video'
+      const sender = (this.peerConnection as unknown as { getSenders(): { track: MediaStreamTrack | null; replaceTrack(track: MediaStreamTrack): Promise<void> }[] })?.getSenders().find(
+        (s: { track: MediaStreamTrack | null }) => s.track && s.track.kind === 'video'
       );
 
       if (sender && newStream.getVideoTracks()[0]) {
         await sender.replaceTrack(newStream.getVideoTracks()[0]);
-        
+
         // Update local stream
-        (this.localStream as any).removeTrack(videoTracks[0]);
-        (this.localStream as any).addTrack(newStream.getVideoTracks()[0]);
+        (this.localStream as unknown as { removeTrack(t: MediaStreamTrack): void; addTrack(t: MediaStreamTrack): void }).removeTrack(videoTracks[0]);
+        (this.localStream as unknown as { removeTrack(t: MediaStreamTrack): void; addTrack(t: MediaStreamTrack): void }).addTrack(newStream.getVideoTracks()[0]);
         
         this.emitCallEvent('camera_switched', { facingMode: newFacingMode });
         return true;
@@ -464,8 +542,8 @@ export class CallService {
 
       return false;
 
-    } catch (error: any) {
-      console.error('Error switching camera:', error);
+    } catch (error: unknown) {
+      log.error('Error switching camera:', error);
       return false;
     }
   }
@@ -488,8 +566,8 @@ export class CallService {
 
       return false;
 
-    } catch (error: any) {
-      console.error('Error updating call quality:', error);
+    } catch (error: unknown) {
+      log.error('Error updating call quality:', error);
       return false;
     }
   }
@@ -507,8 +585,8 @@ export class CallService {
 
       return [];
 
-    } catch (error: any) {
-      console.error('Error fetching call history:', error);
+    } catch (error: unknown) {
+      log.error('Error fetching call history:', error);
       return [];
     }
   }
@@ -517,44 +595,89 @@ export class CallService {
    * Private helper methods
    */
 
-  private static async requestPermissions(callType: 'voice' | 'video'): Promise<void> {
-    const permissions = ['microphone'];
-    if (callType === 'video') {
-      permissions.push('camera');
+  private static async requestInitialPermissions(): Promise<void> {
+    try {
+      if (Platform.OS === 'android') {
+        const micGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'This app needs access to your microphone for voice calls',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        
+        const cameraGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera Permission',
+            message: 'This app needs access to your camera for video calls',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        
+        log.info('Permissions granted:', { microphone: micGranted, camera: cameraGranted });
+      }
+    } catch (error) {
+      log.error('Error requesting permissions:', error);
     }
-
-    // Request permissions (implementation depends on platform)
-    // This is a simplified version - actual implementation would use
-    // react-native-permissions or similar
-    console.log('Requesting permissions:', permissions);
   }
 
-  private static async getLocalMedia(callType: 'voice' | 'video'): Promise<any> {
+  private static async requestPermissions(callType: 'voice' | 'video'): Promise<void> {
+    try {
+      if (Platform.OS === 'android') {
+        const micGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (!micGranted) {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        }
+        
+        if (callType === 'video') {
+          const cameraGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+          if (!cameraGranted) {
+            await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+          }
+        }
+      }
+    } catch (error) {
+      log.error('Error requesting call permissions:', error);
+    }
+  }
+
+  private static async getLocalMedia(callType: 'voice' | 'video'): Promise<MediaStream> {
     const constraints = {
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
       video: callType === 'video' ? {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 },
         facingMode: 'user',
+        frameRate: { ideal: 30, max: 60 },
       } : false,
     };
 
-    return await (global as any).navigator.mediaDevices.getUserMedia(constraints);
+    return await mediaDevices.getUserMedia(constraints as any);
   }
 
-  private static async handleSignalingData(data: any): Promise<void> {
+  private static async handleSignalingData(data: SignalingData): Promise<void> {
     try {
       if (!this.peerConnection) {
-        console.warn('Received signaling data but no peer connection');
+        log.warn('Received signaling data but no peer connection');
         return;
       }
 
       switch (data.type) {
         case 'offer':
-          await this.peerConnection.setRemoteDescription(data.data);
+          await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.data as any));
           const answer = await this.peerConnection.createAnswer();
           await this.peerConnection.setLocalDescription(answer);
-          
+
           this.socketService.emit('call_signal', {
             type: 'answer',
             sessionId: data.sessionId,
@@ -564,24 +687,31 @@ export class CallService {
           break;
 
         case 'answer':
-          await this.peerConnection.setRemoteDescription(data.data);
+          await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.data as any));
           break;
 
-        case 'ice-candidate':
-          await this.peerConnection.addIceCandidate(data.data);
+        case 'ice-candidate': {
+          const iceData = data.data as RTCIceCandidateInit;
+          const candidate = new RTCIceCandidate({
+            candidate: iceData.candidate,
+            sdpMLineIndex: iceData.sdpMLineIndex,
+            sdpMid: iceData.sdpMid,
+          } as any);
+          await this.peerConnection.addIceCandidate(candidate);
           break;
+        }
 
         default:
-          console.warn('Unknown signaling type:', data.type);
+          log.warn('Unknown signaling type:', data.type);
       }
 
-    } catch (error: any) {
-      console.error('Error handling signaling data:', error);
+    } catch (error: unknown) {
+      log.error('Error handling signaling data:', error);
       this.handleCallError('Signaling error');
     }
   }
 
-  private static async handleCallEnd(data: any): Promise<void> {
+  private static async handleCallEnd(data: CallEndData): Promise<void> {
     // Update call status
     if (this.activeCall) {
       this.activeCall.status = 'ended';
@@ -596,7 +726,7 @@ export class CallService {
   }
 
   private static handleCallError(message: string): void {
-    console.error('Call error:', message);
+    log.error('Call error:', message);
     this.emitCallEvent('call_error', { message });
     this.cleanup();
     this.activeCall = null;
@@ -605,7 +735,7 @@ export class CallService {
   private static cleanup(): void {
     // Stop local stream
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track: any) => track.stop());
+      this.localStream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       this.localStream = null;
     }
 
@@ -630,14 +760,14 @@ export class CallService {
   /**
    * Event management
    */
-  static addEventListener(event: string, callback: Function): void {
+  static addEventListener(event: string, callback: CallEventCallback): void {
     if (!this.callEventListeners.has(event)) {
       this.callEventListeners.set(event, []);
     }
     this.callEventListeners.get(event)!.push(callback);
   }
 
-  static removeEventListener(event: string, callback: Function): void {
+  static removeEventListener(event: string, callback: CallEventCallback): void {
     const listeners = this.callEventListeners.get(event);
     if (listeners) {
       const index = listeners.indexOf(callback);
@@ -647,14 +777,14 @@ export class CallService {
     }
   }
 
-  private static emitCallEvent(event: string, data: any): void {
+  private static emitCallEvent(event: string, data: unknown): void {
     const listeners = this.callEventListeners.get(event);
     if (listeners) {
       listeners.forEach(callback => {
         try {
-          callback(data);
-        } catch (error: any) {
-          console.error('Error in call event listener:', error);
+          callback(data as CallEventData);
+        } catch (error: unknown) {
+          log.error('Error in call event listener:', error);
         }
       });
     }
@@ -667,11 +797,11 @@ export class CallService {
     return this.activeCall;
   }
 
-  static getLocalStream(): any | null {
+  static getLocalStream(): MediaStream | null {
     return this.localStream;
   }
 
-  static getRemoteStream(): any | null {
+  static getRemoteStream(): MediaStream | null {
     return this.remoteStream;
   }
 

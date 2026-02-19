@@ -8,6 +8,9 @@
 import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, View, Dimensions } from 'react-native';
 import PerformanceMonitor from '../utils/performance/PerformanceMonitor';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('usePerformanceOptimization');
 
 export interface PerformanceHookOptions {
   enableMonitoring?: boolean;
@@ -46,7 +49,7 @@ export function usePerformanceOptimization(
     );
 
     if (logSlowOperations && mountDuration > slowOperationThreshold) {
-      console.warn(`Slow component mount: ${componentName} took ${mountDuration}ms`);
+      log.warn(`Slow component mount: ${componentName} took ${mountDuration}ms`);
     }
 
     return () => {
@@ -105,7 +108,7 @@ export function usePerformanceOptimization(
     );
 
     if (logSlowOperations && renderDuration > slowOperationThreshold) {
-      console.warn(`Slow render: ${componentName} took ${renderDuration}ms`);
+      log.warn(`Slow render: ${componentName} took ${renderDuration}ms`);
     }
 
     renderStartTime.current = Date.now();
@@ -155,7 +158,7 @@ export function useOptimizedComputation<T>(
 
       // Log slow computations
       if (duration > 16) {
-        console.warn(`Slow computation detected: ${duration}ms`);
+        log.warn(`Slow computation detected: ${duration}ms`);
       }
 
       PerformanceMonitor.markTiming('expensive_computation', 'custom', duration, {

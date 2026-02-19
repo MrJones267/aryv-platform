@@ -21,6 +21,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import ImageOptimizer, { ImageOptimizationOptions } from '../../utils/performance/ImageOptimizer';
 import PerformanceMonitor from '../../utils/performance/PerformanceMonitor';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('OptimizedImage');
 
 interface OptimizedImageProps extends Omit<ImageProps, 'source'> {
   uri: string;
@@ -33,7 +36,7 @@ interface OptimizedImageProps extends Omit<ImageProps, 'source'> {
   showErrorState?: boolean;
   onLoadStart?: () => void;
   onLoadEnd?: () => void;
-  onError?: (error: any) => void;
+  onError?: (error: unknown) => void;
   retryable?: boolean;
   maxRetries?: number;
   fadeDuration?: number;
@@ -135,7 +138,7 @@ const OptimizedImage: React.FC<OptimizedImageProps> = ({
       }
 
     } catch (loadError) {
-      console.error('Error loading image:', loadError);
+      log.error('Error loading image:', loadError);
       setLoading(false);
       setError((loadError as Error).message);
       onError?.(loadError);
@@ -190,7 +193,7 @@ const OptimizedImage: React.FC<OptimizedImageProps> = ({
       <View style={[styles.placeholder, style, styles.defaultPlaceholder]}>
         <Icon 
           name={fallbackIcon} 
-          size={Math.min(60, (style as any)?.width / 3 || 40)} 
+          size={Math.min(60, Number((style as Record<string, unknown>)?.width || 120) / 3 || 40)}
           color={colors.text.secondary} 
         />
       </View>

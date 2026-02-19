@@ -1,11 +1,11 @@
 /**
- * @fileoverview Home screen with ride discovery and quick actions
+ * @fileoverview Home screen with intercity route search, map, and quick actions
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-26
+ * @lastModified 2026-02-04
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,11 @@ import {
   SafeAreaView,
   Dimensions,
   Alert,
+  TextInput,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import MapView, { PROVIDER_GOOGLE, Region, Marker, Polyline } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { fetchUserProfile } from '../../store/slices/userSlice';
@@ -24,81 +28,89 @@ import { getCurrentLocation } from '../../store/slices/locationSlice';
 import { ridesApi } from '../../services/api';
 import { HomeScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
-import AIRecommendationsService, { RecommendationsResponse } from '../../services/AIRecommendationsService';
+import { haptic } from '../../services/HapticService';
+import { FadeIn, ScaleIn } from '../../components/ui/AnimatedComponents';
 import EmergencyService, { EmergencyAlert } from '../../services/EmergencyServiceSimple';
 import EmergencyAlertModal from '../../components/emergency/EmergencyAlertModal';
+import OfflineBanner from '../../components/common/OfflineBanner';
+import logger from '../../services/LoggingService';
 
-const { width } = Dimensions.get('window');
+const log = logger.createLogger('HomeScreen');
+
+const { width, height } = Dimensions.get('window');
+const MAP_HEIGHT = height * 0.35;
+
+// Default region: Botswana/Southern Africa
+const DEFAULT_REGION: Region = {
+  latitude: -24.6282,
+  longitude: 25.9231,
+  latitudeDelta: 4,
+  longitudeDelta: 4,
+};
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { currentLocation } = useAppSelector((state) => state.location);
-  
-  const [nearbyRides, setNearbyRides] = useState<any[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
+  const mapRef = useRef<MapView>(null);
+
+  interface NearbyRide {
+    id: string;
+    origin?: { latitude: number; longitude: number; address?: string; city?: string };
+    destination?: { latitude: number; longitude: number; address?: string; city?: string };
+    route?: Array<{ latitude: number; longitude: number }>;
+    pricePerSeat?: number;
+    availableSeats?: number;
+    departureTime?: string;
+  }
+  const [nearbyRides, setNearbyRides] = useState<NearbyRide[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [activeEmergency, setActiveEmergency] = useState<EmergencyAlert | null>(null);
+  const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_REGION);
 
   useEffect(() => {
     initializeScreen();
-    
-    // Safety fallback - force completion after 8 seconds
     const safetyTimer = setTimeout(() => {
-      console.log('HomeScreen: Safety timer triggered - forcing initialization completion');
       setIsInitializing(false);
     }, 8000);
-    
     return () => clearTimeout(safetyTimer);
   }, []);
 
-  const initializeScreen = async (): Promise<void> => {
-    console.log('HomeScreen: Starting initialization...');
-    
-    try {
-      // Fetch user profile if not loaded
-      console.log('HomeScreen: Checking user profile...');
-      if (!user) {
-        console.log('HomeScreen: Fetching user profile...');
-        await dispatch(fetchUserProfile()).unwrap();
-        console.log('HomeScreen: User profile fetched successfully');
-      } else {
-        console.log('HomeScreen: User profile already available');
-      }
+  useEffect(() => {
+    if (currentLocation) {
+      const newRegion = {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 2,
+        longitudeDelta: 2,
+      };
+      setMapRegion(newRegion);
+      mapRef.current?.animateToRegion(newRegion, 1000);
+    }
+  }, [currentLocation]);
 
-      // Try to get current location (with timeout to prevent hanging)
-      console.log('HomeScreen: Getting current location...');
+  const initializeScreen = async (): Promise<void> => {
+    try {
+      if (!user) {
+        await dispatch(fetchUserProfile()).unwrap();
+      }
       try {
-        const locationTimeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Location timeout after 3 seconds')), 3000)
+        const locationTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Location timeout')), 3000)
         );
         await Promise.race([
           dispatch(getCurrentLocation()).unwrap(),
-          locationTimeout
+          locationTimeout,
         ]);
-        console.log('HomeScreen: Location obtained successfully');
       } catch (locationError) {
-        console.log('HomeScreen: Location access failed:', locationError);
-        // Continue without location - app should still work
+        log.info('Location access failed', { error: String(locationError) });
       }
-      
-      // Load nearby rides
-      console.log('HomeScreen: Loading nearby rides...');
       await loadNearbyRides();
-      console.log('HomeScreen: Nearby rides loaded');
-      
-      // Load AI recommendations
-      console.log('HomeScreen: Loading AI recommendations...');
-      await loadRecommendations();
-      console.log('HomeScreen: AI recommendations loaded');
-      
-      console.log('HomeScreen: Initialization completed successfully');
     } catch (error) {
-      console.log('HomeScreen: Error during initialization:', error);
+      log.info('Error during initialization', { error: String(error) });
     } finally {
-      console.log('HomeScreen: Setting isInitializing to false');
       setIsInitializing(false);
     }
   };
@@ -109,74 +121,96 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         const response = await ridesApi.getNearbyRides(
           currentLocation.latitude,
           currentLocation.longitude,
-          10 // 10km radius
+          50 // 50km radius for intercity
         );
-        
         if (response.success) {
-          setNearbyRides(response.data?.slice(0, 5) || []); // Show top 5
+          setNearbyRides((response.data?.slice(0, 10) || []) as unknown as NearbyRide[]);
         }
       } else {
-        // For testing without location - show empty rides
-        console.log('No location available, showing empty rides list');
         setNearbyRides([]);
       }
     } catch (error) {
-      console.log('Error loading nearby rides:', error);
+      log.info('Error loading nearby rides', { error: String(error) });
       setNearbyRides([]);
     }
   };
 
   const handleRefresh = async (): Promise<void> => {
     setIsRefreshing(true);
-    await Promise.all([loadNearbyRides(), loadRecommendations()]);
+    await loadNearbyRides();
     setIsRefreshing(false);
   };
 
   const handleFindRide = (): void => {
-    // Navigate to Search screen for finding rides
+    haptic.tap();
     navigation.navigate('Search');
   };
 
   const handleOfferRide = (): void => {
-    // Navigate to Create Ride screen
-    navigation.navigate('CreateRide');
+    haptic.tap();
+    // If user is not yet a driver, route to driver onboarding
+    const isDriver = user?.roles?.includes('driver') || user?.primaryRole === 'driver';
+    if (!isDriver) {
+      navigation.navigate('DriverOnboarding');
+    } else {
+      navigation.navigate('CreateRide');
+    }
+  };
+
+  const handleSendPackage = (): void => {
+    haptic.tap();
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Packages');
+  };
+
+  const handleDeliverPackages = (): void => {
+    haptic.tap();
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Courier');
   };
 
   const handleViewRide = (rideId: string): void => {
     navigation.navigate('RideDetails', { rideId });
   };
 
+  const handleMyLocation = (): void => {
+    if (currentLocation) {
+      mapRef.current?.animateToRegion({
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: 0.5,
+        longitudeDelta: 0.5,
+      }, 1000);
+    }
+  };
+
   const handleEmergency = (): void => {
-    // Check if there's already an active emergency
+    haptic.impact();
     if (EmergencyService.hasActiveEmergency()) {
       const currentEmergency = EmergencyService.getCurrentEmergency();
       if (currentEmergency) {
         Alert.alert(
-          '🚨 Active Emergency',
-          `You have an active ${currentEmergency.type} emergency alert since ${new Date(currentEmergency.timestamp).toLocaleTimeString()}.`,
+          'Active Emergency',
+          `You have an active ${currentEmergency.type} emergency alert.`,
           [
             { text: 'View Details', onPress: () => showActiveEmergencyDetails(currentEmergency) },
-            { text: 'I\'m Safe Now', onPress: () => resolveCurrentEmergency() },
-            { text: 'Cancel', style: 'cancel' }
+            { text: "I'm Safe Now", onPress: () => resolveCurrentEmergency() },
+            { text: 'Cancel', style: 'cancel' },
           ]
         );
         return;
       }
     }
-
-    // Show emergency alert modal
     setShowEmergencyModal(true);
   };
 
   const showActiveEmergencyDetails = (emergency: EmergencyAlert): void => {
     Alert.alert(
-      '🚨 Emergency Details',
-      `Type: ${emergency.type.toUpperCase()}\nTime: ${new Date(emergency.timestamp).toLocaleString()}\nLocation: ${emergency.location.latitude.toFixed(4)}, ${emergency.location.longitude.toFixed(4)}`,
+      'Emergency Details',
+      `Type: ${emergency.type.toUpperCase()}\nTime: ${new Date(emergency.timestamp).toLocaleString()}`,
       [
-        { text: 'Call 911', onPress: () => EmergencyService.callEmergencyServices() },
+        { text: 'Call 999', onPress: () => EmergencyService.callEmergencyServices() },
         { text: 'Call Emergency Contact', onPress: () => EmergencyService.callPrimaryContact() },
-        { text: 'I\'m Safe', onPress: () => resolveCurrentEmergency() },
-        { text: 'Cancel', style: 'cancel' }
+        { text: "I'm Safe", onPress: () => resolveCurrentEmergency() },
+        { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
@@ -189,166 +223,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const handleEmergencyTriggered = (alert: EmergencyAlert): void => {
     setActiveEmergency(alert);
     Alert.alert(
-      '🚨 Emergency Alert Sent',
+      'Emergency Alert Sent',
       'Your emergency alert has been sent to your emergency contacts and your location is being shared.',
       [{ text: 'OK' }]
     );
   };
-
-  const loadRecommendations = async (): Promise<void> => {
-    try {
-      if (user?.id) {
-        const request = {
-          userId: user.id,
-          context: {
-            timeOfDay: new Date().getHours(),
-            dayOfWeek: new Date().getDay(),
-            weather: 'clear',
-            urgency: 'low' as const,
-            budget: 'normal' as const,
-            purpose: 'other' as const,
-          },
-          requestType: 'all' as const,
-          currentLocation: currentLocation ? {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          } : undefined,
-        };
-        
-        const response = await AIRecommendationsService.getRecommendations(request);
-        setRecommendations(response);
-      }
-    } catch (error) {
-      console.log('Error loading recommendations:', error);
-      setRecommendations(null);
-    }
-  };
-
-  const renderQuickActions = (): React.ReactNode => (
-    <View style={styles.quickActions}>
-      <TouchableOpacity
-        style={[styles.actionCard, styles.primaryAction]}
-        onPress={handleFindRide}
-        activeOpacity={0.8}
-      >
-        <Icon name="search" size={28} color="#FFFFFF" />
-        <Text style={styles.primaryActionText}>Find a Ride</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.actionCard, styles.secondaryAction]}
-        onPress={handleOfferRide}
-        activeOpacity={0.8}
-      >
-        <Icon name="add-circle-outline" size={28} color="#2196F3" />
-        <Text style={styles.secondaryActionText}>Offer a Ride</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderNearbyRides = (): React.ReactNode => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Nearby Rides</Text>
-        <TouchableOpacity onPress={() => (navigation as any).navigate('Home')}>
-          <Text style={styles.seeAllText}>See All</Text>
-        </TouchableOpacity>
-      </View>
-
-      {nearbyRides.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.ridesContainer}>
-            {nearbyRides.map((ride) => (
-              <TouchableOpacity
-                key={ride.id}
-                style={styles.rideCard}
-                onPress={() => handleViewRide(ride.id)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.rideHeader}>
-                  <View style={styles.driverInfo}>
-                    <View style={styles.driverAvatar}>
-                      <Text style={styles.driverInitial}>
-                        {ride.driver?.firstName?.charAt(0) || 'U'}
-                      </Text>
-                    </View>
-                    <View>
-                      <Text style={styles.driverName}>
-                        {ride.driver?.firstName} {ride.driver?.lastName}
-                      </Text>
-                      <View style={styles.ratingContainer}>
-                        <Icon name="star" size={14} color="#FF9800" />
-                        <Text style={styles.rating}>{ride.driver?.rating || '4.5'}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <Text style={styles.price}>${ride.pricePerSeat}</Text>
-                </View>
-
-                <View style={styles.routeInfo}>
-                  <View style={styles.routePoint}>
-                    <Icon name="radio-button-checked" size={12} color="#4CAF50" />
-                    <Text style={styles.routeText} numberOfLines={1}>
-                      {ride.origin?.address || 'Origin'}
-                    </Text>
-                  </View>
-                  <View style={styles.routeLine} />
-                  <View style={styles.routePoint}>
-                    <Icon name="location-on" size={12} color="#F44336" />
-                    <Text style={styles.routeText} numberOfLines={1}>
-                      {ride.destination?.address || 'Destination'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.rideDetails}>
-                  <View style={styles.detailItem}>
-                    <Icon name="schedule" size={14} color="#666666" />
-                    <Text style={styles.detailText}>
-                      {new Date(ride.departureTime).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Text>
-                  </View>
-                  <View style={styles.detailItem}>
-                    <Icon name="person" size={14} color="#666666" />
-                    <Text style={styles.detailText}>{ride.availableSeats} seats</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      ) : (
-        <View style={styles.emptyState}>
-          <Icon name="near-me" size={48} color="#CCCCCC" />
-          <Text style={styles.emptyStateText}>No nearby rides found</Text>
-          <Text style={styles.emptyStateSubtext}>
-            Try searching in different locations or offer your own ride
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderWelcomeSection = (): React.ReactNode => (
-    <View style={styles.welcomeSection}>
-      <Text style={styles.welcomeText}>
-        Good {getGreeting()}, {user?.firstName || 'there'}!
-      </Text>
-      <Text style={styles.welcomeSubtext}>Where would you like to go today?</Text>
-      
-      {currentLocation && (
-        <View style={styles.locationInfo}>
-          <Icon name="location-on" size={16} color="#666666" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {currentLocation.address || 'Current location'}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 
   const getGreeting = (): string => {
     const hour = new Date().getHours();
@@ -357,90 +236,285 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     return 'evening';
   };
 
-  const renderAIRecommendations = (): React.ReactNode => {
-    if (!recommendations || recommendations.recommendations.length === 0) {
-      return null;
-    }
+  // Map section with route overview
+  const renderMap = (): React.ReactNode => (
+    <View style={styles.mapContainer}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={mapRegion}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        rotateEnabled={false}
+        mapType="standard"
+      >
+        {/* Show nearby ride routes on map */}
+        {nearbyRides.map((ride) => {
+          if (!ride.origin?.latitude || !ride.destination?.latitude) return null;
+          return (
+            <React.Fragment key={ride.id}>
+              <Marker
+                coordinate={{
+                  latitude: ride.origin.latitude,
+                  longitude: ride.origin.longitude,
+                }}
+                onPress={() => handleViewRide(ride.id)}
+              >
+                <View style={styles.mapMarkerOrigin}>
+                  <View style={styles.mapMarkerDot} />
+                </View>
+              </Marker>
+              <Marker
+                coordinate={{
+                  latitude: ride.destination.latitude,
+                  longitude: ride.destination.longitude,
+                }}
+                onPress={() => handleViewRide(ride.id)}
+              >
+                <View style={styles.mapMarkerDest}>
+                  <Icon name="location-on" size={14} color="#FFFFFF" />
+                </View>
+              </Marker>
+              {ride.route && ride.route.length > 0 && (
+                <Polyline
+                  coordinates={ride.route}
+                  strokeWidth={2}
+                  strokeColor={colors.primary + '80'}
+                  lineDashPattern={[5, 5]}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </MapView>
 
-    const topRecommendations = recommendations.recommendations.slice(0, 2);
+      {/* Gradient overlay at bottom of map */}
+      <View style={styles.mapGradient} />
 
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.aiSectionTitle}>
-            <Icon name="auto-awesome" size={20} color="#2196F3" />
-            <Text style={styles.sectionTitle}>AI Recommendations</Text>
+      {/* My location button */}
+      <TouchableOpacity
+        style={styles.myLocationBtn}
+        onPress={handleMyLocation}
+        activeOpacity={0.8}
+      >
+        <Icon name="my-location" size={22} color={colors.text.primary} />
+      </TouchableOpacity>
+
+      {/* Emergency SOS button */}
+      <TouchableOpacity
+        style={[styles.sosButton, activeEmergency && styles.sosButtonActive]}
+        onPress={handleEmergency}
+        activeOpacity={0.8}
+      >
+        <Icon name="emergency" size={18} color="#FFFFFF" />
+        <Text style={styles.sosText}>SOS</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Route search bar overlaying the bottom of the map
+  const renderSearchBar = (): React.ReactNode => (
+    <TouchableOpacity
+      style={styles.searchBar}
+      onPress={handleFindRide}
+      activeOpacity={0.9}
+    >
+      <View style={styles.searchIconContainer}>
+        <Icon name="search" size={22} color={colors.primary} />
+      </View>
+      <View style={styles.searchTextContainer}>
+        <Text style={styles.searchPlaceholder}>Where are you travelling to?</Text>
+        <Text style={styles.searchSubtext}>
+          {currentLocation?.address || 'Search intercity routes'}
+        </Text>
+      </View>
+      <View style={styles.searchDivider} />
+      <TouchableOpacity style={styles.searchTimeBtn} onPress={handleFindRide}>
+        <Icon name="schedule" size={18} color={colors.text.secondary} />
+        <Text style={styles.searchTimeText}>Now</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+
+  // 4 core quick action buttons matching the business model
+  const renderQuickActions = (): React.ReactNode => (
+    <View style={styles.quickActions}>
+      <ScaleIn delay={0}>
+        <TouchableOpacity
+          style={styles.quickActionItem}
+          onPress={handleFindRide}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: colors.primary + '15' }]}>
+            <Icon name="search" size={24} color={colors.primary} />
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('AIRecommendations')}>
-            <Text style={styles.seeAllText}>See All</Text>
+          <Text style={styles.quickActionLabel}>Find Ride</Text>
+        </TouchableOpacity>
+      </ScaleIn>
+
+      <ScaleIn delay={60}>
+        <TouchableOpacity
+          style={styles.quickActionItem}
+          onPress={handleOfferRide}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: '#10B981' + '15' }]}>
+            <Icon name="add-circle-outline" size={24} color="#10B981" />
+          </View>
+          <Text style={styles.quickActionLabel}>Offer Ride</Text>
+        </TouchableOpacity>
+      </ScaleIn>
+
+      <ScaleIn delay={120}>
+        <TouchableOpacity
+          style={styles.quickActionItem}
+          onPress={handleSendPackage}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: '#F59E0B' + '15' }]}>
+            <Icon name="local-shipping" size={24} color="#F59E0B" />
+          </View>
+          <Text style={styles.quickActionLabel}>Send Parcel</Text>
+        </TouchableOpacity>
+      </ScaleIn>
+
+      <ScaleIn delay={180}>
+        <TouchableOpacity
+          style={styles.quickActionItem}
+          onPress={handleDeliverPackages}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickActionIcon, { backgroundColor: '#8B5CF6' + '15' }]}>
+            <Icon name="delivery-dining" size={24} color="#8B5CF6" />
+          </View>
+          <Text style={styles.quickActionLabel}>Deliver</Text>
+        </TouchableOpacity>
+      </ScaleIn>
+    </View>
+  );
+
+  // Upcoming rides section
+  const renderUpcomingRides = (): React.ReactNode => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Available Rides</Text>
+        <TouchableOpacity onPress={handleFindRide}>
+          <Text style={styles.seeAllText}>See All</Text>
+        </TouchableOpacity>
+      </View>
+
+      {nearbyRides.length > 0 ? (
+        nearbyRides.slice(0, 5).map((ride) => (
+          <TouchableOpacity
+            key={ride.id as string}
+            style={styles.rideCard}
+            onPress={() => handleViewRide(ride.id as string)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rideCardLeft}>
+              {/* Route indicator */}
+              <View style={styles.routeIndicator}>
+                <View style={styles.routeDotGreen} />
+                <View style={styles.routeLineVertical} />
+                <View style={styles.routeDotRed} />
+              </View>
+
+              {/* Route info */}
+              <View style={styles.rideRouteInfo}>
+                <Text style={styles.rideCity} numberOfLines={1}>
+                  {ride.origin?.address || ride.origin?.city || 'Origin'}
+                </Text>
+                <Text style={styles.rideCity} numberOfLines={1}>
+                  {ride.destination?.address || ride.destination?.city || 'Destination'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.rideCardRight}>
+              {/* Price */}
+              <Text style={styles.ridePrice}>
+                P{(ride.pricePerSeat ?? 0).toFixed(0)}
+              </Text>
+              <Text style={styles.ridePriceLabel}>per seat</Text>
+
+              {/* Details row */}
+              <View style={styles.rideMetaRow}>
+                <View style={styles.rideMeta}>
+                  <Icon name="person" size={12} color={colors.text.secondary} />
+                  <Text style={styles.rideMetaText}>
+                    {ride.availableSeats ?? 0}
+                  </Text>
+                </View>
+                <View style={styles.rideMeta}>
+                  <Icon name="schedule" size={12} color={colors.text.secondary} />
+                  <Text style={styles.rideMetaText}>
+                    {ride.departureTime
+                      ? new Date(ride.departureTime).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'TBD'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Icon name="directions-car" size={40} color={colors.border.light} />
+          <Text style={styles.emptyStateTitle}>No rides available</Text>
+          <Text style={styles.emptyStateSubtext}>
+            Be the first to offer a ride or search for upcoming routes
+          </Text>
+          <TouchableOpacity style={styles.emptyActionBtn} onPress={handleOfferRide}>
+            <Icon name="add" size={18} color="#FFFFFF" />
+            <Text style={styles.emptyActionText}>Offer a Ride</Text>
           </TouchableOpacity>
         </View>
+      )}
+    </View>
+  );
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.recommendationsContainer}>
-            {topRecommendations.map((recommendation) => {
-              const getIcon = () => {
-                switch (recommendation.type) {
-                  case 'route': return 'route';
-                  case 'driver': return 'person';
-                  case 'timing': return 'schedule';
-                  case 'price': return 'attach-money';
-                  default: return 'lightbulb-outline';
-                }
-              };
-
-              const getColor = () => {
-                switch (recommendation.impact) {
-                  case 'high': return '#4CAF50';
-                  case 'medium': return '#FF9800';
-                  case 'low': return '#2196F3';
-                  default: return '#9E9E9E';
-                }
-              };
-
-              return (
-                <TouchableOpacity
-                  key={recommendation.id}
-                  style={styles.recommendationCard}
-                  onPress={() => navigation.navigate('AIRecommendations')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.recommendationHeader}>
-                    <View style={[styles.recommendationIcon, { backgroundColor: getColor() + '20' }]}>
-                      <Icon name={getIcon()} size={24} color={getColor()} />
-                    </View>
-                    <View style={[styles.confidenceBadge, { backgroundColor: getColor() }]}>
-                      <Text style={styles.confidenceText}>
-                        {Math.round(recommendation.confidence * 100)}%
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.recommendationTitle} numberOfLines={2}>
-                    {recommendation.title}
-                  </Text>
-                  <Text style={styles.recommendationDescription} numberOfLines={3}>
-                    {recommendation.description}
-                  </Text>
-                  {recommendation.actionable && (
-                    <View style={styles.recommendationAction}>
-                      <Icon name="touch-app" size={14} color={getColor()} />
-                      <Text style={[styles.actionText, { color: getColor() }]}>Take Action</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+  // How it works section for new users
+  const renderHowItWorks = (): React.ReactNode => (
+    <View style={styles.howItWorksSection}>
+      <Text style={styles.sectionTitle}>How ARYV Works</Text>
+      <View style={styles.howItWorksCards}>
+        <View style={styles.howCard}>
+          <View style={[styles.howCardIcon, { backgroundColor: colors.primary + '15' }]}>
+            <Icon name="search" size={22} color={colors.primary} />
           </View>
-        </ScrollView>
+          <Text style={styles.howCardTitle}>Search</Text>
+          <Text style={styles.howCardDesc}>Find rides on your route</Text>
+        </View>
+        <View style={styles.howCard}>
+          <View style={[styles.howCardIcon, { backgroundColor: '#10B981' + '15' }]}>
+            <Icon name="event-seat" size={22} color="#10B981" />
+          </View>
+          <Text style={styles.howCardTitle}>Reserve</Text>
+          <Text style={styles.howCardDesc}>Book a seat or cargo space</Text>
+        </View>
+        <View style={styles.howCard}>
+          <View style={[styles.howCardIcon, { backgroundColor: '#F59E0B' + '15' }]}>
+            <Icon name="directions-car" size={22} color="#F59E0B" />
+          </View>
+          <Text style={styles.howCardTitle}>Travel</Text>
+          <Text style={styles.howCardDesc}>Share the journey safely</Text>
+        </View>
       </View>
-    );
-  };
+    </View>
+  );
 
   if (isInitializing) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background.primary} />
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Icon name="directions-car" size={48} color={colors.primary} />
+          <Text style={styles.loadingText}>Loading ARYV...</Text>
         </View>
       </SafeAreaView>
     );
@@ -448,6 +522,34 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background.primary} />
+      <OfflineBanner />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerGreeting}>
+            Good {getGreeting()}, {user?.firstName || 'there'}
+          </Text>
+          {currentLocation && (
+            <View style={styles.headerLocation}>
+              <Icon name="location-on" size={14} color={colors.text.secondary} />
+              <Text style={styles.headerLocationText} numberOfLines={1}>
+                {currentLocation.address || 'Current location'}
+              </Text>
+            </View>
+          )}
+        </View>
+        <TouchableOpacity
+          style={styles.headerProfileBtn}
+          onPress={() => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Profile')}
+        >
+          <Text style={styles.headerProfileInitial}>
+            {user?.firstName?.charAt(0) || 'U'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -455,29 +557,23 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
       >
-        {renderWelcomeSection()}
-        {renderQuickActions()}
-        {renderAIRecommendations()}
-        {renderNearbyRides()}
+        {/* Map */}
+        {renderMap()}
 
-        {/* Emergency Button */}
-        <TouchableOpacity
-          style={[
-            styles.emergencyButton,
-            activeEmergency && styles.emergencyButtonActive
-          ]}
-          onPress={handleEmergency}
-          activeOpacity={0.8}
-        >
-          <Icon 
-            name={activeEmergency ? "warning" : "emergency"} 
-            size={20} 
-            color="#FFFFFF" 
-          />
-          <Text style={styles.emergencyText}>
-            {activeEmergency ? "EMERGENCY ACTIVE" : "Emergency"}
-          </Text>
-        </TouchableOpacity>
+        {/* Search Bar */}
+        {renderSearchBar()}
+
+        {/* Quick Actions */}
+        {renderQuickActions()}
+
+        {/* Available Rides */}
+        {renderUpcomingRides()}
+
+        {/* How It Works (for new users or empty state) */}
+        {nearbyRides.length === 0 && renderHowItWorks()}
+
+        {/* Bottom spacing */}
+        <View style={{ height: 20 }} />
       </ScrollView>
 
       {/* Emergency Alert Modal */}
@@ -499,6 +595,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
   },
   loadingText: {
     fontSize: 16,
@@ -507,294 +604,388 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  welcomeSection: {
-    padding: 20,
-    paddingBottom: 10,
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  welcomeText: {
-    fontSize: 24,
+  headerGreeting: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.text.primary,
-    marginBottom: 4,
   },
-  welcomeSubtext: {
+  headerLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  headerLocationText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    maxWidth: width * 0.6,
+  },
+  headerProfileBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerProfileInitial: {
     fontSize: 16,
-    color: colors.text.secondary,
-    marginBottom: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
-  locationInfo: {
-    flexDirection: 'row',
+
+  // Map
+  mapContainer: {
+    height: MAP_HEIGHT,
+    position: 'relative',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    backgroundColor: 'transparent',
+  },
+  myLocationBtn: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-  },
-  locationText: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    flex: 1,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  actionCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    gap: 8,
-    elevation: 2,
-    shadowColor: '#000000',
+    elevation: 4,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
   },
-  primaryAction: {
-    backgroundColor: colors.primary,
+  sosButton: {
+    position: 'absolute',
+    left: 16,
+    top: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 4,
+    elevation: 4,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
-  secondaryAction: {
-    backgroundColor: colors.background.primary,
-    borderWidth: 1,
-    borderColor: colors.primary,
+  sosButtonActive: {
+    backgroundColor: '#DC2626',
   },
-  primaryActionText: {
-    fontSize: 16,
+  sosText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  mapMarkerOrigin: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#10B981',
+  },
+  mapMarkerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  mapMarkerDest: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+
+  // Search Bar
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: -20,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+  },
+  searchIconContainer: {
+    marginRight: 12,
+  },
+  searchTextContainer: {
+    flex: 1,
+  },
+  searchPlaceholder: {
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.text.inverse,
+    color: colors.text.primary,
   },
-  secondaryActionText: {
-    fontSize: 16,
+  searchSubtext: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 1,
+  },
+  searchDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: colors.border.light,
+    marginHorizontal: 12,
+  },
+  searchTimeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 4,
+  },
+  searchTimeText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+
+  // Quick Actions
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  quickActionItem: {
+    alignItems: 'center',
+    width: (width - 60) / 4,
+  },
+  quickActionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickActionLabel: {
+    fontSize: 12,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.text.primary,
+    textAlign: 'center',
   },
+
+  // Section
   section: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333333',
+    color: colors.text.primary,
   },
   seeAllText: {
     fontSize: 14,
-    color: '#2196F3',
+    color: colors.primary,
     fontWeight: '500',
   },
-  ridesContainer: {
-    flexDirection: 'row',
-    gap: 16,
-    paddingRight: 20,
-  },
+
+  // Ride Cards
   rideCard: {
-    width: width * 0.75,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  rideHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    borderWidth: 1,
+    borderColor: colors.border.light,
   },
-  driverInfo: {
+  rideCardLeft: {
     flexDirection: 'row',
+    flex: 1,
+    marginRight: 12,
+  },
+  routeIndicator: {
     alignItems: 'center',
-    gap: 12,
+    marginRight: 10,
+    paddingTop: 4,
   },
-  driverAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
+  routeDotGreen: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#10B981',
   },
-  driverInitial: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  routeLineVertical: {
+    width: 2,
+    height: 20,
+    backgroundColor: colors.border.light,
   },
-  driverName: {
+  routeDotRed: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+  },
+  rideRouteInfo: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  rideCity: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
+    fontWeight: '500',
+    color: colors.text.primary,
   },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  rideCardRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
-  rating: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  price: {
+  ridePrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2196F3',
+    color: colors.primary,
   },
-  routeInfo: {
-    marginBottom: 12,
+  ridePriceLabel: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    marginBottom: 6,
   },
-  routePoint: {
+  rideMetaRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  rideMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
+    gap: 3,
   },
-  routeLine: {
-    width: 1,
-    height: 16,
-    backgroundColor: '#CCCCCC',
-    marginLeft: 5,
-    marginBottom: 4,
+  rideMetaText: {
+    fontSize: 11,
+    color: colors.text.secondary,
   },
-  routeText: {
-    fontSize: 12,
-    color: '#666666',
-    flex: 1,
-  },
-  rideDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  detailText: {
-    fontSize: 12,
-    color: '#666666',
-  },
+
+  // Empty State
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#999999',
-    textAlign: 'center',
-    lineHeight: 20,
+    paddingVertical: 32,
     paddingHorizontal: 20,
   },
-  emergencyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F44336',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-    elevation: 4,
-    shadowColor: '#F44336',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  emergencyButtonActive: {
-    backgroundColor: '#FF5722',
-    shadowColor: '#FF5722',
-  },
-  emergencyText: {
+  emptyStateTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.text.primary,
+    marginTop: 12,
+    marginBottom: 6,
   },
-  aiSectionTitle: {
+  emptyStateSubtext: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 6,
   },
-  recommendationsContainer: {
-    flexDirection: 'row',
-    gap: 16,
-    paddingRight: 20,
-  },
-  recommendationCard: {
-    width: width * 0.7,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  recommendationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  recommendationIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  confidenceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  confidenceText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  recommendationTitle: {
+  emptyActionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333333',
-    marginBottom: 6,
-    lineHeight: 18,
+    color: '#FFFFFF',
   },
-  recommendationDescription: {
-    fontSize: 12,
-    color: '#666666',
-    lineHeight: 16,
-    marginBottom: 12,
+
+  // How It Works
+  howItWorksSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
   },
-  recommendationAction: {
+  howItWorksCards: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    gap: 10,
   },
-  actionText: {
-    fontSize: 12,
-    fontWeight: '500',
+  howCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  howCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  howCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  howCardDesc: {
+    fontSize: 11,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 14,
   },
 });
 

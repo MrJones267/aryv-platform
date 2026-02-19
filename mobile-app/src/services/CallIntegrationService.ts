@@ -8,6 +8,54 @@
 import { CallService, Call, CallInitiationRequest } from './CallService';
 import SocketService from './SocketService';
 import { ApiClient } from './ApiClient';
+import logger from './LoggingService';
+
+const log = logger.createLogger('CallIntegrationService');
+
+// Navigation reference type
+interface NavigationRef {
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+}
+
+// Incoming call event data
+interface IncomingCallData {
+  callId: string;
+  sessionId?: string;
+  callType: 'voice' | 'video' | 'emergency';
+  from: string;
+  caller?: {
+    id: string;
+    name: string;
+  };
+  isEmergency?: boolean;
+}
+
+// Call ended event data
+interface CallEndedData {
+  callId: string;
+  reason?: string;
+  duration?: number;
+}
+
+// Call error event data
+interface CallErrorData {
+  callId?: string;
+  error: string;
+  code?: string;
+}
+
+// Workflow event data
+interface WorkflowEventData {
+  workflow: CallWorkflow;
+}
+
+// Emergency call request event data
+interface EmergencyCallRequestEventData {
+  request: EmergencyCallRequest;
+}
+
+// Event listener callback type
+type CallEventCallback = (data: unknown) => void;
 
 export interface CallContext {
   rideId?: string;
@@ -16,7 +64,7 @@ export interface CallContext {
   participantName: string;
   participantRole: 'driver' | 'passenger' | 'courier' | 'customer';
   isEmergency?: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CallWorkflow {
@@ -48,9 +96,9 @@ export class CallIntegrationService {
   private static instance: CallIntegrationService;
   private apiClient = new ApiClient();
   private socketService = SocketService.getInstance();
-  private navigation: any = null;
+  private navigation: NavigationRef | null = null;
   private activeWorkflows = new Map<string, CallWorkflow>();
-  private callEventListeners = new Map<string, Function[]>();
+  private callEventListeners = new Map<string, CallEventCallback[]>();
 
   private constructor() {
     this.setupEventHandlers();
@@ -66,18 +114,18 @@ export class CallIntegrationService {
   /**
    * Initialize the service with navigation
    */
-  async initialize(navigationRef: any): Promise<void> {
+  async initialize(navigationRef: NavigationRef): Promise<void> {
     this.navigation = navigationRef;
-    
+
     // Initialize CallService
     await CallService.initialize();
-    
+
     // Setup call event listeners
-    CallService.addEventListener('incoming_call', this.handleIncomingCall.bind(this));
-    CallService.addEventListener('call_ended', this.handleCallEnded.bind(this));
-    CallService.addEventListener('call_error', this.handleCallError.bind(this));
-    
-    console.log('CallIntegrationService initialized successfully');
+    CallService.addEventListener('incoming_call', ((data: unknown) => this.handleIncomingCall(data as any)) as import('./CallService').CallEventCallback);
+    CallService.addEventListener('call_ended', ((data: unknown) => this.handleCallEnded(data)) as import('./CallService').CallEventCallback);
+    CallService.addEventListener('call_error', ((data: unknown) => this.handleCallError(data)) as import('./CallService').CallEventCallback);
+
+    log.info('CallIntegrationService initialized successfully');
   }
 
   /**
@@ -139,9 +187,10 @@ export class CallIntegrationService {
       }
 
       return success;
-    } catch (error: any) {
-      console.error('Error initiating call:', error);
-      this.emitEvent('call_error', { error: error.message, participantId, callType });
+    } catch (error: unknown) {
+      log.error('Error initiating call:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.emitEvent('call_error', { error: errMsg, participantId, callType });
       return false;
     }
   }
@@ -149,8 +198,8 @@ export class CallIntegrationService {
   /**
    * Handle incoming call
    */
-  private handleIncomingCall(data: any): void {
-    console.log('Incoming call received:', data);
+  private handleIncomingCall(data: { callId: string; sessionId?: string; callType: string; from: string; caller: string; isEmergency?: boolean }): void {
+    log.info('Incoming call received:', data);
     
     // Navigate to incoming call screen
     if (this.navigation) {
@@ -170,8 +219,8 @@ export class CallIntegrationService {
   /**
    * Handle call ended
    */
-  private handleCallEnded(data: any): void {
-    console.log('Call ended:', data);
+  private handleCallEnded(data: unknown): void {
+    log.info('Call ended:', data);
     
     // Update any active workflows
     this.activeWorkflows.forEach(async (workflow) => {
@@ -186,8 +235,8 @@ export class CallIntegrationService {
   /**
    * Handle call error
    */
-  private handleCallError(data: any): void {
-    console.error('Call error:', data);
+  private handleCallError(data: unknown): void {
+    log.error('Call error:', data);
     
     // Update any active workflows
     this.activeWorkflows.forEach(async (workflow) => {
@@ -233,8 +282,8 @@ export class CallIntegrationService {
       };
 
       return await this.initiateCall(emergencyContact.id, 'video', context);
-    } catch (error: any) {
-      console.error('Error creating emergency call:', error);
+    } catch (error: unknown) {
+      log.error('Error creating emergency call:', error);
       return false;
     }
   }
@@ -252,7 +301,7 @@ export class CallIntegrationService {
       
       return [];
     } catch (error) {
-      console.error('Error getting call history:', error);
+      log.error('Error getting call history:', error);
       return [];
     }
   }
@@ -294,7 +343,7 @@ export class CallIntegrationService {
 
       return null;
     } catch (error) {
-      console.error('Error creating call workflow:', error);
+      log.error('Error creating call workflow:', error);
       return null;
     }
   }
@@ -314,7 +363,7 @@ export class CallIntegrationService {
 
       return null;
     } catch (error) {
-      console.error('Error creating emergency workflow:', error);
+      log.error('Error creating emergency workflow:', error);
       return null;
     }
   }
@@ -328,11 +377,11 @@ export class CallIntegrationService {
       
       const workflow = this.activeWorkflows.get(workflowId);
       if (workflow) {
-        workflow.status = status as any;
+        workflow.status = status as CallWorkflow['status'];
         workflow.updatedAt = new Date().toISOString();
       }
     } catch (error) {
-      console.error('Error updating workflow status:', error);
+      log.error('Error updating workflow status:', error);
     }
   }
 
@@ -357,7 +406,7 @@ export class CallIntegrationService {
 
       return null;
     } catch (error) {
-      console.error('Error getting emergency contact:', error);
+      log.error('Error getting emergency contact:', error);
       return null;
     }
   }
@@ -365,8 +414,8 @@ export class CallIntegrationService {
   /**
    * Handle workflow created event
    */
-  private handleWorkflowCreated(data: any): void {
-    console.log('Call workflow created:', data);
+  private handleWorkflowCreated(data: { workflow?: CallWorkflow }): void {
+    log.info('Call workflow created:', data);
     if (data.workflow) {
       this.activeWorkflows.set(data.workflow.id, data.workflow);
     }
@@ -375,8 +424,8 @@ export class CallIntegrationService {
   /**
    * Handle workflow updated event
    */
-  private handleWorkflowUpdated(data: any): void {
-    console.log('Call workflow updated:', data);
+  private handleWorkflowUpdated(data: { workflow?: CallWorkflow }): void {
+    log.info('Call workflow updated:', data);
     if (data.workflow) {
       this.activeWorkflows.set(data.workflow.id, data.workflow);
     }
@@ -385,8 +434,8 @@ export class CallIntegrationService {
   /**
    * Handle emergency call request event
    */
-  private handleEmergencyCallRequest(data: any): void {
-    console.log('Emergency call requested:', data);
+  private handleEmergencyCallRequest(data: { request: EmergencyCallRequest }): void {
+    log.info('Emergency call requested:', data);
     // Auto-initiate emergency call
     this.createEmergencyCall(data.request);
   }
@@ -394,14 +443,14 @@ export class CallIntegrationService {
   /**
    * Event management
    */
-  addEventListener(event: string, callback: Function): void {
+  addEventListener(event: string, callback: CallEventCallback): void {
     if (!this.callEventListeners.has(event)) {
       this.callEventListeners.set(event, []);
     }
     this.callEventListeners.get(event)!.push(callback);
   }
 
-  removeEventListener(event: string, callback: Function): void {
+  removeEventListener(event: string, callback: CallEventCallback): void {
     const listeners = this.callEventListeners.get(event);
     if (listeners) {
       const index = listeners.indexOf(callback);
@@ -411,14 +460,14 @@ export class CallIntegrationService {
     }
   }
 
-  private emitEvent(event: string, data: any): void {
+  private emitEvent(event: string, data: unknown): void {
     const listeners = this.callEventListeners.get(event);
     if (listeners) {
       listeners.forEach(callback => {
         try {
           callback(data);
         } catch (error) {
-          console.error('Error in call event listener:', error);
+          log.error('Error in call event listener:', error);
         }
       });
     }

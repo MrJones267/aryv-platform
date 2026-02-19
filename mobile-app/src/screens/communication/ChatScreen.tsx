@@ -21,6 +21,9 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('ChatScreen');
 import {
   ChatList,
   ChatInput,
@@ -137,7 +140,7 @@ const ChatScreen: React.FC = () => {
 
       setMessages(mockMessages);
     } catch (error) {
-      console.error('Error loading messages:', error);
+      log.error('Error loading messages:', error);
       Alert.alert('Error', 'Failed to load conversation history');
     }
   };
@@ -192,7 +195,7 @@ const ChatScreen: React.FC = () => {
       }, 1000);
 
     } catch (error) {
-      console.error('Error sending message:', error);
+      log.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message');
     }
   };
@@ -211,12 +214,12 @@ const ChatScreen: React.FC = () => {
 
   const openCamera = () => {
     // Implement camera functionality
-    console.log('Opening camera...');
+    log.info('Opening camera...');
   };
 
   const openGallery = () => {
     // Implement gallery functionality
-    console.log('Opening gallery...');
+    log.info('Opening gallery...');
   };
 
   const handleSendLocation = () => {
@@ -255,7 +258,7 @@ const ChatScreen: React.FC = () => {
 
   const openInMaps = (location: MessageData['location']) => {
     // Open location in maps app
-    console.log('Opening location in maps:', location);
+    log.info('Opening location in maps:', location);
   };
 
   const handleResendMessage = (message: MessageData) => {
@@ -287,7 +290,7 @@ const ChatScreen: React.FC = () => {
 
   const initiateCall = () => {
     // Implement calling functionality
-    console.log('Initiating call...');
+    log.info('Initiating call...');
   };
 
   const getStatusIndicator = () => {

@@ -30,10 +30,13 @@ import AIMatchingService, {
   RidePreferences 
 } from '../../services/AIMatchingService';
 import DriverMatchCard from '../../components/matching/DriverMatchCard';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RideRequestScreen');
 
 interface RideRequestScreenProps {
-  navigation: any;
-  route?: any;
+  navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  route?: { params?: Record<string, unknown> };
 }
 
 const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route }) => {
@@ -81,10 +84,10 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
   useEffect(() => {
     // Pre-populate locations from route params if available
     if (route?.params?.origin) {
-      setOrigin(route.params.origin);
+      setOrigin(route.params.origin as LocationData);
     }
     if (route?.params?.destination) {
-      setDestination(route.params.destination);
+      setDestination(route.params.destination as LocationData);
     }
   }, [route?.params]);
 
@@ -128,8 +131,9 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
           ]
         );
       }
-    } catch (error: any) {
-      Alert.alert('Search Error', error.message || 'Failed to find matching rides');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Search Error', errMsg || 'Failed to find matching rides');
     } finally {
       setIsSearching(false);
     }
@@ -154,7 +158,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
   const handleRequestRide = async (match: DriverMatch) => {
     try {
       // In production, this would send a ride request to the backend
-      console.log('Sending ride request to driver:', match.driver.id);
+      log.info('Sending ride request to driver:', match.driver.id);
       
       Alert.alert(
         'Request Sent!',
@@ -164,7 +168,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
             text: 'Track Request',
             onPress: () => {
               // Navigate to request tracking screen
-              navigation.navigate('RideTracking', { 
+              navigation?.navigate('RideTracking', { 
                 requestId: `request_${Date.now()}`,
                 driverId: match.driver.id,
               });
@@ -173,15 +177,16 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
           { text: 'OK' },
         ]
       );
-    } catch (error: any) {
-      Alert.alert('Request Error', error.message || 'Failed to send ride request');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Request Error', errMsg || 'Failed to send ride request');
     }
   };
 
   const handleMessageDriver = (driverId: string) => {
     const match = matchingResults?.matches.find(m => m.driver.id === driverId);
     if (match) {
-      navigation.navigate('Chat', {
+      navigation?.navigate('Chat', {
         messageId: `driver-${driverId}`,
         participantName: `${match.driver.firstName} ${match.driver.lastName}`,
         driverId,
@@ -232,7 +237,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
                 styles.rideTypeItem,
                 preferences.rideType === type.id && styles.rideTypeItemSelected,
               ]}
-              onPress={() => setPreferences(prev => ({ ...prev, rideType: type.id as any }))}
+              onPress={() => setPreferences(prev => ({ ...prev, rideType: type.id as 'economy' | 'comfort' | 'premium' | 'shared' }))}
             >
               <Icon 
                 name={type.icon} 
@@ -304,7 +309,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
                   styles.preferenceButton,
                   preferences.prioritizeBy === priority.id && styles.preferenceButtonSelected,
                 ]}
-                onPress={() => setPreferences(prev => ({ ...prev, prioritizeBy: priority.id as any }))}
+                onPress={() => setPreferences(prev => ({ ...prev, prioritizeBy: priority.id as 'time' | 'price' | 'rating' }))}
               >
                 <Text style={[
                   styles.preferenceButtonText,

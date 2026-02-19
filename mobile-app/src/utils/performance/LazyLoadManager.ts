@@ -7,6 +7,9 @@
 
 import React from 'react';
 import { InteractionManager, Dimensions } from 'react-native';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('LazyLoadManager');
 
 export interface LazyLoadOptions {
   threshold?: number; // Distance from viewport to trigger loading
@@ -55,9 +58,9 @@ class LazyLoadManager {
       this.setupIdlePreloading();
 
       this.isInitialized = true;
-      console.log('LazyLoadManager initialized');
+      log.info('LazyLoadManager initialized');
     } catch (error) {
-      console.error('Error initializing LazyLoadManager:', error);
+      log.error('Error initializing LazyLoadManager:', error);
     }
   }
 
@@ -117,7 +120,7 @@ class LazyLoadManager {
       try {
         await this.loadEntry(entry);
       } catch (error) {
-        console.error('Error loading lazy entry:', error);
+        log.error('Error loading lazy entry:', error);
       }
 
       // Small delay between loads to prevent overwhelming
@@ -145,7 +148,7 @@ class LazyLoadManager {
       entry.loading = false;
       entry.timestamp = Date.now();
 
-      console.log(`Lazy loaded: ${entry.id}`);
+      log.info(`Lazy loaded: ${entry.id}`);
     } catch (error) {
       entry.loading = false;
       throw error;
@@ -183,7 +186,7 @@ class LazyLoadManager {
         try {
           await this.loadEntry(entry);
         } catch (error) {
-          console.warn('Error during preload:', error);
+          log.warn('Error during preload:', error);
         }
       }
     }
@@ -378,7 +381,7 @@ export function withLazyLoading<P extends object>(
     if (!shouldRender) {
       return React.createElement('div', { 
         style: { minHeight: 100 },
-        ref: (element: any) => {
+        ref: (element: any): void => {
           if (element) {
             // Simplified viewport detection
             setInViewport(true);

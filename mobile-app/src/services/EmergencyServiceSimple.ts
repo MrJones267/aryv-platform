@@ -50,7 +50,7 @@ class EmergencyServiceSimple {
   }
 
   async callEmergencyServices(): Promise<void> {
-    Alert.alert('Emergency Services', 'Calling 911...');
+    Alert.alert('Emergency Services', 'Calling 999...');
   }
 
   async callPrimaryContact(): Promise<void> {

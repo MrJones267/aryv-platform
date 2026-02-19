@@ -28,6 +28,22 @@ export const APP_CONFIG = {
     firstName: 'Demo',
     lastName: 'User',
   },
+
+  // Google Services Configuration
+  GOOGLE_SERVICES: {
+    // API keys - used in both dev and production builds
+    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
+    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
+    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
+
+    // Rate limiting
+    MAX_REQUESTS_PER_DAY: 25000,
+    MAX_REQUESTS_PER_MINUTE: 150,
+
+    // Configuration
+    DEFAULT_REGION: 'BW',
+    DEFAULT_LANGUAGE: 'en',
+  },
 };
 
 // API Base URLs

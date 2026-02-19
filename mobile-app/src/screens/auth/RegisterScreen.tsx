@@ -20,9 +20,24 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { registerUser, clearAuthError } from '../../store/slices/authSlice';
+import { registerUser, clearAuthError, googleLogin } from '../../store/slices/authSlice';
 import { RegisterScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
+import PhoneInput from '../../components/ui/PhoneInput';
+import { Country as CountryServiceCountry } from '../../services/CountryService';
+import { CurrencyService } from '../../services/CurrencyService';
+
+/** Lightweight country shape matching what PhoneInput emits */
+interface PhoneCountry {
+  code: string;
+  name: string;
+  dialCode: string;
+  flag: string;
+}
+import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RegisterScreen');
 
 const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
@@ -43,6 +58,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isFormValid, setIsFormValid] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState<PhoneCountry | null>(null);
+  const [suggestedCurrency, setSuggestedCurrency] = useState<string | null>(null);
 
   useEffect(() => {
     dispatch(clearAuthError());
@@ -85,12 +102,13 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       errors.email = 'Please enter a valid email address';
     }
 
-    // Phone validation
-    const phoneRegex = /^\+?[\d\s\-\(\)]{10,}$/;
+    // Phone validation (simplified since PhoneInput handles country code)
     if (!formData.phone) {
       errors.phone = 'Phone number is required';
-    } else if (!phoneRegex.test(formData.phone.replace(/\s/g, ''))) {
-      errors.phone = 'Please enter a valid phone number';
+    } else if (formData.phone.replace(/\s/g, '').length < 6) {
+      errors.phone = 'Phone number must be at least 6 digits';
+    } else if (!/^\d+$/.test(formData.phone.replace(/[\s\-]/g, ''))) {
+      errors.phone = 'Phone number can only contain digits, spaces, and dashes';
     }
 
     // Password validation
@@ -123,17 +141,80 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleCountryChange = async (country: PhoneCountry): Promise<void> => {
+    setSelectedCountry(country);
+
+    // Automatically suggest currency based on country
+    try {
+      const currencies = await CurrencyService.getCurrenciesByCountry(country.code);
+      if (currencies && currencies.length > 0) {
+        const primaryCurrency = currencies[0];
+        setSuggestedCurrency(primaryCurrency.code);
+        
+        // Show currency suggestion to user
+        Alert.alert(
+          'Currency Setting',
+          `Based on your country selection (${country.name}), we've set your currency to ${primaryCurrency.name} (${primaryCurrency.code}). You can change this in settings later.`,
+          [
+            { text: 'OK', style: 'default' }
+          ]
+        );
+
+        // Automatically set the user's currency preference
+        try {
+          await CurrencyService.setUserCurrency(primaryCurrency.code);
+        } catch (error) {
+          log.error('Error setting user currency:', error);
+        }
+      }
+    } catch (error) {
+      log.error('Error getting currency suggestion:', error);
+      // Set fallback currency based on common country mappings
+      const fallbackCurrencies: Record<string, string> = {
+        'BW': 'BWP',
+        'ZA': 'ZAR',
+        'NA': 'NAD',
+        'ZM': 'ZMW',
+        'MZ': 'MZN',
+        'MW': 'MWK',
+        'SZ': 'SZL',
+        'LS': 'LSL',
+        'ZW': 'ZWL',
+        'AO': 'AOA',
+        'TZ': 'TZS',
+        'KE': 'KES',
+        'NG': 'NGN',
+        'GH': 'GHS',
+        'UG': 'UGX',
+        'US': 'USD',
+        'GB': 'GBP',
+        'CA': 'CAD',
+        'AU': 'AUD',
+      };
+
+      const fallbackCurrency = fallbackCurrencies[country.code] || 'BWP';
+      setSuggestedCurrency(fallbackCurrency);
+    }
+  };
+
   const handleRegister = async (): Promise<void> => {
     if (!isFormValid) return;
 
     try {
+      // Construct full phone number with country code
+      const fullPhoneNumber = selectedCountry?.dialCode
+        ? `${selectedCountry.dialCode}${formData.phone.replace(/\s/g, '')}`
+        : formData.phone.replace(/\s/g, '');
+
       await dispatch(registerUser({
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.toLowerCase().trim(),
-        phone: formData.phone.replace(/\s/g, ''),
+        phone: fullPhoneNumber,
         password: formData.password,
         role: formData.role,
+        country: selectedCountry?.code,
+        currency: suggestedCurrency || undefined,
       })).unwrap();
 
       // Navigate to verification screen
@@ -143,7 +224,18 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       });
     } catch (err) {
       // Error handled by useEffect
-      console.log('Registration error handled by useEffect');
+      log.info('Registration error handled by useEffect');
+    }
+  };
+
+  const handleGoogleSignUp = async (): Promise<void> => {
+    try {
+      await dispatch(googleLogin({ user: {}, tokens: { accessToken: '', refreshToken: '', expiresIn: 0 } } as any)).unwrap();
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg !== 'Sign in cancelled') {
+        Alert.alert('Google Sign-In Failed', errMsg || 'Could not sign in with Google. Please try again.');
+      }
     }
   };
 
@@ -244,23 +336,14 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               {renderError('email')}
             </View>
 
-            {/* Phone Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <View style={styles.inputWrapper}>
-                <Icon name="phone" size={20} color="#666666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter your phone number"
-                  placeholderTextColor="#999999"
-                  value={formData.phone}
-                  onChangeText={(text) => handleInputChange('phone', text)}
-                  keyboardType="phone-pad"
-                  returnKeyType="next"
-                />
-              </View>
-              {renderError('phone')}
-            </View>
+            {/* Phone Input with Country Code */}
+            <PhoneInput
+              value={formData.phone}
+              onChangeText={(text) => handleInputChange('phone', text)}
+              onCountryChange={handleCountryChange}
+              error={validationErrors.phone}
+              defaultCountry="BW"
+            />
 
             {/* Role Selection */}
             <View style={styles.inputContainer}>
@@ -403,6 +486,24 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               <Text style={styles.registerButtonText}>
                 {isLoading ? 'Creating Account...' : 'Create Account'}
               </Text>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Google Sign Up */}
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={handleGoogleSignUp}
+              disabled={isLoading}
+              activeOpacity={0.8}
+            >
+              <Icon name="login" size={20} color={colors.text.primary} />
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
             </TouchableOpacity>
 
             {/* Login Link */}
@@ -575,6 +676,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border.light,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
   },
   loginSection: {
     flexDirection: 'row',

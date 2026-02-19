@@ -21,9 +21,15 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { VerificationScreenProps } from '../../navigation/types';
 import { authApi } from '../../services/api';
 import OTPService from '../../services/OTPService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('VerificationScreen');
 
 const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, route }) => {
-  const { email, type, purpose = 'email_verification' } = route.params as any;
+  const routeParams = route.params as Record<string, unknown>;
+  const email = routeParams.email as string;
+  const type = routeParams.type as 'email' | 'sms' | 'phone';
+  const purpose = (routeParams.purpose as string) || 'email_verification';
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
@@ -65,11 +71,12 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
 
   const loadOTPStatus = async (): Promise<void> => {
     try {
-      const status = await OTPService.getOTPStatus(email, type === 'phone' ? 'sms' : type);
+      const otpType: 'sms' | 'email' = type === 'phone' ? 'sms' : (type === 'sms' ? 'sms' : 'email');
+      const status = await OTPService.getOTPStatus(email as string, otpType);
       setOtpStatus(status);
       setCountdown(status.cooldownRemaining);
     } catch (error) {
-      console.error('Failed to load OTP status:', error);
+      log.error('Failed to load OTP status:', error);
     }
   };
 
@@ -104,11 +111,12 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
 
     try {
       // Use new OTPService for verification
+      const verifyType: 'sms' | 'email' = type === 'phone' ? 'sms' : (type === 'sms' ? 'sms' : 'email');
       const response = await OTPService.verifyOTP({
-        type: type === 'phone' ? 'sms' : type,
-        recipient: email,
+        type: verifyType,
+        recipient: email as string,
         code: verificationCode,
-        purpose: purpose,
+        purpose: purpose as 'registration' | 'login' | 'password_reset' | 'phone_verification' | 'email_verification',
       });
 
       if (response.success) {
@@ -136,8 +144,9 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
         inputRefs.current[0]?.focus();
         await loadOTPStatus();
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Verification failed');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Verification failed');
       // Clear the code
       setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
@@ -156,13 +165,13 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
       const response = type === 'email'
         ? await OTPService.sendEmailOTP({
             type: 'email',
-            recipient: email,
-            purpose: purpose,
+            recipient: email as string,
+            purpose: purpose as 'registration' | 'login' | 'password_reset' | 'phone_verification' | 'email_verification',
           })
         : await OTPService.sendSMSOTP({
             type: 'sms',
-            recipient: email,
-            purpose: purpose,
+            recipient: email as string,
+            purpose: purpose as 'registration' | 'login' | 'password_reset' | 'phone_verification' | 'email_verification',
           });
 
       if (response.success) {
@@ -170,7 +179,7 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
           'Code Resent',
           response.message || `A new verification code has been sent to your ${type}.`
         );
-        
+
         // Update OTP status and countdown
         await loadOTPStatus();
         setCode(['', '', '', '', '', '']); // Clear current code
@@ -178,8 +187,9 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
       } else {
         Alert.alert('Error', response.message || 'Failed to resend code');
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to resend code');
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errMsg || 'Failed to resend code');
     } finally {
       setIsResending(false);
     }
@@ -237,7 +247,7 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
             <Text style={styles.title}>Verify Your {type === 'email' ? 'Email' : 'Phone'}</Text>
             <Text style={styles.subtitle}>
               We've sent a 6-digit verification code to{'\n'}
-              <Text style={styles.contactInfo}>{formatContactInfo(email)}</Text>
+              <Text style={styles.contactInfo}>{formatContactInfo(email as string)}</Text>
             </Text>
           </View>
 

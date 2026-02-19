@@ -26,13 +26,16 @@ import {
   TrendingPattern,
   PersonalizedTip 
 } from '../../services/AIRecommendationsService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RecommendationsDisplay');
 
 interface RecommendationsDisplayProps {
   recommendations: AIRecommendation[];
   userInsights?: UserInsights;
   trendingPatterns?: TrendingPattern[];
   personalizedTips?: PersonalizedTip[];
-  style?: any;
+  style?: object;
 }
 
 export const RecommendationsDisplay: React.FC<RecommendationsDisplayProps> = ({
@@ -119,7 +122,7 @@ export const RecommendationsDisplay: React.FC<RecommendationsDisplayProps> = ({
               onPress={(e) => {
                 e.stopPropagation();
                 // Handle specific actions based on recommendation type
-                console.log('Acting on recommendation:', recommendation.id);
+                log.info('Acting on recommendation:', recommendation.id);
               }}
             >
               <Icon name="touch-app" size={16} color={impactColor} />

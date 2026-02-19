@@ -20,6 +20,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { Currency, CurrencyService, CurrencyConversion } from '../../services/CurrencyService';
 import CurrencySelector from './CurrencySelector';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('CurrencyConverter');
 
 interface CurrencyConverterProps {
   initialFromCurrency?: Currency;
@@ -70,15 +73,15 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
           if (otherCurrency) {
             setToCurrency(otherCurrency);
           } else {
-            // Default to USD if no other currencies
-            const usdCurrency = await CurrencyService.getCurrencyByCode('USD');
-            if (usdCurrency && usdCurrency.code !== fromCurrency?.code) {
-              setToCurrency(usdCurrency);
+            // Default to BWP (Botswana Pula) if no other currencies
+            const bwpCurrency = await CurrencyService.getCurrencyByCode('BWP');
+            if (bwpCurrency && bwpCurrency.code !== fromCurrency?.code) {
+              setToCurrency(bwpCurrency);
             }
           }
         }
       } catch (error) {
-        console.error('Error loading default currencies:', error);
+        log.error('Error loading default currencies:', error);
       }
     }
   };
@@ -139,7 +142,7 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
         }
       }
     } catch (error) {
-      console.error('Error performing conversion:', error);
+      log.error('Error performing conversion:', error);
       Alert.alert('Error', 'Failed to convert currency. Please check your connection and try again.');
     } finally {
       setLoading(false);

@@ -3,11 +3,18 @@
  * @author Oabona-Majoko
  * @created 2025-12-14
  * @lastModified 2025-12-14
+ * 
+ * @deprecated This service is deprecated. Use ../SocketService.ts instead for all real-time features.
+ * 
+ * MIGRATION: Replace calls to websocket/socketService with SocketService.getInstance()
  */
 
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiConfig } from '../../config/api';
+import logger from '../LoggingService';
+
+const log = logger.createLogger('WebSocketService');
 
 // Types
 export interface LocationUpdate {
@@ -45,7 +52,7 @@ export interface NotificationData {
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
-  data?: any;
+  data?: unknown;
   timestamp: string;
 }
 
@@ -70,7 +77,7 @@ class SocketService {
       const config = getApiConfig();
       const socketUrl = config.socketUrl || 'http://localhost:3001';
       
-      console.log('🔌 Connecting to WebSocket:', socketUrl);
+      log.info('🔌 Connecting to WebSocket:', socketUrl);
 
       this.socket = io(socketUrl, {
         transports: ['websocket', 'polling'],
@@ -85,7 +92,7 @@ class SocketService {
       
       return true;
     } catch (error) {
-      console.error('WebSocket connection failed:', error);
+      log.error('WebSocket connection failed:', error);
       return false;
     }
   }
@@ -95,7 +102,7 @@ class SocketService {
    */
   disconnect(): void {
     if (this.socket) {
-      console.log('📡 Disconnecting WebSocket');
+      log.info('📡 Disconnecting WebSocket');
       this.socket.disconnect();
       this.socket = null;
       this.isAuthenticated = false;
@@ -116,7 +123,7 @@ class SocketService {
         this.socket.emit('authenticate', { token, userId });
       }
     } catch (error) {
-      console.error('WebSocket authentication failed:', error);
+      log.error('WebSocket authentication failed:', error);
     }
   }
 
@@ -127,27 +134,27 @@ class SocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('✅ WebSocket connected:', this.socket?.id);
+      log.info('✅ WebSocket connected:', this.socket?.id);
       this.reconnectAttempts = 0;
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('📡 WebSocket disconnected:', reason);
+      log.info('📡 WebSocket disconnected:', reason);
       this.isAuthenticated = false;
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('🔌 WebSocket connection error:', error);
+      log.error('🔌 WebSocket connection error:', error);
       this.reconnectAttempts++;
     });
 
     this.socket.on('authenticated', (data) => {
-      console.log('🔐 WebSocket authenticated:', data);
+      log.info('🔐 WebSocket authenticated:', data);
       this.isAuthenticated = true;
     });
 
     this.socket.on('authentication_error', (error) => {
-      console.error('❌ WebSocket authentication failed:', error);
+      log.error('❌ WebSocket authentication failed:', error);
     });
 
     // Real-time event listeners
@@ -168,11 +175,11 @@ class SocketService {
     });
 
     this.socket.on('package_status', (data) => {
-      console.log('📦 Package status received:', data);
+      log.info('📦 Package status received:', data);
     });
 
     this.socket.on('passenger_joined', (data) => {
-      console.log('👥 Passenger joined:', data);
+      log.info('👥 Passenger joined:', data);
     });
   }
 
@@ -182,7 +189,7 @@ class SocketService {
   joinRide(rideId: number): void {
     if (this.socket && this.isAuthenticated) {
       this.socket.emit('join_ride', rideId);
-      console.log(`🚗 Joined ride tracking: ${rideId}`);
+      log.info(`🚗 Joined ride tracking: ${rideId}`);
     }
   }
 
@@ -192,7 +199,7 @@ class SocketService {
   joinPackage(packageId: number): void {
     if (this.socket && this.isAuthenticated) {
       this.socket.emit('join_package', packageId);
-      console.log(`📦 Joined package tracking: ${packageId}`);
+      log.info(`📦 Joined package tracking: ${packageId}`);
     }
   }
 

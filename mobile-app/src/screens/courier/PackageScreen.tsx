@@ -59,18 +59,25 @@ const PackageScreen: React.FC = () => {
   };
 
   const navigateToPackageDetails = (packageId: string) => {
-    (navigation as any).navigate('PackageDetails', { packageId });
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('PackageDetails', { packageId });
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    const normalizedStatus = status.toLowerCase().replace(/ /g, '_');
+    switch (normalizedStatus) {
       case 'active':
-        return colors.success;
-      case 'in_transit':
+      case 'awaiting_courier':
+        return colors.info;
+      case 'courier_assigned':
+      case 'pending_pickup':
         return colors.warning;
+      case 'in_transit':
+        return colors.primary;
       case 'delivered':
+      case 'completed':
         return colors.success;
       case 'cancelled':
+      case 'disputed':
         return colors.error;
       default:
         return colors.text.secondary;
@@ -81,7 +88,34 @@ const PackageScreen: React.FC = () => {
     if (!package_.isActive) {
       return 'Cancelled';
     }
-    // TODO: Add logic to determine status based on delivery agreement
+
+    // Check the package status field if available
+    if (package_.status) {
+      switch (package_.status.toLowerCase()) {
+        case 'pending':
+        case 'awaiting_courier':
+          return 'Awaiting Courier';
+        case 'accepted':
+        case 'courier_assigned':
+          return 'Courier Assigned';
+        case 'pending_pickup':
+          return 'Pending Pickup';
+        case 'in_transit':
+        case 'picked_up':
+          return 'In Transit';
+        case 'delivered':
+        case 'completed':
+          return 'Delivered';
+        case 'disputed':
+          return 'Disputed';
+        case 'cancelled':
+          return 'Cancelled';
+        default:
+          return package_.status.charAt(0).toUpperCase() + package_.status.slice(1).replace(/_/g, ' ');
+      }
+    }
+
+    // Default to Active if no status is set but package is active
     return 'Active';
   };
 
@@ -126,7 +160,7 @@ const PackageScreen: React.FC = () => {
             </View>
           )}
         </View>
-        <Text style={styles.priceText}>${package_.senderPriceOffer.toFixed(2)}</Text>
+        <Text style={styles.priceText}>P{package_.senderPriceOffer.toFixed(2)}</Text>
       </View>
 
       <Text style={styles.dateText}>

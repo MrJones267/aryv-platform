@@ -27,9 +27,9 @@ interface GroupMessage {
   type: string;
   createdAt: string;
   isRead: boolean;
-  reactions: any;
+  reactions: Record<string, string[]>;
   isPinned: boolean;
-  replyToMessage?: any;
+  replyToMessage?: { sender: { firstName: string }; content: string };
   sender: {
     id: string;
     firstName: string;
@@ -70,7 +70,7 @@ export const GroupChatMessage: React.FC<GroupChatMessageProps> = ({
 
     return (
       <View style={styles.reactionsContainer}>
-        {Object.entries(message.reactions).map(([emoji, users]: [string, any]) => (
+        {Object.entries(message.reactions).map(([emoji, users]: [string, string[]]) => (
           <View key={emoji} style={styles.reaction}>
             <Text style={styles.reactionEmoji}>{emoji}</Text>
             <Text style={styles.reactionCount}>{Array.isArray(users) ? users.length : 1}</Text>

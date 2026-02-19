@@ -24,10 +24,13 @@ import AIRecommendationsService, {
 } from '../../services/AIRecommendationsService';
 import RecommendationsDisplay from '../../components/recommendations/RecommendationsDisplay';
 import { locationService } from '../../services/LocationService';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RecommendationsScreen');
 
 interface RecommendationsScreenProps {
-  navigation: any;
-  route?: any;
+  navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  route?: { params?: Record<string, unknown> };
 }
 
 const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigation }) => {
@@ -63,7 +66,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
       try {
         currentLocation = await locationService.getCurrentLocation();
       } catch (locationError) {
-        console.warn('Failed to get location for recommendations:', locationError);
+        log.warn('Failed to get location for recommendations:', locationError);
         // Continue without location - recommendations will be less personalized
       }
       
@@ -79,8 +82,8 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
 
       const response = await AIRecommendationsService.getRecommendations(request);
       setRecommendations(response);
-    } catch (error: any) {
-      console.error('Failed to load recommendations:', error);
+    } catch (error: unknown) {
+      log.error('Failed to load recommendations:', error);
       Alert.alert(
         'Error',
         'Failed to load personalized recommendations. Please try again.',
@@ -113,7 +116,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
           style={styles.settingsButton}
           onPress={() => {
             // Navigate to AI preferences/settings
-            navigation.navigate('AISettings');
+            navigation?.navigate('AISettings');
           }}
         >
           <Icon name="tune" size={24} color="#666666" />

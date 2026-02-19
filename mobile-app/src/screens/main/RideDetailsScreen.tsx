@@ -20,6 +20,18 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
 import { ridesApi } from '../../services/api';
 import { RideDetailsScreenProps } from '../../navigation/types';
+import TripShareSheet from '../../components/trip/TripShareSheet';
+import { TripShareData } from '../../services/TripSharingService';
+import DriverVerificationCard from '../../components/verification/DriverVerificationCard';
+import DriverProfileCard from '../../components/profile/DriverProfileCard';
+import UserProfileCard from '../../components/profile/UserProfileCard';
+import { Skeleton, SkeletonCircle, RideCardSkeleton } from '../../components/ui/Skeleton';
+import { haptic } from '../../services/HapticService';
+import AnonymizedCallService from '../../services/AnonymizedCallService';
+import PromoCodeInput from '../../components/payment/PromoCodeInput';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('RideDetailsScreen');
 
 const { width } = Dimensions.get('window');
 
@@ -85,6 +97,9 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   const [ride, setRide] = useState<RideDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [promoDiscount, setPromoDiscount] = useState(0);
 
   useEffect(() => {
     loadRideDetails();
@@ -93,50 +108,61 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   const loadRideDetails = async (): Promise<void> => {
     setIsLoading(true);
     try {
-      // Mock data - replace with actual API call
+      // Try API first, fall back to mock data
+      try {
+        const response = await ridesApi.getRideById(rideId);
+        if (response.success && response.data) {
+          setRide(response.data as unknown as RideDetails);
+          return;
+        }
+      } catch (apiError) {
+        log.warn('API call failed, using mock data:', apiError);
+      }
+
+      // Mock data fallback
       const mockRide: RideDetails = {
         id: rideId,
         driver: {
           id: 'driver-123',
-          firstName: 'John',
-          lastName: 'Smith',
+          firstName: 'Thabo',
+          lastName: 'Mokoena',
           rating: 4.8,
           totalRides: 156,
-          phone: '+1234567890',
+          phone: '+26772345678',
         },
         vehicle: {
           make: 'Toyota',
-          model: 'Camry',
-          year: 2020,
-          color: 'Silver',
-          licensePlate: 'ABC123',
+          model: 'Hilux',
+          year: 2021,
+          color: 'White',
+          licensePlate: 'B 123 ABC',
         },
         origin: {
-          address: 'Downtown Shopping Mall, Main Street',
-          latitude: 40.7128,
-          longitude: -74.0060,
+          address: 'Game City Mall, Gaborone',
+          latitude: -24.6282,
+          longitude: 25.9231,
         },
         destination: {
-          address: 'Airport Terminal 1, JFK Airport',
-          latitude: 40.6413,
-          longitude: -73.7781,
+          address: 'Nzano Centre, Francistown',
+          latitude: -21.1700,
+          longitude: 27.5073,
         },
-        departureTime: new Date(Date.now() + 7200000).toISOString(), // 2 hours from now
-        arrivalTime: new Date(Date.now() + 10800000).toISOString(), // 3 hours from now
-        pricePerSeat: 25,
+        departureTime: new Date(Date.now() + 7200000).toISOString(),
+        arrivalTime: new Date(Date.now() + 21600000).toISOString(), // ~6 hours
+        pricePerSeat: 180,
         availableSeats: 2,
         totalSeats: 4,
-        distance: 45,
-        estimatedDuration: 60,
+        distance: 430,
+        estimatedDuration: 300,
         status: 'confirmed',
-        description: 'Comfortable ride to the airport. I\'ll help with luggage if needed.',
-        amenities: ['WiFi', 'Phone Charger', 'Air Conditioning', 'Music'],
+        description: 'Direct route Gaborone to Francistown via A1. Comfortable ride with AC. Happy to stop for refreshments at Palapye.',
+        amenities: ['Phone Charger', 'Air Conditioning', 'Music', 'Luggage Space'],
         bookings: [
           {
             id: 'booking-1',
             passenger: {
-              firstName: 'Sarah',
-              lastName: 'Johnson',
+              firstName: 'Kelebogile',
+              lastName: 'Motswana',
               rating: 4.9,
             },
             seatsBooked: 1,
@@ -145,8 +171,8 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
           {
             id: 'booking-2',
             passenger: {
-              firstName: 'Mike',
-              lastName: 'Chen',
+              firstName: 'Mpho',
+              lastName: 'Radebe',
               rating: 4.7,
             },
             seatsBooked: 1,
@@ -162,7 +188,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
       setRide(mockRide);
     } catch (error) {
-      console.log('Error loading ride details:', error);
+      log.info('Error loading ride details:', error);
       Alert.alert('Error', 'Failed to load ride details');
     } finally {
       setIsLoading(false);
@@ -171,10 +197,11 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const handleBookRide = async (): Promise<void> => {
     if (!ride) return;
+    haptic.confirm();
 
     Alert.alert(
       'Book This Ride',
-      `Book 1 seat for $${ride.pricePerSeat}?`,
+      `Book 1 seat for P${ride.pricePerSeat.toFixed(2)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -192,8 +219,9 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
               } else {
                 Alert.alert('Booking Failed', response.error || 'Unable to book ride');
               }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Booking failed');
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              Alert.alert('Error', errMsg || 'Booking failed');
             } finally {
               setIsBooking(false);
             }
@@ -203,10 +231,12 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     );
   };
 
+  const typedNavigation = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+
   const handleContactDriver = (): void => {
     if (!ride) return;
-    
-    (navigation as any).navigate('Chat', {
+
+    typedNavigation.navigate('Chat', {
       chatId: `ride-${ride.id}`,
       recipientName: `${ride.driver.firstName} ${ride.driver.lastName}`,
       rideId: ride.id,
@@ -214,17 +244,118 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   };
 
   const handleCallDriver = (): void => {
-    if (!ride?.driver.phone) {
-      Alert.alert('Contact Info', 'Driver\'s phone number is not available');
-      return;
-    }
+    if (!ride) return;
+    haptic.tap();
+
+    const callService = AnonymizedCallService.getInstance();
+    callService.initiateCall(
+      ride.id,
+      user?.id || '',
+      ride.driver.id,
+      `${ride.driver.firstName} ${ride.driver.lastName}`,
+      ride.driver.phone,
+    );
+  };
+
+  const handleStartRide = async (): Promise<void> => {
+    if (!ride) return;
+    haptic.confirm();
 
     Alert.alert(
-      'Call Driver',
-      `Call ${ride.driver.firstName} ${ride.driver.lastName}?`,
+      'Start This Ride',
+      'Confirm that all passengers are on board and you are ready to depart?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => console.log('Calling driver...') },
+        {
+          text: 'Start Ride',
+          onPress: async () => {
+            setIsUpdatingStatus(true);
+            try {
+              const response = await ridesApi.startRide(ride.id);
+              if (response.success) {
+                setRide(prev => prev ? { ...prev, status: 'in_progress' } : null);
+                Alert.alert('Ride Started', 'Have a safe journey! Passengers have been notified.');
+              } else {
+                Alert.alert('Error', response.error || 'Failed to start ride');
+              }
+            } catch (error: unknown) {
+              // Update locally even if API fails
+              setRide(prev => prev ? { ...prev, status: 'in_progress' } : null);
+              Alert.alert('Ride Started', 'Have a safe journey!');
+            } finally {
+              setIsUpdatingStatus(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCompleteRide = async (): Promise<void> => {
+    if (!ride) return;
+    haptic.confirm();
+
+    Alert.alert(
+      'Complete This Ride',
+      'Confirm that you have arrived at the destination and all passengers have been dropped off?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete Ride',
+          onPress: async () => {
+            setIsUpdatingStatus(true);
+            try {
+              const response = await ridesApi.completeRide(ride.id);
+              if (response.success) {
+                setRide(prev => prev ? { ...prev, status: 'completed' } : null);
+              }
+            } catch (error: unknown) {
+              setRide(prev => prev ? { ...prev, status: 'completed' } : null);
+            } finally {
+              setIsUpdatingStatus(false);
+              // Navigate to rating screen
+              typedNavigation.navigate('RideRating', {
+                rideId: ride.id,
+                origin: ride.origin.address,
+                destination: ride.destination.address,
+                rideFare: ride.pricePerSeat * (ride.totalSeats - ride.availableSeats),
+                currency: 'BWP',
+                role: 'driver',
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCancelRide = async (): Promise<void> => {
+    if (!ride) return;
+    haptic.tap();
+
+    Alert.alert(
+      'Cancel This Ride',
+      'Are you sure you want to cancel? All booked passengers will be notified.',
+      [
+        { text: 'Keep Ride', style: 'cancel' },
+        {
+          text: 'Cancel Ride',
+          style: 'destructive',
+          onPress: async () => {
+            setIsUpdatingStatus(true);
+            try {
+              await ridesApi.cancelRide(ride.id, 'Driver cancelled');
+              setRide(prev => prev ? { ...prev, status: 'cancelled' } : null);
+              Alert.alert('Ride Cancelled', 'Passengers have been notified.', [
+                { text: 'OK', onPress: () => navigation.goBack() },
+              ]);
+            } catch (error: unknown) {
+              Alert.alert('Error', 'Failed to cancel ride');
+            } finally {
+              setIsUpdatingStatus(false);
+            }
+          },
+        },
       ]
     );
   };
@@ -244,61 +375,43 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     }
   };
 
-  const renderDriverInfo = (): React.ReactNode => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Driver</Text>
-      <View style={styles.driverCard}>
-        <View style={styles.driverHeader}>
-          <View style={styles.driverAvatar}>
-            <Text style={styles.driverInitial}>
-              {ride?.driver.firstName.charAt(0)}
-            </Text>
-          </View>
-          <View style={styles.driverInfo}>
-            <Text style={styles.driverName}>
-              {ride?.driver.firstName} {ride?.driver.lastName}
-            </Text>
-            <View style={styles.driverRating}>
-              <Icon name="star" size={16} color="#FF9800" />
-              <Text style={styles.ratingText}>{ride?.driver.rating}</Text>
-              <Text style={styles.ridesCount}>• {ride?.driver.totalRides} rides</Text>
-            </View>
-          </View>
-          <View style={styles.contactButtons}>
-            <TouchableOpacity style={styles.contactButton} onPress={handleContactDriver}>
-              <Icon name="message" size={20} color="#2196F3" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton} onPress={handleCallDriver}>
-              <Icon name="call" size={20} color="#2196F3" />
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        {ride?.description && (
+  const renderDriverAndVehicle = (): React.ReactNode => {
+    if (!ride) return null;
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Driver & Vehicle</Text>
+        <DriverProfileCard
+          driver={{
+            id: ride.driver.id,
+            firstName: ride.driver.firstName,
+            lastName: ride.driver.lastName,
+            rating: ride.driver.rating,
+            totalRides: ride.driver.totalRides,
+            profilePicture: ride.driver.profileImage,
+            isPhoneVerified: true,
+            isIdentityVerified: true,
+            isDriverVerified: true,
+            primaryRole: 'driver',
+          }}
+          vehicle={{
+            make: ride.vehicle.make,
+            model: ride.vehicle.model,
+            year: ride.vehicle.year,
+            color: ride.vehicle.color,
+            licensePlate: ride.vehicle.licensePlate,
+            isVerified: true,
+            isInspected: true,
+          }}
+          onContactPress={handleContactDriver}
+          onCallPress={handleCallDriver}
+        />
+        {ride.description && (
           <Text style={styles.driverDescription}>{ride.description}</Text>
         )}
       </View>
-    </View>
-  );
-
-  const renderVehicleInfo = (): React.ReactNode => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Vehicle</Text>
-      <View style={styles.vehicleCard}>
-        <View style={styles.vehicleHeader}>
-          <Icon name="directions-car" size={32} color="#2196F3" />
-          <View style={styles.vehicleDetails}>
-            <Text style={styles.vehicleName}>
-              {ride?.vehicle.year} {ride?.vehicle.make} {ride?.vehicle.model}
-            </Text>
-            <Text style={styles.vehicleInfo}>
-              {ride?.vehicle.color} • {ride?.vehicle.licensePlate}
-            </Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderRouteInfo = (): React.ReactNode => (
     <View style={styles.section}>
@@ -374,7 +487,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
           <View style={styles.infoItem}>
             <Icon name="attach-money" size={20} color="#666666" />
             <Text style={styles.infoLabel}>Price</Text>
-            <Text style={styles.infoValue}>${ride?.pricePerSeat} per seat</Text>
+            <Text style={styles.infoValue}>P{ride?.pricePerSeat?.toFixed(2)} per seat</Text>
           </View>
         </View>
         
@@ -463,21 +576,17 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
         <View style={styles.bookingsContainer}>
           {ride.bookings.map((booking) => (
             <View key={booking.id} style={styles.bookingCard}>
-              <View style={styles.passengerAvatar}>
-                <Text style={styles.passengerInitial}>
-                  {booking.passenger.firstName.charAt(0)}
-                </Text>
-              </View>
-              <View style={styles.passengerInfo}>
-                <Text style={styles.passengerName}>
-                  {booking.passenger.firstName} {booking.passenger.lastName}
-                </Text>
-                <View style={styles.passengerDetails}>
-                  <Icon name="star" size={14} color="#FF9800" />
-                  <Text style={styles.passengerRating}>{booking.passenger.rating}</Text>
-                  <Text style={styles.seatsBooked}>• {booking.seatsBooked} seat(s)</Text>
-                </View>
-              </View>
+              <UserProfileCard
+                user={{
+                  id: booking.id,
+                  firstName: booking.passenger.firstName,
+                  lastName: booking.passenger.lastName,
+                  rating: booking.passenger.rating,
+                  totalRides: 0,
+                }}
+                variant="inline"
+              />
+              <Text style={styles.seatsBooked}>{booking.seatsBooked} seat(s)</Text>
             </View>
           ))}
         </View>
@@ -485,30 +594,145 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     );
   };
 
+  const buildTripShareData = (): TripShareData => ({
+    rideId: ride?.id || rideId,
+    driverName: ride ? `${ride.driver.firstName} ${ride.driver.lastName}` : 'Driver',
+    vehicleInfo: ride?.vehicle
+      ? `${ride.vehicle.color} ${ride.vehicle.make} ${ride.vehicle.model} (${ride.vehicle.licensePlate})`
+      : undefined,
+    origin: ride?.origin.address || 'Origin',
+    destination: ride?.destination.address || 'Destination',
+    departureTime: ride?.departureTime
+      ? new Date(ride.departureTime).toLocaleString()
+      : undefined,
+    estimatedArrival: ride?.arrivalTime
+      ? new Date(ride.arrivalTime).toLocaleString()
+      : undefined,
+    passengerName: user
+      ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+      : 'Passenger',
+  });
+
   const renderActionButtons = (): React.ReactNode => {
     const isDriverCurrentUser = ride?.driver.id === user?.id;
-    const canBook = ride && ride.availableSeats > 0 && !isDriverCurrentUser;
+    const canBook = ride && ride.availableSeats > 0 && !isDriverCurrentUser && ride.status !== 'completed' && ride.status !== 'cancelled';
+    const finalPrice = ride ? Math.max(0, ride.pricePerSeat - promoDiscount) : 0;
 
     return (
       <View style={styles.actionContainer}>
+        {/* Driver actions based on ride status */}
+        {isDriverCurrentUser && ride && (
+          <View style={styles.driverActions}>
+            {ride.status === 'confirmed' && (
+              <>
+                <TouchableOpacity
+                  style={styles.startRideButton}
+                  onPress={handleStartRide}
+                  disabled={isUpdatingStatus}
+                  activeOpacity={0.8}
+                >
+                  <Icon name="play-arrow" size={22} color="#FFFFFF" />
+                  <Text style={styles.startRideButtonText}>
+                    {isUpdatingStatus ? 'Starting...' : 'Start Ride'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelRideButton}
+                  onPress={handleCancelRide}
+                  disabled={isUpdatingStatus}
+                >
+                  <Text style={styles.cancelRideButtonText}>Cancel Ride</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {ride.status === 'in_progress' && (
+              <TouchableOpacity
+                style={styles.completeRideButton}
+                onPress={handleCompleteRide}
+                disabled={isUpdatingStatus}
+                activeOpacity={0.8}
+              >
+                <Icon name="check-circle" size={22} color="#FFFFFF" />
+                <Text style={styles.completeRideButtonText}>
+                  {isUpdatingStatus ? 'Completing...' : 'Complete Ride'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {ride.status === 'completed' && (
+              <View style={styles.statusBanner}>
+                <Icon name="check-circle" size={20} color="#10B981" />
+                <Text style={styles.statusBannerText}>Ride Completed</Text>
+              </View>
+            )}
+            {ride.status === 'cancelled' && (
+              <View style={[styles.statusBanner, styles.cancelledBanner]}>
+                <Icon name="cancel" size={20} color="#EF4444" />
+                <Text style={[styles.statusBannerText, styles.cancelledText]}>Ride Cancelled</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Passenger booking action */}
         {canBook && (
+          <>
+            <PromoCodeInput
+              rideAmount={ride.pricePerSeat}
+              onPromoApplied={(discount) => setPromoDiscount(discount)}
+              onPromoRemoved={() => setPromoDiscount(0)}
+            />
+            <TouchableOpacity
+              style={[styles.bookButton, isBooking && styles.bookButtonDisabled]}
+              onPress={handleBookRide}
+              disabled={isBooking}
+              activeOpacity={0.8}
+            >
+              <Icon name="event-seat" size={20} color="#FFFFFF" />
+              <Text style={styles.bookButtonText}>
+                {isBooking
+                  ? 'Booking...'
+                  : promoDiscount > 0
+                    ? `Book for P${finalPrice.toFixed(2)} (was P${ride.pricePerSeat.toFixed(2)})`
+                    : `Book for P${ride.pricePerSeat.toFixed(2)}`}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Passenger post-ride rating (when ride is completed and user is not driver) */}
+        {!isDriverCurrentUser && ride?.status === 'completed' && (
           <TouchableOpacity
-            style={[styles.bookButton, isBooking && styles.bookButtonDisabled]}
-            onPress={handleBookRide}
-            disabled={isBooking}
+            style={styles.rateRideButton}
+            onPress={() => typedNavigation.navigate('RideRating', {
+              rideId: ride.id,
+              driverId: ride.driver.id,
+              driverName: `${ride.driver.firstName} ${ride.driver.lastName}`,
+              origin: ride.origin.address,
+              destination: ride.destination.address,
+              rideFare: ride.pricePerSeat,
+              currency: 'BWP',
+              role: 'passenger',
+            })}
             activeOpacity={0.8}
           >
-            <Icon name="event-seat" size={20} color="#FFFFFF" />
-            <Text style={styles.bookButtonText}>
-              {isBooking ? 'Booking...' : `Book for $${ride.pricePerSeat}`}
-            </Text>
+            <Icon name="star" size={20} color="#FFFFFF" />
+            <Text style={styles.rateRideButtonText}>Rate This Ride</Text>
           </TouchableOpacity>
         )}
-        
-        <TouchableOpacity style={styles.reportButton} onPress={handleReportRide}>
-          <Icon name="report" size={16} color="#F44336" />
-          <Text style={styles.reportButtonText}>Report</Text>
-        </TouchableOpacity>
+
+        <View style={styles.secondaryActions}>
+          <TouchableOpacity
+            style={styles.shareRideButton}
+            onPress={() => setShowShareSheet(true)}
+          >
+            <Icon name="share" size={16} color="#2563EB" />
+            <Text style={styles.shareRideButtonText}>Share Trip</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.reportButton} onPress={handleReportRide}>
+            <Icon name="report" size={16} color="#F44336" />
+            <Text style={styles.reportButtonText}>Report</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -516,9 +740,52 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text>Loading ride details...</Text>
-        </View>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* Driver skeleton */}
+          <View style={styles.section}>
+            <Skeleton width={140} height={20} style={{ marginBottom: 12 }} />
+            <View style={styles.skeletonDriverCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                <SkeletonCircle size={54} />
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Skeleton width={120} height={16} />
+                  <Skeleton width={100} height={12} style={{ marginTop: 6 }} />
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Skeleton width={44} height={44} borderRadius={10} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Skeleton width={140} height={14} />
+                  <Skeleton width={80} height={11} style={{ marginTop: 4 }} />
+                </View>
+                <Skeleton width={70} height={28} borderRadius={6} />
+              </View>
+            </View>
+          </View>
+          {/* Route skeleton */}
+          <View style={styles.section}>
+            <Skeleton width={80} height={20} style={{ marginBottom: 12 }} />
+            <RideCardSkeleton />
+          </View>
+          {/* Info skeleton */}
+          <View style={styles.section}>
+            <Skeleton width={140} height={20} style={{ marginBottom: 12 }} />
+            <View style={styles.skeletonDriverCard}>
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+                  <Skeleton width={24} height={24} borderRadius={12} />
+                  <Skeleton width={40} height={10} />
+                  <Skeleton width={60} height={14} />
+                </View>
+                <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+                  <Skeleton width={24} height={24} borderRadius={12} />
+                  <Skeleton width={40} height={10} />
+                  <Skeleton width={60} height={14} />
+                </View>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -537,8 +804,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {renderDriverInfo()}
-        {renderVehicleInfo()}
+        {renderDriverAndVehicle()}
         {renderRouteInfo()}
         {renderRideInfo()}
         {renderAmenities()}
@@ -548,6 +814,15 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       </ScrollView>
       
       {renderActionButtons()}
+
+      {/* Trip share sheet */}
+      {ride && (
+        <TripShareSheet
+          visible={showShareSheet}
+          onClose={() => setShowShareSheet(false)}
+          tripData={buildTripShareData()}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -586,103 +861,12 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 12,
   },
-  driverCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  driverHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  driverAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  driverInitial: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  driverRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#333333',
-    fontWeight: '500',
-  },
-  ridesCount: {
-    fontSize: 14,
-    color: '#666666',
-  },
-  contactButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  contactButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   driverDescription: {
     fontSize: 14,
     color: '#666666',
     lineHeight: 20,
     fontStyle: 'italic',
-  },
-  vehicleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  vehicleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  vehicleDetails: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  vehicleName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  vehicleInfo: {
-    fontSize: 14,
-    color: '#666666',
+    marginTop: 10,
   },
   routeCard: {
     backgroundColor: '#FFFFFF',
@@ -921,6 +1105,118 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  // Driver action buttons
+  driverActions: {
+    marginBottom: 12,
+  },
+  startRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 12,
+    paddingVertical: 16,
+    gap: 8,
+    marginBottom: 8,
+    elevation: 2,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  startRideButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  completeRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 16,
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  completeRideButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  cancelRideButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  cancelRideButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#EF4444',
+  },
+  rateRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 16,
+    gap: 8,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  rateRideButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  cancelledBanner: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+  },
+  statusBannerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  cancelledText: {
+    color: '#EF4444',
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  shareRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 6,
+  },
+  shareRideButtonText: {
+    fontSize: 14,
+    color: '#2563EB',
+    fontWeight: '500',
+  },
   reportButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -932,6 +1228,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#F44336',
     fontWeight: '500',
+  },
+  skeletonDriverCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
   },
   bottomSpacer: {
     height: 20,

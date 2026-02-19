@@ -30,10 +30,13 @@ import DocumentVerificationService, {
   DocumentMetadata,
 } from '../../services/DocumentVerificationService';
 import DocumentCapture from '../../components/verification/DocumentCapture';
+import logger from '../../services/LoggingService';
+
+const log = logger.createLogger('VerificationWorkflowScreen');
 
 interface VerificationWorkflowScreenProps {
-  navigation: any;
-  route?: any;
+  navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  route?: { params?: Record<string, unknown> };
 }
 
 interface DocumentUploadState {
@@ -82,8 +85,8 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       setIsLoading(true);
       const status = await DocumentVerificationService.getUserVerificationStatus(user.id);
       setVerificationStatus(status);
-    } catch (error: any) {
-      console.error('Error loading verification status:', error);
+    } catch (error: unknown) {
+      log.error('Error loading verification status:', error);
       Alert.alert('Error', 'Failed to load verification status. Please try again.');
     } finally {
       setIsLoading(false);
@@ -169,21 +172,22 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       } else {
         throw new Error(uploadResponse.error || 'Upload failed');
       }
-    } catch (error: any) {
-      console.error('Document upload error:', error);
-      
+    } catch (error: unknown) {
+      log.error('Document upload error:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+
       setUploadStates(prev => ({
         ...prev,
         [selectedDocumentType]: {
           isUploading: false,
           progress: 0,
-          error: error.message,
+          error: errMsg,
         }
       }));
 
       Alert.alert(
         'Upload Failed',
-        error.message || 'Failed to upload document. Please try again.',
+        errMsg || 'Failed to upload document. Please try again.',
         [
           { text: 'Retry', onPress: () => handleDocumentUpload(selectedDocumentType) },
           { text: 'Cancel' },
@@ -475,7 +479,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation?.goBack()}
         >
           <Icon name="arrow-back" size={24} color="#333333" />
         </TouchableOpacity>

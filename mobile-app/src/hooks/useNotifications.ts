@@ -7,6 +7,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSelector } from 'react-redux';
+import logger from '../services/LoggingService';
+
+const log = logger.createLogger('useNotifications');
 import { RootState } from '../store';
 import NotificationService, { NotificationPayload } from '../services/NotificationService';
 
@@ -81,12 +84,12 @@ export const useNotifications = () => {
       }));
 
       if (success) {
-        console.log('Notifications initialized successfully');
+        log.info('Notifications initialized successfully');
       } else {
-        console.warn('Failed to initialize notifications');
+        log.warn('Failed to initialize notifications');
       }
     } catch (error) {
-      console.error('Error initializing notifications:', error);
+      log.error('Error initializing notifications:', error);
       setState(prev => ({
         ...prev,
         isInitialized: false,
@@ -156,7 +159,7 @@ export const useNotifications = () => {
       const success = await NotificationService.updateNotificationPreferences(preferences);
       return success;
     } catch (error) {
-      console.error('Error updating notification preferences:', error);
+      log.error('Error updating notification preferences:', error);
       return false;
     }
   }, []);
@@ -168,7 +171,7 @@ export const useNotifications = () => {
     try {
       return await NotificationService.getNotificationPreferences();
     } catch (error) {
-      console.error('Error getting notification preferences:', error);
+      log.error('Error getting notification preferences:', error);
       return {};
     }
   }, []);
@@ -185,7 +188,7 @@ export const useNotifications = () => {
         lastNotification: null,
       }));
     } catch (error) {
-      console.error('Error clearing notifications:', error);
+      log.error('Error clearing notifications:', error);
     }
   }, []);
 
@@ -203,7 +206,7 @@ export const useNotifications = () => {
       }));
       return success;
     } catch (error) {
-      console.error('Error requesting permissions:', error);
+      log.error('Error requesting permissions:', error);
       return false;
     }
   }, []);
