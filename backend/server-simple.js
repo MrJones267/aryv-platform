@@ -17,6 +17,216 @@ const { jwtManager, authenticateToken, refreshToken, signToken, verifyToken } = 
 // Import Google Auth service
 const { googleAuthService } = require('./services/google-auth-service');
 
+// Input validation schemas
+const Joi = require('joi');
+
+const schemas = {
+  login: Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(1).required()
+  }),
+  register: Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(8).max(128).required(),
+    firstName: Joi.string().min(1).max(100).required(),
+    lastName: Joi.string().min(1).max(100).required(),
+    phone: Joi.string().max(20).allow('', null),
+    role: Joi.string().valid('passenger', 'driver', 'courier').default('passenger')
+  }),
+  forgotPassword: Joi.object({
+    email: Joi.string().email().required()
+  }),
+  resetPassword: Joi.object({
+    token: Joi.string().required(),
+    newPassword: Joi.string().min(8).max(128).required()
+  }),
+  createPaymentIntent: Joi.object({
+    amount: Joi.number().positive().required(),
+    currency: Joi.string().length(3).default('usd'),
+    rideId: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null),
+    packageId: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null),
+    description: Joi.string().max(500).allow('', null)
+  }),
+  sendMessage: Joi.object({
+    recipientId: Joi.string().required(),
+    content: Joi.string().min(1).max(5000).required(),
+    messageType: Joi.string().valid('text', 'image', 'file', 'location').default('text'),
+    attachmentUrl: Joi.string().uri().allow('', null)
+  }),
+  rideRating: Joi.object({
+    ratedId: Joi.string().required(),
+    rating: Joi.number().integer().min(1).max(5).required(),
+    comment: Joi.string().max(1000).allow('', null)
+  })
+};
+
+// Validation middleware factory
+function validate(schemaName) {
+  return (req, res, next) => {
+    const schema = schemas[schemaName];
+    if (!schema) return next();
+    const { error, value } = schema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.details.map(d => ({ field: d.path.join('.'), message: d.message }))
+      });
+    }
+    req.body = value;
+    next();
+  };
+}
+
+// Stripe payment processing
+const Stripe = require('stripe');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2023-10-16',
+});
+
+// File upload - R2/S3 compatible storage
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const multer = require('multer');
+const path = require('path');
+const crypto = require('crypto');
+
+// Initialize R2/S3 client
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: process.env.CLOUDFLARE_R2_ENDPOINT || `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY || process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
+  },
+});
+
+const R2_BUCKET = process.env.CLOUDFLARE_R2_BUCKET || 'aryv-app-platform-bucket';
+const R2_PUBLIC_URL = process.env.CLOUDFLARE_R2_PUBLIC_URL || '';
+
+// Multer configuration - store in memory before uploading to R2
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Allowed: JPEG, PNG, WebP, PDF'), false);
+    }
+  },
+});
+
+// Helper: Upload buffer to R2
+async function uploadToR2(buffer, key, contentType) {
+  const command = new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+  });
+  await s3Client.send(command);
+  return `${R2_PUBLIC_URL}/${key}`;
+}
+
+// Helper: Generate unique file key
+function generateFileKey(userId, purpose, originalName) {
+  const ext = path.extname(originalName);
+  const hash = crypto.randomBytes(8).toString('hex');
+  const timestamp = Date.now();
+  return `${purpose}/${userId}/${timestamp}-${hash}${ext}`;
+}
+
+// Firebase Cloud Messaging push notification helper
+// Uses FCM HTTP v1 API via legacy server key (no SDK needed)
+const FCM_SERVER_KEY = process.env.FCM_SERVER_KEY || '';
+
+async function sendPushNotification(userId, title, body, data = {}) {
+  if (!FCM_SERVER_KEY) {
+    console.log(`[FCM] No server key configured. Skipping push for user ${userId}: ${title}`);
+    return { sent: false, reason: 'no_fcm_key' };
+  }
+
+  try {
+    // Get active push tokens for user
+    const tokenResult = await pool.query(
+      'SELECT token, platform FROM push_tokens WHERE user_id = $1 AND is_active = TRUE',
+      [userId]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return { sent: false, reason: 'no_tokens' };
+    }
+
+    const fetch = require('node-fetch');
+    const results = [];
+
+    for (const row of tokenResult.rows) {
+      try {
+        const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `key=${FCM_SERVER_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            to: row.token,
+            notification: { title, body },
+            data: { ...data, click_action: 'FLUTTER_NOTIFICATION_CLICK' },
+            priority: 'high'
+          })
+        });
+
+        const result = await response.json();
+
+        // If token is invalid, deactivate it
+        if (result.failure && result.results?.[0]?.error === 'NotRegistered') {
+          await pool.query(
+            'UPDATE push_tokens SET is_active = FALSE WHERE token = $1',
+            [row.token]
+          );
+        }
+
+        results.push({ token: row.token.substring(0, 10) + '...', success: result.success === 1 });
+      } catch (fcmErr) {
+        results.push({ token: row.token.substring(0, 10) + '...', success: false, error: fcmErr.message });
+      }
+    }
+
+    return { sent: true, results };
+  } catch (error) {
+    console.error('[FCM] Push notification error:', error.message);
+    return { sent: false, reason: error.message };
+  }
+}
+
+// Helper: create notification in DB and optionally push
+async function createNotification(userId, type, title, message, data = {}, push = true) {
+  try {
+    await pool.query(
+      `INSERT INTO notifications (user_id, type, title, message, data, created_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+      [userId, type, title, message, JSON.stringify(data)]
+    );
+
+    if (push) {
+      await sendPushNotification(userId, title, message, data);
+    }
+
+    // Also emit via Socket.io if connected
+    if (connectedUsers && connectedUsers.has(userId)) {
+      io.to(connectedUsers.get(userId)).emit('notification', {
+        type, title, message, data,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('[Notification] Failed to create:', error.message);
+  }
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -95,6 +305,18 @@ async function initializeDatabase() {
       END IF;
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='profile_picture') THEN
         ALTER TABLE users ADD COLUMN profile_picture VARCHAR(500);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='device_info') THEN
+        ALTER TABLE users ADD COLUMN device_info JSONB;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_active') THEN
+        ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_verified') THEN
+        ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT FALSE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='stripe_customer_id') THEN
+        ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(100);
       END IF;
     END $$;
 
@@ -218,11 +440,123 @@ async function initializeDatabase() {
       END IF;
     END $$;
 
+    -- Create user_preferences table
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      language VARCHAR(10) DEFAULT 'en',
+      currency VARCHAR(10) DEFAULT 'BWP',
+      notifications_enabled BOOLEAN DEFAULT TRUE,
+      push_enabled BOOLEAN DEFAULT TRUE,
+      email_notifications BOOLEAN DEFAULT TRUE,
+      sms_notifications BOOLEAN DEFAULT FALSE,
+      dark_mode BOOLEAN DEFAULT FALSE,
+      location_sharing BOOLEAN DEFAULT TRUE,
+      data_usage VARCHAR(20) DEFAULT 'normal',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id)
+    );
+
+    -- Create group_chats table
+    CREATE TABLE IF NOT EXISTS group_chats (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      description TEXT,
+      creator_id TEXT NOT NULL,
+      ride_id INTEGER,
+      chat_type VARCHAR(20) DEFAULT 'group',
+      avatar_url VARCHAR(500),
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create group_chat_members table
+    CREATE TABLE IF NOT EXISTS group_chat_members (
+      id SERIAL PRIMARY KEY,
+      group_chat_id INTEGER NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      role VARCHAR(20) DEFAULT 'member',
+      joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(group_chat_id, user_id)
+    );
+
+    -- Create chat_messages table
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id SERIAL PRIMARY KEY,
+      sender_id TEXT NOT NULL,
+      recipient_id TEXT,
+      group_chat_id INTEGER REFERENCES group_chats(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      message_type VARCHAR(20) DEFAULT 'text',
+      attachment_url VARCHAR(500),
+      is_read BOOLEAN DEFAULT FALSE,
+      read_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create ride_ratings table
+    CREATE TABLE IF NOT EXISTS ride_ratings (
+      id SERIAL PRIMARY KEY,
+      ride_id INTEGER NOT NULL,
+      rater_id TEXT NOT NULL,
+      rated_id TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      comment TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(ride_id, rater_id)
+    );
+
+    -- Create password_reset_tokens table
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token VARCHAR(255) NOT NULL UNIQUE,
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      used BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create uploaded_files table for R2 tracking
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      file_key VARCHAR(500) NOT NULL,
+      file_url VARCHAR(1000),
+      file_type VARCHAR(50) NOT NULL,
+      file_size INTEGER,
+      mime_type VARCHAR(100),
+      purpose VARCHAR(50) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create push_tokens table for FCM
+    CREATE TABLE IF NOT EXISTS push_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL,
+      platform VARCHAR(20) DEFAULT 'android',
+      device_id VARCHAR(100),
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, token)
+    );
+
     -- Create indexes if they don't exist
     CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
     CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
     CREATE INDEX IF NOT EXISTS idx_bookings_ride_id ON bookings(ride_id);
     CREATE INDEX IF NOT EXISTS idx_bookings_passenger_id ON bookings(passenger_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_sender ON chat_messages(sender_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_recipient ON chat_messages(recipient_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_group ON chat_messages(group_chat_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_user_preferences_user ON user_preferences(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ride_ratings_ride ON ride_ratings(ride_id);
+    CREATE INDEX IF NOT EXISTS idx_uploaded_files_user ON uploaded_files(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
   `;
 
   await pool.query(initQueries);
@@ -378,6 +712,36 @@ const rateLimiter = rateLimit({
 
 app.use('/api', rateLimiter);
 
+// Strict rate limiting for auth endpoints (brute force protection)
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window
+  message: {
+    success: false,
+    message: 'Too many authentication attempts. Please try again in 15 minutes.',
+    code: 'RATE_LIMIT_AUTH'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 attempts per hour
+  message: {
+    success: false,
+    message: 'Too many password reset requests. Please try again later.',
+    code: 'RATE_LIMIT_RESET'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/register', authRateLimiter);
+app.use('/api/auth/forgot-password', passwordResetLimiter);
+app.use('/api/auth/reset-password', passwordResetLimiter);
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -479,7 +843,7 @@ app.post('/api/db/initialize', async (req, res) => {
 });
 
 // Authentication endpoints
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', validate('login'), async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -496,9 +860,8 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // For development, allow simple passwords or verify hash
-    const passwordValid = password === 'admin123' || password === 'test123' || 
-                         await bcrypt.compare(password, user.password_hash);
+    // Verify password hash
+    const passwordValid = user.password_hash && await bcrypt.compare(password, user.password_hash);
 
     if (!passwordValid) {
       return res.status(401).json({
@@ -559,7 +922,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // User registration endpoint
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', validate('register'), async (req, res) => {
   try {
     const { email, password, firstName, lastName, phone, role = 'passenger' } = req.body;
 
@@ -802,11 +1165,233 @@ app.get('/api/auth/secret-info', authenticateToken, (req, res) => {
       message: 'Admin access required'
     });
   }
-  
+
   res.json({
     success: true,
     data: jwtManager.getSecretInfo()
   });
+});
+
+// Logout endpoint - invalidate token on client side, record logout
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Update last_login to null or record logout time
+    await pool.query(
+      'UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Logout failed'
+    });
+  }
+});
+
+// Forgot password - send reset token via email
+app.post('/api/auth/forgot-password', validate('forgotPassword'), async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Check if user exists
+    const userResult = await pool.query(
+      'SELECT id, email, first_name FROM users WHERE email = $1',
+      [email]
+    );
+
+    // Always return success to prevent email enumeration attacks
+    if (userResult.rows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'If an account exists with that email, a password reset link has been sent'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate secure reset token
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour expiry
+
+    // Store token in database
+    await pool.query(
+      'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
+      [user.id, resetToken, expiresAt]
+    );
+
+    // Send reset email (if nodemailer is configured)
+    try {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.sendgrid.net',
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        auth: {
+          user: process.env.SMTP_USER || 'apikey',
+          pass: process.env.SENDGRID_API_KEY || process.env.SMTP_PASS
+        }
+      });
+
+      const resetUrl = `https://aryv-app.com/reset-password?token=${resetToken}`;
+
+      await transporter.sendMail({
+        from: process.env.FROM_EMAIL || 'noreply@aryv-app.com',
+        to: email,
+        subject: 'ARYV - Password Reset Request',
+        html: `
+          <h2>Password Reset</h2>
+          <p>Hi ${user.first_name},</p>
+          <p>You requested a password reset. Click the link below to reset your password:</p>
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#4F46E5;color:white;text-decoration:none;border-radius:6px;">Reset Password</a>
+          <p>This link expires in 1 hour.</p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <p>- The ARYV Team</p>
+        `
+      });
+    } catch (emailErr) {
+      console.error('Email sending failed (reset will still work via token):', emailErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'If an account exists with that email, a password reset link has been sent',
+      // Include token in dev mode for testing
+      ...(process.env.NODE_ENV !== 'production' && { resetToken })
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process password reset request'
+    });
+  }
+});
+
+// Reset password - verify token and set new password
+app.post('/api/auth/reset-password', validate('resetPassword'), async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and new password are required'
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters long'
+      });
+    }
+
+    // Find valid token
+    const tokenResult = await pool.query(
+      'SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = $1',
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+
+    const resetRecord = tokenResult.rows[0];
+
+    if (resetRecord.used) {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset token has already been used'
+      });
+    }
+
+    if (new Date(resetRecord.expires_at) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset token has expired'
+      });
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // Update password and mark token as used
+    await pool.query('BEGIN');
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [passwordHash, resetRecord.user_id]
+    );
+    await pool.query(
+      'UPDATE password_reset_tokens SET used = TRUE WHERE token = $1',
+      [token]
+    );
+    await pool.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully'
+    });
+  } catch (error) {
+    await pool.query('ROLLBACK').catch(() => {});
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
+    });
+  }
+});
+
+// Verify token endpoint
+app.get('/api/auth/verify', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const userResult = await pool.query(
+      'SELECT id, email, first_name, last_name, role, is_active, is_verified FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+    res.json({
+      success: true,
+      data: {
+        valid: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role,
+          isActive: user.is_active,
+          isVerified: user.is_verified
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Token verify error:', error);
+    res.status(500).json({ success: false, message: 'Verification failed' });
+  }
 });
 
 // Get user profile
@@ -1786,6 +2371,15 @@ app.post('/api/rides/:id/book', authenticateToken, async (req, res) => {
     const bookingResult = await pool.query(bookingQuery, [
       rideId, passengerId, seats, totalPrice, pickupNote || null
     ]);
+
+    // Notify driver about new booking
+    createNotification(
+      ride.driver_id,
+      'ride_update',
+      'New Booking',
+      `Someone booked ${seats} seat(s) on your ride`,
+      { rideId, bookingId: bookingResult.rows[0].id, seats }
+    );
 
     res.status(201).json({
       success: true,
@@ -4033,283 +4627,620 @@ function getPlaceType(types) {
 }
 
 // ==========================================
-// PAYMENT ENDPOINTS
+// PAYMENT ENDPOINTS (Stripe + Cash + Escrow)
 // ==========================================
 
-// Create cash payment
-app.post('/api/payments/cash/create', authenticateToken, async (req, res) => {
+// Create a Stripe payment intent for a ride or package
+app.post('/api/payments/create-intent', authenticateToken, validate('createPaymentIntent'), async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { amount, rideId, packageId, currency = 'USD', description } = req.body;
+    const { amount, currency = 'usd', rideId, packageId, description } = req.body;
 
-    const transactionId = `CASH${Date.now().toString(36).toUpperCase()}`;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid amount is required' });
+    }
+
+    // Get or create Stripe customer
+    let stripeCustomerId;
+    const userResult = await pool.query(
+      'SELECT stripe_customer_id, email, first_name, last_name FROM users WHERE id = $1',
+      [userId]
+    );
+    const user = userResult.rows[0];
+
+    if (user && user.stripe_customer_id) {
+      stripeCustomerId = user.stripe_customer_id;
+    } else if (user) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: `${user.first_name} ${user.last_name}`,
+        metadata: { userId }
+      });
+      stripeCustomerId = customer.id;
+      await pool.query('UPDATE users SET stripe_customer_id = $1 WHERE id = $2', [stripeCustomerId, userId]);
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Stripe uses cents
+      currency: currency.toLowerCase(),
+      customer: stripeCustomerId,
+      description: description || `ARYV payment`,
+      metadata: { userId, rideId: rideId || '', packageId: packageId || '' }
+    });
+
+    // Record in payments table
+    await pool.query(
+      `INSERT INTO payments (user_id, amount, currency, payment_method, status, stripe_payment_intent_id, ride_id, description, created_at)
+       VALUES ($1, $2, $3, 'card', 'pending', $4, $5, $6, CURRENT_TIMESTAMP)`,
+      [userId, amount, currency, paymentIntent.id, rideId || null, description || null]
+    );
 
     res.status(201).json({
       success: true,
       data: {
-        transactionId,
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        amount,
+        currency
+      }
+    });
+  } catch (error) {
+    console.error('Create payment intent error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create payment' });
+  }
+});
+
+// Get payment methods for user
+app.get('/api/payments/methods', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const userResult = await pool.query('SELECT stripe_customer_id FROM users WHERE id = $1', [userId]);
+
+    if (!userResult.rows[0]?.stripe_customer_id) {
+      return res.json({ success: true, data: { methods: [] } });
+    }
+
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: userResult.rows[0].stripe_customer_id,
+      type: 'card',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        methods: paymentMethods.data.map(pm => ({
+          id: pm.id,
+          brand: pm.card.brand,
+          last4: pm.card.last4,
+          expMonth: pm.card.exp_month,
+          expYear: pm.card.exp_year,
+          isDefault: false
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Get payment methods error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get payment methods' });
+  }
+});
+
+// Add a payment method
+app.post('/api/payments/methods', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { paymentMethodId } = req.body;
+
+    if (!paymentMethodId) {
+      return res.status(400).json({ success: false, message: 'paymentMethodId is required' });
+    }
+
+    // Get or create Stripe customer
+    let userResult = await pool.query('SELECT stripe_customer_id, email, first_name, last_name FROM users WHERE id = $1', [userId]);
+    let stripeCustomerId = userResult.rows[0]?.stripe_customer_id;
+
+    if (!stripeCustomerId) {
+      const user = userResult.rows[0];
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: `${user.first_name} ${user.last_name}`,
+        metadata: { userId }
+      });
+      stripeCustomerId = customer.id;
+      await pool.query('UPDATE users SET stripe_customer_id = $1 WHERE id = $2', [stripeCustomerId, userId]);
+    }
+
+    await stripe.paymentMethods.attach(paymentMethodId, { customer: stripeCustomerId });
+
+    res.json({ success: true, message: 'Payment method added' });
+  } catch (error) {
+    console.error('Add payment method error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add payment method' });
+  }
+});
+
+// Remove a payment method
+app.delete('/api/payments/methods/:methodId', authenticateToken, async (req, res) => {
+  try {
+    await stripe.paymentMethods.detach(req.params.methodId);
+    res.json({ success: true, message: 'Payment method removed' });
+  } catch (error) {
+    console.error('Remove payment method error:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove payment method' });
+  }
+});
+
+// Process a charge (confirm payment intent)
+app.post('/api/payments/charge', authenticateToken, async (req, res) => {
+  try {
+    const { paymentIntentId, paymentMethodId } = req.body;
+
+    if (!paymentIntentId) {
+      return res.status(400).json({ success: false, message: 'paymentIntentId is required' });
+    }
+
+    const intent = await stripe.paymentIntents.confirm(paymentIntentId, {
+      payment_method: paymentMethodId
+    });
+
+    // Update payment status in DB
+    await pool.query(
+      `UPDATE payments SET status = $1, stripe_charge_id = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE stripe_payment_intent_id = $3`,
+      [intent.status === 'succeeded' ? 'completed' : intent.status, intent.latest_charge, paymentIntentId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        status: intent.status,
+        paymentIntentId: intent.id
+      }
+    });
+  } catch (error) {
+    console.error('Charge error:', error);
+    res.status(500).json({ success: false, message: 'Payment failed' });
+  }
+});
+
+// Refund a payment
+app.post('/api/payments/refund', authenticateToken, async (req, res) => {
+  try {
+    const { paymentIntentId, amount, reason } = req.body;
+
+    if (!paymentIntentId) {
+      return res.status(400).json({ success: false, message: 'paymentIntentId is required' });
+    }
+
+    const refundParams = { payment_intent: paymentIntentId };
+    if (amount) refundParams.amount = Math.round(amount * 100);
+    if (reason) refundParams.reason = reason;
+
+    const refund = await stripe.refunds.create(refundParams);
+
+    // Update payment status
+    await pool.query(
+      `UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP
+       WHERE stripe_payment_intent_id = $1`,
+      [paymentIntentId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        refundId: refund.id,
+        status: refund.status,
+        amount: refund.amount / 100
+      }
+    });
+  } catch (error) {
+    console.error('Refund error:', error);
+    res.status(500).json({ success: false, message: 'Refund failed' });
+  }
+});
+
+// Get payment history
+app.get('/api/payments/history', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { limit = 20, offset = 0 } = req.query;
+
+    const result = await pool.query(
+      `SELECT id, amount, currency, payment_method, status, stripe_payment_intent_id,
+              ride_id, description, created_at, updated_at
+       FROM payments WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, parseInt(limit), parseInt(offset)]
+    );
+
+    const countResult = await pool.query('SELECT COUNT(*) FROM payments WHERE user_id = $1', [userId]);
+
+    res.json({
+      success: true,
+      data: {
+        transactions: result.rows,
+        total: parseInt(countResult.rows[0].count),
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      }
+    });
+  } catch (error) {
+    console.error('Payment history error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch payment history' });
+  }
+});
+
+// Stripe webhook handler (no auth - Stripe signs it)
+app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  try {
+    let event;
+    if (webhookSecret && sig) {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } else {
+      event = req.body;
+    }
+
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object;
+        await pool.query(
+          `UPDATE payments SET status = 'completed', stripe_charge_id = $1, updated_at = CURRENT_TIMESTAMP
+           WHERE stripe_payment_intent_id = $2`,
+          [pi.latest_charge, pi.id]
+        );
+        // Notify user of successful payment
+        if (pi.metadata?.userId) {
+          createNotification(
+            pi.metadata.userId, 'payment',
+            'Payment Successful',
+            `Your payment of ${(pi.amount / 100).toFixed(2)} ${pi.currency.toUpperCase()} was processed successfully`,
+            { paymentIntentId: pi.id, amount: pi.amount / 100 }
+          );
+        }
+        break;
+      }
+      case 'payment_intent.payment_failed': {
+        const pi = event.data.object;
+        await pool.query(
+          `UPDATE payments SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+           WHERE stripe_payment_intent_id = $1`,
+          [pi.id]
+        );
+        break;
+      }
+      case 'charge.refunded': {
+        const charge = event.data.object;
+        await pool.query(
+          `UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP
+           WHERE stripe_charge_id = $1`,
+          [charge.id]
+        );
+        break;
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(400).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Create cash payment (DB-backed)
+app.post('/api/payments/cash/create', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { amount, rideId, packageId, currency = 'BWP', description } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid amount is required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO payments (user_id, amount, currency, payment_method, status, ride_id, description, created_at)
+       VALUES ($1, $2, $3, 'cash', 'pending', $4, $5, CURRENT_TIMESTAMP) RETURNING *`,
+      [userId, amount, currency, rideId || null, description || 'Cash payment']
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        transactionId: result.rows[0].id,
         type: 'cash',
         amount: parseFloat(amount),
         currency,
         status: 'pending',
         rideId,
-        packageId,
-        description,
-        createdAt: new Date().toISOString()
-      },
-      timestamp: new Date().toISOString()
+        createdAt: result.rows[0].created_at
+      }
     });
   } catch (error) {
     console.error('Create cash payment error:', error);
-    res.status(500).json({ success: false, error: 'Failed to create payment' });
+    res.status(500).json({ success: false, message: 'Failed to create cash payment' });
   }
 });
 
 // Get cash transaction
 app.get('/api/payments/cash/:transactionId', authenticateToken, async (req, res) => {
   try {
-    const { transactionId } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM payments WHERE id = $1 AND payment_method = $2',
+      [req.params.transactionId, 'cash']
+    );
 
-    res.json({
-      success: true,
-      data: {
-        transactionId,
-        type: 'cash',
-        amount: 25.00,
-        currency: 'USD',
-        status: 'completed',
-        createdAt: new Date().toISOString()
-      },
-      timestamp: new Date().toISOString()
-    });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch transaction' });
+    res.status(500).json({ success: false, message: 'Failed to fetch transaction' });
   }
 });
 
-// Get payment history
+// Get cash payment history
 app.get('/api/payments/cash/history', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const { limit = 20, offset = 0 } = req.query;
 
+    const result = await pool.query(
+      `SELECT * FROM payments WHERE user_id = $1 AND payment_method = 'cash'
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, parseInt(limit), parseInt(offset)]
+    );
+
+    const countResult = await pool.query(
+      "SELECT COUNT(*) FROM payments WHERE user_id = $1 AND payment_method = 'cash'",
+      [userId]
+    );
+
     res.json({
       success: true,
       data: {
-        transactions: [],
-        total: 0,
+        transactions: result.rows,
+        total: parseInt(countResult.rows[0].count),
         limit: parseInt(limit),
         offset: parseInt(offset)
-      },
-      timestamp: new Date().toISOString()
+      }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch history' });
+    res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });
 
-// Get wallet balance
+// Get wallet balance (sum of completed payments)
 app.get('/api/payments/cash/wallet', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    const result = await pool.query(
+      `SELECT
+        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as balance,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount
+       FROM payments WHERE user_id = $1`,
+      [userId]
+    );
+
     res.json({
       success: true,
       data: {
-        balance: 0.00,
-        currency: 'USD',
-        pendingAmount: 0.00,
-        availableBalance: 0.00
-      },
-      timestamp: new Date().toISOString()
+        balance: parseFloat(result.rows[0].balance),
+        currency: 'BWP',
+        pendingAmount: parseFloat(result.rows[0].pending_amount),
+        availableBalance: parseFloat(result.rows[0].balance)
+      }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch wallet' });
+    res.status(500).json({ success: false, message: 'Failed to fetch wallet' });
   }
 });
 
-// Escrow endpoints
+// Escrow: create
 app.post('/api/payments/escrow/create', authenticateToken, async (req, res) => {
   try {
-    const { amount, rideId, packageId, currency = 'USD' } = req.body;
-    const escrowId = `ESC${Date.now().toString(36).toUpperCase()}`;
+    const userId = req.user.userId;
+    const { amount, rideId, packageId, currency = 'BWP' } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid amount is required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO payments (user_id, amount, currency, payment_method, status, ride_id, description, created_at)
+       VALUES ($1, $2, $3, 'escrow', 'escrow_created', $4, $5, CURRENT_TIMESTAMP) RETURNING *`,
+      [userId, amount, currency, rideId || null, `Escrow for ${rideId ? 'ride' : 'package'}`]
+    );
 
     res.status(201).json({
       success: true,
       data: {
-        escrowId,
+        escrowId: result.rows[0].id,
         amount: parseFloat(amount),
         currency,
         status: 'created',
         rideId,
         packageId,
-        createdAt: new Date().toISOString()
-      },
-      timestamp: new Date().toISOString()
+        createdAt: result.rows[0].created_at
+      }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to create escrow' });
+    res.status(500).json({ success: false, message: 'Failed to create escrow' });
   }
 });
 
+// Escrow: fund
 app.post('/api/payments/escrow/:escrowId/fund', authenticateToken, async (req, res) => {
   try {
-    const { escrowId } = req.params;
-
-    res.json({
-      success: true,
-      data: { escrowId, status: 'funded', fundedAt: new Date().toISOString() },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      `UPDATE payments SET status = 'escrow_funded', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND payment_method = 'escrow' RETURNING *`,
+      [req.params.escrowId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    res.json({ success: true, data: { escrowId: result.rows[0].id, status: 'funded', fundedAt: result.rows[0].updated_at } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fund escrow' });
+    res.status(500).json({ success: false, message: 'Failed to fund escrow' });
   }
 });
 
+// Escrow: release
 app.post('/api/payments/escrow/:escrowId/release', authenticateToken, async (req, res) => {
   try {
-    const { escrowId } = req.params;
-
-    res.json({
-      success: true,
-      data: { escrowId, status: 'released', releasedAt: new Date().toISOString() },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      `UPDATE payments SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND payment_method = 'escrow' RETURNING *`,
+      [req.params.escrowId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    res.json({ success: true, data: { escrowId: result.rows[0].id, status: 'released', releasedAt: result.rows[0].updated_at } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to release escrow' });
+    res.status(500).json({ success: false, message: 'Failed to release escrow' });
   }
 });
 
+// Escrow: refund
 app.post('/api/payments/escrow/:escrowId/refund', authenticateToken, async (req, res) => {
   try {
-    const { escrowId } = req.params;
-
-    res.json({
-      success: true,
-      data: { escrowId, status: 'refunded', refundedAt: new Date().toISOString() },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      `UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND payment_method = 'escrow' RETURNING *`,
+      [req.params.escrowId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    res.json({ success: true, data: { escrowId: result.rows[0].id, status: 'refunded', refundedAt: result.rows[0].updated_at } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to refund escrow' });
+    res.status(500).json({ success: false, message: 'Failed to refund escrow' });
   }
 });
 
+// Escrow: dispute
 app.post('/api/payments/escrow/:escrowId/dispute', authenticateToken, async (req, res) => {
   try {
-    const { escrowId } = req.params;
     const { reason } = req.body;
-
-    res.json({
-      success: true,
-      data: { escrowId, status: 'disputed', reason, disputedAt: new Date().toISOString() },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      `UPDATE payments SET status = 'disputed', description = COALESCE(description, '') || ' | Dispute: ' || $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND payment_method = 'escrow' RETURNING *`,
+      [req.params.escrowId, reason || 'No reason provided']
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    res.json({ success: true, data: { escrowId: result.rows[0].id, status: 'disputed', reason, disputedAt: result.rows[0].updated_at } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to dispute escrow' });
+    res.status(500).json({ success: false, message: 'Failed to dispute escrow' });
   }
 });
 
+// Escrow: get by ID
 app.get('/api/payments/escrow/:escrowId', authenticateToken, async (req, res) => {
   try {
-    const { escrowId } = req.params;
-
-    res.json({
-      success: true,
-      data: {
-        escrowId,
-        amount: 0,
-        currency: 'USD',
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      "SELECT * FROM payments WHERE id = $1 AND payment_method = 'escrow'",
+      [req.params.escrowId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    res.json({ success: true, data: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch escrow' });
+    res.status(500).json({ success: false, message: 'Failed to fetch escrow' });
   }
 });
 
+// Escrow: get by ride
 app.get('/api/payments/escrow/ride/:rideId', authenticateToken, async (req, res) => {
   try {
-    res.json({
-      success: true,
-      data: null,
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      "SELECT * FROM payments WHERE ride_id = $1 AND payment_method = 'escrow' ORDER BY created_at DESC LIMIT 1",
+      [req.params.rideId]
+    );
+    res.json({ success: true, data: result.rows[0] || null });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch escrow' });
+    res.status(500).json({ success: false, message: 'Failed to fetch escrow' });
   }
 });
 
+// Escrow: wallet balance
 app.get('/api/payments/escrow/wallet/balance', authenticateToken, async (req, res) => {
   try {
+    const userId = req.user.userId;
+    const result = await pool.query(
+      `SELECT
+        COALESCE(SUM(CASE WHEN status = 'escrow_funded' THEN amount ELSE 0 END), 0) as balance,
+        COALESCE(SUM(CASE WHEN status IN ('escrow_created','escrow_funded') THEN amount ELSE 0 END), 0) as pending_release
+       FROM payments WHERE user_id = $1 AND payment_method = 'escrow'`,
+      [userId]
+    );
     res.json({
       success: true,
-      data: { balance: 0, pendingRelease: 0, currency: 'USD' },
-      timestamp: new Date().toISOString()
+      data: { balance: parseFloat(result.rows[0].balance), pendingRelease: parseFloat(result.rows[0].pending_release), currency: 'BWP' }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch balance' });
+    res.status(500).json({ success: false, message: 'Failed to fetch balance' });
   }
 });
 
+// Escrow: statistics
 app.get('/api/payments/escrow/statistics', authenticateToken, async (req, res) => {
   try {
-    res.json({
-      success: true,
-      data: {
-        totalEscrows: 0,
-        totalAmount: 0,
-        releasedAmount: 0,
-        pendingAmount: 0
-      },
-      timestamp: new Date().toISOString()
-    });
+    const userId = req.user.userId;
+    const result = await pool.query(
+      `SELECT
+        COUNT(*) as total_escrows,
+        COALESCE(SUM(amount), 0) as total_amount,
+        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as released_amount,
+        COALESCE(SUM(CASE WHEN status IN ('escrow_created','escrow_funded') THEN amount ELSE 0 END), 0) as pending_amount
+       FROM payments WHERE user_id = $1 AND payment_method = 'escrow'`,
+      [userId]
+    );
+    res.json({ success: true, data: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch statistics' });
+    res.status(500).json({ success: false, message: 'Failed to fetch statistics' });
   }
 });
 
+// Escrow: history
 app.get('/api/payments/escrow/history', authenticateToken, async (req, res) => {
   try {
-    res.json({
-      success: true,
-      data: { escrows: [], total: 0 },
-      timestamp: new Date().toISOString()
-    });
+    const userId = req.user.userId;
+    const result = await pool.query(
+      "SELECT * FROM payments WHERE user_id = $1 AND payment_method = 'escrow' ORDER BY created_at DESC",
+      [userId]
+    );
+    res.json({ success: true, data: { escrows: result.rows, total: result.rows.length } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch history' });
+    res.status(500).json({ success: false, message: 'Failed to fetch history' });
   }
 });
 
+// Escrow: auto-release check
 app.get('/api/payments/escrow/:escrowId/auto-release-check', authenticateToken, async (req, res) => {
   try {
-    res.json({
-      success: true,
-      data: { eligible: false, reason: 'No auto-release configured' },
-      timestamp: new Date().toISOString()
-    });
+    const result = await pool.query(
+      "SELECT * FROM payments WHERE id = $1 AND payment_method = 'escrow'",
+      [req.params.escrowId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Escrow not found' });
+    const escrow = result.rows[0];
+    // Auto-release after 24h of funded status
+    const hoursSinceFunded = (Date.now() - new Date(escrow.updated_at).getTime()) / (1000 * 60 * 60);
+    const eligible = escrow.status === 'escrow_funded' && hoursSinceFunded >= 24;
+    res.json({ success: true, data: { eligible, reason: eligible ? 'Auto-release period elapsed' : 'Not yet eligible' } });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to check eligibility' });
+    res.status(500).json({ success: false, message: 'Failed to check eligibility' });
   }
 });
 
+// Escrow: eligibility check
 app.post('/api/payments/escrow/eligibility-check', authenticateToken, async (req, res) => {
   try {
     const { amount } = req.body;
-
+    const eligible = amount > 0 && amount <= 50000;
     res.json({
       success: true,
-      data: {
-        eligible: true,
-        maxAmount: 10000,
-        minAmount: 1,
-        reason: null
-      },
-      timestamp: new Date().toISOString()
+      data: { eligible, maxAmount: 50000, minAmount: 1, reason: eligible ? null : 'Amount out of range' }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to check eligibility' });
+    res.status(500).json({ success: false, message: 'Failed to check eligibility' });
   }
 });
 
@@ -4321,10 +5252,22 @@ app.post('/api/payments/escrow/eligibility-check', authenticateToken, async (req
 app.post('/api/notifications/register-token', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { token, platform, deviceId } = req.body;
+    const { token, platform = 'android', deviceId } = req.body;
 
-    // In production, store token in database
-    console.log(`Push token registered for user ${userId}: ${token?.substring(0, 20)}...`);
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Push token is required' });
+    }
+
+    // Upsert token in database
+    await pool.query(
+      `INSERT INTO push_tokens (user_id, token, platform, device_id, is_active, updated_at)
+       VALUES ($1, $2, $3, $4, TRUE, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id, token) DO UPDATE SET
+         is_active = TRUE, platform = $3, device_id = $4, updated_at = CURRENT_TIMESTAMP`,
+      [userId, token, platform, deviceId || null]
+    );
+
+    console.log(`Push token registered for user ${userId}: ${token.substring(0, 20)}...`);
 
     res.json({
       success: true,
@@ -4383,6 +5326,402 @@ app.get('/api/notifications/preferences', authenticateToken, async (req, res) =>
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to fetch preferences' });
+  }
+});
+
+// ==========================================
+// NOTIFICATION LIST & READ ENDPOINTS
+// ==========================================
+
+// Get notifications for user
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { limit = 50, offset = 0, unreadOnly } = req.query;
+
+    let query = `SELECT id, user_id, title, message, type, data, is_read, created_at
+                 FROM notifications WHERE user_id = $1`;
+    const params = [userId];
+
+    if (unreadOnly === 'true') {
+      query += ' AND is_read = FALSE';
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    params.push(parseInt(limit), parseInt(offset));
+
+    const result = await pool.query(query, params);
+
+    const countResult = await pool.query(
+      'SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE is_read = FALSE) as unread FROM notifications WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        notifications: result.rows,
+        total: parseInt(countResult.rows[0].total),
+        unread: parseInt(countResult.rows[0].unread)
+      }
+    });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
+  }
+});
+
+// Mark notification as read
+app.put('/api/notifications/:notificationId/read', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    await pool.query(
+      'UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2',
+      [req.params.notificationId, userId]
+    );
+    res.json({ success: true, message: 'Notification marked as read' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to mark notification' });
+  }
+});
+
+// Mark all notifications as read
+app.put('/api/notifications/read-all', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    await pool.query(
+      'UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND is_read = FALSE',
+      [userId]
+    );
+    res.json({ success: true, message: 'All notifications marked as read' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to mark notifications' });
+  }
+});
+
+// ==========================================
+// CHAT & MESSAGING ENDPOINTS
+// ==========================================
+
+// Get conversations (1:1 chats - latest message per conversation partner)
+app.get('/api/chat/conversations', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const result = await pool.query(`
+      WITH conversation_partners AS (
+        SELECT DISTINCT
+          CASE WHEN sender_id = $1 THEN recipient_id ELSE sender_id END as partner_id
+        FROM chat_messages
+        WHERE (sender_id = $1 OR recipient_id = $1) AND group_chat_id IS NULL
+      ),
+      latest_messages AS (
+        SELECT DISTINCT ON (partner_id)
+          cp.partner_id,
+          cm.id as message_id,
+          cm.content,
+          cm.message_type,
+          cm.sender_id,
+          cm.is_read,
+          cm.created_at
+        FROM conversation_partners cp
+        JOIN chat_messages cm ON
+          ((cm.sender_id = $1 AND cm.recipient_id = cp.partner_id)
+           OR (cm.sender_id = cp.partner_id AND cm.recipient_id = $1))
+          AND cm.group_chat_id IS NULL
+        ORDER BY cp.partner_id, cm.created_at DESC
+      )
+      SELECT
+        lm.*,
+        u.first_name, u.last_name, u.profile_picture, u.email
+      FROM latest_messages lm
+      LEFT JOIN users u ON u.id = lm.partner_id
+      ORDER BY lm.created_at DESC
+    `, [userId]);
+
+    // Count unread per conversation
+    const unreadResult = await pool.query(`
+      SELECT sender_id, COUNT(*) as unread_count
+      FROM chat_messages
+      WHERE recipient_id = $1 AND is_read = FALSE AND group_chat_id IS NULL
+      GROUP BY sender_id
+    `, [userId]);
+
+    const unreadMap = {};
+    unreadResult.rows.forEach(r => { unreadMap[r.sender_id] = parseInt(r.unread_count); });
+
+    const conversations = result.rows.map(row => ({
+      partnerId: row.partner_id,
+      partnerName: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+      partnerAvatar: row.profile_picture,
+      lastMessage: {
+        id: row.message_id,
+        content: row.content,
+        type: row.message_type,
+        senderId: row.sender_id,
+        isRead: row.is_read,
+        createdAt: row.created_at
+      },
+      unreadCount: unreadMap[row.partner_id] || 0
+    }));
+
+    res.json({ success: true, data: { conversations } });
+  } catch (error) {
+    console.error('Get conversations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch conversations' });
+  }
+});
+
+// Get messages in a 1:1 conversation
+app.get('/api/chat/messages/:partnerId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { partnerId } = req.params;
+    const { limit = 50, before } = req.query;
+
+    let query = `
+      SELECT id, sender_id, recipient_id, content, message_type, attachment_url, is_read, created_at
+      FROM chat_messages
+      WHERE group_chat_id IS NULL
+        AND ((sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1))
+    `;
+    const params = [userId, partnerId];
+
+    if (before) {
+      query += ` AND created_at < $3`;
+      params.push(before);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const result = await pool.query(query, params);
+
+    // Mark received messages as read
+    await pool.query(
+      'UPDATE chat_messages SET is_read = TRUE, read_at = CURRENT_TIMESTAMP WHERE sender_id = $1 AND recipient_id = $2 AND is_read = FALSE AND group_chat_id IS NULL',
+      [partnerId, userId]
+    );
+
+    res.json({
+      success: true,
+      data: { messages: result.rows.reverse() }
+    });
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch messages' });
+  }
+});
+
+// Send a message (1:1)
+app.post('/api/chat/send', authenticateToken, validate('sendMessage'), async (req, res) => {
+  try {
+    const senderId = req.user.userId;
+    const { recipientId, content, messageType = 'text', attachmentUrl } = req.body;
+
+    if (!recipientId || !content) {
+      return res.status(400).json({ success: false, message: 'recipientId and content are required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO chat_messages (sender_id, recipient_id, content, message_type, attachment_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING *`,
+      [senderId, recipientId, content, messageType, attachmentUrl || null]
+    );
+
+    const message = result.rows[0];
+
+    // Send via Socket.io if recipient is connected
+    if (connectedUsers.has(recipientId)) {
+      io.to(connectedUsers.get(recipientId)).emit('new_message', {
+        id: message.id,
+        senderId: message.sender_id,
+        content: message.content,
+        messageType: message.message_type,
+        attachmentUrl: message.attachment_url,
+        createdAt: message.created_at
+      });
+    }
+
+    // Push notification if recipient is offline
+    if (!connectedUsers.has(recipientId)) {
+      // Get sender name for notification
+      const senderResult = await pool.query('SELECT first_name FROM users WHERE id = $1', [senderId]);
+      const senderName = senderResult.rows[0]?.first_name || 'Someone';
+      sendPushNotification(recipientId, `New message from ${senderName}`, content.substring(0, 100), {
+        type: 'chat_message', senderId, messageId: String(message.id)
+      });
+    }
+
+    res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    console.error('Send message error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+});
+
+// Get group chats for user
+app.get('/api/chat/groups', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const result = await pool.query(`
+      SELECT gc.*, gcm.role as user_role,
+        (SELECT COUNT(*) FROM chat_messages cm WHERE cm.group_chat_id = gc.id AND cm.is_read = FALSE AND cm.sender_id != $1) as unread_count,
+        (SELECT content FROM chat_messages cm WHERE cm.group_chat_id = gc.id ORDER BY cm.created_at DESC LIMIT 1) as last_message,
+        (SELECT created_at FROM chat_messages cm WHERE cm.group_chat_id = gc.id ORDER BY cm.created_at DESC LIMIT 1) as last_message_at
+      FROM group_chats gc
+      JOIN group_chat_members gcm ON gcm.group_chat_id = gc.id
+      WHERE gcm.user_id = $1 AND gc.is_active = TRUE
+      ORDER BY last_message_at DESC NULLS LAST
+    `, [userId]);
+
+    res.json({ success: true, data: { groups: result.rows } });
+  } catch (error) {
+    console.error('Get groups error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch groups' });
+  }
+});
+
+// Create a group chat
+app.post('/api/chat/groups', authenticateToken, async (req, res) => {
+  try {
+    const creatorId = req.user.userId;
+    const { name, description, rideId, memberIds = [] } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Group name is required' });
+    }
+
+    const groupResult = await pool.query(
+      `INSERT INTO group_chats (name, description, creator_id, ride_id, created_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP) RETURNING *`,
+      [name, description || null, creatorId, rideId || null]
+    );
+
+    const group = groupResult.rows[0];
+
+    // Add creator as admin
+    await pool.query(
+      'INSERT INTO group_chat_members (group_chat_id, user_id, role) VALUES ($1, $2, $3)',
+      [group.id, creatorId, 'admin']
+    );
+
+    // Add other members
+    for (const memberId of memberIds) {
+      if (memberId !== creatorId) {
+        await pool.query(
+          'INSERT INTO group_chat_members (group_chat_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [group.id, memberId, 'member']
+        );
+      }
+    }
+
+    res.status(201).json({ success: true, data: group });
+  } catch (error) {
+    console.error('Create group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create group' });
+  }
+});
+
+// Get messages in a group chat
+app.get('/api/chat/groups/:groupId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { limit = 50, before } = req.query;
+
+    let query = `
+      SELECT cm.*, u.first_name, u.last_name, u.profile_picture
+      FROM chat_messages cm
+      LEFT JOIN users u ON u.id = cm.sender_id
+      WHERE cm.group_chat_id = $1
+    `;
+    const params = [groupId];
+
+    if (before) {
+      query += ` AND cm.created_at < $2`;
+      params.push(before);
+    }
+
+    query += ` ORDER BY cm.created_at DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const result = await pool.query(query, params);
+
+    res.json({ success: true, data: { messages: result.rows.reverse() } });
+  } catch (error) {
+    console.error('Get group messages error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch messages' });
+  }
+});
+
+// Send message to group chat
+app.post('/api/chat/groups/:groupId/messages', authenticateToken, async (req, res) => {
+  try {
+    const senderId = req.user.userId;
+    const { groupId } = req.params;
+    const { content, messageType = 'text', attachmentUrl } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ success: false, message: 'content is required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO chat_messages (sender_id, group_chat_id, content, message_type, attachment_url, created_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING *`,
+      [senderId, groupId, content, messageType, attachmentUrl || null]
+    );
+
+    const message = result.rows[0];
+
+    // Broadcast to group via Socket.io
+    io.to(`group_${groupId}`).emit('group_message', {
+      groupId: parseInt(groupId),
+      id: message.id,
+      senderId: message.sender_id,
+      content: message.content,
+      messageType: message.message_type,
+      createdAt: message.created_at
+    });
+
+    res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    console.error('Send group message error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+});
+
+// Get group members
+app.get('/api/chat/groups/:groupId/members', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT gcm.*, u.first_name, u.last_name, u.profile_picture, u.email
+      FROM group_chat_members gcm
+      LEFT JOIN users u ON u.id = gcm.user_id
+      WHERE gcm.group_chat_id = $1
+      ORDER BY gcm.role DESC, gcm.joined_at
+    `, [req.params.groupId]);
+
+    res.json({ success: true, data: { members: result.rows } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch members' });
+  }
+});
+
+// Add member to group
+app.post('/api/chat/groups/:groupId/members', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+
+    await pool.query(
+      'INSERT INTO group_chat_members (group_chat_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [req.params.groupId, userId, 'member']
+    );
+
+    res.json({ success: true, message: 'Member added' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to add member' });
   }
 });
 
@@ -4872,25 +6211,54 @@ app.get('/api/otp/settings', authenticateToken, async (req, res) => {
 // VERIFICATION ENDPOINTS
 // ==========================================
 
-app.post('/api/verification/documents/upload', authenticateToken, async (req, res) => {
+app.post('/api/verification/documents/upload', authenticateToken, upload.single('document'), async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { documentType, documentData } = req.body;
+    const documentType = req.body.documentType || 'general';
 
-    const documentId = `DOC${Date.now().toString(36).toUpperCase()}`;
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided. Send a multipart form with field name "document"'
+      });
+    }
+
+    // Upload to R2
+    const fileKey = generateFileKey(userId, `documents/${documentType}`, req.file.originalname);
+    const fileUrl = await uploadToR2(req.file.buffer, fileKey, req.file.mimetype);
+
+    // Store in database
+    const result = await pool.query(
+      `INSERT INTO uploaded_files (user_id, file_key, file_url, file_type, file_size, mime_type, purpose)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [userId, fileKey, fileUrl, documentType, req.file.size, req.file.mimetype, 'verification']
+    );
+
+    // Also record in driver_documents if the table exists
+    try {
+      await pool.query(
+        `INSERT INTO driver_documents (user_id, document_type, document_url, status, created_at)
+         VALUES ($1, $2, $3, 'pending_review', CURRENT_TIMESTAMP)`,
+        [userId, documentType, fileUrl]
+      );
+    } catch (docErr) {
+      // driver_documents table may not exist yet - that's ok
+    }
 
     res.status(201).json({
       success: true,
       message: 'Document uploaded for verification',
       data: {
-        documentId,
+        documentId: result.rows[0].id,
         documentType,
+        fileUrl,
         status: 'pending_review',
         uploadedAt: new Date().toISOString()
       },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error('Document upload error:', error);
     res.status(500).json({ success: false, error: 'Failed to upload document' });
   }
 });
@@ -4962,12 +6330,21 @@ app.use('/api/*', (req, res) => {
         'POST /api/auth/login',
         'POST /api/auth/register',
         'POST /api/auth/refresh',
+        'POST /api/auth/logout',
+        'POST /api/auth/forgot-password',
+        'POST /api/auth/reset-password',
+        'GET /api/auth/verify',
         'POST /api/auth/google/verify',
         'GET /api/auth/profile'
       ],
       users: [
         'GET /api/users',
         'GET /api/users/profile',
+        'POST /api/users/avatar',
+        'GET /api/users/settings',
+        'PUT /api/users/settings',
+        'GET /api/users/preferences',
+        'PUT /api/users/preferences',
         'PUT /api/users/profile',
         'GET /api/users/:id'
       ],
@@ -5031,6 +6408,14 @@ app.use('/api/*', (req, res) => {
         'POST /api/locations/reverse-geocode'
       ],
       payments: [
+        'POST /api/payments/create-intent',
+        'GET /api/payments/methods',
+        'POST /api/payments/methods',
+        'DELETE /api/payments/methods/:methodId',
+        'POST /api/payments/charge',
+        'POST /api/payments/refund',
+        'GET /api/payments/history',
+        'POST /api/payments/webhook',
         'POST /api/payments/cash/create',
         'GET /api/payments/cash/:id',
         'GET /api/payments/cash/history',
@@ -5048,7 +6433,21 @@ app.use('/api/*', (req, res) => {
       notifications: [
         'POST /api/notifications/register-token',
         'PUT /api/notifications/preferences',
-        'GET /api/notifications/preferences'
+        'GET /api/notifications/preferences',
+        'GET /api/notifications',
+        'PUT /api/notifications/:id/read',
+        'PUT /api/notifications/read-all'
+      ],
+      chat: [
+        'GET /api/chat/conversations',
+        'GET /api/chat/messages/:partnerId',
+        'POST /api/chat/send',
+        'GET /api/chat/groups',
+        'POST /api/chat/groups',
+        'GET /api/chat/groups/:groupId/messages',
+        'POST /api/chat/groups/:groupId/messages',
+        'GET /api/chat/groups/:groupId/members',
+        'POST /api/chat/groups/:groupId/members'
       ],
       emergency: [
         'GET /api/user/emergency-contacts',
@@ -5086,6 +6485,13 @@ app.use('/api/*', (req, res) => {
         'POST /api/verification/documents/upload',
         'GET /api/verification/status/:userId',
         'GET /api/verification/progress/:userId'
+      ],
+      uploads: [
+        'POST /api/users/avatar',
+        'POST /api/upload'
+      ],
+      ratings: [
+        'POST /api/rides/:rideId/rate'
       ],
       system: [
         'GET /api/health',
@@ -5285,6 +6691,251 @@ io.on('connection', (socket) => {
       }
     }
   });
+});
+
+// Profile photo upload
+app.post('/api/users/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided. Send a multipart form with field name "avatar"'
+      });
+    }
+
+    // Upload to R2
+    const fileKey = generateFileKey(userId, 'avatars', req.file.originalname);
+    const fileUrl = await uploadToR2(req.file.buffer, fileKey, req.file.mimetype);
+
+    // Update user profile picture
+    await pool.query(
+      'UPDATE users SET profile_picture = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [fileUrl, userId]
+    );
+
+    // Track in uploaded_files
+    await pool.query(
+      `INSERT INTO uploaded_files (user_id, file_key, file_url, file_type, file_size, mime_type, purpose)
+       VALUES ($1, $2, $3, 'image', $4, $5, 'avatar')`,
+      [userId, fileKey, fileUrl, req.file.size, req.file.mimetype]
+    );
+
+    res.json({
+      success: true,
+      message: 'Profile photo updated',
+      data: { avatarUrl: fileUrl }
+    });
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload avatar' });
+  }
+});
+
+// General file upload (for ride photos, package photos, etc.)
+app.post('/api/upload', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const purpose = req.body.purpose || 'general';
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided. Send a multipart form with field name "file"'
+      });
+    }
+
+    const fileKey = generateFileKey(userId, purpose, req.file.originalname);
+    const fileUrl = await uploadToR2(req.file.buffer, fileKey, req.file.mimetype);
+
+    await pool.query(
+      `INSERT INTO uploaded_files (user_id, file_key, file_url, file_type, file_size, mime_type, purpose)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [userId, fileKey, fileUrl, path.extname(req.file.originalname).slice(1), req.file.size, req.file.mimetype, purpose]
+    );
+
+    res.json({
+      success: true,
+      data: { fileUrl, fileKey }
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload file' });
+  }
+});
+
+// User settings / preferences
+app.get('/api/users/settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await pool.query(
+      'SELECT * FROM user_preferences WHERE user_id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      // Create default preferences
+      const insertResult = await pool.query(
+        `INSERT INTO user_preferences (user_id) VALUES ($1) RETURNING *`,
+        [userId]
+      );
+      return res.json({ success: true, data: insertResult.rows[0] });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get settings' });
+  }
+});
+
+app.put('/api/users/settings', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      language, currency, notifications_enabled, push_enabled,
+      email_notifications, sms_notifications, dark_mode,
+      location_sharing, data_usage
+    } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO user_preferences (user_id, language, currency, notifications_enabled, push_enabled,
+        email_notifications, sms_notifications, dark_mode, location_sharing, data_usage)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (user_id) DO UPDATE SET
+        language = COALESCE($2, user_preferences.language),
+        currency = COALESCE($3, user_preferences.currency),
+        notifications_enabled = COALESCE($4, user_preferences.notifications_enabled),
+        push_enabled = COALESCE($5, user_preferences.push_enabled),
+        email_notifications = COALESCE($6, user_preferences.email_notifications),
+        sms_notifications = COALESCE($7, user_preferences.sms_notifications),
+        dark_mode = COALESCE($8, user_preferences.dark_mode),
+        location_sharing = COALESCE($9, user_preferences.location_sharing),
+        data_usage = COALESCE($10, user_preferences.data_usage),
+        updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [userId, language, currency, notifications_enabled, push_enabled,
+       email_notifications, sms_notifications, dark_mode, location_sharing, data_usage]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Update settings error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update settings' });
+  }
+});
+
+// Alias for mobile app compatibility
+app.get('/api/users/preferences', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await pool.query(
+      'SELECT * FROM user_preferences WHERE user_id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      const insertResult = await pool.query(
+        'INSERT INTO user_preferences (user_id) VALUES ($1) RETURNING *',
+        [userId]
+      );
+      return res.json({ success: true, data: insertResult.rows[0] });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Get preferences error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get preferences' });
+  }
+});
+
+app.put('/api/users/preferences', authenticateToken, async (req, res) => {
+  // Delegate to settings endpoint logic
+  try {
+    const userId = req.user.userId;
+    const updates = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO user_preferences (user_id, language, currency, notifications_enabled, push_enabled,
+        email_notifications, sms_notifications, dark_mode, location_sharing, data_usage)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (user_id) DO UPDATE SET
+        language = COALESCE($2, user_preferences.language),
+        currency = COALESCE($3, user_preferences.currency),
+        notifications_enabled = COALESCE($4, user_preferences.notifications_enabled),
+        push_enabled = COALESCE($5, user_preferences.push_enabled),
+        email_notifications = COALESCE($6, user_preferences.email_notifications),
+        sms_notifications = COALESCE($7, user_preferences.sms_notifications),
+        dark_mode = COALESCE($8, user_preferences.dark_mode),
+        location_sharing = COALESCE($9, user_preferences.location_sharing),
+        data_usage = COALESCE($10, user_preferences.data_usage),
+        updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [userId, updates.language, updates.currency, updates.notifications_enabled, updates.push_enabled,
+       updates.email_notifications, updates.sms_notifications, updates.dark_mode, updates.location_sharing, updates.data_usage]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update preferences' });
+  }
+});
+
+// Ride rating endpoint
+app.post('/api/rides/:rideId/rate', authenticateToken, validate('rideRating'), async (req, res) => {
+  try {
+    const { rideId } = req.params;
+    const raterId = req.user.userId;
+    const { ratedId, rating, comment } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5'
+      });
+    }
+
+    if (!ratedId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ratedId (the user being rated) is required'
+      });
+    }
+
+    // Insert rating
+    const result = await pool.query(
+      `INSERT INTO ride_ratings (ride_id, rater_id, rated_id, rating, comment)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (ride_id, rater_id) DO UPDATE SET
+         rating = $4, comment = $5, created_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [rideId, raterId, ratedId, rating, comment]
+    );
+
+    // Update user's average rating
+    const avgResult = await pool.query(
+      'SELECT AVG(rating)::DECIMAL(3,2) as avg_rating FROM ride_ratings WHERE rated_id = $1',
+      [ratedId]
+    );
+
+    if (avgResult.rows[0].avg_rating) {
+      await pool.query(
+        'UPDATE users SET rating = $1 WHERE id = $2',
+        [avgResult.rows[0].avg_rating, ratedId]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Rating submitted',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Ride rating error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit rating' });
+  }
 });
 
 // REST API endpoint to broadcast notifications
