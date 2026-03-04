@@ -39,7 +39,7 @@ export class ApiClient {
 
   constructor(baseURL: string = API_CONFIG.baseURL) {
     this.baseURL = baseURL;
-    this.token = localStorage.getItem('aryv_admin_token');
+    this.token = localStorage.getItem('admin_token');
   }
 
   private getHeaders(): HeadersInit {
@@ -129,13 +129,13 @@ export class ApiClient {
   // Authentication methods
   setToken(token: string) {
     this.token = token;
-    localStorage.setItem('aryv_admin_token', token);
+    localStorage.setItem('admin_token', token);
   }
 
   clearAuth() {
     this.token = null;
-    localStorage.removeItem('aryv_admin_token');
-    localStorage.removeItem('aryv_admin_user');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
   }
 
   isAuthenticated(): boolean {
@@ -157,7 +157,7 @@ export const authService = {
 
       if (response.success && response.data.accessToken) {
         apiClient.setToken(response.data.accessToken);
-        localStorage.setItem('aryv_admin_user', JSON.stringify(response.data.user));
+        localStorage.setItem('admin_user', JSON.stringify(response.data.user));
         return response;
       } else {
         throw new Error(response.message || 'Login failed');
@@ -180,7 +180,7 @@ export const authService = {
   },
 
   getCurrentUser() {
-    const userStr = localStorage.getItem('aryv_admin_user');
+    const userStr = localStorage.getItem('admin_user');
     return userStr ? JSON.parse(userStr) : null;
   },
 

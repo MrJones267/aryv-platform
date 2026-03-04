@@ -6,6 +6,7 @@
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { apiClient } from '../../config/api';
+import { analyticsService } from '../../services/api';
 
 export interface DashboardStats {
   users: {

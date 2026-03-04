@@ -10,7 +10,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.aryv-app.
 
 // Create axios instance for admin API
 export const adminApi: AxiosInstance = axios.create({
-  baseURL: `${API_BASE_URL}/api/admin`,
+  baseURL: `${API_BASE_URL}/api`,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
