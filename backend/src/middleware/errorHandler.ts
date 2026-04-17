@@ -10,13 +10,12 @@ import { ValidationError as SequelizeValidationError } from 'sequelize';
 import { AppError } from '../types';
 import { logError, logSecurityEvent } from '../utils/logger';
 
-// Development error response
+// Development error response — stack is logged server-side only, never sent to client
 const sendErrorDev = (err: AppError, res: Response): void => {
   res.status(err.statusCode).json({
     success: false,
     error: err.message,
     code: err.code,
-    stack: err.stack,
     timestamp: new Date().toISOString(),
   });
 };

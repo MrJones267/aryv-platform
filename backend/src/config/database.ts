@@ -16,9 +16,9 @@ const DB_CONFIG = {
   port: parseInt(process.env['DB_PORT'] || '5432'),
   database: process.env['DB_NAME'] || 'aryv',
   username: process.env['DB_USER'] || 'aryv_user',
-  password: process.env['DB_PASSWORD'] || 'aryv_secure_password',
+  password: process.env['DB_PASSWORD'] || '',
   dialect: 'postgres' as const,
-  logging: process.env['NODE_ENV'] === 'development' ? console.log : false,
+  logging: false,
   pool: {
     max: 10,
     min: 0,

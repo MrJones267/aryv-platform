@@ -17,9 +17,19 @@ import {
   AppError,
   UserRole,
 } from '../types';
+import { redisClient } from '../config/redis';
+import logger from '../utils/logger';
+
+const BLACKLIST_PREFIX = 'bl:';
+const USED_REFRESH_PREFIX = 'ur:';
+const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days in seconds
+
+const hashRefreshToken = (token: string): string =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 // Constants
-const JWT_SECRET = process.env['JWT_SECRET'] || 'fallback-secret-key';
+if (!process.env['JWT_SECRET']) throw new Error('JWT_SECRET environment variable is required');
+const JWT_SECRET = process.env['JWT_SECRET'] as string;
 const JWT_EXPIRES_IN = process.env['JWT_EXPIRES_IN'] || '24h';
 // JWT_REFRESH_EXPIRES_IN removed as it was unused
 
@@ -36,7 +46,7 @@ export class AuthService {
       };
       return jwt.sign(payload, JWT_SECRET, signOptions);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error generating access token:`, {
+      logger.error('Error generating access token', {
         error: (error as Error).message,
         userId: payload.userId,
       });
@@ -51,7 +61,7 @@ export class AuthService {
     try {
       return crypto.randomBytes(40).toString('hex');
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error generating refresh token:`, {
+      logger.error('Error generating refresh token', {
         error: (error as Error).message,
       });
       throw new AppError('Refresh token generation failed', 500, 'REFRESH_TOKEN_ERROR');
@@ -75,7 +85,7 @@ export class AuthService {
       } else if (error instanceof jwt.JsonWebTokenError) {
         throw new AppError('Invalid token', 401, 'INVALID_TOKEN');
       } else {
-        console.error(`[${new Date().toISOString()}] Token verification error:`, {
+        logger.error('Token verification error', {
           error: (error as Error).message,
         });
         throw new AppError('Token verification failed', 401, 'TOKEN_VERIFICATION_ERROR');
@@ -126,8 +136,8 @@ export class AuthService {
 
       const refreshToken = this.generateRefreshToken();
 
-      // Store refresh token
-      await user.update({ refreshToken });
+      // Store hashed refresh token (raw token is returned to client only)
+      await user.update({ refreshToken: hashRefreshToken(refreshToken) });
 
       // Update last login
       await user.update({ lastLoginAt: new Date() });
@@ -144,7 +154,7 @@ export class AuthService {
         throw error;
       }
 
-      console.error(`[${new Date().toISOString()}] Registration error:`, {
+      logger.error('Registration error', {
         error: (error as Error).message,
         email: userData.email,
       });
@@ -191,9 +201,9 @@ export class AuthService {
 
       const refreshToken = this.generateRefreshToken();
 
-      // Store refresh token and update last login
+      // Store hashed refresh token (raw token is returned to client only)
       await user.update({
-        refreshToken,
+        refreshToken: hashRefreshToken(refreshToken),
         lastLoginAt: new Date(),
       });
 
@@ -209,7 +219,7 @@ export class AuthService {
         throw error;
       }
 
-      console.error(`[${new Date().toISOString()}] Login error:`, {
+      logger.error('Login error', {
         error: (error as Error).message,
         email: credentials.email,
       });
@@ -227,9 +237,23 @@ export class AuthService {
         throw new AppError('Refresh token is required', 400, 'REFRESH_TOKEN_REQUIRED');
       }
 
-      // Find user with this refresh token
+      const tokenHash = hashRefreshToken(refreshToken);
+
+      // Detect reuse of a previously rotated token (possible token theft)
+      const wasUsed = await redisClient.get(`${USED_REFRESH_PREFIX}${tokenHash}`);
+      if (wasUsed) {
+        // This refresh token was already rotated — potential replay attack.
+        // Find and invalidate the user's session entirely.
+        const suspectUser = await User.findOne({ where: { id: wasUsed } });
+        if (suspectUser) {
+          await suspectUser.update({ refreshToken: null });
+        }
+        throw new AppError('Refresh token already used — possible token theft. Please log in again.', 401, 'REFRESH_TOKEN_REUSE');
+      }
+
+      // Find user with this refresh token (DB stores hashed value)
       const user = await User.findOne({
-        where: { refreshToken },
+        where: { refreshToken: tokenHash },
       });
 
       if (!user) {
@@ -254,8 +278,11 @@ export class AuthService {
 
       const newRefreshToken = this.generateRefreshToken();
 
-      // Update refresh token
-      await user.update({ refreshToken: newRefreshToken });
+      // Mark old token hash as used (with TTL matching max token lifetime)
+      await redisClient.set(`${USED_REFRESH_PREFIX}${tokenHash}`, user.id, REFRESH_TOKEN_TTL);
+
+      // Update refresh token (rotation) — store only the hash
+      await user.update({ refreshToken: hashRefreshToken(newRefreshToken) });
 
       return {
         success: true,
@@ -269,7 +296,7 @@ export class AuthService {
         throw error;
       }
 
-      console.error(`[${new Date().toISOString()}] Token refresh error:`, {
+      logger.error('Token refresh error', {
         error: (error as Error).message,
       });
 
@@ -278,21 +305,42 @@ export class AuthService {
   }
 
   /**
-   * Logout user
+   * Logout user — clears refresh token and blacklists the access token in Redis
    */
-  static async logout(userId: string): Promise<void> {
+  static async logout(userId: string, accessToken?: string): Promise<void> {
     try {
       await User.update(
         { refreshToken: null },
         { where: { id: userId } },
       );
+
+      // Blacklist the access token so it can't be reused before it expires
+      if (accessToken) {
+        try {
+          const decoded = jwt.decode(accessToken) as { exp?: number } | null;
+          const ttl = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 86400;
+          if (ttl > 0) {
+            await redisClient.set(`${BLACKLIST_PREFIX}${accessToken}`, '1', ttl);
+          }
+        } catch {
+          // Decode failure is non-fatal — token may already be invalid
+        }
+      }
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Logout error:`, {
+      logger.error('Logout error', {
         error: (error as Error).message,
         userId,
       });
       throw new AppError('Logout failed', 500, 'LOGOUT_ERROR');
     }
+  }
+
+  /**
+   * Check if an access token has been blacklisted (post-logout)
+   */
+  static async isTokenBlacklisted(token: string): Promise<boolean> {
+    const result = await redisClient.get(`${BLACKLIST_PREFIX}${token}`);
+    return result !== null;
   }
 
   /**
@@ -312,7 +360,7 @@ export class AuthService {
         throw error;
       }
 
-      console.error(`[${new Date().toISOString()}] Get user error:`, {
+      logger.error('Get user error', {
         error: (error as Error).message,
         userId,
       });

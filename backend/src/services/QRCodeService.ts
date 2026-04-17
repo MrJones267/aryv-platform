@@ -27,7 +27,15 @@ export interface QRCodeData {
 
 export class QRCodeService {
   private readonly QR_CODE_VALIDITY_HOURS = 24;
-  private readonly SECRET_KEY = process.env['QR_CODE_SECRET'] || 'hitch-qr-secret-key';
+  private readonly SECRET_KEY: string;
+
+  constructor() {
+    const secret = process.env['QR_CODE_SECRET'];
+    if (!secret) {
+      throw new Error('QR_CODE_SECRET environment variable is required');
+    }
+    this.SECRET_KEY = secret;
+  }
 
   /**
    * Generate a new QR code for delivery verification

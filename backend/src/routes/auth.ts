@@ -5,11 +5,13 @@
  * @lastModified 2025-01-27
  */
 
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { AuthController } from '../controllers/AuthController';
 import { validateRequest, authSchemas } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
+import { uploadAvatar, handleMulterError } from '../middleware/upload';
+import { redisClient } from '../config/redis';
 
 /**
  * @swagger
@@ -132,6 +134,24 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Per-email rate limiter for password reset (max 3 per email per 15 min)
+const emailPasswordResetLimiter = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const email = (req.body?.email as string | undefined)?.toLowerCase().trim();
+  if (!email) { next(); return; }
+
+  const count = await redisClient.increment(`pw-reset-email:${email}`, 15 * 60);
+  if (count > 3) {
+    res.status(429).json({
+      success: false,
+      error: 'Too many password reset attempts for this email. Please try again later.',
+      code: 'EMAIL_RATE_LIMIT_EXCEEDED',
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+  next();
+};
+
 /**
  * @swagger
  * /api/auth/register:
@@ -232,5 +252,122 @@ router.get(
   authenticateToken,
   AuthController.verifyToken,
 );
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request a password reset email
+ * @access  Public
+ */
+router.post(
+  '/forgot-password',
+  authLimiter,
+  emailPasswordResetLimiter,
+  AuthController.forgotPassword,
+);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using token from email
+ * @access  Public
+ */
+router.post(
+  '/reset-password',
+  authLimiter,
+  AuthController.resetPassword,
+);
+
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change password for authenticated user
+ * @access  Private
+ */
+router.post('/change-password', authenticateToken, AuthController.changePassword);
+
+/**
+ * @route   DELETE /api/auth/account
+ * @desc    Deactivate authenticated user's account
+ * @access  Private
+ */
+router.delete('/account', authenticateToken, AuthController.deleteAccount);
+
+/**
+ * @route   PATCH /api/auth/profile
+ * @desc    Update authenticated user's profile
+ * @access  Private
+ */
+router.patch('/profile', authenticateToken, AuthController.updateProfile);
+
+/**
+ * @route   POST /api/auth/upload-profile-picture
+ * @desc    Upload profile picture
+ * @access  Private
+ */
+router.post(
+  '/upload-profile-picture',
+  authenticateToken,
+  uploadAvatar,
+  handleMulterError,
+  AuthController.uploadProfilePicture,
+);
+
+/**
+ * @route   GET /api/auth/stats
+ * @desc    Get user statistics
+ * @access  Private
+ */
+router.get('/stats', authenticateToken, AuthController.getUserStats);
+
+/**
+ * @route   GET /api/auth/notification-preferences
+ * @desc    Get notification preferences
+ * @access  Private
+ */
+router.get('/notification-preferences', authenticateToken, AuthController.getNotificationPreferences);
+
+/**
+ * @route   PATCH /api/auth/notification-preferences
+ * @desc    Update notification preferences
+ * @access  Private
+ */
+router.patch('/notification-preferences', authenticateToken, AuthController.updateNotificationPreferences);
+
+/**
+ * @route   POST /api/auth/send-email-verification
+ * @desc    Send email verification OTP
+ * @access  Private
+ */
+router.post('/send-email-verification', authenticateToken, AuthController.sendEmailVerification);
+
+/**
+ * @route   POST /api/auth/verify-email
+ * @desc    Verify email with OTP
+ * @access  Private
+ */
+router.post('/verify-email', authenticateToken, AuthController.verifyEmailToken);
+
+/**
+ * @route   POST /api/auth/send-phone-verification
+ * @desc    Send phone verification OTP
+ * @access  Private
+ */
+router.post('/send-phone-verification', authenticateToken, AuthController.sendPhoneVerification);
+
+/**
+ * @route   POST /api/auth/verify-phone
+ * @desc    Verify phone with OTP
+ * @access  Private
+ */
+router.post('/verify-phone', authenticateToken, AuthController.verifyPhone);
+
+/**
+ * OTP endpoints (Twilio / email OTP system)
+ */
+router.post('/otp/sms/send', authLimiter, AuthController.sendSMSOTP);
+router.post('/otp/email/send', authLimiter, AuthController.sendEmailOTP);
+router.post('/otp/verify', authLimiter, AuthController.verifyOTP);
+router.get('/otp/status', authLimiter, AuthController.getOTPStatus);
+router.post('/login/otp', loginLimiter, AuthController.loginWithOTP);
+router.post('/register/otp', authLimiter, AuthController.registerWithOTP);
+router.post('/password-reset/otp', authLimiter, AuthController.resetPasswordWithOTP);
 
 export default router;

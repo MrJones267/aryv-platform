@@ -105,7 +105,7 @@ export const config: Config = {
     port: parseInt(process.env['POSTGRES_PORT'] || '5432', 10),
     name: process.env['POSTGRES_DB'] || 'aryv_db',
     username: process.env['POSTGRES_USER'] || 'aryv_user',
-    password: process.env['POSTGRES_PASSWORD'] || 'aryv_secure_password_change_me',
+    password: process.env['POSTGRES_PASSWORD'] || '',
     ssl: process.env['DATABASE_SSL'] === 'true',
     logging: process.env['DATABASE_LOGGING'] === 'true',
   },
@@ -119,7 +119,7 @@ export const config: Config = {
   },
 
   jwt: {
-    secret: process.env['JWT_SECRET'] || 'your-super-secret-jwt-key-at-least-32-characters-long-change-in-production',
+    secret: process.env['JWT_SECRET'] as string,
     expiresIn: process.env['JWT_EXPIRES_IN'] || '7d',
   },
 

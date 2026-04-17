@@ -11,6 +11,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
+import path from 'path';
+import fs from 'fs';
 
 // Import custom modules
 import { testConnection } from './models';
@@ -27,12 +29,27 @@ import cashPaymentRoutes from './routes/cashPayments';
 import currencyRoutes from './routes/currencies';
 import countryRoutes from './routes/countries';
 import groupChatRoutes from './routes/groupChat';
+import notificationRoutes from './routes/notifications';
+import paymentRoutes from './routes/payments';
+import rideRequestRoutes from './routes/rideRequests';
+import promoRoutes from './routes/promos';
 import SocketService from './services/SocketService';
+import { authenticateToken } from './middleware/auth';
 import { notificationService } from './services/NotificationService';
 import { groupCleanupService } from './services/GroupCleanupService';
+import { redisClient } from './config/redis';
 
 // Load environment variables
 dotenv.config();
+
+// Validate required environment variables before anything else starts
+const REQUIRED_ENV_VARS = ['JWT_SECRET', 'DATABASE_URL'];
+const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`[STARTUP] Missing required environment variables: ${missing.join(', ')}`);
+  console.error('[STARTUP] Server cannot start. Please set these variables in your .env file.');
+  process.exit(1);
+}
 
 // Constants
 const PORT = process.env['PORT'] || 3001;
@@ -47,15 +64,37 @@ const server = createServer(app);
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false, // Disable for development
+  contentSecurityPolicy: NODE_ENV !== 'development',
+  noSniff: true,
 }));
 
-// CORS configuration
+// CORS configuration - allow mobile app (React Native), admin panel, and web clients
+const corsOrigins = process.env['CORS_ORIGIN']
+  ? process.env['CORS_ORIGIN'].split(',').map((o) => o.trim())
+  : NODE_ENV === 'development'
+    ? ['http://localhost:3000', 'http://localhost:19006']
+    : [];
+
+if (NODE_ENV === 'production' && corsOrigins.length === 0) {
+  console.error('[STARTUP] CORS_ORIGIN must be configured in production');
+  process.exit(1);
+}
+
 app.use(cors({
-  origin: process.env['CORS_ORIGIN'] || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    // In development, allow all origins
+    if (NODE_ENV === 'development') return callback(null, true);
+    // In production, check against allowed list
+    if (corsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
 // Rate limiting
@@ -76,8 +115,39 @@ app.use(limiter);
 // Request logging middleware
 app.use(requestLogger);
 
+// Authenticated file serving — users can only access their own files; admins can access all
+app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) => {
+  const { type, filename } = req.params as { type: string; filename: string };
+
+  // Restrict to known subdirectories
+  const allowedTypes = ['avatars', 'documents', 'vehicles'];
+  if (!allowedTypes.includes(type)) {
+    return res.status(400).json({ success: false, error: 'Invalid file type', code: 'INVALID_FILE_TYPE' });
+  }
+
+  // Sanitise filename — no path traversal
+  const safe = path.basename(filename);
+  if (safe !== filename || safe.startsWith('.')) {
+    return res.status(400).json({ success: false, error: 'Invalid filename', code: 'INVALID_FILENAME' });
+  }
+
+  // Ownership check: filename starts with userId (e.g. "abc123-1234567890.jpg")
+  const fileOwner = safe.split('-')[0];
+  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+  if (!isAdmin && req.user?.id !== fileOwner) {
+    return res.status(403).json({ success: false, error: 'Access denied', code: 'FORBIDDEN' });
+  }
+
+  const filePath = path.resolve('./uploads', type, safe);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+  }
+
+  return res.sendFile(filePath);
+});
+
 // Body parsing middleware
-app.use(express.json({ 
+app.use(express.json({
   limit: '10mb',
   type: 'application/json',
 }));
@@ -131,6 +201,9 @@ app.get('/', (_req, res) => {
       currencies: '/api/currencies',
       countries: '/api/countries',
       groupChats: '/api/group-chats',
+      notifications: '/api/notifications',
+      payments: '/api/payments',
+      rideRequests: '/api/ride-requests',
       docs: '/api/docs',
     },
     version: '1.0.0',
@@ -147,14 +220,23 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/payments/cash', cashPaymentRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/currencies', currencyRoutes);
 app.use('/api/countries', countryRoutes);
 app.use('/api/group-chats', groupChatRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/ride-requests', rideRequestRoutes);
+app.use('/api/promos', promoRoutes);
 
 // API Documentation
 if (NODE_ENV !== 'production' || process.env['ENABLE_DOCS'] === 'true') {
-  const docsRoutes = require('./routes/docs');
-  app.use('/docs', docsRoutes);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const docsRoutes = require('./routes/docs').default;
+    app.use('/docs', docsRoutes);
+  } catch (e) {
+    console.warn('[STARTUP] API docs unavailable (swagger dependencies missing):', (e as Error).message);
+  }
 }
 
 // 404 handler
@@ -190,7 +272,10 @@ const startServer = async (): Promise<void> => {
     
     // Skip database sync since tables already exist
     logInfo('Database tables already exist, skipping sync...');
-    
+
+    // Connect to Redis (non-fatal if unavailable)
+    await redisClient.connect();
+
     // Initialize Socket.io service
     logInfo('Initializing Socket.io service...');
     const socketService = new SocketService(server);
