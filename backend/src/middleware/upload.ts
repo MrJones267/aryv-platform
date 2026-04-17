@@ -9,7 +9,6 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Request } from 'express';
-import logger from '../utils/logger';
 
 // Ensure uploads directory exists
 const UPLOADS_DIR = process.env['UPLOADS_DIR'] || './uploads';
