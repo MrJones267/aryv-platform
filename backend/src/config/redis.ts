@@ -17,6 +17,10 @@ class RedisClient {
   private client: RedisClientType | null = null;
   private connected = false;
 
+  private isReady(): boolean {
+    return this.client !== null && this.connected;
+  }
+
   async connect(): Promise<void> {
     try {
       const url = REDIS_URL || `redis://${REDIS_HOST}:${REDIS_PORT}`;
@@ -55,12 +59,12 @@ class RedisClient {
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
-    if (!this.client || !this.connected) return;
+    if (!this.isReady()) return;
     try {
       if (ttlSeconds) {
-        await this.client.set(key, value, { EX: ttlSeconds });
+        await this.client!.set(key, value, { EX: ttlSeconds });
       } else {
-        await this.client.set(key, value);
+        await this.client!.set(key, value);
       }
     } catch (error) {
       logger.warn('Redis set failed', { key, error });
@@ -68,9 +72,9 @@ class RedisClient {
   }
 
   async get(key: string): Promise<string | null> {
-    if (!this.client || !this.connected) return null;
+    if (!this.isReady()) return null;
     try {
-      return await this.client.get(key);
+      return await this.client!.get(key);
     } catch (error) {
       logger.warn('Redis get failed', { key, error });
       return null;
@@ -78,9 +82,9 @@ class RedisClient {
   }
 
   async del(key: string): Promise<void> {
-    if (!this.client || !this.connected) return;
+    if (!this.isReady()) return;
     try {
-      await this.client.del(key);
+      await this.client!.del(key);
     } catch (error) {
       logger.warn('Redis del failed', { key, error });
     }
@@ -88,10 +92,10 @@ class RedisClient {
 
   // Atomically increment a counter; sets TTL on first increment only
   async increment(key: string, ttlSeconds: number): Promise<number> {
-    if (!this.client || !this.connected) return 0;
+    if (!this.isReady()) return 0;
     try {
-      const count = await this.client.incr(key);
-      if (count === 1) await this.client.expire(key, ttlSeconds);
+      const count = await this.client!.incr(key);
+      if (count === 1) await this.client!.expire(key, ttlSeconds);
       return count;
     } catch (error) {
       logger.warn('Redis increment failed', { key, error });

@@ -136,11 +136,10 @@ export class AuthService {
 
       const refreshToken = this.generateRefreshToken();
 
-      // Store hashed refresh token (raw token is returned to client only)
-      await user.update({ refreshToken: hashRefreshToken(refreshToken) });
-
-      // Update last login
-      await user.update({ lastLoginAt: new Date() });
+      await user.update({
+        refreshToken: hashRefreshToken(refreshToken),
+        lastLoginAt: new Date(),
+      });
 
       return {
         success: true,
@@ -242,12 +241,8 @@ export class AuthService {
       // Detect reuse of a previously rotated token (possible token theft)
       const wasUsed = await redisClient.get(`${USED_REFRESH_PREFIX}${tokenHash}`);
       if (wasUsed) {
-        // This refresh token was already rotated — potential replay attack.
-        // Find and invalidate the user's session entirely.
-        const suspectUser = await User.findOne({ where: { id: wasUsed } });
-        if (suspectUser) {
-          await suspectUser.update({ refreshToken: null });
-        }
+        // Token already rotated — possible replay attack; invalidate the session immediately
+        await User.update({ refreshToken: null }, { where: { id: wasUsed } });
         throw new AppError('Refresh token already used — possible token theft. Please log in again.', 401, 'REFRESH_TOKEN_REUSE');
       }
 

@@ -12,7 +12,6 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
-import fs from 'fs';
 
 // Import custom modules
 import { testConnection } from './models';
@@ -131,19 +130,16 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
     return res.status(400).json({ success: false, error: 'Invalid filename', code: 'INVALID_FILENAME' });
   }
 
-  // Ownership check: filename starts with userId (e.g. "abc123-1234567890.jpg")
-  const fileOwner = safe.split('-')[0];
+  // Ownership check: filename must start with userId- (UUIDs contain hyphens so use prefix match)
   const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
-  if (!isAdmin && req.user?.id !== fileOwner) {
+  if (!isAdmin && !safe.startsWith(`${req.user?.id}-`)) {
     return res.status(403).json({ success: false, error: 'Access denied', code: 'FORBIDDEN' });
   }
 
   const filePath = path.resolve('./uploads', type, safe);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
-  }
-
-  return res.sendFile(filePath);
+  return res.sendFile(filePath, (err) => {
+    if (err) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+  });
 });
 
 // Body parsing middleware

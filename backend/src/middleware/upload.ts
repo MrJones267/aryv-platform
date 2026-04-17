@@ -18,10 +18,7 @@ const DOCS_DIR = path.join(UPLOADS_DIR, 'documents');
 const VEHICLES_DIR = path.join(UPLOADS_DIR, 'vehicles');
 
 [UPLOADS_DIR, AVATAR_DIR, DOCS_DIR, VEHICLES_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    logger.info(`Created upload directory: ${dir}`);
-  }
+  fs.mkdirSync(dir, { recursive: true });
 });
 
 const sanitizeId = (id: string): string => id.replace(/[^a-zA-Z0-9-]/g, '');
