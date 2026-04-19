@@ -44,12 +44,15 @@ export class PaymentService {
   async createPaymentIntent(data: PaymentIntentData): Promise<PaymentResult> {
     try {
       if (!this.stripe) {
-        // Mock payment intent for development
+        if (process.env['NODE_ENV'] !== 'development') {
+          return { success: false, error: 'Payment processing is not configured. Contact support.' };
+        }
+        // Dev-only mock — never active in production
         return {
           success: true,
           data: {
             id: `pi_mock_${Date.now()}`,
-            client_secret: `pi_mock_${Date.now()}_secret_${Math.random().toString(36).substring(7)}`,
+            client_secret: `pi_mock_${Date.now()}_secret_dev`,
             amount: Math.round(data.amount * 100),
             currency: data.currency,
             status: 'requires_payment_method',
@@ -139,7 +142,10 @@ export class PaymentService {
   async verifyPaymentIntent(paymentIntentId: string): Promise<PaymentResult> {
     try {
       if (!this.stripe) {
-        // Mock verification for development
+        if (process.env['NODE_ENV'] !== 'development') {
+          return { success: false, error: 'Payment processing is not configured. Contact support.' };
+        }
+        // Dev-only mock
         return {
           success: true,
           data: {
@@ -207,8 +213,11 @@ export class PaymentService {
       }
 
       if (!this.stripe) {
-        // Mock refund for development
-        await transaction.commit();
+        await transaction.rollback();
+        if (process.env['NODE_ENV'] !== 'development') {
+          return { success: false, error: 'Payment processing is not configured. Contact support.' };
+        }
+        // Dev-only mock
         return {
           success: true,
           data: {

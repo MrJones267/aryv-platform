@@ -53,6 +53,8 @@ export const RevenueAnalyticsScreen: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'week' | 'month' | 'year'>('month');
   const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
   const [showRealTime, setShowRealTime] = useState(false);
+  // Accumulate revenue data across periods to build a real trend chart
+  const [trendHistory, setTrendHistory] = useState<{ label: string; value: number }[]>([]);
   
   // Use analytics hook
   const {
@@ -89,12 +91,19 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         commissionRevenue: metrics.revenueMetrics.commissionRevenue,
         subscriptionRevenue: metrics.revenueMetrics.subscriptionRevenue,
         serviceFeesRevenue: metrics.revenueMetrics.serviceFeesRevenue,
-        financialServicesRevenue: 0, // Not in BusinessMetrics
-        advertisingRevenue: 0, // Not in BusinessMetrics
+        financialServicesRevenue: 0,
+        advertisingRevenue: 0,
         growthRate: metrics.revenueMetrics.growthRate,
         period: selectedPeriod,
       };
       setRevenueData(convertedData);
+
+      // Append this period's revenue to trend history (deduplicate by label)
+      const label = selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1);
+      setTrendHistory((prev) => {
+        const filtered = prev.filter((p) => p.label !== label);
+        return [...filtered, { label, value: metrics.revenueMetrics.totalRevenue }].slice(-6);
+      });
     }
   }, [metrics, selectedPeriod]);
 
@@ -240,19 +249,12 @@ export const RevenueAnalyticsScreen: React.FC = () => {
   };
 
   const getGrowthTrendData = () => {
-    // Mock historical data for growth trend
-    const periods = selectedPeriod === 'month' ? 
-      ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'] :
-      ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-
-    const data = selectedPeriod === 'month' ?
-      [85000, 92000, 98000, 105000, 118000, 125000] :
-      [28000, 29500, 30200, 31250];
-
+    // Use real accumulated period data; fall back to current value repeated if only one point
+    const history = trendHistory.length > 0 ? trendHistory : [{ label: selectedPeriod, value: revenueData?.totalRevenue || 0 }];
     return {
-      labels: periods,
+      labels: history.map((h) => h.label),
       datasets: [{
-        data: data,
+        data: history.map((h) => h.value || 0),
         color: (opacity = 1) => colors.primary + Math.round(opacity * 255).toString(16),
         strokeWidth: 3,
       }]

@@ -6,6 +6,7 @@
  */
 
 import { Request, Response } from 'express';
+import logger from '../utils/logger';
 
 export class CountryController {
   
@@ -108,7 +109,7 @@ export class CountryController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CountryController] Error fetching countries:', {
+      logger.error('Error fetching countries', {
         error: (error as Error).message,
         timestamp: new Date().toISOString(),
       });
@@ -151,7 +152,7 @@ export class CountryController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CountryController] Error fetching popular countries:', {
+      logger.error('Error fetching popular countries', {
         error: (error as Error).message,
         timestamp: new Date().toISOString(),
       });
@@ -217,7 +218,7 @@ export class CountryController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CountryController] Error fetching country by code:', {
+      logger.error('Error fetching country by code', {
         error: (error as Error).message,
         countryCode: req.params['countryCode'],
         timestamp: new Date().toISOString(),
@@ -271,7 +272,7 @@ export class CountryController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CountryController] Error fetching countries by region:', {
+      logger.error('Error fetching countries by region', {
         error: (error as Error).message,
         region: req.params['region'],
         timestamp: new Date().toISOString(),
@@ -329,7 +330,7 @@ export class CountryController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CountryController] Error searching countries:', {
+      logger.error('Error searching countries', {
         error: (error as Error).message,
         query: req.query['q'],
         timestamp: new Date().toISOString(),

@@ -5,6 +5,7 @@
  * @lastModified 2025-01-25
  */
 
+import crypto from 'crypto';
 import { Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
@@ -468,7 +469,7 @@ export class CashPaymentService {
    * Generate 6-digit confirmation code
    */
   private generateConfirmationCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return (100000 + crypto.randomInt(0, 900000)).toString();
   }
 
   /**

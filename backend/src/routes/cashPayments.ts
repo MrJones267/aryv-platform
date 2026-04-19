@@ -122,22 +122,6 @@ router.post('/:transactionId/confirm-paid',
 );
 
 /**
- * @route   GET /api/payments/cash/:transactionId
- * @desc    Get cash transaction details
- * @access  Private
- */
-router.get('/:transactionId',
-  [
-    param('transactionId')
-      .isUUID()
-      .withMessage('Valid transaction ID is required'),
-
-    validateInput,
-  ],
-  ((req: any, res: any) => cashPaymentController.getCashTransaction(req, res)) as any,
-);
-
-/**
  * @route   GET /api/payments/cash/history
  * @desc    Get user's cash transaction history
  * @access  Private
@@ -180,6 +164,22 @@ router.get('/history',
  */
 router.get('/wallet',
   (req: Request, res: Response) => cashPaymentController.getWalletInfo(req as any, res),
+);
+
+/**
+ * @route   GET /api/payments/cash/:transactionId
+ * @desc    Get cash transaction details
+ * @access  Private
+ */
+router.get('/:transactionId',
+  [
+    param('transactionId')
+      .isUUID()
+      .withMessage('Valid transaction ID is required'),
+
+    validateInput,
+  ],
+  ((req: any, res: any) => cashPaymentController.getCashTransaction(req, res)) as any,
 );
 
 /**

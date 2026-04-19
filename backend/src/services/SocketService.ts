@@ -83,9 +83,21 @@ export class SocketService {
   private groupChatRooms: Map<string, Set<string>> = new Map(); // groupChatId -> Set of userIds
 
   constructor(server: HTTPServer) {
+    const nodeEnv = process.env['NODE_ENV'] || 'development';
+    const corsOrigins = process.env['CORS_ORIGIN']
+      ? process.env['CORS_ORIGIN'].split(',').map((o) => o.trim())
+      : [];
+
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: process.env['CORS_ORIGIN'] || 'http://localhost:3000',
+        origin: (origin, callback) => {
+          // Allow no-origin requests (mobile apps) and all origins in development
+          if (!origin || nodeEnv === 'development') return callback(null, true);
+          if (corsOrigins.length === 0 || corsOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          return callback(new Error(`CORS: origin ${origin} not allowed`));
+        },
         methods: ['GET', 'POST'],
         credentials: true,
       },
@@ -199,6 +211,44 @@ export class SocketService {
     // General events
     socket.on('ping', () => socket.emit('pong'));
     socket.on('get_online_users', (data: { rideId: string }) => this.handleGetOnlineUsers(socket, data));
+
+    // Mobile app explicit user room join (user is auto-joined on connection, this is just an ack)
+    socket.on('join_user_room', (data: { userId: string }) => {
+      const userId = socket.userId;
+      socket.join(`user:${userId}`);
+      socket.emit('user_room_joined', { userId, timestamp: new Date().toISOString() });
+      logInfo('User explicitly joined personal room', { userId, requestedId: data.userId });
+    });
+
+    // ── Mobile app compatibility aliases ─────────────────────────────────────
+
+    // Mobile emits 'authenticate' post-connect as an explicit handshake; reply with 'authenticated'
+    socket.on('authenticate', (_data: any) => {
+      socket.emit('authenticated', {
+        userId: socket.userId,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    // Mobile emits 'location_update' — alias to driver_location_update handler
+    socket.on('location_update', (data: LocationUpdate) => this.handleDriverLocationUpdate(socket, data));
+
+    // Mobile emits 'ride_update' — alias to ride_status_update handler
+    socket.on('ride_update', (data: RideStatusUpdate) => this.handleRideStatusUpdate(socket, data));
+
+    // Mobile emits 'send_notification' — broadcast to target user room
+    socket.on('send_notification', (data: { to: string; type: string; title: string; message: string; payload?: any }) => {
+      if (data.to) {
+        this.io.to(`user:${data.to}`).emit('notification', {
+          type: data.type,
+          title: data.title,
+          message: data.message,
+          payload: data.payload || {},
+          fromUserId: socket.userId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
   }
 
   private async handleJoinRide(socket: any, data: { rideId: string }): Promise<void> {
@@ -235,6 +285,7 @@ export class SocketService {
       const currentLocation = this.driverLocations.get(rideId);
       if (currentLocation) {
         socket.emit('driver_location', currentLocation);
+        socket.emit('live_location', currentLocation); // mobile app alias
       }
 
       socket.emit('joined_ride', { rideId, timestamp: new Date().toISOString() });
@@ -294,8 +345,9 @@ export class SocketService {
       // Store latest location
       this.driverLocations.set(rideId, locationUpdate);
 
-      // Broadcast to all users in the ride
+      // Broadcast to all users in the ride (emit both names for mobile app compat)
       this.io.to(`ride:${rideId}`).emit('driver_location', locationUpdate);
+      this.io.to(`ride:${rideId}`).emit('live_location', locationUpdate);
 
       logInfo('Driver location updated', { userId, rideId, latitude, longitude });
     } catch (error) {
@@ -390,6 +442,11 @@ export class SocketService {
       const userId = socket.userId;
       const { rideId, message, type = 'text' } = data;
 
+      if (!message || typeof message !== 'string' || message.length === 0 || message.length > 5000) {
+        socket.emit('error', { message: 'Message must be between 1 and 5000 characters' });
+        return;
+      }
+
       // Verify user has access to this ride
       const hasAccess = await this.verifyRideAccess(userId, rideId);
       if (!hasAccess) {
@@ -408,12 +465,14 @@ export class SocketService {
       // Store message in database (optional - implement if persistent chat is needed)
       // await this.storeChatMessage(chatMessage);
 
-      // Broadcast to all users in the ride
-      this.io.to(`ride:${rideId}`).emit('new_message', {
+      // Broadcast to all users in the ride (emit both names for mobile app compat)
+      const messagePayload = {
         ...chatMessage,
         senderName: `${socket.user.firstName  } ${  socket.user.lastName}`,
         senderAvatar: socket.user.profileImage,
-      });
+      };
+      this.io.to(`ride:${rideId}`).emit('new_message', messagePayload);
+      this.io.to(`ride:${rideId}`).emit('chat_message', messagePayload);
 
       logInfo('Chat message sent', { userId, rideId, messageLength: message.length });
     } catch (error) {
@@ -424,8 +483,10 @@ export class SocketService {
 
   private handleTypingStart(socket: any, data: { rideId: string }): void {
     const { rideId } = data;
+    const userId = socket.userId as string;
+    if (!this.rideRooms.get(rideId)?.has(userId)) return; // must be a member of this ride room
     socket.to(`ride:${rideId}`).emit('user_typing', {
-      userId: socket.userId,
+      userId,
       userName: socket.user.firstName,
       isTyping: true,
     });
@@ -433,8 +494,10 @@ export class SocketService {
 
   private handleTypingStop(socket: any, data: { rideId: string }): void {
     const { rideId } = data;
+    const userId = socket.userId as string;
+    if (!this.rideRooms.get(rideId)?.has(userId)) return; // must be a member of this ride room
     socket.to(`ride:${rideId}`).emit('user_typing', {
-      userId: socket.userId,
+      userId,
       userName: socket.user.firstName,
       isTyping: false,
     });
@@ -442,7 +505,12 @@ export class SocketService {
 
   private handleGetOnlineUsers(socket: any, data: { rideId: string }): void {
     const { rideId } = data;
-    const usersInRide = this.rideRooms.get(rideId) || new Set();
+    const userId = socket.userId as string;
+    if (!this.rideRooms.get(rideId)?.has(userId)) {
+      socket.emit('error', { message: 'Access denied', code: 'NOT_IN_RIDE' });
+      return;
+    }
+    const usersInRide = this.rideRooms.get(rideId)!;
 
     socket.emit('online_users', {
       rideId,
@@ -887,8 +955,9 @@ export class SocketService {
   }
 
   private handleGroupTypingStart(socket: any, data: { groupChatId: string }): void {
-    const userId = socket.userId;
+    const userId = socket.userId as string;
     const { groupChatId } = data;
+    if (!this.groupChatRooms.get(groupChatId)?.has(userId)) return; // must be a member
 
     socket.to(`group_${groupChatId}`).emit('group_typing_start', {
       userId,
@@ -901,8 +970,9 @@ export class SocketService {
   }
 
   private handleGroupTypingStop(socket: any, data: { groupChatId: string }): void {
-    const userId = socket.userId;
+    const userId = socket.userId as string;
     const { groupChatId } = data;
+    if (!this.groupChatRooms.get(groupChatId)?.has(userId)) return; // must be a member
 
     socket.to(`group_${groupChatId}`).emit('group_typing_stop', {
       userId,
@@ -968,6 +1038,72 @@ export class SocketService {
 
   public emitToRoom(room: string, event: string, data: any): void {
     this.io.to(room).emit(event, data);
+  }
+
+  // Called by LocationController to broadcast driver location to ride room
+  public async updateUserLocation(userId: string, locationData: any): Promise<void> {
+    // Find active rides for this user and broadcast location
+    const socketId = this.connectedUsers.get(userId);
+    if (!socketId) return;
+
+    // Broadcast to all ride rooms this user is in
+    for (const [rideId, users] of this.rideRooms.entries()) {
+      if (users.has(userId)) {
+        const update: LocationUpdate = {
+          rideId,
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          heading: locationData.heading,
+          speed: locationData.speed,
+          timestamp: locationData.timestamp || new Date(),
+        };
+        this.driverLocations.set(rideId, update);
+        this.io.to(`ride:${rideId}`).emit('driver_location', update);
+        this.io.to(`ride:${rideId}`).emit('live_location', update); // mobile app alias
+        logInfo('Broadcasted driver location via HTTP update', { userId, rideId });
+      }
+    }
+  }
+
+  // Called by LocationController to start tracking a ride
+  public async startRideTracking(rideId: string, userId: string): Promise<void> {
+    if (!this.rideRooms.has(rideId)) {
+      this.rideRooms.set(rideId, new Set());
+    }
+    this.rideRooms.get(rideId)!.add(userId);
+    logInfo('Ride tracking started via HTTP', { rideId, userId });
+  }
+
+  // Called by LocationController to stop tracking a ride
+  public async stopRideTracking(rideId: string, userId: string): Promise<void> {
+    const users = this.rideRooms.get(rideId);
+    if (users) {
+      users.delete(userId);
+      if (users.size === 0) this.rideRooms.delete(rideId);
+    }
+    logInfo('Ride tracking stopped via HTTP', { rideId, userId });
+  }
+
+  // Called by LocationController and RideController to get tracking state
+  public async getRideTrackingData(rideId: string): Promise<any> {
+    const users = this.rideRooms.get(rideId);
+    const driverLocation = this.driverLocations.get(rideId);
+
+    return {
+      rideId,
+      participants: users ? Array.from(users) : [],
+      driverLocation: driverLocation || null,
+      locations: driverLocation ? [driverLocation] : [],
+      lastUpdated: driverLocation?.timestamp || null,
+    };
+  }
+
+  // Called by LocationController to send emergency alerts
+  public async sendEmergencyAlert(rideId: string, alert: any): Promise<void> {
+    this.io.to(`ride:${rideId}`).emit('emergency_alert', alert);
+    // Also notify all connected admins
+    this.io.emit('admin_emergency_alert', alert);
+    logError('Emergency alert broadcasted', new Error('EMERGENCY'), { rideId, alert });
   }
 }
 

@@ -24,6 +24,7 @@ import { useAppSelector } from '../../store/hooks';
 import { MessagesScreenProps } from '../../navigation/types';
 import { useSocketEvent } from '../../hooks/useSocket';
 import logger from '../../services/LoggingService';
+import chatApi from '../../services/api/chatApi';
 
 const log = logger.createLogger('MessagesScreen');
 
@@ -85,73 +86,29 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
   }, []);
 
   const loadMessages = async (): Promise<void> => {
-    // Mock data — replace with actual API call
-    const mockMessages: Message[] = [
-      {
-        id: '1',
-        type: 'ride',
-        title: 'Gaborone to Francistown',
-        lastMessage: 'I\'ll pick you up at Game City in 5 minutes',
-        timestamp: new Date(Date.now() - 300000).toISOString(),
-        unreadCount: 2,
-        participantName: 'Thabo Mokoena',
-        rideId: 'ride-123',
-        isOnline: true,
-        routeOrigin: 'Gaborone',
-        routeDestination: 'Francistown',
-      },
-      {
-        id: '2',
-        type: 'booking',
-        title: 'Maun to Kasane',
-        lastMessage: 'Thank you for the ride! Safe travels.',
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        unreadCount: 0,
-        participantName: 'Kelebogile Motswana',
-        bookingId: 'booking-456',
-        isOnline: false,
-        routeOrigin: 'Maun',
-        routeDestination: 'Kasane',
-      },
-      {
-        id: '3',
-        type: 'ride',
-        title: 'Gaborone to Palapye',
-        lastMessage: 'Are you still offering this ride tomorrow?',
-        timestamp: new Date(Date.now() - 7200000).toISOString(),
-        unreadCount: 1,
-        participantName: 'Mpho Radebe',
-        rideId: 'ride-789',
-        isOnline: true,
-        routeOrigin: 'Gaborone',
-        routeDestination: 'Palapye',
-      },
-      {
-        id: '5',
-        type: 'courier',
-        title: 'Package to Serowe',
-        lastMessage: 'Package has been picked up',
-        timestamp: new Date(Date.now() - 43200000).toISOString(),
-        unreadCount: 0,
-        participantName: 'Lesego Moagi',
-        rideId: 'pkg-321',
-        isOnline: false,
-        routeOrigin: 'Gaborone',
-        routeDestination: 'Serowe',
-      },
-      {
-        id: '4',
-        type: 'support',
-        title: 'Hitch Support',
-        lastMessage: 'Your issue has been resolved. Let us know if you need further assistance.',
-        timestamp: new Date(Date.now() - 86400000).toISOString(),
-        unreadCount: 0,
-        participantName: 'Support Team',
-        isOnline: false,
-      },
-    ];
-
-    setMessages(mockMessages);
+    try {
+      const response = await chatApi.getUserGroupChats({ limit: 50 });
+      if (response.success && response.data?.groupChats) {
+        const conversations: Message[] = response.data.groupChats.map((chat) => ({
+          id: chat.id,
+          type: chat.type,
+          title: chat.name,
+          lastMessage: chat.lastMessage || '',
+          timestamp: chat.lastMessageAt || new Date().toISOString(),
+          unreadCount: chat.unreadCount,
+          participantName: chat.participantName || '',
+          rideId: chat.rideId,
+          bookingId: chat.bookingId,
+          isOnline: chat.isOnline,
+          routeOrigin: chat.routeOrigin,
+          routeDestination: chat.routeDestination,
+        }));
+        setMessages(conversations);
+      }
+    } catch (error) {
+      log.warn('Failed to load conversations', { error: String(error) });
+      Alert.alert('Error', 'Failed to load conversations. Pull down to retry.');
+    }
   };
 
   const handleRefresh = async (): Promise<void> => {

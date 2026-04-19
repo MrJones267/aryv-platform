@@ -8,6 +8,7 @@
 import { Currency } from '../models/Currency';
 import { UserCurrency } from '../models/UserCurrency';
 import axios from 'axios';
+import logger from '../utils/logger';
 
 export interface CurrencyConversion {
   fromCurrency: string;
@@ -56,7 +57,7 @@ export class CurrencyService {
         order: [['code', 'ASC']],
       });
     } catch (error) {
-      console.error('Error fetching active currencies:', error);
+      logger.error('Error fetching active currencies', { error: (error as Error).message });
       throw new Error('Failed to fetch currencies');
     }
   }
@@ -73,7 +74,7 @@ export class CurrencyService {
         },
       });
     } catch (error) {
-      console.error(`Error fetching currency ${code}:`, error);
+      logger.error('Error fetching currency', { code, error: (error as Error).message });
       return null;
     }
   }
@@ -111,7 +112,7 @@ export class CurrencyService {
         paymentCurrencies,
       };
     } catch (error) {
-      console.error('Error fetching user currencies:', error);
+      logger.error('Error fetching user currencies', { error: (error as Error).message });
       throw new Error('Failed to fetch user currency preferences');
     }
   }
@@ -136,7 +137,7 @@ export class CurrencyService {
 
       return true;
     } catch (error) {
-      console.error('Error setting primary currency:', error);
+      logger.error('Error setting primary currency', { error: (error as Error).message });
       throw error;
     }
   }
@@ -160,7 +161,7 @@ export class CurrencyService {
 
       return true;
     } catch (error) {
-      console.error('Error adding payment currency:', error);
+      logger.error('Error adding payment currency', { error: (error as Error).message });
       throw error;
     }
   }
@@ -208,7 +209,7 @@ export class CurrencyService {
         timestamp: new Date(),
       };
     } catch (error) {
-      console.error('Error converting currency:', error as Error);
+      logger.error('Error converting currency', { error: (error as Error).message });
       throw error;
     }
   }
@@ -238,7 +239,7 @@ export class CurrencyService {
 
       return { updated, errors };
     } catch (error) {
-      console.error('Error updating exchange rates:', error);
+      logger.error('Error updating exchange rates', { error: (error as Error).message });
       errors.push(`General error: ${(error as Error).message}`);
       return { updated: 0, errors };
     }
@@ -261,7 +262,7 @@ export class CurrencyService {
 
       return null;
     } catch (error) {
-      console.error(`Error fetching from ${provider.name}:`, (error as Error).message);
+      logger.error('Error fetching from exchange rate provider', { provider: provider.name, error: (error as Error).message });
       throw error;
     }
   }
@@ -290,7 +291,7 @@ export class CurrencyService {
 
       return updated;
     } catch (error) {
-      console.error('Error updating currency rates:', error);
+      logger.error('Error updating currency rates', { error: (error as Error).message });
       throw error;
     }
   }
@@ -311,7 +312,7 @@ export class CurrencyService {
 
       return currencyObj.formatAmount(amount);
     } catch (error) {
-      console.error('Error formatting amount:', error);
+      logger.error('Error formatting amount', { error: (error as Error).message });
       return `${amount.toFixed(2)}`;
     }
   }

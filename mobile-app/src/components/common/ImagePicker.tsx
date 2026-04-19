@@ -15,19 +15,17 @@ import {
   ScrollView,
   Image,
   Dimensions,
-  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import {
+  launchCamera,
+  launchImageLibrary,
+  ImagePickerResponse,
+  CameraOptions,
+  ImageLibraryOptions,
+} from 'react-native-image-picker';
 
 import { colors } from '../../theme';
-
-// Mock image picker - in production, use react-native-image-picker
-interface ImagePickerResult {
-  uri: string;
-  type: string;
-  fileName: string;
-  fileSize: number;
-}
 
 interface ImagePickerProps {
   onImagesSelected: (images: string[]) => void;
@@ -43,30 +41,6 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   placeholder = "Add photos of your package"
 }) => {
   const [selectedImages, setSelectedImages] = useState<string[]>(existingImages);
-
-  const mockImagePicker = (): Promise<ImagePickerResult> => {
-    return new Promise((resolve) => {
-      // Simulate image picker with mock data
-      const mockImages = [
-        'https://via.placeholder.com/300x200/4A90E2/FFFFFF?text=Package+Photo+1',
-        'https://via.placeholder.com/300x200/50C878/FFFFFF?text=Package+Photo+2',
-        'https://via.placeholder.com/300x200/F39C12/FFFFFF?text=Package+Photo+3',
-        'https://via.placeholder.com/300x200/E74C3C/FFFFFF?text=Package+Photo+4',
-        'https://via.placeholder.com/300x200/9B59B6/FFFFFF?text=Package+Photo+5',
-      ];
-      
-      const randomImage = mockImages[Math.floor(Math.random() * mockImages.length)];
-      
-      setTimeout(() => {
-        resolve({
-          uri: randomImage,
-          type: 'image/jpeg',
-          fileName: `package_photo_${Date.now()}.jpg`,
-          fileSize: 245760
-        });
-      }, 1000); // Simulate network delay
-    });
-  };
 
   const handleAddImage = () => {
     if (selectedImages.length >= maxImages) {
@@ -94,18 +68,35 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
     );
   };
 
-  const openImagePicker = async (source: 'camera' | 'gallery') => {
-    try {
-      // In production, this would use react-native-image-picker
-      const result = await mockImagePicker();
-      
-      if (result.uri) {
-        const newImages = [...selectedImages, result.uri];
-        setSelectedImages(newImages);
-        onImagesSelected(newImages);
+  const handlePickerResponse = (response: ImagePickerResponse) => {
+    if (response.didCancel || response.errorCode) {
+      if (response.errorCode && response.errorCode !== 'camera_unavailable') {
+        Alert.alert('Error', response.errorMessage || 'Failed to select image.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      return;
+    }
+    const asset = response.assets?.[0];
+    if (asset?.uri) {
+      const newImages = [...selectedImages, asset.uri];
+      setSelectedImages(newImages);
+      onImagesSelected(newImages);
+    }
+  };
+
+  const openImagePicker = (source: 'camera' | 'gallery') => {
+    const sharedOptions = {
+      mediaType: 'photo' as const,
+      quality: 0.8 as const,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    };
+
+    if (source === 'camera') {
+      const options: CameraOptions = { ...sharedOptions, saveToPhotos: false };
+      launchCamera(options, handlePickerResponse);
+    } else {
+      const options: ImageLibraryOptions = { ...sharedOptions, selectionLimit: 1 };
+      launchImageLibrary(options, handlePickerResponse);
     }
   };
 

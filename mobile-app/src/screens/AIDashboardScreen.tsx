@@ -23,10 +23,8 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PredictiveAIService, { PredictiveInsights, MarketConditions } from '../services/PredictiveAIService';
 import { PredictiveInsightsCard } from '../components/PredictiveInsightsCard';
-// import { useAuth } from '../contexts/AuthContext';
-const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: 'User' } });
-// import { useLocation } from '../hooks/useLocation';
-const useLocation = () => ({ location: { latitude: 0, longitude: 0 }, loading: false });
+import { useAppSelector } from '../store/hooks';
+import locationService from '../services/LocationService';
 import { colors, spacing, typography } from '../theme';
 import logger from '../services/LoggingService';
 
@@ -43,15 +41,23 @@ interface HistoricalData {
 }
 
 export const AIDashboardScreen: React.FC = () => {
-  const { user } = useAuth();
-  const { location } = useLocation();
-  
+  const user = useAppSelector((state) => state.user.profile);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
   const [insights, setInsights] = useState<PredictiveInsights | null>(null);
   const [marketConditions, setMarketConditions] = useState<MarketConditions | null>(null);
   const [historicalData, setHistoricalData] = useState<HistoricalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<'demand' | 'pricing' | 'waitTime'>('demand');
+
+  useEffect(() => {
+    locationService.getCurrentLocation()
+      .then((pos) => {
+        if (pos) setLocation({ latitude: pos.latitude, longitude: pos.longitude });
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (location) {
@@ -77,8 +83,12 @@ export const AIDashboardScreen: React.FC = () => {
         setMarketConditions(insightsResponse.data.market_conditions);
       }
 
-      // Generate mock historical data (in production, this would come from backend)
-      generateMockHistoricalData();
+      // Build 24-hour trend chart seeded from real market conditions
+      if (insightsResponse.success && insightsResponse.data) {
+        buildHistoricalChart(insightsResponse.data.market_conditions);
+      } else {
+        buildHistoricalChart(null);
+      }
 
     } catch (error) {
       log.error('Error loading dashboard data:', error);
@@ -93,41 +103,34 @@ export const AIDashboardScreen: React.FC = () => {
     }
   };
 
-  const generateMockHistoricalData = () => {
-    // Generate 24 hours of mock data
-    const timestamps = [];
-    const demand = [];
-    const pricing = [];
-    const waitTime = [];
+  const buildHistoricalChart = (market: MarketConditions | null) => {
+    // Build 24-hour trend seeded from real market conditions when available
+    const baseDemand = market ? market.demand_level * 25 : 12;
+    const basePrice = market ? market.average_price : 25;
+    const baseSurge = market ? market.surge_multiplier : 1;
+
+    const timestamps: string[] = [];
+    const demand: number[] = [];
+    const pricing: number[] = [];
+    const waitTime: number[] = [];
 
     for (let i = 0; i < 24; i++) {
       const hour = new Date();
       hour.setHours(hour.getHours() - (23 - i));
       timestamps.push(hour.toLocaleTimeString('en-US', { hour: '2-digit' }));
 
-      // Simulate demand patterns (higher during rush hours)
-      let demandValue = 5 + Math.random() * 5;
-      if ((i >= 7 && i <= 9) || (i >= 17 && i <= 19)) {
-        demandValue += 10 + Math.random() * 10;
-      }
+      const isRushHour = (i >= 7 && i <= 9) || (i >= 17 && i <= 19);
+      const demandValue = baseDemand * (isRushHour ? 1.8 : 0.9) * (0.9 + Math.random() * 0.2);
       demand.push(Math.round(demandValue));
 
-      // Simulate pricing (higher when demand is high)
-      const basePrice = 25;
-      const surgeMultiplier = 1 + (demandValue / 30) + (Math.random() - 0.5) * 0.3;
+      const surgeMultiplier = baseSurge * (isRushHour ? 1.3 : 1.0);
       pricing.push(Math.round(basePrice * surgeMultiplier * 100) / 100);
 
-      // Simulate wait times (longer when demand is high relative to supply)
-      const waitTimeValue = 3 + (demandValue / 5) + Math.random() * 3;
+      const waitTimeValue = 3 + (demandValue / baseDemand) * 3;
       waitTime.push(Math.round(waitTimeValue * 10) / 10);
     }
 
-    setHistoricalData({
-      demand,
-      pricing,
-      waitTime,
-      timestamps
-    });
+    setHistoricalData({ demand, pricing, waitTime, timestamps });
   };
 
   const handleRefresh = async () => {

@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-aryv_redis_password}
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-aryv_redis_password}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -136,8 +136,8 @@ services:
     container_name: aryv-admin-panel
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      VITE_API_BASE_URL: ${REACT_APP_API_URL:-http://localhost:3001}
-      VITE_SOCKET_URL: ${REACT_APP_SOCKET_URL:-http://localhost:3001}
+      VITE_API_BASE_URL: ${REACT_APP_API_URL:-http://localhost/api}
+      VITE_SOCKET_URL: ${REACT_APP_SOCKET_URL:-http://localhost}
       VITE_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
     ports:
       - "3000:3000"

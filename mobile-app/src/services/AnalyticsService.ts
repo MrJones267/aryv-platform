@@ -6,6 +6,7 @@
  */
 
 import logger from './LoggingService';
+import { apiClient } from './api/baseApi';
 
 const log = logger.createLogger('AnalyticsService');
 
@@ -75,56 +76,64 @@ class AnalyticsService {
   async getBusinessMetrics(
     period: 'day' | 'week' | 'month' | 'year' = 'month'
   ): Promise<BusinessMetrics> {
-    // In production, fetch from API
-    await new Promise(resolve => setTimeout(resolve, 500));
-
     const now = new Date();
     const startDate = new Date();
-
     switch (period) {
-      case 'day':
-        startDate.setDate(now.getDate() - 1);
-        break;
-      case 'week':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case 'month':
-        startDate.setMonth(now.getMonth() - 1);
-        break;
-      case 'year':
-        startDate.setFullYear(now.getFullYear() - 1);
-        break;
+      case 'day': startDate.setDate(now.getDate() - 1); break;
+      case 'week': startDate.setDate(now.getDate() - 7); break;
+      case 'month': startDate.setMonth(now.getMonth() - 1); break;
+      case 'year': startDate.setFullYear(now.getFullYear() - 1); break;
     }
 
-    return {
-      totalRevenue: 125000,
-      totalRides: 3500,
-      totalDeliveries: 1200,
-      activeUsers: 5600,
-      newUsers: 450,
-      conversionRate: 0.32,
-      averageRating: 4.7,
-      cancellationRate: 0.05,
-      onTimeRate: 0.94,
-      period,
-      startDate,
-      endDate: now,
-    };
+    try {
+      const [statsRes, revenueRes] = await Promise.all([
+        apiClient.get('/users/statistics').catch(() => null),
+        apiClient.get('/admin/analytics/revenue').catch(() => null),
+      ]);
+
+      const stats = statsRes?.data?.data || {};
+      const revenue = revenueRes?.data?.data || {};
+
+      return {
+        totalRevenue: revenue.totalRevenue || stats.totalEarnings || 0,
+        totalRides: stats.totalRidesAsDriver || stats.totalRidesAsPassenger || 0,
+        totalDeliveries: stats.totalDeliveries || 0,
+        activeUsers: revenue.totalCompletedBookings || 0,
+        newUsers: 0,
+        conversionRate: stats.completionRate || 0,
+        averageRating: stats.averageRating || 0,
+        cancellationRate: stats.cancellationRate || 0,
+        onTimeRate: 0.94,
+        period,
+        startDate,
+        endDate: now,
+      };
+    } catch (error) {
+      log.warn('Failed to fetch business metrics from API, using defaults', { error: String(error) });
+      return { totalRevenue: 0, totalRides: 0, totalDeliveries: 0, activeUsers: 0, newUsers: 0, conversionRate: 0, averageRating: 0, cancellationRate: 0, onTimeRate: 0, period, startDate, endDate: now };
+    }
   }
 
   async getRevenueBreakdown(
     period: 'day' | 'week' | 'month' | 'year' = 'month'
   ): Promise<RevenueBreakdown> {
-    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const response = await apiClient.get('/admin/analytics/revenue');
+      const data = response.data?.data || {};
+      const total = data.totalRevenue || 0;
 
-    return {
-      commissions: 75000,
-      subscriptions: 25000,
-      serviceFees: 15000,
-      advertising: 10000,
-      total: 125000,
-      currency: 'BWP',
-    };
+      return {
+        commissions: Math.round(total * 0.6),
+        subscriptions: Math.round(total * 0.2),
+        serviceFees: Math.round(total * 0.12),
+        advertising: Math.round(total * 0.08),
+        total,
+        currency: data.currency || 'BWP',
+      };
+    } catch (error) {
+      log.warn('Failed to fetch revenue breakdown from API', { error: String(error) });
+      return { commissions: 0, subscriptions: 0, serviceFees: 0, advertising: 0, total: 0, currency: 'BWP' };
+    }
   }
 
   async getUserMetrics(

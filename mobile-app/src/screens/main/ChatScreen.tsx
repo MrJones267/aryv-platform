@@ -28,6 +28,7 @@ import { ChatScreenProps } from '../../navigation/types';
 import { useSocket, useSocketEvent, useChatMessages } from '../../hooks/useSocket';
 import locationService from '../../services/LocationService';
 import logger from '../../services/LoggingService';
+import chatApi from '../../services/api/chatApi';
 
 const log = logger.createLogger('ChatScreen');
 
@@ -129,66 +130,28 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     loadMessages();
   }, []);
 
-  const loadMessages = (): void => {
-    // Initial mock messages — these would be fetched from API in production
-    const mockMessages: ChatMessage[] = [
-      {
-        id: '1',
-        senderId: 'other-user-id',
-        senderName: recipientName,
-        message: 'Hi! I\'m interested in your ride.',
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        type: 'text',
-        isRead: true,
-      },
-      {
-        id: '2',
-        senderId: user?.id || 'current-user',
-        senderName: user?.firstName || 'You',
-        message: 'Great! I have seats available. When do you need to leave?',
-        timestamp: new Date(Date.now() - 3300000).toISOString(),
-        type: 'text',
-        isRead: true,
-      },
-      {
-        id: '3',
-        senderId: 'other-user-id',
-        senderName: recipientName,
-        message: 'Around 5 PM would be perfect. Where should we meet?',
-        timestamp: new Date(Date.now() - 3000000).toISOString(),
-        type: 'text',
-        isRead: true,
-      },
-      {
-        id: '4',
-        senderId: user?.id || 'current-user',
-        senderName: user?.firstName || 'You',
-        message: 'How about the main entrance of the mall?',
-        timestamp: new Date(Date.now() - 2700000).toISOString(),
-        type: 'text',
-        isRead: true,
-      },
-      {
-        id: '5',
-        senderId: 'system',
-        senderName: 'System',
-        message: `${recipientName} has booked this ride`,
-        timestamp: new Date(Date.now() - 2400000).toISOString(),
-        type: 'system',
-        isRead: true,
-      },
-      {
-        id: '6',
-        senderId: 'other-user-id',
-        senderName: recipientName,
-        message: 'Perfect! See you there at 5 PM.',
-        timestamp: new Date(Date.now() - 300000).toISOString(),
-        type: 'text',
-        isRead: false,
-      },
-    ];
-
-    setLocalMessages(mockMessages);
+  const loadMessages = async (): Promise<void> => {
+    try {
+      const response = await chatApi.getGroupMessages(chatId, { limit: 50 });
+      if (response.success && response.data?.messages) {
+        const history: ChatMessage[] = response.data.messages.map((m) => ({
+          id: m.id,
+          senderId: m.senderId,
+          senderName: m.senderName,
+          message: m.content,
+          timestamp: m.timestamp,
+          type: (m.type === 'image' ? 'text' : m.type) as ChatMessage['type'],
+          isRead: m.isRead,
+          location: m.location,
+        }));
+        setLocalMessages(history);
+        // Mark messages as read
+        chatApi.markAsRead(chatId).catch(() => {});
+      }
+    } catch (error) {
+      log.warn('Failed to load message history', { error: String(error) });
+      // Silently fail — socket will still deliver new messages in real time
+    }
   };
 
   const handleSendMessage = (): void => {

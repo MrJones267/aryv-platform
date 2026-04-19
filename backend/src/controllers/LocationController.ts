@@ -12,6 +12,13 @@ import Booking from '../models/Booking';
 import { AuthenticatedRequest } from '../types';
 import { BookingStatus } from '../types';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
+import googleMapsService from '../services/GoogleMapsService';
+import { redisClient } from '../config/redis';
+import User from '../models/User';
+import notificationService from '../services/NotificationService';
+
+const LOCATION_TTL = 300; // 5 minutes — location data expires if not refreshed
+const locationKey = (userId: string) => `loc:${userId}`;
 
 interface LocationData {
   latitude: number;
@@ -49,8 +56,9 @@ export class LocationController {
         timestamp: new Date(),
       };
 
-      // Store in Redis or database for real-time access
-      // For now, we'll simulate storing in memory
+      // Cache location in Redis with TTL so stale data auto-expires
+      await redisClient.set(locationKey(userId), JSON.stringify(locationData), LOCATION_TTL);
+
       logger.info('Location updated', {
         userId,
         location: { latitude, longitude },
@@ -104,15 +112,16 @@ export class LocationController {
         return;
       }
 
-      // TODO: Get location from Redis/cache
-      // For now, return placeholder data
+      const cached = await redisClient.get(locationKey(userId));
+      const location = cached ? JSON.parse(cached) : null;
+
       res.json({
         success: true,
         data: {
           userId,
-          location: null,
-          lastUpdated: null,
-          message: 'No location data available',
+          location,
+          lastUpdated: location?.timestamp || null,
+          message: location ? 'Location data available' : 'No location data available',
         },
         timestamp: new Date().toISOString(),
       });
@@ -329,44 +338,39 @@ export class LocationController {
     try {
       const { latitude, longitude, radius = 5, type = 'all' } = req.query;
 
-      // Use PostGIS for geospatial search
-      // TODO: Implement actual nearby user search with real-time location data
-      // For now, return mock data
+      // Get active ride participants from socket service
+      const socketService = req.app?.get('socketService');
+      const activeUserIds: string[] = socketService?.getActiveUserIds?.() || [];
 
-      const nearbyUsers = [
-        {
-          id: 'user-1',
-          firstName: 'John',
-          lastName: 'D.',
-          type: 'driver',
-          distance: 0.5,
-          location: {
-            latitude: Number(latitude) + 0.001,
-            longitude: Number(longitude) + 0.001,
-          },
-          lastSeen: new Date(),
-        },
-        {
-          id: 'user-2',
-          firstName: 'Jane',
-          lastName: 'S.',
-          type: 'passenger',
-          distance: 1.2,
-          location: {
-            latitude: Number(latitude) - 0.002,
-            longitude: Number(longitude) + 0.002,
-          },
-          lastSeen: new Date(),
-        },
-      ];
+      const userLat = Number(latitude);
+      const userLng = Number(longitude);
+      const radiusKm = Number(radius);
+
+      // For each active user, fetch cached location from Redis and filter by distance
+      const nearbyUsers: any[] = [];
+
+      await Promise.all(
+        activeUserIds.map(async (uid: string) => {
+          const cached = await redisClient.get(locationKey(uid));
+          if (!cached) return;
+
+          const loc = JSON.parse(cached) as { latitude: number; longitude: number; timestamp?: string };
+          const dist = googleMapsService.haversineDistance(userLat, userLng, loc.latitude, loc.longitude);
+          if (dist > radiusKm) return;
+
+          nearbyUsers.push({ id: uid, distance: Math.round(dist * 10) / 10, location: loc, lastSeen: loc.timestamp });
+        })
+      );
+
+      nearbyUsers.sort((a, b) => a.distance - b.distance);
 
       res.json({
         success: true,
         data: {
           users: nearbyUsers,
           searchParams: {
-            center: { latitude: Number(latitude), longitude: Number(longitude) },
-            radius: Number(radius),
+            center: { latitude: userLat, longitude: userLng },
+            radius: radiusKm,
             type,
           },
           total: nearbyUsers.length,
@@ -393,40 +397,17 @@ export class LocationController {
     try {
       const { query, latitude, longitude, radius = 10 } = req.query;
 
-      // TODO: Integrate with external geocoding service (Google Places, Mapbox, etc.)
-      // For now, return mock search results
-
-      const mockResults = [
-        {
-          placeId: 'place-1',
-          name: `${query} - Restaurant`,
-          address: '123 Main St, City, Country',
-          location: {
-            latitude: Number(latitude || 40.7128) + 0.001,
-            longitude: Number(longitude || -74.0060) + 0.001,
-          },
-          types: ['restaurant', 'food', 'establishment'],
-          rating: 4.5,
-          distance: 0.8,
-        },
-        {
-          placeId: 'place-2',
-          name: `${query} - Shopping Mall`,
-          address: '456 Oak Ave, City, Country',
-          location: {
-            latitude: Number(latitude || 40.7128) - 0.002,
-            longitude: Number(longitude || -74.0060) - 0.002,
-          },
-          types: ['shopping_mall', 'establishment'],
-          rating: 4.2,
-          distance: 1.5,
-        },
-      ];
+      const results = await googleMapsService.searchPlaces(
+        query as string,
+        latitude ? Number(latitude) : undefined,
+        longitude ? Number(longitude) : undefined,
+        Number(radius)
+      );
 
       res.json({
         success: true,
         data: {
-          results: mockResults,
+          results,
           query: query as string,
           searchCenter: latitude && longitude ? {
             latitude: Number(latitude),
@@ -457,32 +438,11 @@ export class LocationController {
     try {
       const { latitude, longitude } = req.query;
 
-      // TODO: Integrate with external geocoding service
-      // For now, return mock address data
-
-      const mockAddress = {
-        formattedAddress: '123 Main St, Downtown, City, State 12345, Country',
-        components: {
-          streetNumber: '123',
-          streetName: 'Main St',
-          neighborhood: 'Downtown',
-          city: 'City',
-          state: 'State',
-          postalCode: '12345',
-          country: 'Country',
-          countryCode: 'CC',
-        },
-        location: {
-          latitude: Number(latitude),
-          longitude: Number(longitude),
-        },
-        accuracy: 'ROOFTOP',
-        locationType: 'GEOMETRIC_CENTER',
-      };
+      const addressData = await googleMapsService.reverseGeocode(Number(latitude), Number(longitude));
 
       res.json({
         success: true,
-        data: mockAddress,
+        data: addressData,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -516,48 +476,24 @@ export class LocationController {
         return;
       }
 
-      // TODO: Integrate with routing service (Google Directions, Mapbox, OSRM, etc.)
-      // For now, return mock route data
-
-      const mockRoute = {
-        distance: 15.2, // km
-        duration: 18, // minutes
-        waypoints: waypoints.map((wp: any, index: number) => ({
-          ...wp,
-          order: index,
-          estimatedArrival: new Date(Date.now() + index * 5 * 60 * 1000), // 5 min intervals
-        })),
-        polyline: 'encoded_polyline_string_here',
-        legs: [
-          {
-            distance: 8.5,
-            duration: 10,
-            startLocation: waypoints[0],
-            endLocation: waypoints[1],
-            steps: [
-              {
-                instruction: 'Head north on Main St',
-                distance: 2.1,
-                duration: 3,
-                polyline: 'leg_polyline_string',
-              },
-            ],
-          },
-        ],
-        routeOptions: {
-          type: routeType,
-          avoidTolls,
-          avoidHighways,
-        },
-        traffic: {
-          currentConditions: 'light',
-          delayMinutes: 2,
-        },
-      };
+      const routeData = await googleMapsService.calculateRoute(
+        waypoints,
+        routeType as string,
+        Boolean(avoidTolls),
+        Boolean(avoidHighways)
+      );
 
       res.json({
         success: true,
-        data: mockRoute,
+        data: {
+          ...routeData,
+          waypoints: waypoints.map((wp: any, index: number) => ({
+            ...wp,
+            order: index,
+            estimatedArrival: new Date(Date.now() + index * Math.ceil((routeData.duration / waypoints.length) * 60 * 1000)),
+          })),
+          routeOptions: { type: routeType, avoidTolls, avoidHighways },
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -604,27 +540,37 @@ export class LocationController {
         return;
       }
 
-      // TODO: Calculate real ETA based on current location and traffic
-      const mockETA = {
-        rideId,
-        estimatedArrival: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes from now
-        distanceRemaining: 5.2, // km
-        durationRemaining: 15, // minutes
-        currentLocation: {
-          latitude: 40.7128,
-          longitude: -74.0060,
-        },
-        destination: {
-          latitude: ride.destinationCoordinates.coordinates[1],
-          longitude: ride.destinationCoordinates.coordinates[0],
-        },
-        trafficConditions: 'moderate',
-        confidence: 0.85,
-      };
+      const socketService = req.app.get('socketService');
+      const trackingData = socketService ? await socketService.getRideTrackingData(rideId) : null;
+      const currentLocation = trackingData?.driverLocation || null;
+
+      const destLat = ride.destinationCoordinates.coordinates[1];
+      const destLng = ride.destinationCoordinates.coordinates[0];
+
+      let durationRemaining = 15;
+      let distanceRemaining = 5.0;
+
+      if (currentLocation) {
+        const eta = await googleMapsService.getETA(
+          { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+          { latitude: destLat, longitude: destLng }
+        );
+        durationRemaining = eta.duration;
+        distanceRemaining = eta.distance;
+      }
 
       res.json({
         success: true,
-        data: mockETA,
+        data: {
+          rideId,
+          estimatedArrival: new Date(Date.now() + durationRemaining * 60 * 1000),
+          distanceRemaining,
+          durationRemaining,
+          currentLocation,
+          destination: { latitude: destLat, longitude: destLng },
+          trafficConditions: 'unknown',
+          confidence: currentLocation ? 0.85 : 0.5,
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -670,11 +616,34 @@ export class LocationController {
         status: 'active',
       };
 
-      // TODO: Send alert to emergency services, contacts, and support team
-      logger.error('EMERGENCY ALERT', {
-        alert: emergencyAlert,
-        priority: 'CRITICAL',
-      });
+      logger.error('EMERGENCY ALERT', { alert: emergencyAlert, priority: 'CRITICAL' });
+
+      // Notify the user's emergency contact and any active ride passengers/driver
+      try {
+        const user = await User.findByPk(userId, {
+          attributes: ['id', 'firstName', 'lastName', 'emergencyContactName', 'emergencyContactPhone'],
+        });
+
+        const alertNotification = {
+          type: 'emergency_alert',
+          title: '🚨 Emergency Alert',
+          message: `${user?.firstName || 'A user'} has triggered an emergency alert. Location: ${latitude}, ${longitude}`,
+          data: { alertId: emergencyAlert.id, latitude, longitude, type: emergencyType },
+          timestamp: new Date().toISOString(),
+        };
+
+        // Notify via the user's own notification channel (for support visibility)
+        await notificationService.sendToUser(userId, alertNotification);
+
+        // If in a ride, notify all participants
+        if (rideId) {
+          await notificationService.sendToRide(rideId, alertNotification);
+        }
+      } catch (notifyErr) {
+        logger.warn('Failed to dispatch emergency notifications', {
+          error: getErrorMessage(notifyErr), userId,
+        });
+      }
 
       // Notify via Socket.io if in a ride
       const socketService = req.app.get('socketService');
@@ -709,36 +678,88 @@ export class LocationController {
     }
   }
 
-  // Placeholder methods for additional location features
-  async getGeofences(_req: AuthenticatedRequest, res: Response): Promise<void> {
-    res.json({
-      success: true,
-      message: 'Geofences feature to be implemented',
-      data: [],
-      timestamp: new Date().toISOString(),
-    });
+  /** GET /locations/geofences — return user's saved geofences from Redis */
+  async getGeofences(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+      const raw = await redisClient.get(`geofences:${userId}`);
+      const geofences = raw ? JSON.parse(raw) : [];
+      res.json({ success: true, data: geofences, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('getGeofences error', { error: getErrorMessage(error) });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
   }
 
-  async checkGeofences(_req: AuthenticatedRequest, res: Response): Promise<void> {
-    res.json({
-      success: true,
-      message: 'Geofence checking feature to be implemented',
-      data: { triggered: [], active: [] },
-      timestamp: new Date().toISOString(),
-    });
+  /** POST /locations/geofences/check — check if coordinates are inside any active geofences */
+  async checkGeofences(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+      const { latitude, longitude } = req.body as { latitude: number; longitude: number };
+      const raw = await redisClient.get(`geofences:${userId}`);
+      const geofences: any[] = raw ? JSON.parse(raw) : [];
+
+      const triggered = geofences.filter((g: any) => {
+        // haversineDistance returns km; g.radius is stored in km (default 1 km)
+        const distKm = googleMapsService.haversineDistance(latitude, longitude, g.latitude, g.longitude);
+        return distKm <= (g.radius || 1);
+      });
+
+      res.json({ success: true, data: { triggered, active: geofences }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('checkGeofences error', { error: getErrorMessage(error) });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
   }
 
-  async getLocationStatistics(_req: AuthenticatedRequest, res: Response): Promise<void> {
-    res.json({
-      success: true,
-      message: 'Location statistics feature to be implemented',
-      data: {
-        totalDistance: 0,
-        totalTime: 0,
-        averageSpeed: 0,
-        topLocations: [],
-      },
-      timestamp: new Date().toISOString(),
-    });
+  /** GET /locations/statistics/:userId — ride distance and location stats for a user */
+  async getLocationStatistics(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { userId: targetUserId } = req.params;
+      const requestingUserId = req.user?.id;
+      if (!requestingUserId) {
+        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const completedRides = await Ride.findAll({
+        where: { driverId: targetUserId, status: 'completed' },
+        attributes: ['distance', 'departureTime', 'originAddress', 'destinationAddress'],
+      });
+
+      const totalDistance = completedRides.reduce((sum: number, r: any) => sum + (r.distance || 0), 0);
+
+      // Top locations from origin/destination
+      const locationCounts: Record<string, number> = {};
+      completedRides.forEach((r: any) => {
+        if (r.originAddress) locationCounts[r.originAddress] = (locationCounts[r.originAddress] || 0) + 1;
+        if (r.destinationAddress) locationCounts[r.destinationAddress] = (locationCounts[r.destinationAddress] || 0) + 1;
+      });
+      const topLocations = Object.entries(locationCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([address, count]) => ({ address, count }));
+
+      res.json({
+        success: true,
+        data: {
+          totalDistance: Math.round(totalDistance * 10) / 10,
+          totalRides: completedRides.length,
+          topLocations,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('getLocationStatistics error', { error: getErrorMessage(error) });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
   }
 }

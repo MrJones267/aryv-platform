@@ -22,6 +22,16 @@
         android:name="com.google.android.geo.API_KEY"
         android:value="@string/google_maps_api_key" />
       
+      <!-- Firebase Crashlytics -->
+      <meta-data
+        android:name="firebase_crashlytics_collection_enabled"
+        android:value="true" />
+      
+      <!-- Firebase Analytics -->
+      <meta-data
+        android:name="firebase_analytics_collection_enabled"
+        android:value="true" />
+      
       <!-- Firebase Cloud Messaging Service -->
       <service
         android:name="com.aryvmobile.AryvFirebaseMessagingService"

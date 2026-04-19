@@ -8,6 +8,7 @@
 import { Country } from '../models/Country';
 import User from '../models/User';
 import { CurrencyService } from './CurrencyService';
+import logger from '../utils/logger';
 
 export interface CountryWithCurrencies extends Country {
   suggestedCurrencies?: Array<{
@@ -37,7 +38,7 @@ export class CountryService {
         order: [['name', 'ASC']],
       });
     } catch (error) {
-      console.error('Error fetching countries:', error);
+      logger.error('Error fetching countries', { error: (error as Error).message });
       throw new Error('Failed to fetch countries');
     }
   }
@@ -62,7 +63,7 @@ export class CountryService {
         ),
       );
     } catch (error) {
-      console.error('Error fetching countries by region:', error);
+      logger.error('Error fetching countries by region', { error: (error as Error).message });
       throw new Error('Failed to fetch countries by region');
     }
   }
@@ -85,7 +86,7 @@ export class CountryService {
         order: [['name', 'ASC']],
       });
     } catch (error) {
-      console.error('Error fetching popular countries:', error);
+      logger.error('Error fetching popular countries', { error: (error as Error).message });
       throw new Error('Failed to fetch popular countries');
     }
   }
@@ -102,7 +103,7 @@ export class CountryService {
         },
       });
     } catch (error) {
-      console.error(`Error fetching country ${code}:`, error);
+      logger.error('Error fetching country', { code, error: (error as Error).message });
       return null;
     }
   }
@@ -152,14 +153,14 @@ export class CountryService {
               await CurrencyService.setUserPrimaryCurrency(userId, suggestedCurrency.code);
             }
           } catch (error) {
-            console.warn('Could not auto-update user currency:', error);
+            logger.warn('Could not auto-update user currency', { error: (error as Error).message });
           }
         }
       }
 
       return result;
     } catch (error) {
-      console.error('Error setting user country:', error);
+      logger.error('Error setting user country', { error: (error as Error).message });
       throw error;
     }
   }
@@ -198,7 +199,7 @@ export class CountryService {
         symbol: currency.symbol,
       };
     } catch (error) {
-      console.error('Error getting suggested currency:', error);
+      logger.error('Error getting suggested currency', { error: (error as Error).message });
       return null;
     }
   }
@@ -228,7 +229,7 @@ export class CountryService {
 
       return result;
     } catch (error) {
-      console.error('Error fetching countries with currencies:', error);
+      logger.error('Error fetching countries with currencies', { error: (error as Error).message });
       throw new Error('Failed to fetch countries with currencies');
     }
   }
@@ -252,7 +253,7 @@ export class CountryService {
         timezone: user.timezone,
       };
     } catch (error) {
-      console.error('Error fetching user country:', error);
+      logger.error('Error fetching user country', { error: (error as Error).message });
       return { country: null, timezone: null };
     }
   }
@@ -283,7 +284,7 @@ export class CountryService {
         order: [['name', 'ASC']],
       });
     } catch (error) {
-      console.error('Error getting countries by phone prefix:', error);
+      logger.error('Error getting countries by phone prefix', { error: (error as Error).message });
       return [];
     }
   }
@@ -298,7 +299,7 @@ export class CountryService {
       const targetTime = new Date(utc.toLocaleString('en-US', { timeZone: timezone }));
       return (targetTime.getTime() - utc.getTime()) / (1000 * 60 * 60); // Hours
     } catch (error) {
-      console.error('Error calculating timezone offset:', error);
+      logger.error('Error calculating timezone offset', { error: (error as Error).message });
       return 0;
     }
   }
@@ -319,7 +320,7 @@ export class CountryService {
         timeZoneName: 'short',
       });
     } catch (error) {
-      console.error('Error formatting local time:', error);
+      logger.error('Error formatting local time', { error: (error as Error).message });
       return new Date().toLocaleString();
     }
   }
@@ -346,7 +347,7 @@ export class CountryService {
         ),
       );
     } catch (error) {
-      console.error('Error searching countries:', error);
+      logger.error('Error searching countries', { error: (error as Error).message });
       throw new Error('Failed to search countries');
     }
   }
@@ -382,7 +383,7 @@ export class CountryService {
         popularCountries: countries.filter(c => popularCodes.includes(c.code)).length,
       };
     } catch (error) {
-      console.error('Error getting country statistics:', error);
+      logger.error('Error getting country statistics', { error: (error as Error).message });
       throw new Error('Failed to get country statistics');
     }
   }

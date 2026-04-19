@@ -108,88 +108,18 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   const loadRideDetails = async (): Promise<void> => {
     setIsLoading(true);
     try {
-      // Try API first, fall back to mock data
-      try {
-        const response = await ridesApi.getRideById(rideId);
-        if (response.success && response.data) {
-          setRide(response.data as unknown as RideDetails);
-          return;
-        }
-      } catch (apiError) {
-        log.warn('API call failed, using mock data:', apiError);
+      const response = await ridesApi.getRideById(rideId);
+      if (response.success && response.data) {
+        setRide(response.data as unknown as RideDetails);
+      } else {
+        throw new Error(response.error || 'Ride not found');
       }
-
-      // Mock data fallback
-      const mockRide: RideDetails = {
-        id: rideId,
-        driver: {
-          id: 'driver-123',
-          firstName: 'Thabo',
-          lastName: 'Mokoena',
-          rating: 4.8,
-          totalRides: 156,
-          phone: '+26772345678',
-        },
-        vehicle: {
-          make: 'Toyota',
-          model: 'Hilux',
-          year: 2021,
-          color: 'White',
-          licensePlate: 'B 123 ABC',
-        },
-        origin: {
-          address: 'Game City Mall, Gaborone',
-          latitude: -24.6282,
-          longitude: 25.9231,
-        },
-        destination: {
-          address: 'Nzano Centre, Francistown',
-          latitude: -21.1700,
-          longitude: 27.5073,
-        },
-        departureTime: new Date(Date.now() + 7200000).toISOString(),
-        arrivalTime: new Date(Date.now() + 21600000).toISOString(), // ~6 hours
-        pricePerSeat: 180,
-        availableSeats: 2,
-        totalSeats: 4,
-        distance: 430,
-        estimatedDuration: 300,
-        status: 'confirmed',
-        description: 'Direct route Gaborone to Francistown via A1. Comfortable ride with AC. Happy to stop for refreshments at Palapye.',
-        amenities: ['Phone Charger', 'Air Conditioning', 'Music', 'Luggage Space'],
-        bookings: [
-          {
-            id: 'booking-1',
-            passenger: {
-              firstName: 'Kelebogile',
-              lastName: 'Motswana',
-              rating: 4.9,
-            },
-            seatsBooked: 1,
-            status: 'confirmed',
-          },
-          {
-            id: 'booking-2',
-            passenger: {
-              firstName: 'Mpho',
-              lastName: 'Radebe',
-              rating: 4.7,
-            },
-            seatsBooked: 1,
-            status: 'confirmed',
-          },
-        ],
-        preferences: {
-          smokingAllowed: false,
-          petsAllowed: true,
-          musicAllowed: true,
-        },
-      };
-
-      setRide(mockRide);
     } catch (error) {
-      log.info('Error loading ride details:', error);
-      Alert.alert('Error', 'Failed to load ride details');
+      log.error('Error loading ride details:', error);
+      Alert.alert('Error', 'Failed to load ride details. Please try again.', [
+        { text: 'Retry', onPress: loadRideDetails },
+        { text: 'Go Back', onPress: () => navigation.goBack() },
+      ]);
     } finally {
       setIsLoading(false);
     }

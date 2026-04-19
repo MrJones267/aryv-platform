@@ -1,0 +1,20 @@
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/src'],
+  testMatch: [
+    '**/src/tests/unit/**/*.test.ts',
+    '**/src/tests/integration/adminAuth.test.ts',
+    '**/src/tests/integration/fileServing.test.ts',
+  ],
+  transform: { '^.+\\.(ts|tsx)$': 'ts-jest' },
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
+  setupFilesAfterEnv: ['<rootDir>/src/tests/setup-unit.ts'],
+  testTimeout: 10000,
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'json'],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+  clearMocks: true,
+  restoreMocks: true,
+  verbose: true,
+  forceExit: true,
+};

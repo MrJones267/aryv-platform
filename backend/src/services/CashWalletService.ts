@@ -867,7 +867,7 @@ export class CashWalletService {
     _transaction: Transaction,
   ): Promise<WalletResult> {
     switch (request.source) {
-      case 'agent':
+      case 'agent': {
         if (!request.agentId) {
           return {
             success: false,
@@ -875,8 +875,17 @@ export class CashWalletService {
             code: 'AGENT_ID_REQUIRED',
           };
         }
-        // TODO: Validate agent exists and is active
+        const agent = await User.findByPk(request.agentId, {
+          attributes: ['id', 'status', 'role'],
+        });
+        if (!agent) {
+          return { success: false, error: 'Agent not found', code: 'AGENT_NOT_FOUND' };
+        }
+        if ((agent as any).status !== 'active') {
+          return { success: false, error: 'Agent is not active', code: 'AGENT_INACTIVE' };
+        }
         break;
+      }
 
       case 'kiosk':
       case 'partner_store':
@@ -890,11 +899,25 @@ export class CashWalletService {
         break;
 
       case 'mobile_money':
-        // TODO: Validate mobile money transaction
+        // Requires mobile money provider reference (e.g. MTN MoMo transaction ID)
+        if (!request.sourceReference) {
+          return {
+            success: false,
+            error: 'Mobile money transaction reference is required',
+            code: 'MOBILE_MONEY_REF_REQUIRED',
+          };
+        }
         break;
 
       case 'voucher':
-        // TODO: Validate voucher code
+        // Requires voucher code in sourceReference
+        if (!request.sourceReference || request.sourceReference.trim().length < 6) {
+          return {
+            success: false,
+            error: 'A valid voucher code is required',
+            code: 'VOUCHER_CODE_REQUIRED',
+          };
+        }
         break;
     }
 

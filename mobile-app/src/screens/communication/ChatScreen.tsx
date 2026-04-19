@@ -22,6 +22,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import chatApi from '../../services/api/chatApi';
+import { useAppSelector } from '../../store/hooks';
 
 const log = logger.createLogger('ChatScreen');
 import {
@@ -44,8 +46,9 @@ const ChatScreen: React.FC = () => {
   const params = route.params as ChatScreenParams;
 
   const [messages, setMessages] = useState<MessageData[]>([]);
-  const [currentUserId] = useState('user_123'); // Would come from auth context
-  const [userType] = useState<'courier' | 'sender'>('sender'); // Would come from auth context
+  const currentUser = useAppSelector((state) => state.user.profile);
+  const currentUserId = currentUser?.id || '';
+  const [userType] = useState<'courier' | 'sender'>('sender');
   const [isTyping, setIsTyping] = useState(false);
   const [onlineStatus, setOnlineStatus] = useState<'online' | 'offline' | 'last_seen'>('online');
   const [lastSeen, setLastSeen] = useState<string>('');
@@ -70,75 +73,27 @@ const ChatScreen: React.FC = () => {
 
   const loadMessages = async () => {
     try {
-      // Mock messages - in production, fetch from API
-      const mockMessages: MessageData[] = [
-        {
-          id: 'msg_001',
-          senderId: 'courier_456',
-          senderName: 'John Driver',
-          senderType: 'courier',
-          message: 'Hi! I\'ve accepted your delivery request.',
-          messageType: 'text',
-          timestamp: '2025-01-25T09:00:00Z',
-          isRead: true,
+      // Use packageId as the group chat id for courier conversations
+      const response = await chatApi.getGroupMessages(params.packageId, { limit: 50 });
+      if (response.success && response.data?.messages) {
+        const history: MessageData[] = response.data.messages.map((m) => ({
+          id: m.id,
+          senderId: m.senderId,
+          senderName: m.senderName,
+          senderType: (m.senderId === 'system' ? 'system' : m.senderId === currentUserId ? userType : params.otherUserType) as MessageData['senderType'],
+          message: m.content,
+          messageType: (m.type === 'image' ? 'text' : m.type) as MessageData['messageType'],
+          timestamp: m.timestamp,
+          isRead: m.isRead,
           isDelivered: true,
-        },
-        {
-          id: 'msg_002',
-          senderId: 'user_123',
-          senderName: 'Customer',
-          senderType: 'sender',
-          message: 'Great! The package is ready for pickup.',
-          messageType: 'text',
-          timestamp: '2025-01-25T09:05:00Z',
-          isRead: true,
-          isDelivered: true,
-        },
-        {
-          id: 'msg_003',
-          senderId: 'system',
-          senderName: 'System',
-          senderType: 'system',
-          message: 'Courier is on the way to pickup location',
-          messageType: 'system',
-          timestamp: '2025-01-25T09:30:00Z',
-          isRead: true,
-          isDelivered: true,
-        },
-        {
-          id: 'msg_004',
-          senderId: 'courier_456',
-          senderName: 'John Driver',
-          senderType: 'courier',
-          message: 'I\'ve arrived at the pickup location',
-          messageType: 'delivery_update',
-          timestamp: '2025-01-25T10:00:00Z',
-          deliveryUpdate: {
-            status: 'At Pickup Location',
-            description: 'Arrived at pickup location and ready to collect the package',
-          },
-          isRead: true,
-          isDelivered: true,
-        },
-        {
-          id: 'msg_005',
-          senderId: 'courier_456',
-          senderName: 'John Driver',
-          senderType: 'courier',
-          message: 'Here\'s my current location',
-          messageType: 'location',
-          timestamp: '2025-01-25T10:01:00Z',
-          location: {
-            latitude: 40.7128,
-            longitude: -74.0060,
-            address: '123 Pickup Street, New York, NY',
-          },
-          isRead: false,
-          isDelivered: true,
-        },
-      ];
-
-      setMessages(mockMessages);
+          location: m.location ? {
+            latitude: m.location.latitude,
+            longitude: m.location.longitude,
+            address: m.location.address || '',
+          } : undefined,
+        }));
+        setMessages(history);
+      }
     } catch (error) {
       log.error('Error loading messages:', error);
       Alert.alert('Error', 'Failed to load conversation history');
@@ -146,12 +101,7 @@ const ChatScreen: React.FC = () => {
   };
 
   const setupRealtimeListeners = () => {
-    // Set up Socket.IO or similar real-time listeners
-    // Mock typing indicator
-    setTimeout(() => {
-      setIsTyping(true);
-      setTimeout(() => setIsTyping(false), 3000);
-    }, 5000);
+    // Real-time updates handled via socket in parent navigator
   };
 
   const cleanupListeners = () => {

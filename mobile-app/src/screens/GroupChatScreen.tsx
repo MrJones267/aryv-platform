@@ -25,8 +25,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { GroupChatService } from '../services/GroupChatService';
 import SocketService from '../services/SocketService';
-// import { useAuth } from '../contexts/AuthContext';
-const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: 'User' } });
+import { useAppSelector } from '../store/hooks';
 import { colors, spacing, typography } from '../theme';
 import { GroupChatMessage } from '../components/GroupChatMessage';
 import { GroupTypingIndicator } from '../components/GroupTypingIndicator';
@@ -78,7 +77,7 @@ type GroupChatScreenRouteProp = RouteProp<{ GroupChat: RouteParams }, 'GroupChat
 export const GroupChatScreen: React.FC = () => {
   const route = useRoute<GroupChatScreenRouteProp>();
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const user = useAppSelector((state) => state.user.profile);
   const { groupChatId, groupName } = route.params;
 
   const [messages, setMessages] = useState<GroupMessage[]>([]);

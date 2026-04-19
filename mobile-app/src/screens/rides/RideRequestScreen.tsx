@@ -60,11 +60,12 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
   const [selectedMatch, setSelectedMatch] = useState<DriverMatch | null>(null);
   const [showPreferences, setShowPreferences] = useState(false);
   
-  // Mock passenger profile - in production, this would come from user profile
+  // Build passenger profile from real user data; stats are fetched from userStats in Redux if available
+  const userStats = useAppSelector((state) => (state.user as any).stats);
   const passengerProfile: PassengerProfile = {
-    id: user?.id || 'passenger-1',
-    rating: 4.6,
-    totalRides: 23,
+    id: user?.id || '',
+    rating: userStats?.rating ?? 5.0,
+    totalRides: userStats?.ridesCompleted ?? 0,
     preferences: {
       smokingTolerance: 'none',
       musicPreference: 'moderate',
@@ -73,10 +74,10 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
       temperaturePreference: 'moderate',
     },
     behaviorProfile: {
-      punctuality: 0.9,
-      cleanliness: 0.85,
-      respectfulness: 0.95,
-      reliability: 0.88,
+      punctuality: userStats?.punctuality ?? 1.0,
+      cleanliness: userStats?.cleanliness ?? 1.0,
+      respectfulness: userStats?.respectfulness ?? 1.0,
+      reliability: userStats?.reliability ?? 1.0,
     },
     rideHistory: [],
   };

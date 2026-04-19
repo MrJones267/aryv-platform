@@ -30,6 +30,7 @@ import PaymentScreen from '../screens/payment/PaymentScreen';
 import VerificationWorkflowScreen from '../screens/verification/VerificationWorkflowScreen';
 import EmergencyContactsScreen from '../screens/settings/EmergencyContactsScreen';
 import NotificationSettingsScreen from '../screens/settings/NotificationSettingsScreen';
+import NotificationsScreen from '../screens/main/NotificationsScreen';
 import PrivacySettingsScreen from '../screens/settings/PrivacySettingsScreen';
 import CurrencySettingsScreen from '../screens/settings/CurrencySettingsScreen';
 import SecuritySettingsScreen from '../screens/settings/SecuritySettingsScreen';
@@ -76,6 +77,7 @@ export type ProfileStackParamList = {
   PaymentScreen: undefined;
   VerificationWorkflow: undefined;
   EmergencyContacts: undefined;
+  NotificationsInbox: undefined;
   NotificationSettings: undefined;
   PrivacySettings: undefined;
   CurrencySettings: undefined;
@@ -228,8 +230,13 @@ const ProfileNavigator: React.FC = () => (
       component={EmergencyContactsScreen}
       options={{ title: 'Emergency Contacts', headerShown: false }}
     />
-    <ProfileStack.Screen 
-      name="NotificationSettings" 
+    <ProfileStack.Screen
+      name="NotificationsInbox"
+      component={NotificationsScreen}
+      options={{ title: 'Notifications', headerShown: false }}
+    />
+    <ProfileStack.Screen
+      name="NotificationSettings"
       component={NotificationSettingsScreen}
       options={{ title: 'Notifications', headerShown: false }}
     />

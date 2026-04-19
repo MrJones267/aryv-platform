@@ -21,6 +21,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import chatApi from '../../services/api/chatApi';
+import { useAppSelector } from '../../store/hooks';
 
 const log = logger.createLogger('ConversationListScreen');
 
@@ -45,10 +47,10 @@ interface Conversation {
 
 const ConversationListScreen: React.FC = () => {
   const navigation = useNavigation();
+  const user = useAppSelector((state) => state.user.profile);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [currentUserId] = useState('user_123'); // From auth context
 
   useEffect(() => {
     loadConversations();
@@ -57,63 +59,29 @@ const ConversationListScreen: React.FC = () => {
   const loadConversations = async () => {
     try {
       setLoading(true);
-      
-      // Mock data - in production, fetch from API
-      const mockConversations: Conversation[] = [
-        {
-          id: 'conv_001',
-          packageId: 'pkg_001',
-          otherUserId: 'courier_456',
-          otherUserName: 'John Driver',
-          otherUserType: 'courier',
-          lastMessage: {
-            text: 'I\'ve arrived at the pickup location',
-            timestamp: '2025-01-25T10:00:00Z',
-            senderId: 'courier_456',
-            messageType: 'text',
-          },
-          unreadCount: 2,
-          isOnline: true,
-          deliveryStatus: 'in_progress',
-          packageTitle: 'Electronics Package',
-        },
-        {
-          id: 'conv_002',
-          packageId: 'pkg_002',
-          otherUserId: 'courier_789',
-          otherUserName: 'Sarah Wilson',
-          otherUserType: 'courier',
-          lastMessage: {
-            text: 'Package delivered successfully',
-            timestamp: '2025-01-24T16:30:00Z',
-            senderId: 'courier_789',
-            messageType: 'text',
-          },
-          unreadCount: 0,
-          isOnline: false,
-          deliveryStatus: 'delivered',
-          packageTitle: 'Documents',
-        },
-        {
-          id: 'conv_003',
-          packageId: 'pkg_003',
-          otherUserId: 'sender_321',
-          otherUserName: 'Mike Chen',
-          otherUserType: 'sender',
-          lastMessage: {
-            text: 'Package is ready for pickup',
-            timestamp: '2025-01-25T08:15:00Z',
-            senderId: 'sender_321',
-            messageType: 'text',
-          },
-          unreadCount: 1,
-          isOnline: true,
-          deliveryStatus: 'pending',
-          packageTitle: 'Gift Box',
-        },
-      ];
-
-      setConversations(mockConversations);
+      const response = await chatApi.getUserGroupChats({ limit: 50 });
+      if (response.success && response.data?.groupChats) {
+        const mapped: Conversation[] = response.data.groupChats
+          .filter((c) => c.type === 'courier')
+          .map((c) => ({
+            id: c.id,
+            packageId: c.rideId || c.id,
+            otherUserId: c.participantName || '',
+            otherUserName: c.participantName || c.name,
+            otherUserType: 'courier' as const,
+            lastMessage: {
+              text: c.lastMessage || '',
+              timestamp: c.lastMessageAt || new Date().toISOString(),
+              senderId: '',
+              messageType: 'text' as const,
+            },
+            unreadCount: c.unreadCount,
+            isOnline: c.isOnline || false,
+            deliveryStatus: 'pending' as const,
+            packageTitle: c.name,
+          }));
+        setConversations(mapped);
+      }
     } catch (error) {
       log.error('Error loading conversations:', error);
       Alert.alert('Error', 'Failed to load conversations');
@@ -200,7 +168,7 @@ const ConversationListScreen: React.FC = () => {
 
   const getLastMessagePreview = (conversation: Conversation) => {
     const { lastMessage } = conversation;
-    const isOwnMessage = lastMessage.senderId === currentUserId;
+    const isOwnMessage = lastMessage.senderId === user?.id;
     const prefix = isOwnMessage ? 'You: ' : '';
 
     switch (lastMessage.messageType) {

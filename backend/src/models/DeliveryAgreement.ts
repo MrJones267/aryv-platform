@@ -5,6 +5,7 @@
  * @lastModified 2025-01-24
  */
 
+import crypto from 'crypto';
 import { Model, DataTypes, Optional } from 'sequelize';
 import { sequelize } from '../config/database';
 
@@ -142,10 +143,7 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
   }
 
   public generateQRToken(): string {
-    // Generate a unique token for QR code
-    const token = Math.random().toString(36).substring(2, 15) +
-                  Math.random().toString(36).substring(2, 15);
-    return token.toUpperCase();
+    return crypto.randomBytes(16).toString('hex').toUpperCase();
   }
 
   public async createQRCode(): Promise<void> {

@@ -31,6 +31,7 @@ import {
 } from '../../components/payment';
 import EscrowPaymentService, { EscrowTransaction } from '../../services/EscrowPaymentService';
 import CashPaymentService from '../../services/CashPaymentService';
+import { paymentApi } from '../../services/api/paymentApi';
 
 const PaymentScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -38,157 +39,75 @@ const PaymentScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'escrow' | 'history'>('overview');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>();
 
-  // Mock data - in production, fetch from API
-  const [recentPayments] = useState<PaymentStatus[]>([
-    {
-      id: 'pay_001',
-      amount: 25.50,
-      status: 'completed',
-      method: 'card',
-      transactionId: 'pi_1234567890',
-      createdAt: '2025-01-25T10:30:00Z',
-      completedAt: '2025-01-25T10:32:00Z',
-      description: 'Ride from Downtown to Airport',
-      fee: 1.25,
-    },
-    {
-      id: 'pay_002',
-      amount: 45.00,
-      status: 'processing',
-      method: 'wallet',
-      transactionId: 'pi_0987654321',
-      createdAt: '2025-01-25T09:15:00Z',
-      description: 'Package delivery - Electronics',
-      fee: 2.25,
-    },
-    {
-      id: 'pay_003',
-      amount: 15.75,
-      status: 'failed',
-      method: 'card',
-      transactionId: 'pi_1122334455',
-      createdAt: '2025-01-24T18:45:00Z',
-      description: 'Ride to Shopping Mall',
-      fee: 0.75,
-    },
-  ]);
+  const [recentPayments, setRecentPayments] = useState<PaymentStatus[]>([]);
+  const [activeEscrows, setActiveEscrows] = useState<EscrowData[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const [activeEscrows] = useState<EscrowData[]>([
-    {
-      id: 'esc_001',
-      packageId: 'pkg_001',
-      amount: 45.00,
-      platformFee: 6.75,
-      courierEarnings: 38.25,
-      status: 'held',
-      createdAt: '2025-01-25T09:15:00Z',
-      expectedReleaseAt: '2025-01-26T09:15:00Z',
-      qrCodeVerified: true,
-      deliveryConfirmed: false,
-    },
-    {
-      id: 'esc_002',
-      packageId: 'pkg_002',
-      amount: 25.00,
-      platformFee: 3.75,
-      courierEarnings: 21.25,
-      status: 'disputed',
-      createdAt: '2025-01-24T14:30:00Z',
-      disputeReason: 'Package delivered to wrong address',
-      qrCodeVerified: false,
-      deliveryConfirmed: false,
-    },
-  ]);
+  useEffect(() => {
+    loadPaymentData();
+  }, []);
 
-  const [paymentMethods] = useState<PaymentMethod[]>([
-    {
-      id: 'card_001',
-      type: 'card',
-      title: 'Visa ending in 4242',
-      subtitle: 'Primary card',
-      icon: 'credit-card',
-      isDefault: true,
-      isAvailable: true,
-      lastFour: '4242',
-      expiryDate: '12/26',
-      fee: 0.30,
-      estimatedTime: 'Instant',
-    },
-    {
-      id: 'wallet_001',
-      type: 'wallet',
-      title: 'Hitch Wallet',
-      subtitle: 'Digital wallet',
-      icon: 'account-balance-wallet',
-      isDefault: false,
-      isAvailable: true,
-      balance: 127.50,
-      estimatedTime: 'Instant',
-    },
-    {
-      id: 'bank_001',
-      type: 'bank_transfer',
-      title: 'Bank Transfer',
-      subtitle: 'Chase Checking',
-      icon: 'account-balance',
-      isDefault: false,
-      isAvailable: true,
-      estimatedTime: '1-2 business days',
-    },
-  ]);
-
-  const [transactions] = useState<Transaction[]>([
-    {
-      id: 'txn_001',
-      amount: 25.50,
-      status: 'completed',
-      method: 'card',
-      transactionId: 'pi_1234567890',
-      createdAt: '2025-01-25T10:30:00Z',
-      completedAt: '2025-01-25T10:32:00Z',
-      description: 'Ride payment',
-      fee: 1.25,
-      type: 'ride',
-      category: 'expense',
-      location: 'Downtown → Airport',
-    },
-    {
-      id: 'txn_002',
-      amount: 38.25,
-      status: 'completed',
-      method: 'wallet',
-      transactionId: 'earning_001',
-      createdAt: '2025-01-24T16:20:00Z',
-      completedAt: '2025-01-24T16:20:00Z',
-      description: 'Delivery earnings',
-      type: 'earning',
-      category: 'income',
-      location: 'Business District',
-    },
-    {
-      id: 'txn_003',
-      amount: 45.00,
-      status: 'pending',
-      method: 'card',
-      transactionId: 'esc_001',
-      createdAt: '2025-01-25T09:15:00Z',
-      description: 'Package delivery payment (escrowed)',
-      fee: 2.25,
-      type: 'delivery',
-      category: 'expense',
-      relatedId: 'pkg_001',
-    },
-  ]);
-
-  const handleRefresh = async () => {
+  const loadPaymentData = async () => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      // In production, refresh data from API
+      const [methodsRes, txRes] = await Promise.all([
+        paymentApi.getPaymentMethods(),
+        paymentApi.getTransactions({ limit: 20 }),
+      ]);
+
+      if (methodsRes.success && methodsRes.data) {
+        const mapped: PaymentMethod[] = (methodsRes.data as any[]).map((m: any) => ({
+          id: m.id,
+          type: m.type,
+          title: m.nickname || m.type,
+          subtitle: m.isDefault ? 'Default' : '',
+          icon: m.type === 'card' ? 'credit-card' : 'account-balance-wallet',
+          isDefault: m.isDefault,
+          isAvailable: true,
+          lastFour: m.lastFour,
+          expiryDate: m.expiryDate,
+          balance: m.balance,
+          estimatedTime: 'Instant',
+        }));
+        setPaymentMethods(mapped);
+      }
+
+      if (txRes.success && txRes.data) {
+        const txList = (txRes.data as any).transactions || txRes.data;
+        const mappedTx: Transaction[] = (txList as any[]).map((t: any) => ({
+          id: t.id,
+          amount: t.amount,
+          status: t.status,
+          method: t.paymentMethod || 'card',
+          transactionId: t.id,
+          createdAt: t.createdAt,
+          completedAt: t.completedAt,
+          description: t.description || t.type,
+          fee: t.fee,
+          type: t.type || 'ride',
+          category: t.amount > 0 ? 'expense' : 'income',
+        }));
+        setTransactions(mappedTx);
+        setRecentPayments(mappedTx.slice(0, 5) as any);
+      }
+
+      // Load active escrow data
+      try {
+        const escrowData = await EscrowPaymentService.getEscrowHistory(10, 0, 'held');
+        if (escrowData) setActiveEscrows(escrowData as any);
+      } catch {
+        // Escrow data is non-critical
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to load payment data.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    await loadPaymentData();
   };
 
   const handlePaymentMethodSelect = (method: string) => {

@@ -10,6 +10,7 @@ import { CurrencyService } from '../services/CurrencyService';
 import { UserCurrency } from '../models/UserCurrency';
 import { Currency } from '../models/Currency';
 import { AuthenticatedRequest } from '../types';
+import logger from '../utils/logger';
 
 // Type for fallback currency data that matches Currency model
 interface FallbackCurrency {
@@ -132,7 +133,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error fetching currencies:', {
+      logger.error('Error fetching currencies', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         timestamp: new Date().toISOString(),
@@ -231,7 +232,7 @@ export class CurrencyController {
         });
       }
     } catch (error) {
-      console.error('[CurrencyController] Error fetching popular currencies:', {
+      logger.error('Error fetching popular currencies', {
         error: (error as Error).message,
         region: req.query['region'],
         timestamp: new Date().toISOString(),
@@ -310,7 +311,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error fetching user currencies:', {
+      logger.error('Error fetching user currencies', {
         error: (error as Error).message,
         userId: req.user?.id,
         timestamp: new Date().toISOString(),
@@ -362,7 +363,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error setting primary currency:', {
+      logger.error('Error setting primary currency', {
         error: (error as Error).message,
         userId: req.user?.id,
         currencyCode: req.body?.currencyCode,
@@ -416,7 +417,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error adding payment currency:', {
+      logger.error('Error adding payment currency', {
         error: (error as Error).message,
         userId: req.user?.id,
         currencyCode: req.body?.currencyCode,
@@ -483,7 +484,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error converting currency:', {
+      logger.error('Error converting currency', {
         error: (error as Error).message,
         fromCurrency: req.body?.fromCurrency,
         toCurrency: req.body?.toCurrency,
@@ -529,7 +530,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error updating exchange rates:', {
+      logger.error('Error updating exchange rates', {
         error: (error as Error).message,
         userId: req.user?.id,
         timestamp: new Date().toISOString(),
@@ -614,7 +615,7 @@ export class CurrencyController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('[CurrencyController] Error removing payment currency:', {
+      logger.error('Error removing payment currency', {
         error: (error as Error).message,
         userId: req.user?.id,
         currencyCode: req.params['currencyCode'],

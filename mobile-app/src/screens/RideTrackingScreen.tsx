@@ -31,6 +31,7 @@ import DriverVerificationCard from '../components/verification/DriverVerificatio
 import { PinDisplay, PinEntry } from '../components/trip/PinVerification';
 import { Skeleton, SkeletonCircle, ScreenSkeleton } from '../components/ui/Skeleton';
 import RouteDeviationService, { DeviationAlert } from '../services/RouteDeviationService';
+import locationService from '../services/LocationService';
 import logger from '../services/LoggingService';
 
 const log = logger.createLogger('RideTrackingScreen');
@@ -305,23 +306,26 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
   }, [connected, rideId, joinRide, leaveRide]);
 
   /**
-   * Simulate location updates for driver
+   * Send real GPS location updates for driver
    */
   useEffect(() => {
     if (!isDriver || !connected) return;
 
-    const interval = setInterval(() => {
-      // Simulate driver location updates
-      const mockLocation: LocationUpdate = {
-        userId,
-        latitude: 6.5244 + (Math.random() - 0.5) * 0.01,
-        longitude: 3.3792 + (Math.random() - 0.5) * 0.01,
-        heading: Math.random() * 360,
-        speed: 20 + Math.random() * 30,
-      };
-
-      sendLocation(mockLocation);
-      setDriverLocation(mockLocation);
+    const interval = setInterval(async () => {
+      try {
+        const pos = await locationService.getCurrentLocation({ timeout: 4000, enableHighAccuracy: true });
+        const locationUpdate: LocationUpdate = {
+          userId,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          heading: pos.heading,
+          speed: pos.speed,
+        };
+        sendLocation(locationUpdate);
+        setDriverLocation(locationUpdate);
+      } catch {
+        // GPS unavailable — skip this tick silently
+      }
     }, 5000); // Every 5 seconds
 
     return () => clearInterval(interval);

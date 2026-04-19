@@ -2,6 +2,7 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
+apply plugin: "com.google.firebase.crashlytics"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -10,6 +11,9 @@ apply plugin: "com.google.gms.google-services"
 react {
     /* Enable Hermes for production builds */
     enableHermes = true
+    
+    /* Specify CLI file location */
+    cliFile = file("../../node_modules/@react-native-community/cli/build/bin.js")
 }
 
 /**
@@ -36,19 +40,7 @@ android {
 
     namespace "com.aryvmobile"
     
-    // Fix for Material Design 3 resource conflicts
-    packagingOptions {
-        resources {
-            excludes += [
-                '**/m3_sys_motion_easing_linear.xml',
-                'META-INF/DEPENDENCIES',
-                'META-INF/LICENSE',
-                'META-INF/LICENSE.txt',
-                'META-INF/NOTICE',
-                'META-INF/NOTICE.txt'
-            ]
-        }
-    }
+    // Fix for Material Design 3 resource conflicts - Combined packaging options
     defaultConfig {
         applicationId "com.aryvmobile"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -78,6 +70,24 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+        }
+        resources {
+            excludes += [
+                '**/m3_sys_motion_easing_linear.xml',
+                '**/m3_sys_motion_*.xml',
+                '**/interpolator/m3_sys_motion_*.xml',
+                'interpolator/m3_sys_motion_easing_linear.xml',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt'
+            ]
+            pickFirsts += [
+                '**/libc++_shared.so',
+                '**/libreactnativejni.so',
+                '**/libfbjni.so'
+            ]
         }
     }
 
@@ -132,10 +142,15 @@ android {
             shrinkResources enableProguardInReleaseBuilds
             debuggable false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-            
+
             // Additional production optimizations
             zipAlignEnabled true
             crunchPngs true
+
+            // Disable Crashlytics mapping file upload for local builds
+            firebaseCrashlytics {
+                mappingFileUploadEnabled false
+            }
         }
     }
 }
@@ -150,7 +165,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 }
 
 dependencies {
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android:0.72.7")
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'androidx.core:core:1.8.0'
     implementation 'androidx.core:core-ktx:1.8.0'
@@ -166,9 +181,11 @@ dependencies {
     implementation('com.google.firebase:firebase-analytics') {
         exclude group: 'com.google.android.gms', module: 'play-services-measurement-api'
     }
+    implementation 'com.google.firebase:firebase-crashlytics'
+
 
     if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
+        implementation("com.facebook.react:hermes-android:0.72.7")
     } else {
         implementation jscFlavor
     }

@@ -30,4 +30,7 @@
     <!-- System Colors -->
     <color name="transparent">#00000000</color>
     <color name="semi_transparent">#80000000</color>
+    
+    <!-- ARYV App Icon Background -->
+    <color name="aryv_background">#FFFFFF</color>
 </resources>

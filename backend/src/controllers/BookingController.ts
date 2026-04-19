@@ -14,7 +14,7 @@ import User from '../models/User';
 import Vehicle from '../models/Vehicle';
 import { BookingStatus } from '../types';
 import { AuthenticatedRequest } from '../types';
-import { getErrorMessage, getErrorStack } from '../utils/logger';
+import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 import { paymentService } from '../services/PaymentService';
 import { notificationService } from '../services/NotificationService';
 
@@ -127,7 +127,7 @@ export class BookingController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getMyBookings:`, {
+      logger.error('Error in getMyBookings', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         userId: req.user?.id,
@@ -212,7 +212,7 @@ export class BookingController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getBookingById:`, {
+      logger.error('Error in getBookingById', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -418,7 +418,7 @@ export class BookingController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in updateBooking:`, {
+      logger.error('Error in updateBooking', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -525,7 +525,7 @@ export class BookingController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in cancelBooking:`, {
+      logger.error('Error in cancelBooking', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -644,7 +644,7 @@ export class BookingController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in confirmBooking:`, {
+      logger.error('Error in confirmBooking', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -657,6 +657,62 @@ export class BookingController {
         code: 'BOOKING_CONFIRM_FAILED',
         timestamp: new Date().toISOString(),
       });
+    }
+  }
+
+  async rejectBooking(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const transaction = await sequelize.transaction();
+
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        await transaction.rollback();
+        return;
+      }
+
+      const booking = await Booking.findByPk(id, {
+        include: [{ model: Ride, as: 'ride' }],
+        transaction,
+      });
+
+      if (!booking) {
+        res.status(404).json({ success: false, error: 'Booking not found', code: 'BOOKING_NOT_FOUND', timestamp: new Date().toISOString() });
+        await transaction.rollback();
+        return;
+      }
+
+      if (booking.ride?.driverId !== userId) {
+        res.status(403).json({ success: false, error: 'Only the driver can reject bookings', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+        await transaction.rollback();
+        return;
+      }
+
+      if (booking.status !== BookingStatus.PENDING) {
+        res.status(400).json({ success: false, error: 'Only pending bookings can be rejected', code: 'BOOKING_NOT_PENDING', timestamp: new Date().toISOString() });
+        await transaction.rollback();
+        return;
+      }
+
+      await booking.update({ status: BookingStatus.CANCELLED }, { transaction });
+
+      await transaction.commit();
+
+      await notificationService.notifyBookingStatusChange(booking.id, BookingStatus.CANCELLED, userId);
+
+      res.json({
+        success: true,
+        message: reason ? `Booking rejected: ${reason}` : 'Booking rejected',
+        data: { bookingId: id, status: BookingStatus.CANCELLED },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.error('Error in rejectBooking', { error: getErrorMessage(error), bookingId: req.params['id'], userId: req.user?.id });
+      res.status(500).json({ success: false, error: 'Failed to reject booking', code: 'BOOKING_REJECT_FAILED', timestamp: new Date().toISOString() });
     }
   }
 
@@ -779,7 +835,7 @@ export class BookingController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in rateBooking:`, {
+      logger.error('Error in rateBooking', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -907,7 +963,7 @@ export class BookingController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in createPaymentIntent:`, {
+      logger.error('Error in createPaymentIntent', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],
@@ -1069,7 +1125,7 @@ export class BookingController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in confirmPayment:`, {
+      logger.error('Error in confirmPayment', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         bookingId: req.params['id'],

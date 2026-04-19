@@ -5,18 +5,21 @@
  * @lastModified 2025-01-25
  */
 
-import { Request, Response } from 'express';
-import { Op } from 'sequelize';
+import { Response } from 'express';
+import { Op, QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import User from '../models/User';
-import { UserRole, UserStatus } from '../types';
+import Ride from '../models/Ride';
+import Booking from '../models/Booking';
+import Vehicle from '../models/Vehicle';
+import { UserRole, UserStatus, RideStatus, BookingStatus, AdminAuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
 
 export class AdminUserController {
   /**
    * Get all users with filtering and pagination for admin panel
    */
-  static async getAllUsers(req: Request, res: Response): Promise<void> {
+  static async getAllUsers(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const {
         page = 1,
@@ -86,15 +89,68 @@ export class AdminUserController {
         offset,
       });
 
-      // For now, return users without stats to test basic functionality
-      const usersWithStats = users.map(user => ({
-        ...user.toJSON(),
-        stats: {
-          rides: { total: 0, completed: 0, cancelled: 0, pending: 0 },
-          bookings: { total: 0, completed: 0, cancelled: 0, pending: 0 },
-          vehicles: 0,
-        },
-      }));
+      const userIds = users.map(u => u.id);
+
+      // Batch-load stats for all returned users in parallel
+      const [rideCounts, bookingCounts, vehicleCounts] = await Promise.all([
+        Ride.findAll({
+          where: { driverId: { [Op.in]: userIds } },
+          attributes: ['driverId', 'status', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+          group: ['driverId', 'status'],
+          raw: true,
+        }) as unknown as Array<{ driverId: string; status: string; cnt: string }>,
+        Booking.findAll({
+          where: { passengerId: { [Op.in]: userIds } },
+          attributes: ['passengerId', 'status', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+          group: ['passengerId', 'status'],
+          raw: true,
+        }) as unknown as Array<{ passengerId: string; status: string; cnt: string }>,
+        Vehicle.findAll({
+          where: { driverId: { [Op.in]: userIds } },
+          attributes: ['driverId', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+          group: ['driverId'],
+          raw: true,
+        }) as unknown as Array<{ userId: string; cnt: string }>,
+      ]);
+
+      // Index stats by userId
+      const ridesByUser: Record<string, Record<string, number>> = {};
+      for (const r of rideCounts) {
+        if (!ridesByUser[r.driverId]) ridesByUser[r.driverId] = {};
+        ridesByUser[r.driverId][r.status] = parseInt(r.cnt, 10);
+      }
+      const bookingsByUser: Record<string, Record<string, number>> = {};
+      for (const b of bookingCounts) {
+        if (!bookingsByUser[b.passengerId]) bookingsByUser[b.passengerId] = {};
+        bookingsByUser[b.passengerId][b.status] = parseInt(b.cnt, 10);
+      }
+      const vehiclesByUser: Record<string, number> = {};
+      for (const v of vehicleCounts) {
+        vehiclesByUser[(v as any).driverId] = parseInt(v.cnt, 10);
+      }
+
+      const usersWithStats = users.map(user => {
+        const rides = ridesByUser[user.id] ?? {};
+        const bookings = bookingsByUser[user.id] ?? {};
+        return {
+          ...user.toJSON(),
+          stats: {
+            rides: {
+              total: Object.values(rides).reduce((s, n) => s + n, 0),
+              completed: rides[RideStatus.COMPLETED] ?? 0,
+              cancelled: rides[RideStatus.CANCELLED] ?? 0,
+              pending: rides[RideStatus.PENDING] ?? 0,
+            },
+            bookings: {
+              total: Object.values(bookings).reduce((s, n) => s + n, 0),
+              completed: bookings[BookingStatus.COMPLETED] ?? 0,
+              cancelled: bookings[BookingStatus.CANCELLED] ?? 0,
+              pending: bookings[BookingStatus.PENDING] ?? 0,
+            },
+            vehicles: vehiclesByUser[user.id] ?? 0,
+          },
+        };
+      });
 
       res.status(200).json({
         success: true,
@@ -124,7 +180,7 @@ export class AdminUserController {
   /**
    * Get detailed user information by ID for admin
    */
-  static async getUserById(req: Request, res: Response): Promise<void> {
+  static async getUserById(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
@@ -144,15 +200,38 @@ export class AdminUserController {
         return;
       }
 
-      // For now, return simplified user data without complex associations
+      const [rides, bookings, vehicles] = await Promise.all([
+        Ride.findAll({
+          where: { driverId: id },
+          order: [['createdAt', 'DESC']],
+          limit: 10,
+          attributes: ['id', 'originAddress', 'destinationAddress', 'status', 'pricePerSeat', 'availableSeats', 'departureTime', 'createdAt'],
+        }),
+        Booking.findAll({
+          where: { passengerId: id },
+          order: [['createdAt', 'DESC']],
+          limit: 10,
+          attributes: ['id', 'rideId', 'status', 'seatsBooked', 'totalAmount', 'createdAt'],
+        }),
+        Vehicle.findAll({
+          where: { driverId: id },
+          attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'vehicleType', 'isVerified', 'isActive'],
+        }),
+      ]);
+
+      const totalRides = await Ride.count({ where: { driverId: id } });
+      const completedRides = await Ride.count({ where: { driverId: id, status: RideStatus.COMPLETED } });
+      const totalBookings = await Booking.count({ where: { passengerId: id } });
+      const completedBookings = await Booking.count({ where: { passengerId: id, status: BookingStatus.COMPLETED } });
+
       const stats = {
-        totalRides: 0,
-        completedRides: 0,
-        rideCompletionRate: 0,
-        totalBookings: 0,
-        completedBookings: 0,
-        bookingCompletionRate: 0,
-        totalVehicles: 0,
+        totalRides,
+        completedRides,
+        rideCompletionRate: totalRides > 0 ? Math.round((completedRides / totalRides) * 1000) / 10 : 0,
+        totalBookings,
+        completedBookings,
+        bookingCompletionRate: totalBookings > 0 ? Math.round((completedBookings / totalBookings) * 1000) / 10 : 0,
+        totalVehicles: vehicles.length,
         accountAge: Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
       };
 
@@ -160,9 +239,9 @@ export class AdminUserController {
         success: true,
         data: {
           user: user.toJSON(),
-          rides: [],
-          bookings: [],
-          vehicles: [],
+          rides: rides.map(r => r.toJSON()),
+          bookings: bookings.map(b => b.toJSON()),
+          vehicles: vehicles.map(v => v.toJSON()),
           stats,
         },
         timestamp: new Date().toISOString(),
@@ -182,13 +261,13 @@ export class AdminUserController {
   /**
    * Update user information
    */
-  static async updateUser(req: Request, res: Response): Promise<void> {
+  static async updateUser(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const updateData = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       const user = await User.findByPk(id, { transaction });
 
@@ -237,8 +316,8 @@ export class AdminUserController {
 
       // Log admin action
       logInfo('Admin updated user', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         userId: id,
         changes: updateData,
         oldData: {
@@ -275,13 +354,13 @@ export class AdminUserController {
   /**
    * Block a user account
    */
-  static async blockUser(req: Request, res: Response): Promise<void> {
+  static async blockUser(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       if (!reason) {
         res.status(400).json({
@@ -307,7 +386,7 @@ export class AdminUserController {
         return;
       }
 
-      if (!user.isPhoneVerified) {
+      if (user.status === UserStatus.SUSPENDED) {
         res.status(400).json({
           success: false,
           error: 'User is already blocked',
@@ -318,20 +397,41 @@ export class AdminUserController {
         return;
       }
 
-      const oldStatus = user.isPhoneVerified;
+      const oldStatus = user.status;
       await user.update({
-        isPhoneVerified: false,
+        status: UserStatus.SUSPENDED,
       }, { transaction });
 
-      // For now, skip ride/booking cancellation (requires proper model associations)
-      // TODO: Implement ride/booking cancellation when associations are set up
+      // Cancel all active rides where user is the driver
+      await Ride.update(
+        { status: RideStatus.CANCELLED },
+        {
+          where: {
+            driverId: id,
+            status: { [Op.in]: [RideStatus.PENDING, RideStatus.CONFIRMED] },
+          },
+          transaction,
+        },
+      );
+
+      // Cancel all pending/confirmed bookings by the user as passenger
+      await Booking.update(
+        { status: BookingStatus.CANCELLED, cancelReason: `Account blocked by admin: ${reason}` },
+        {
+          where: {
+            passengerId: id,
+            status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+          },
+          transaction,
+        },
+      );
 
       await transaction.commit();
 
       // Log admin action
       logInfo('Admin blocked user', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         userId: id,
         userEmail: user.email,
         reason,
@@ -364,13 +464,13 @@ export class AdminUserController {
   /**
    * Unblock a user account
    */
-  static async unblockUser(req: Request, res: Response): Promise<void> {
+  static async unblockUser(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       const user = await User.findByPk(id, { transaction });
 
@@ -385,7 +485,7 @@ export class AdminUserController {
         return;
       }
 
-      if (user.isPhoneVerified) {
+      if (user.status !== UserStatus.SUSPENDED) {
         res.status(400).json({
           success: false,
           error: 'User is not blocked',
@@ -397,15 +497,15 @@ export class AdminUserController {
       }
 
       await user.update({
-        isPhoneVerified: true,
+        status: UserStatus.ACTIVE,
       }, { transaction });
 
       await transaction.commit();
 
       // Log admin action
       logInfo('Admin unblocked user', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         userId: id,
         userEmail: user.email,
         reason: reason || 'No reason provided',
@@ -437,13 +537,13 @@ export class AdminUserController {
   /**
    * Verify user identity (manual verification)
    */
-  static async verifyUser(req: Request, res: Response): Promise<void> {
+  static async verifyUser(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const { verificationType, documents, notes } = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       const user = await User.findByPk(id, { transaction });
 
@@ -479,8 +579,8 @@ export class AdminUserController {
 
       // Log admin action
       logInfo('Admin verified user', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         userId: id,
         userEmail: user.email,
         verificationType,
@@ -515,7 +615,7 @@ export class AdminUserController {
   /**
    * Get user analytics and statistics
    */
-  static async getUserAnalytics(req: Request, res: Response): Promise<void> {
+  static async getUserAnalytics(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const {
         startDate,
@@ -569,7 +669,7 @@ export class AdminUserController {
         WHERE created_at BETWEEN :start AND :end
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       // Growth trend data
@@ -585,7 +685,7 @@ export class AdminUserController {
         ORDER BY period
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       // Top drivers by activity
@@ -608,7 +708,7 @@ export class AdminUserController {
         LIMIT 10
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       res.status(200).json({

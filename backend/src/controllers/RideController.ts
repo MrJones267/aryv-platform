@@ -6,7 +6,7 @@
  */
 
 import { Request, Response } from 'express';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
@@ -124,7 +124,7 @@ export class RideController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in createRide:`, {
+      logger.error('Error in createRide', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         userId: req.user?.id,
@@ -178,7 +178,24 @@ export class RideController {
         };
       }
 
-      // Use PostGIS for geospatial search
+      const parsedOriginLng = Number(originLng);
+      const parsedOriginLat = Number(originLat);
+      const parsedDestLng = Number(destinationLng);
+      const parsedDestLat = Number(destinationLat);
+
+      if (
+        !isFinite(parsedOriginLat) || !isFinite(parsedOriginLng) ||
+        !isFinite(parsedDestLat) || !isFinite(parsedDestLng) ||
+        parsedOriginLat < -90 || parsedOriginLat > 90 ||
+        parsedDestLat < -90 || parsedDestLat > 90 ||
+        parsedOriginLng < -180 || parsedOriginLng > 180 ||
+        parsedDestLng < -180 || parsedDestLng > 180
+      ) {
+        res.status(400).json({ success: false, error: 'Invalid coordinates', code: 'INVALID_COORDINATES', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Use PostGIS for geospatial search — ST_SetSRID(ST_MakePoint()) avoids string interpolation
       const rides = await Ride.findAndCountAll({
         where: {
           ...whereClause,
@@ -187,7 +204,7 @@ export class RideController {
               sequelize.fn(
                 'ST_DWithin',
                 sequelize.col('originCoordinates'),
-                sequelize.fn('ST_GeomFromText', `POINT(${originLng} ${originLat})`, 4326),
+                sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedOriginLng, parsedOriginLat), 4326),
                 searchRadius,
               ),
               true,
@@ -196,7 +213,7 @@ export class RideController {
               sequelize.fn(
                 'ST_DWithin',
                 sequelize.col('destinationCoordinates'),
-                sequelize.fn('ST_GeomFromText', `POINT(${destinationLng} ${destinationLat})`, 4326),
+                sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedDestLng, parsedDestLat), 4326),
                 searchRadius,
               ),
               true,
@@ -260,7 +277,7 @@ export class RideController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in searchRides:`, {
+      logger.error('Error in searchRides', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         query: req.query,
@@ -323,7 +340,7 @@ export class RideController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getRideById:`, {
+      logger.error('Error in getRideById', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -342,6 +359,9 @@ export class RideController {
     try {
       const { userId } = req.params;
       const requesterId = req.user?.id;
+      const page = Math.max(1, Number(req.query['page'] || 1));
+      const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 20)));
+      const offset = (page - 1) * limit;
 
       // Users can only view their own rides unless they're admin
       if (userId !== requesterId) {
@@ -355,7 +375,7 @@ export class RideController {
       }
 
       // Get rides as driver
-      const driverRides = await Ride.findAll({
+      const driverRidesResult = await Ride.findAndCountAll({
         where: { driverId: userId },
         include: [
           {
@@ -364,11 +384,13 @@ export class RideController {
             attributes: ['id', 'make', 'model', 'year', 'color'],
           },
         ],
-        order: [['departureTime', 'ASC']],
+        order: [['departureTime', 'DESC']],
+        limit,
+        offset,
       });
 
       // Get rides as passenger
-      const passengerRides = await Ride.findAll({
+      const passengerRidesResult = await Ride.findAndCountAll({
         include: [
           {
             model: User,
@@ -386,19 +408,27 @@ export class RideController {
             attributes: ['id', 'seatsBooked', 'status', 'totalAmount'],
           },
         ],
-        order: [['departureTime', 'ASC']],
+        order: [['departureTime', 'DESC']],
+        limit,
+        offset,
       });
 
       res.json({
         success: true,
         data: {
-          asDriver: driverRides,
-          asPassenger: passengerRides,
+          asDriver: driverRidesResult.rows,
+          asPassenger: passengerRidesResult.rows,
+          pagination: {
+            page,
+            limit,
+            totalAsDriver: driverRidesResult.count,
+            totalAsPassenger: passengerRidesResult.count,
+          },
         },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getUserRides:`, {
+      logger.error('Error in getUserRides', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         userId: req.params['userId'],
@@ -431,7 +461,7 @@ export class RideController {
       req.params['userId'] = userId;
       await this.getUserRides(req, res);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getMyRides:`, {
+      logger.error('Error in getMyRides', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         userId: req.user?.id,
@@ -548,7 +578,7 @@ export class RideController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in updateRide:`, {
+      logger.error('Error in updateRide', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -649,7 +679,7 @@ export class RideController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in deleteRide:`, {
+      logger.error('Error in deleteRide', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -684,7 +714,8 @@ export class RideController {
         return;
       }
 
-      const ride = await Ride.findByPk(rideId, { transaction });
+      // Lock the ride row to prevent concurrent overbooking
+      const ride = await Ride.findByPk(rideId, { transaction, lock: Transaction.LOCK.UPDATE });
 
       if (!ride) {
         res.status(404).json({
@@ -820,7 +851,7 @@ export class RideController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in bookRide:`, {
+      logger.error('Error in bookRide', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -891,7 +922,7 @@ export class RideController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getRideBookings:`, {
+      logger.error('Error in getRideBookings', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -1007,7 +1038,7 @@ export class RideController {
       });
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in updateRideStatus:`, {
+      logger.error('Error in updateRideStatus', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
         rideId: req.params['id'],
@@ -1438,6 +1469,202 @@ export class RideController {
         success: false,
         error: 'Failed to get ride recommendations',
         code: 'RECOMMENDATIONS_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async getPopularRoutes(_req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const rides = await Ride.findAll({
+        where: { status: RideStatus.COMPLETED },
+        attributes: [
+          'originAddress', 'destinationAddress',
+          'originCoordinates', 'destinationCoordinates',
+          [sequelize.fn('COUNT', sequelize.col('Ride.id')), 'count'],
+          [sequelize.fn('AVG', sequelize.col('pricePerSeat')), 'averagePrice'],
+        ],
+        group: ['originAddress', 'destinationAddress', 'originCoordinates', 'destinationCoordinates'],
+        order: [[sequelize.literal('count'), 'DESC']],
+        limit: 10,
+      });
+
+      const popularRoutes = rides.map((r: any) => ({
+        origin: {
+          address: r.originAddress,
+          latitude: r.originCoordinates?.coordinates?.[1],
+          longitude: r.originCoordinates?.coordinates?.[0],
+        },
+        destination: {
+          address: r.destinationAddress,
+          latitude: r.destinationCoordinates?.coordinates?.[1],
+          longitude: r.destinationCoordinates?.coordinates?.[0],
+        },
+        count: parseInt(r.getDataValue('count'), 10),
+        averagePrice: parseFloat(parseFloat(r.getDataValue('averagePrice')).toFixed(2)),
+      }));
+
+      res.json({
+        success: true,
+        data: popularRoutes,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error in getPopularRoutes', { error: getErrorMessage(error) });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get popular routes',
+        code: 'POPULAR_ROUTES_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async getRideUpdates(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const ride = await Ride.findByPk(id, {
+        include: [
+          { model: User, as: 'driver', attributes: ['id', 'firstName', 'lastName', 'profilePicture', 'rating'] },
+          { model: Vehicle, as: 'vehicle', attributes: ['make', 'model', 'color', 'licensePlate'] },
+        ],
+      });
+
+      if (!ride) {
+        res.status(404).json({ success: false, error: 'Ride not found', code: 'RIDE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const socketService = req.app.get('socketService');
+      const trackingData = socketService ? await socketService.getRideTrackingData(id) : null;
+
+      res.json({
+        success: true,
+        data: {
+          currentLocation: trackingData?.driverLocation || null,
+          estimatedArrival: null,
+          status: ride.status,
+          updates: [
+            {
+              message: `Ride is ${ride.status.replace('_', ' ')}`,
+              timestamp: ride.updatedAt,
+              type: 'info',
+            },
+          ],
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error in getRideUpdates', { error: getErrorMessage(error), rideId: req.params['id'] });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get ride updates',
+        code: 'RIDE_UPDATES_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async rateRide(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { rating, comment, tags } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (!rating || rating < 1 || rating > 5) {
+        res.status(400).json({ success: false, error: 'Rating must be between 1 and 5', code: 'INVALID_RATING', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const ride = await Ride.findByPk(id);
+      if (!ride) {
+        res.status(404).json({ success: false, error: 'Ride not found', code: 'RIDE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (ride.status !== RideStatus.COMPLETED) {
+        res.status(400).json({ success: false, error: 'Can only rate completed rides', code: 'RIDE_NOT_COMPLETED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Determine who to rate (if passenger rates, update driver rating; if driver rates, update passenger rating)
+      const isDriver = ride.driverId === userId;
+      const booking = await Booking.findOne({ where: { rideId: id, passengerId: userId } });
+      const isPassenger = !!booking;
+
+      if (!isDriver && !isPassenger) {
+        res.status(403).json({ success: false, error: 'Not authorized to rate this ride', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Update rating for the other party
+      const targetId = isDriver
+        ? (booking ? booking.passengerId : null)
+        : ride.driverId;
+
+      if (targetId) {
+        const target = await User.findByPk(targetId);
+        if (target) {
+          const newRating = ((target.rating || 0) * (target.totalRides || 1) + rating) / ((target.totalRides || 1) + 1);
+          await target.update({ rating: Math.round(newRating * 10) / 10 });
+        }
+      }
+
+      logger.info('Ride rated', { rideId: id, userId, rating, role: isDriver ? 'driver' : 'passenger', comment });
+
+      res.json({
+        success: true,
+        message: 'Rating submitted successfully',
+        data: { rideId: id, rating, comment, tags },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error in rateRide', { error: getErrorMessage(error), rideId: req.params['id'] });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to submit rating',
+        code: 'RATE_RIDE_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async reportRideIssue(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { rideId, type, description } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      logger.warn('Ride issue reported', { rideId, userId, type, description });
+
+      res.json({
+        success: true,
+        message: 'Issue reported successfully. Our team will review it.',
+        data: { reportId: `report-${Date.now()}`, rideId, type, status: 'pending' },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error in reportRideIssue', { error: getErrorMessage(error) });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to submit report',
+        code: 'REPORT_FAILED',
         timestamp: new Date().toISOString(),
       });
     }

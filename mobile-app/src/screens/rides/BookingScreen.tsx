@@ -107,59 +107,56 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const loadBookingDetails = async () => {
     setIsLoading(true);
     try {
-      // Mock booking details - replace with actual API call
-      const mockBooking: BookingDetails = {
+      const response = await ridesApi.getRideDetails(rideId);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Ride not found');
+      }
+
+      const ride = response.data;
+      const subtotal = ride.pricePerSeat * selectedSeats;
+      const platformFee = Math.max(1, subtotal * 0.05);
+
+      setBookingDetails({
         ride: {
-          id: rideId,
+          id: ride.id,
           driver: {
-            id: 'driver-123',
-            firstName: 'John',
-            lastName: 'Smith',
-            rating: 4.8,
-            totalRides: 156,
+            id: ride.driver.id,
+            firstName: ride.driver.firstName,
+            lastName: ride.driver.lastName,
+            rating: ride.driver.rating ?? 0,
+            totalRides: ride.driver.totalRides ?? 0,
+            profileImage: ride.driver.profilePicture,
           },
           vehicle: {
-            make: 'Toyota',
-            model: 'Camry',
-            year: 2020,
-            color: 'Silver',
-            licensePlate: 'ABC123',
+            make: ride.vehicle.make,
+            model: ride.vehicle.model,
+            year: ride.vehicle.year,
+            color: ride.vehicle.color,
+            licensePlate: ride.vehicle.licensePlate,
           },
           origin: {
-            address: 'Downtown Shopping Mall, Main Street',
-            latitude: 40.7128,
-            longitude: -74.0060,
+            address: ride.origin.address,
+            latitude: ride.origin.latitude,
+            longitude: ride.origin.longitude,
           },
           destination: {
-            address: 'Airport Terminal 1, JFK Airport',
-            latitude: 40.6413,
-            longitude: -73.7781,
+            address: ride.destination.address,
+            latitude: ride.destination.latitude,
+            longitude: ride.destination.longitude,
           },
-          departureTime: new Date(Date.now() + 7200000).toISOString(),
-          pricePerSeat: 25,
-          availableSeats: 3,
-          distance: 45,
-          estimatedDuration: 60,
-          amenities: ['WiFi', 'Phone Charger', 'Air Conditioning'],
-          preferences: {
-            smokingAllowed: false,
-            petsAllowed: true,
-            musicAllowed: true,
-          },
+          departureTime: ride.departureTime,
+          pricePerSeat: ride.pricePerSeat,
+          availableSeats: ride.availableSeats,
+          distance: ride.distance ?? 0,
+          estimatedDuration: ride.estimatedDuration ?? 0,
+          amenities: [],
+          preferences: { smokingAllowed: false, petsAllowed: false, musicAllowed: true },
         },
         seatsToBook: selectedSeats,
-        totalAmount: 0, // Will be calculated
-        platformFee: 0, // Will be calculated
+        totalAmount: subtotal + platformFee,
+        platformFee,
         paymentMethod: null,
-      };
-
-      // Calculate pricing
-      const subtotal = mockBooking.ride.pricePerSeat * selectedSeats;
-      const platformFee = Math.max(1, subtotal * 0.05); // 5% or minimum P1
-      mockBooking.totalAmount = subtotal + platformFee;
-      mockBooking.platformFee = platformFee;
-
-      setBookingDetails(mockBooking);
+      });
     } catch (error) {
       log.error('Error loading booking details:', error);
       Alert.alert('Error', 'Failed to load booking details');

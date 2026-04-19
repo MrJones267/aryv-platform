@@ -6,7 +6,7 @@
  */
 
 import { Request, Response } from 'express';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import {
   Package,
   DeliveryAgreement,
@@ -20,6 +20,7 @@ import { DeliveryTier } from '../models/DeliveryTier';
 import { sequelize } from '../config/database';
 import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
+import logger from '../utils/logger';
 
 export class CourierController {
   /**
@@ -78,7 +79,7 @@ export class CourierController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getPricingSuggestions:`, {
+      logger.error('Error in getPricingSuggestions', {
         error: (error as Error).message,
         stack: (error as Error).stack,
       });
@@ -109,7 +110,7 @@ export class CourierController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getDeliveryTiers:`, {
+      logger.error('Error in getDeliveryTiers', {
         error: (error as Error).message,
         stack: (error as Error).stack,
       });
@@ -256,7 +257,7 @@ export class CourierController {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in createPackage:`, {
+      logger.error('Error in createPackage', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -289,13 +290,13 @@ export class CourierController {
       const {
         lat,
         lng,
-        radius = 50, // Default 50km radius
         packageSizes,
         minPrice,
         maxPrice,
-        limit = 20,
-        offset = 0,
       } = req.query;
+      const radius = Math.min(parseFloat(req.query['radius'] as string) || 50, 200); // cap at 200km
+      const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 100); // cap at 100
+      const offset = Math.max(parseInt(req.query['offset'] as string) || 0, 0);
 
       const whereClause: any = {
         isActive: true,
@@ -318,60 +319,69 @@ export class CourierController {
         if (maxPrice) whereClause.senderPriceOffer[Op.lte] = parseFloat(maxPrice as string);
       }
 
-      // Build location-based query if coordinates provided
-      let locationClause = '';
-      if (lat && lng) {
-        locationClause = `
-          AND ST_DWithin(
-            pickup_coordinates::geography,
-            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-${Number(radius) * 1000}
-          )
-        `;
+      // Build location-based query if coordinates provided — use parameterized replacements to prevent injection
+      const hasCoords = lat && lng;
+      const parsedLat = hasCoords ? parseFloat(lat as string) : 0;
+      const parsedLng = hasCoords ? parseFloat(lng as string) : 0;
+
+      if (hasCoords && (isNaN(parsedLat) || isNaN(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180)) {
+        res.status(400).json({ success: false, error: 'Invalid coordinates', code: 'INVALID_COORDS', timestamp: new Date().toISOString() });
+        return;
       }
 
+      const locationClause = hasCoords
+        ? `AND ST_DWithin(pickup_coordinates::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radiusMeters)`
+        : '';
+
+      const distanceSelect = hasCoords
+        ? `ST_Distance(p.pickup_coordinates::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography) / 1000 as distance_from_courier`
+        : `NULL as distance_from_courier`;
+
       const query = `
-        SELECT p.*, 
+        SELECT p.*,
                u.first_name as sender_first_name,
                u.last_name as sender_last_name,
                u.phone_number as sender_phone,
-               ${lat && lng ? `
-                 ST_Distance(
-                   p.pickup_coordinates::geography,
-                   ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
-                 ) / 1000 as distance_from_courier
-               ` : 'NULL as distance_from_courier'}
+               ${distanceSelect}
         FROM packages p
         JOIN users u ON p.sender_id = u.id
         WHERE p.is_active = true
           AND (p.expires_at IS NULL OR p.expires_at > NOW())
           AND NOT EXISTS (
-            SELECT 1 FROM delivery_agreements da 
-            WHERE da.package_id = p.id 
+            SELECT 1 FROM delivery_agreements da
+            WHERE da.package_id = p.id
             AND da.status NOT IN ('cancelled', 'disputed')
           )
           ${locationClause}
-        ORDER BY ${lat && lng ? 'distance_from_courier ASC,' : ''} p.created_at DESC
-        LIMIT ${parseInt(limit as string)} OFFSET ${parseInt(offset as string)}
+        ORDER BY ${hasCoords ? 'distance_from_courier ASC,' : ''} p.created_at DESC
+        LIMIT :limit OFFSET :offset
       `;
 
       const packages = await sequelize.query(query, {
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
+        replacements: {
+          lat: parsedLat,
+          lng: parsedLng,
+          radiusMeters: radius * 1000,
+          limit,
+          offset,
+        },
       });
 
       res.status(200).json({
         success: true,
         data: packages,
         pagination: {
-          limit: parseInt(limit as string),
-          offset: parseInt(offset as string),
-          total: packages.length,
+          limit,
+          offset,
+          returned: packages.length,
+          hasMore: packages.length === limit,
         },
         timestamp: new Date().toISOString(),
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getAvailablePackages:`, {
+      logger.error('Error in getAvailablePackages', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -405,7 +415,7 @@ ${Number(radius) * 1000}
         return;
       }
 
-      // Check if package exists and is available
+      // Lock the package row to prevent double-acceptance race conditions
       const packageData = await Package.findOne({
         where: {
           id: packageId,
@@ -424,6 +434,7 @@ ${Number(radius) * 1000}
           as: 'sender',
           attributes: ['id', 'firstName', 'lastName', 'email'],
         }],
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
@@ -529,7 +540,7 @@ ${Number(radius) * 1000}
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in acceptDelivery:`, {
+      logger.error('Error in acceptDelivery', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -616,7 +627,7 @@ ${Number(radius) * 1000}
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in confirmPickup:`, {
+      logger.error('Error in confirmPickup', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -690,7 +701,7 @@ ${Number(radius) * 1000}
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in verifyDeliveryQR:`, {
+      logger.error('Error in verifyDeliveryQR', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -760,7 +771,7 @@ ${Number(radius) * 1000}
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in updateCourierLocation:`, {
+      logger.error('Error in updateCourierLocation', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -817,7 +828,7 @@ ${Number(radius) * 1000}
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getCourierDeliveries:`, {
+      logger.error('Error in getCourierDeliveries', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -920,7 +931,7 @@ ${Number(radius) * 1000}
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getPackageTracking:`, {
+      logger.error('Error in getPackageTracking', {
         error: (error as Error).message,
         stack: (error as Error).stack,
         userId: req.user?.id,
@@ -967,7 +978,7 @@ ${Number(radius) * 1000}
       'SELECT calculate_suggested_delivery_price($1, $2, $3, $4) as suggested_price',
       {
         bind: [distance, packageSize, isFragile, isValuable],
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       },
     );
 

@@ -153,7 +153,27 @@ class RidesApiService extends BaseApiService {
    * Create a new ride
    */
   async createRide(rideData: CreateRideData): Promise<ApiResponse<Ride>> {
-    return this.post<Ride>('/rides', rideData);
+    // Transform mobile format to backend format
+    const payload = {
+      vehicleId: rideData.vehicleId,
+      originAddress: rideData.origin.address,
+      originCoordinates: {
+        latitude: rideData.origin.latitude,
+        longitude: rideData.origin.longitude,
+      },
+      destinationAddress: rideData.destination.address,
+      destinationCoordinates: {
+        latitude: rideData.destination.latitude,
+        longitude: rideData.destination.longitude,
+      },
+      departureTime: rideData.departureTime,
+      availableSeats: rideData.availableSeats,
+      pricePerSeat: rideData.pricePerSeat,
+      description: rideData.description,
+      estimatedDuration: rideData.estimatedDuration,
+      distance: rideData.distance,
+    };
+    return this.post<Ride>('/rides', payload);
   }
 
   /**
@@ -167,7 +187,7 @@ class RidesApiService extends BaseApiService {
    * Cancel a ride
    */
   async cancelRide(rideId: string, reason?: string): Promise<ApiResponse<{ message: string }>> {
-    return this.patch<{ message: string }>(`/rides/${rideId}/cancel`, { reason });
+    return this.put<{ message: string }>(`/rides/${rideId}/status`, { status: 'cancelled', reason });
   }
 
   /**
@@ -203,8 +223,8 @@ class RidesApiService extends BaseApiService {
    */
   async bookRide(rideId: string, seats: number, message?: string): Promise<ApiResponse<Booking>> {
     return this.post<Booking>(`/rides/${rideId}/book`, {
-      seatsBooked: seats,
-      message,
+      seatsRequested: seats,
+      specialRequests: message,
     });
   }
 
@@ -261,14 +281,14 @@ class RidesApiService extends BaseApiService {
    * Start a ride (driver action)
    */
   async startRide(rideId: string): Promise<ApiResponse<Ride>> {
-    return this.patch<Ride>(`/rides/${rideId}/start`);
+    return this.put<Ride>(`/rides/${rideId}/status`, { status: 'in_progress' });
   }
 
   /**
    * Complete a ride (driver action)
    */
   async completeRide(rideId: string): Promise<ApiResponse<Ride>> {
-    return this.patch<Ride>(`/rides/${rideId}/complete`);
+    return this.put<Ride>(`/rides/${rideId}/status`, { status: 'completed' });
   }
 
   /**
@@ -342,8 +362,8 @@ class RidesApiService extends BaseApiService {
       totalPages: number;
     };
   }>> {
-    return this.get('/rides/history', {
-      params: { page, limit, type },
+    return this.get('/users/ride-history', {
+      params: { page, limit, role: type },
     });
   }
 
@@ -367,8 +387,17 @@ class RidesApiService extends BaseApiService {
     longitude: number,
     radius = 10
   ): Promise<ApiResponse<Ride[]>> {
-    return this.get('/rides/nearby', {
-      params: { lat: latitude, lng: longitude, radius },
+    // Use the search endpoint with current location as both origin and a wide radius
+    return this.get('/rides/search', {
+      params: {
+        originLat: latitude,
+        originLng: longitude,
+        destinationLat: latitude,
+        destinationLng: longitude,
+        departureDate: new Date().toISOString(),
+        radius,
+        limit: 20,
+      },
     });
   }
 

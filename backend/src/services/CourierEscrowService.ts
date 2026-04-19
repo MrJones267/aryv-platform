@@ -5,6 +5,7 @@
  * @lastModified 2025-01-24
  */
 
+import crypto from 'crypto';
 import { Transaction, Op } from 'sequelize';
 import {
   DeliveryAgreement,
@@ -36,7 +37,7 @@ class MockPaymentProvider implements PaymentProvider {
   }> = new Map();
 
   async createEscrowPayment(amount: number, senderId: string, metadata?: Record<string, any>): Promise<string> {
-    const paymentId = `escrow_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    const paymentId = `escrow_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
     this.payments.set(paymentId, {
       amount,
@@ -401,6 +402,8 @@ export class CourierEscrowService {
         }
       }
 
+      const statusBeforeCancel = agreement.status;
+
       // Update agreement status
       await agreement.transitionTo(DeliveryStatus.CANCELLED, cancelledByUserId, {
         cancellation_reason: reason,
@@ -410,7 +413,7 @@ export class CourierEscrowService {
       });
 
       // Reactivate package if cancelled before pickup
-      if (agreement.status === DeliveryStatus.PENDING_PICKUP) {
+      if (statusBeforeCancel === DeliveryStatus.PENDING_PICKUP) {
         const packageData = agreement.package!;
         packageData.isActive = true;
         await packageData.save({ transaction: t });

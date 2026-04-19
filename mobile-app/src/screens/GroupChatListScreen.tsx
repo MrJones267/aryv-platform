@@ -22,8 +22,7 @@ import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { GroupChatService } from '../services/GroupChatService';
 import SocketService from '../services/SocketService';
-// import { useAuth } from '../contexts/AuthContext';
-const useAuth = () => ({ user: { id: 'mock-user', firstName: 'Mock', lastName: 'User' } });
+import { useAppSelector } from '../store/hooks';
 import { colors, spacing, typography } from '../theme';
 import { GroupChatListItem } from '../components/GroupChatListItem';
 import { CreateGroupModal } from '../components/CreateGroupModal';
@@ -51,7 +50,7 @@ interface GroupChat {
 
 export const GroupChatListScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const user = useAppSelector((state) => state.user.profile);
   const [groupChats, setGroupChats] = useState<GroupChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

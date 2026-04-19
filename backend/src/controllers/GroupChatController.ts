@@ -571,8 +571,8 @@ export const groupChatValidationRules = {
       .withMessage('Invalid group chat ID'),
     body('content')
       .isString()
-      .isLength({ min: 1 })
-      .withMessage('Message content is required'),
+      .isLength({ min: 1, max: 5000 })
+      .withMessage('Message content must be between 1 and 5000 characters'),
     body('type')
       .optional()
       .isIn(Object.values(MessageType))

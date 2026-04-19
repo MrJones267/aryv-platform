@@ -11,6 +11,7 @@ import { AuthService } from '../services/AuthService';
 import { User as UserModel } from '../models';
 import { AdminUser } from '../models/AdminUser';
 import { AuthenticatedRequest, UserRole, AppError, User } from '../types';
+import { logError } from '../utils/logger';
 
 /**
  * Middleware to authenticate JWT token
@@ -29,6 +30,17 @@ export const authenticateToken = async (
         success: false,
         error: 'Access token is required',
         code: 'ACCESS_TOKEN_REQUIRED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Check if token has been invalidated (post-logout blacklist)
+    if (await AuthService.isTokenBlacklisted(token)) {
+      res.status(401).json({
+        success: false,
+        error: 'Token has been invalidated',
+        code: 'TOKEN_INVALIDATED',
         timestamp: new Date().toISOString(),
       });
       return;
@@ -75,8 +87,7 @@ export const authenticateToken = async (
       return;
     }
 
-    console.error(`[${new Date().toISOString()}] Authentication error:`, {
-      error: (error as Error).message,
+    logError('Authentication error', error as Error, {
       url: req.url,
       method: req.method,
     });
@@ -232,11 +243,11 @@ export const authenticateAdminToken = async (
 
     const token = authHeader.substring(7);
 
+    const jwtSecret = process.env['JWT_SECRET'];
+    if (!jwtSecret) throw new Error('JWT_SECRET not configured');
+
     // Verify token
-    const decoded = jwt.verify(
-      token,
-      process.env['JWT_SECRET'] || 'your-secret-key',
-    ) as any;
+    const decoded = jwt.verify(token, jwtSecret) as any;
 
     // Check if token is for admin access
     if (decoded.type !== 'admin') {
@@ -266,8 +277,7 @@ export const authenticateAdminToken = async (
 
     next();
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Admin authentication error:`, {
-      error: (error as Error).message,
+    logError('Admin authentication error', error as Error, {
       url: req.url,
       method: req.method,
     });

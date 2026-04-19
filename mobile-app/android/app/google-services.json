@@ -1,34 +1,39 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "aryv-temp"
+    "project_number": "137714367351",
+    "project_id": "aryv-app",
+    "storage_bucket": "aryv-app.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:temp",
+        "mobilesdk_app_id": "1:137714367351:android:b51c5f070f1a52832cff72",
         "android_client_info": {
           "package_name": "com.aryvmobile"
         }
       },
+      "oauth_client": [
+        {
+          "client_id": "306893979998-g6oetretorc1smcuc9lkiuc3hnjhvtet.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "temp-key"
+          "current_key": "AIzaSyCn9sV90RpeRLZGyYLAqzmcEzzMnCw_NHg"
         }
-      ]
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:temp-debug",
-        "android_client_info": {
-          "package_name": "com.aryvmobile.debug"
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "306893979998-g6oetretorc1smcuc9lkiuc3hnjhvtet.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
-      },
-      "api_key": [
-        {
-          "current_key": "temp-key-debug"
-        }
-      ]
+      }
     }
-  ]
+  ],
+  "configuration_version": "1"
 }

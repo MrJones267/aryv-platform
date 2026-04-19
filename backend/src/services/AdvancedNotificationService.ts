@@ -12,6 +12,7 @@ import NotificationPreference from '../models/NotificationPreference';
 import NotificationTemplate from '../models/NotificationTemplate';
 import { User } from '../models';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import fcmService, { StalePushTokenError } from './FCMService';
 
 export interface NotificationRequest {
   userId: string;
@@ -361,58 +362,44 @@ export class AdvancedNotificationService {
    */
   private async sendPushNotification(notification: Notification): Promise<boolean> {
     try {
-      // Get user's FCM token
-      const user = await User.findByPk(notification.userId);
-      if (!user || !(user as any).fcmToken) {
+      // Get user's push token — stored in preferences['pushToken'] by NotificationController
+      const user = await User.findByPk(notification.userId, { attributes: ['id', 'preferences'] });
+      const prefs = (user?.preferences as Record<string, any>) || {};
+      const pushToken: string | undefined = prefs['pushToken'];
+
+      if (!user || !pushToken) {
+        logInfo('FCM: No push token for user', { userId: notification.userId });
         return false;
       }
 
-      // Format push notification payload
-      const payload = {
-        token: (user as any).fcmToken,
-        notification: {
-          title: notification.title,
-          body: notification.body,
-          imageUrl: notification.imageUrl,
-        },
+      const sent = await fcmService.send({
+        token: pushToken,
+        title: notification.title,
+        body: notification.body,
+        imageUrl: notification.imageUrl,
+        priority: notification.isCritical() ? 'high' : 'normal',
+        androidChannelId: this.getAndroidChannelId(notification.type),
+        sound: notification.isCritical() ? 'emergency' : 'default',
         data: {
           notificationId: notification.id,
           type: notification.type,
           deepLink: notification.deepLink || '',
-          ...notification.data,
         },
-        android: {
-          priority: notification.isCritical() ? 'high' : 'normal',
-          notification: {
-            channelId: this.getAndroidChannelId(notification.type),
-            sound: notification.isCritical() ? 'emergency' : 'default',
-            priority: notification.isCritical() ? 'high' : 'default',
-          },
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: notification.isCritical() ? 'emergency.wav' : 'default',
-              badge: 1,
-              'content-available': 1,
-            },
-          },
-        },
-      };
-
-      // Send via FCM (implementation would depend on FCM SDK)
-      // const response = await fcmAdmin.messaging().send(payload);
-      console.log('Push notification payload prepared:', payload);
-
-      // For now, simulate successful delivery
-      logInfo('Push notification sent', {
-        notificationId: notification.id,
-        userId: notification.userId,
       });
 
-      return true;
+      return sent;
 
     } catch (error) {
+      if (error instanceof StalePushTokenError) {
+        // Clear the stale token so we don't keep trying
+        const user = await User.findByPk(notification.userId, { attributes: ['id', 'preferences'] });
+        if (user) {
+          const prefs = (user.preferences as Record<string, any>) || {};
+          delete prefs['pushToken'];
+          await user.update({ preferences: prefs });
+        }
+        return false;
+      }
       logError('Push notification delivery failed', error as Error, {
         notificationId: notification.id,
       });
@@ -481,7 +468,7 @@ export class AdvancedNotificationService {
 
       // Send via email service (implementation would depend on email provider)
       // await emailService.send(emailData);
-      console.log('Email notification data prepared:', emailData);
+      logInfo('Email notification data prepared', { to: emailData.to, subject: emailData.subject });
 
       logInfo('Email notification sent', {
         notificationId: notification.id,
@@ -513,7 +500,7 @@ export class AdvancedNotificationService {
 
       // Send via SMS service (implementation would depend on SMS provider)
       // await smsService.send({ to: user.phone, text: smsText });
-      console.log('SMS notification text prepared:', smsText);
+      logInfo('SMS notification text prepared', { length: smsText.length });
 
       logInfo('SMS notification sent', {
         notificationId: notification.id,

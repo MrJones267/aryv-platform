@@ -15,6 +15,10 @@ export { authApi, default as AuthApiService } from './authApi';
 export { ridesApi, default as RidesApiService } from './ridesApi';
 export { vehicleApi, default as VehicleApiService } from './vehicleApi';
 export { paymentApi, default as PaymentApiService } from './paymentApi';
+export { chatApi, default as ChatApiService } from './chatApi';
+export type { ChatMessageRecord, GroupChatSummary } from './chatApi';
+export { notificationsApi, default as NotificationsApiService } from './notificationsApi';
+export type { NotificationRecord, NotificationsPagination } from './notificationsApi';
 
 // Re-export types for convenience
 export type {

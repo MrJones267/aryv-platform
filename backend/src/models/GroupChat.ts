@@ -5,6 +5,7 @@
  * @lastModified 2025-01-25
  */
 
+import crypto from 'crypto';
 import { DataTypes, Model, Optional, Op } from 'sequelize';
 import { sequelize } from '../config/database';
 
@@ -77,8 +78,7 @@ export class GroupChat extends Model<GroupChatAttributes, GroupChatCreationAttri
   }
 
   public generateJoinCode(): string {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return code;
+    return crypto.randomBytes(4).toString('hex').toUpperCase();
   }
 
   public getDefaultSettings(): any {

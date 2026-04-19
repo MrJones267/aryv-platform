@@ -10,6 +10,7 @@ import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
 import { Package, PackageSize } from '../models/Package';
 import { CourierProfile } from '../models/CourierProfile';
 import { sequelize } from '../config/database';
+import logger from '../utils/logger';
 import { Op } from 'sequelize';
 
 export interface PricingSuggestion {
@@ -100,7 +101,7 @@ export class DemandPricingEngine {
 
       return suggestions;
     } catch (error) {
-      console.error('[DemandPricingEngine] Error calculating pricing suggestions:', error);
+      logger.error('Error calculating pricing suggestions', { error: (error as Error).message });
       throw new Error('Failed to calculate pricing suggestions');
     }
   }
@@ -224,7 +225,7 @@ export class DemandPricingEngine {
         });
       }
     } catch (error) {
-      console.error('[DemandPricingEngine] Error updating demand metrics:', error);
+      logger.error('Error updating demand metrics', { error: (error as Error).message });
       throw new Error('Failed to update demand metrics');
     }
   }
@@ -435,9 +436,9 @@ export class DemandPricingEngine {
         });
       }
 
-      console.log('[DemandPricingEngine] Default delivery tiers initialized');
+      logger.info('Default delivery tiers initialized');
     } catch (error) {
-      console.error('[DemandPricingEngine] Error initializing default tiers:', error);
+      logger.error('Error initializing default tiers', { error: (error as Error).message });
       throw error;
     }
   }

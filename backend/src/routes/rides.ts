@@ -236,6 +236,16 @@ router.put(
   rideController.updateRide.bind(rideController),
 );
 
+// PATCH alias for mobile app compatibility
+router.patch(
+  '/:id',
+  rideRateLimit,
+  authenticateToken,
+  updateRideValidation,
+  validateInput,
+  rideController.updateRide.bind(rideController),
+);
+
 /**
  * @route   DELETE /api/rides/:id
  * @desc    Cancel/delete ride (driver only)
@@ -312,6 +322,69 @@ router.put(
   ],
   validateInput,
   rideController.updateRideStatus.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/popular-routes
+ * @desc    Get popular routes based on completed rides
+ * @access  Private
+ */
+router.get(
+  '/popular-routes',
+  rideRateLimit,
+  authenticateToken,
+  rideController.getPopularRoutes.bind(rideController),
+);
+
+/**
+ * @route   POST /api/rides/report
+ * @desc    Report a ride issue
+ * @access  Private
+ */
+router.post(
+  '/report',
+  rideRateLimit,
+  authenticateToken,
+  [
+    body('rideId').optional().isUUID().withMessage('Ride ID must be a valid UUID'),
+    body('type').isIn(['no_show', 'late', 'route_change', 'safety', 'other']).withMessage('Invalid report type'),
+    body('description').isLength({ min: 10, max: 1000 }).withMessage('Description must be 10-1000 characters'),
+  ],
+  validateInput,
+  rideController.reportRideIssue.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/:id/updates
+ * @desc    Get real-time updates for a ride
+ * @access  Private
+ */
+router.get(
+  '/:id/updates',
+  rideRateLimit,
+  authenticateToken,
+  rideIdValidation,
+  validateInput,
+  rideController.getRideUpdates.bind(rideController),
+);
+
+/**
+ * @route   POST /api/rides/:id/rate
+ * @desc    Rate a completed ride
+ * @access  Private
+ */
+router.post(
+  '/:id/rate',
+  rideRateLimit,
+  authenticateToken,
+  [
+    param('id').isUUID().withMessage('Ride ID must be a valid UUID'),
+    body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+    body('comment').optional().isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters'),
+    body('tags').optional().isArray().withMessage('Tags must be an array'),
+  ],
+  validateInput,
+  rideController.rateRide.bind(rideController),
 );
 
 // AI-Powered Routes

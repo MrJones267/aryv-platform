@@ -12,7 +12,9 @@ import { BookingController } from '../controllers/BookingController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { paymentService } from '../services/PaymentService';
+import Booking from '../models/Booking';
 import { Request, Response } from 'express';
+import logger from '../utils/logger';
 
 const router = Router();
 const bookingController = new BookingController();
@@ -155,6 +157,23 @@ router.post(
 );
 
 /**
+ * @route   PATCH /api/bookings/:id/reject
+ * @desc    Reject a pending booking (driver only)
+ * @access  Private
+ */
+router.patch(
+  '/:id/reject',
+  bookingRateLimit,
+  authenticateToken,
+  [
+    param('id').isUUID().withMessage('Booking ID must be a valid UUID'),
+    body('reason').optional().isLength({ max: 500 }).withMessage('Reason cannot exceed 500 characters'),
+  ],
+  validateInput,
+  bookingController.rejectBooking.bind(bookingController),
+);
+
+/**
  * @route   POST /api/bookings/:id/confirm
  * @desc    Confirm booking (driver only)
  * @access  Private
@@ -278,7 +297,7 @@ router.post(
 
       res.json({ received: true });
     } catch (error) {
-      console.error('Webhook error:', error);
+      logger.error('Webhook error', { error: (error as Error).message });
       res.status(500).json({
         success: false,
         error: 'Webhook processing failed',
@@ -323,7 +342,18 @@ router.post(
         return;
       }
 
-      // TODO: Add authorization check (admin or booking owner)
+      // Verify requester owns the booking or is an admin
+      const booking = await Booking.findByPk(id, { attributes: ['id', 'passengerId'] });
+      if (!booking) {
+        res.status(404).json({ success: false, error: 'Booking not found', code: 'NOT_FOUND' });
+        return;
+      }
+      const isAdmin = (req as any).user?.role === 'admin';
+      if (!isAdmin && booking.passengerId !== userId) {
+        res.status(403).json({ success: false, error: 'Not authorized to refund this booking', code: 'FORBIDDEN' });
+        return;
+      }
+
       const result = await paymentService.processRefund(id, amount, reason);
 
       if (!result.success) {
@@ -342,7 +372,7 @@ router.post(
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error('Refund error:', error);
+      logger.error('Refund error', { error: (error as Error).message });
       res.status(500).json({
         success: false,
         error: 'Failed to process refund',

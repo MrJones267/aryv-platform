@@ -4,7 +4,9 @@
  * @created 2025-01-27
  */
 
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
+import { authApi } from './api/authApi';
+import locationService from './LocationService';
 
 export interface EmergencyContact {
   id: string;
@@ -41,20 +43,56 @@ class EmergencyServiceSimple {
     return EmergencyServiceSimple.instance;
   }
 
-  async triggerEmergency(type: EmergencyAlert['type'] = 'panic', description?: string): Promise<void> {
-    Alert.alert('Emergency Triggered', `Emergency type: ${type}. ${description || 'No description'}`);
+  async triggerEmergency(type: EmergencyAlert['type'] = 'panic', description?: string, rideId?: string): Promise<void> {
+    try {
+      const pos = await locationService.getCurrentLocation({ timeout: 5000 }).catch(() => null);
+      const { apiClient } = await import('./api/baseApi');
+      await apiClient.post('/locations/emergency', {
+        latitude: pos?.latitude ?? 0,
+        longitude: pos?.longitude ?? 0,
+        emergencyType: type,
+        message: description,
+        rideId,
+      });
+      Alert.alert('Emergency Alert Sent', 'Your emergency alert has been sent. Help is on the way.');
+    } catch {
+      Alert.alert('Emergency', `Emergency type: ${type}. ${description || ''}\nAlert could not be sent to server.`);
+    }
   }
 
   async getEmergencyContacts(): Promise<EmergencyContact[]> {
-    return [];
+    try {
+      const response = await authApi.getProfile();
+      if (response.success && response.data) {
+        const profile = response.data as any;
+        if (profile.emergencyContactName && profile.emergencyContactPhone) {
+          return [{
+            id: `${profile.id}_emergency`,
+            name: profile.emergencyContactName,
+            phoneNumber: profile.emergencyContactPhone,
+            relationship: 'Emergency Contact',
+            isPrimary: true,
+          }];
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   async callEmergencyServices(): Promise<void> {
-    Alert.alert('Emergency Services', 'Calling 999...');
+    await Linking.openURL('tel:999');
   }
 
   async callPrimaryContact(): Promise<void> {
-    Alert.alert('Emergency Contact', 'Calling emergency contact...');
+    const contacts = await this.getEmergencyContacts();
+    const primary = contacts.find((c) => c.isPrimary) || contacts[0];
+    if (primary) {
+      await Linking.openURL(`tel:${primary.phoneNumber}`);
+    } else {
+      Alert.alert('No Contact', 'No emergency contact has been set. Please add one in your profile settings.');
+    }
   }
 
   async resolveEmergency(): Promise<void> {

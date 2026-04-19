@@ -166,6 +166,9 @@ export interface AuthenticatedRequest extends Request {
   user?: User;
 }
 
+// Alias for admin-authenticated endpoints (admin middleware sets req.user)
+export type AdminAuthenticatedRequest = AuthenticatedRequest;
+
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;

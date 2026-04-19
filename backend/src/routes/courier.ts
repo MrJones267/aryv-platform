@@ -11,6 +11,7 @@ import courierController from '../controllers/CourierController';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 import { CourierProfile, User, Package, DeliveryAgreement } from '../models';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -271,7 +272,7 @@ router.get('/packages/user', async (req: any, res: any): Promise<void> => {
     });
 
   } catch (error) {
-    console.error('Error fetching user packages:', error);
+    logger.error('Error fetching user packages', { error: (error as Error).message });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch user packages',
@@ -521,7 +522,7 @@ router.get('/profile', async (req: any, res: any): Promise<void> => {
     });
 
   } catch (error) {
-    console.error('Error fetching courier profile:', error);
+    logger.error('Error fetching courier profile', { error: (error as Error).message });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch courier profile',
@@ -590,7 +591,7 @@ router.put('/profile',
       });
 
     } catch (error) {
-      console.error('Error updating courier profile:', error);
+      logger.error('Error updating courier profile', { error: (error as Error).message });
       res.status(500).json({
         success: false,
         error: 'Failed to update courier profile',

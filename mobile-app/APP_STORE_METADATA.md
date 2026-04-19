@@ -1,17 +1,17 @@
-# 📱 Hitch App Store Metadata & Assets
+# 📱 ARYV App Store Metadata & Assets
 
 ## 🎯 **App Store Listing Information**
 
 ### **App Name & Description**
 ```
-Primary Name: Hitch
+Primary Name: ARYV
 Subtitle: Smart Ride-Sharing Platform
 Short Description: AI-powered ride-sharing with integrated courier services
 ```
 
 ### **Full Description:**
 ```
-Hitch is a comprehensive ride-sharing platform that revolutionizes urban transportation through AI-powered matching, integrated courier services, and advanced safety features.
+ARYV is a comprehensive ride-sharing platform that revolutionizes urban transportation through AI-powered matching, integrated courier services, and advanced safety features.
 
 KEY FEATURES:
 🚗 Smart Ride Matching - AI algorithms find perfect ride matches
@@ -37,7 +37,7 @@ SMART TECHNOLOGY:
 - Intelligent route planning
 - Advanced user profiling
 
-Perfect for daily commuters, occasional riders, and courier services. Experience the future of ride-sharing with Hitch.
+Perfect for daily commuters, occasional riders, and courier services. Experience the future of ride-sharing with ARYV.
 ```
 
 ### **Keywords (App Store SEO):**
@@ -106,11 +106,11 @@ Rating Explanation: General transportation app
 
 ### **App Information:**
 ```
-Developer: Your Company Name
-Support URL: https://support.hitch-app.com
-Marketing URL: https://hitch-app.com
-Privacy Policy URL: https://hitch-app.com/privacy
-Terms of Service URL: https://hitch-app.com/terms
+Developer: ARYV Technologies
+Support URL: https://support.aryv-app.com
+Marketing URL: https://aryv-app.com
+Privacy Policy URL: https://aryv-app.com/privacy
+Terms of Service URL: https://aryv-app.com/terms
 ```
 
 ### **Localization:**
@@ -155,8 +155,8 @@ App Preview Video (Optional but Recommended):
 
 ### **Title Optimization:**
 ```
-iOS (30 characters): "Hitch - Smart Rideshare"
-Android (50 characters): "Hitch: Smart Ride-Sharing & Courier Services"
+iOS (30 characters): "ARYV - Smart Rideshare"
+Android (50 characters): "ARYV: Smart Ride-Sharing & Courier Services"
 ```
 
 ### **Subtitle/Short Description:**

@@ -129,6 +129,19 @@ router.delete(
   ((req: any, res: any) => CurrencyController.removePaymentCurrency(req, res)) as any,
 );
 
+// More restrictive rate limiting for conversion endpoint — must be declared before the route
+const conversionRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // 20 conversions per minute
+  message: {
+    success: false,
+    error: 'Too many conversion requests. Please try again later.',
+    code: 'CONVERSION_RATE_LIMIT_EXCEEDED',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 /**
  * @route POST /api/currencies/convert
  * @description Convert amount between currencies
@@ -136,6 +149,7 @@ router.delete(
  */
 router.post(
   '/convert',
+  conversionRateLimit,
   [
     body('fromCurrency')
       .notEmpty()
@@ -186,21 +200,5 @@ router.post(
   // Note: Admin role check is done in the controller
   (req: Request, res: Response) => CurrencyController.updateExchangeRates(req, res),
 );
-
-// More restrictive rate limiting for conversion endpoint
-const conversionRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 conversions per minute
-  message: {
-    success: false,
-    error: 'Too many conversion requests. Please try again later.',
-    code: 'CONVERSION_RATE_LIMIT_EXCEEDED',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply stricter rate limiting to conversion endpoint
-router.use('/convert', conversionRateLimit);
 
 export default router;

@@ -22,6 +22,7 @@ import { colors } from '../../theme';
 import EmergencyService, { EmergencyContact } from '../../services/EmergencyServiceSimple';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
+import { authApi } from '../../services/api/authApi';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -78,21 +79,21 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       : newContact.phoneNumber.replace(/\s/g, '');
 
     try {
-      // Create the contact with full phone number
-      const contactToAdd = {
-        ...newContact,
-        phoneNumber: fullPhoneNumber
-      };
-      
-      await EmergencyService.getEmergencyContacts(); // Mock implementation
+      // Save emergency contact via user profile update
+      await authApi.updateProfile({
+        emergencyContact: {
+          name: newContact.name.trim(),
+          phone: fullPhoneNumber,
+        },
+      } as any);
       setShowAddModal(false);
       setNewContact({ name: '', phoneNumber: '', relationship: '', isPrimary: false });
       setSelectedCountry(null);
       await loadEmergencyContacts();
-      Alert.alert('Success', 'Emergency contact added successfully');
+      Alert.alert('Success', 'Emergency contact saved successfully');
     } catch (error) {
       log.error('Error adding contact:', error);
-      Alert.alert('Error', 'Failed to add emergency contact');
+      Alert.alert('Error', 'Failed to save emergency contact');
     }
   };
 

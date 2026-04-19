@@ -7,12 +7,22 @@
 
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
 import { logInfo, logError, logWarn } from '../utils/logger';
 import { AdminUser } from '../models/AdminUser';
+import User from '../models/User';
+import Ride from '../models/Ride';
+import Booking from '../models/Booking';
+import Package from '../models/Package';
+import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
+import { DeliveryDispute } from '../models/DeliveryDispute';
+import { UserStatus, RideStatus, BookingStatus } from '../types';
 
-// Configuration constants
-const JWT_SECRET = process.env['JWT_SECRET'] || 'your-secret-key';
-const JWT_REFRESH_SECRET = process.env['JWT_REFRESH_SECRET'] || 'your-refresh-secret';
+// Configuration constants — fail fast if secrets are missing
+if (!process.env['JWT_SECRET']) throw new Error('JWT_SECRET environment variable is required');
+if (!process.env['JWT_REFRESH_SECRET']) throw new Error('JWT_REFRESH_SECRET environment variable is required');
+const JWT_SECRET = process.env['JWT_SECRET'] as string;
+const JWT_REFRESH_SECRET = process.env['JWT_REFRESH_SECRET'] as string;
 
 export class AdminController {
   /**
@@ -248,52 +258,108 @@ export class AdminController {
    */
   static async getDashboardStats(_req: Request, res: Response): Promise<void> {
     try {
-      // Mock dashboard statistics - In production, this would query the database
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+      // User stats
+      const [totalUsers, activeUsers, suspendedUsers, newUsersThisMonth, newUsersLastMonth] = await Promise.all([
+        User.count(),
+        User.count({ where: { status: UserStatus.ACTIVE } }),
+        User.count({ where: { status: UserStatus.SUSPENDED } }),
+        User.count({ where: { createdAt: { [Op.gte]: startOfMonth } } }),
+        User.count({ where: { createdAt: { [Op.between]: [startOfLastMonth, endOfLastMonth] } } }),
+      ]);
+      const userGrowthRate = newUsersLastMonth > 0
+        ? Math.round(((newUsersThisMonth - newUsersLastMonth) / newUsersLastMonth) * 1000) / 10
+        : 0;
+
+      // Ride stats
+      const [totalRides, activeRides, completedRides, cancelledRides, newRidesThisMonth] = await Promise.all([
+        Ride.count(),
+        Ride.count({ where: { status: { [Op.in]: [RideStatus.PENDING, RideStatus.CONFIRMED, RideStatus.IN_PROGRESS] } } }),
+        Ride.count({ where: { status: RideStatus.COMPLETED } }),
+        Ride.count({ where: { status: RideStatus.CANCELLED } }),
+        Ride.count({ where: { createdAt: { [Op.gte]: startOfMonth } } }),
+      ]);
+      const rideCompletionRate = totalRides > 0
+        ? Math.round((completedRides / totalRides) * 1000) / 10
+        : 0;
+
+      // Courier stats
+      const [totalPackages, activeDeliveries, completedDeliveries, disputedDeliveries, newPackagesThisMonth] = await Promise.all([
+        Package.count(),
+        DeliveryAgreement.count({ where: { status: DeliveryStatus.IN_TRANSIT } }),
+        DeliveryAgreement.count({ where: { status: DeliveryStatus.COMPLETED } }),
+        DeliveryDispute.count(),
+        Package.count({ where: { createdAt: { [Op.gte]: startOfMonth } } }),
+      ]);
+      const totalDeliveries = completedDeliveries + disputedDeliveries;
+      const courierSuccessRate = totalDeliveries > 0
+        ? Math.round((completedDeliveries / totalDeliveries) * 1000) / 10
+        : 0;
+
+      // Revenue from completed bookings
+      const [revenueAll, revenueThisMonth, revenueLastMonth] = await Promise.all([
+        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED } }) as Promise<number | null>,
+        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED, createdAt: { [Op.gte]: startOfMonth } } }) as Promise<number | null>,
+        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED, createdAt: { [Op.between]: [startOfLastMonth, endOfLastMonth] } } }) as Promise<number | null>,
+      ]);
+      const totalRevenue = revenueAll ?? 0;
+      const monthRevenue = revenueThisMonth ?? 0;
+      const lastMonthRevenue = revenueLastMonth ?? 0;
+      const revenueGrowth = lastMonthRevenue > 0
+        ? Math.round(((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 1000) / 10
+        : 0;
+
+      // Open disputes
+      const [openDisputes, resolvedDisputes] = await Promise.all([
+        DeliveryDispute.count({ where: { status: { [Op.in]: ['open', 'investigating'] } } }),
+        DeliveryDispute.count({ where: { status: 'resolved' } }),
+      ]);
+
       const stats = {
         users: {
-          total: 45230,
-          active: 38500,
-          verified: 42100,
-          blocked: 150,
-          newThisMonth: 2340,
-          growthRate: 12.5,
+          total: totalUsers,
+          active: activeUsers,
+          suspended: suspendedUsers,
+          newThisMonth: newUsersThisMonth,
+          growthRate: userGrowthRate,
         },
         rides: {
-          total: 8450,
-          active: 245,
-          completed: 7890,
-          cancelled: 315,
-          newThisMonth: 890,
-          completionRate: 94.2,
+          total: totalRides,
+          active: activeRides,
+          completed: completedRides,
+          cancelled: cancelledRides,
+          newThisMonth: newRidesThisMonth,
+          completionRate: rideCompletionRate,
         },
         courier: {
-          totalPackages: 3120,
-          activeDeliveries: 85,
-          completed: 2890,
-          disputed: 12,
-          newThisMonth: 420,
-          successRate: 96.8,
+          totalPackages,
+          activeDeliveries,
+          completed: completedDeliveries,
+          disputed: disputedDeliveries,
+          newThisMonth: newPackagesThisMonth,
+          successRate: courierSuccessRate,
         },
         revenue: {
-          total: 45500,
-          thisMonth: 12300,
-          lastMonth: 10800,
-          growthRate: 18.7,
-          ridesRevenue: 32500,
-          courierRevenue: 13000,
+          total: Math.round(totalRevenue * 100) / 100,
+          thisMonth: Math.round(monthRevenue * 100) / 100,
+          lastMonth: Math.round(lastMonthRevenue * 100) / 100,
+          growthRate: revenueGrowth,
         },
         disputes: {
-          total: 12,
-          open: 3,
-          investigating: 5,
-          resolved: 4,
-          avgResolutionTime: 2.4, // days
+          total: openDisputes + resolvedDisputes,
+          open: openDisputes,
+          resolved: resolvedDisputes,
         },
       };
 
       res.status(200).json({
         success: true,
         data: stats,
+        timestamp: new Date().toISOString(),
       });
     } catch (error) {
       logError('Dashboard stats error', error as Error);

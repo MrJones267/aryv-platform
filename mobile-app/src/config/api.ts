@@ -32,9 +32,9 @@ export const APP_CONFIG = {
   // Google Services Configuration
   GOOGLE_SERVICES: {
     // API keys - used in both dev and production builds
-    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
-    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
-    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw',
+    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
+    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
+    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
 
     // Rate limiting
     MAX_REQUESTS_PER_DAY: 25000,
@@ -165,12 +165,14 @@ export const getApiConfig = () => {
   
   // In development, prefer local database backend if available
   if (APP_CONFIG.IS_DEV) {
+    // Android emulator uses 10.0.2.2 to reach the host machine's localhost
+    const devHost = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
     return {
       ...baseConfig,
       // Try local database backend first, fallback to production
-      apiUrl: 'http://localhost:3001/api',
-      socketUrl: 'http://localhost:3001',
-      wsUrl: 'ws://localhost:3001',
+      apiUrl: `http://${devHost}:3001/api`,
+      socketUrl: `http://${devHost}:3001`,
+      wsUrl: `ws://${devHost}:3001`,
       cdnUrl: API_ENDPOINTS.CDN_URL,
       // Keep production URLs as fallback (Custom domain)
       fallbackApiUrl: 'https://api.aryv-app.com/api', // Custom domain as primary fallback

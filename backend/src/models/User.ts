@@ -41,6 +41,12 @@ export interface UserModel extends Model<
   timezone: CreationOptional<string | null>;
   deactivatedAt: CreationOptional<Date | null>;
   deactivationReason: CreationOptional<string | null>;
+  rating: CreationOptional<number>;
+  totalRides: CreationOptional<number>;
+  preferences: CreationOptional<Record<string, any> | null>;
+  emergencyContactName: CreationOptional<string | null>;
+  emergencyContactPhone: CreationOptional<string | null>;
+  address: CreationOptional<string | null>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 
@@ -206,6 +212,39 @@ const User = sequelize.define<UserModel>(
       type: DataTypes.TEXT,
       allowNull: true,
       field: 'deactivation_reason',
+    },
+    rating: {
+      type: DataTypes.DECIMAL(3, 2),
+      allowNull: true,
+      defaultValue: 5.0,
+      field: 'rating',
+    },
+    totalRides: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0,
+      field: 'total_rides',
+    },
+    preferences: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+      field: 'preferences',
+    },
+    emergencyContactName: {
+      type: DataTypes.STRING(200),
+      allowNull: true,
+      field: 'emergency_contact_name',
+    },
+    emergencyContactPhone: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      field: 'emergency_contact_phone',
+    },
+    address: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: 'address',
     },
     createdAt: {
       type: DataTypes.DATE,

@@ -17,6 +17,7 @@ import { DisputeStatus } from '../models/DeliveryDispute';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
 import courierEscrowService from '../services/CourierEscrowService';
+import logger from '../utils/logger';
 
 export class DisputeController {
   /**
@@ -136,7 +137,7 @@ export class DisputeController {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in createDispute:`, {
+      logger.error('Error in createDispute', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -240,7 +241,7 @@ export class DisputeController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getAllDisputes:`, {
+      logger.error('Error in getAllDisputes', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -303,7 +304,7 @@ export class DisputeController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getUserDisputes:`, {
+      logger.error('Error in getUserDisputes', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -402,7 +403,7 @@ export class DisputeController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getDisputeDetails:`, {
+      logger.error('Error in getDisputeDetails', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -463,7 +464,7 @@ export class DisputeController {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in moveToReview:`, {
+      logger.error('Error in moveToReview', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -553,7 +554,7 @@ export class DisputeController {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`[${new Date().toISOString()}] Error in resolveDispute:`, {
+      logger.error('Error in resolveDispute', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,
@@ -636,7 +637,7 @@ export class DisputeController {
       });
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Error in getDisputeStats:`, {
+      logger.error('Error in getDisputeStats', {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         userId: req.user?.id,

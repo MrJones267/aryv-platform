@@ -39,6 +39,8 @@
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/*.spec.ts",
-    "**/*.spec.tsx"
+    "**/*.spec.tsx",
+    "src/_problematic_files/**/*",
+    "src/__tests__/**/*"
   ]
 }

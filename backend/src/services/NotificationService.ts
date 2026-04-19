@@ -13,6 +13,7 @@ import User from '../models/User';
 import Vehicle from '../models/Vehicle';
 import { BookingStatus, RideStatus } from '../types';
 import { logInfo, logError } from '../utils/logger';
+import fcmService, { StalePushTokenError } from './FCMService';
 
 export interface NotificationData {
   type: string;
@@ -113,18 +114,40 @@ export class NotificationService {
    */
   async sendToUser(userId: string, notification: NotificationData): Promise<void> {
     try {
-      if (!this.io) {
-        logError('Socket.io not initialized', new Error('Socket.io server not available'));
-        return;
+      // Send via socket (real-time, works when app is open)
+      if (this.io) {
+        this.io.to(`user_${userId}`).emit('notification', notification);
       }
 
-      this.io.to(`user_${userId}`).emit('notification', notification);
+      // Send via FCM push (works when app is in background/closed)
+      try {
+        const user = await User.findByPk(userId, { attributes: ['id', 'preferences'] });
+        const prefs = (user?.preferences as Record<string, any>) || {};
+        const pushToken: string | undefined = prefs['pushToken'];
 
-      logInfo('Notification sent to user', {
-        userId,
-        type: notification.type,
-        title: notification.title,
-      });
+        if (pushToken) {
+          await fcmService.send({
+            token: pushToken,
+            title: notification.title,
+            body: notification.message,
+            priority: 'normal',
+            data: { type: notification.type, timestamp: notification.timestamp },
+          });
+        }
+      } catch (pushError) {
+        if (pushError instanceof StalePushTokenError) {
+          // Clear stale token
+          const user = await User.findByPk(userId, { attributes: ['id', 'preferences'] });
+          if (user) {
+            const prefs = (user.preferences as Record<string, any>) || {};
+            delete prefs['pushToken'];
+            await user.update({ preferences: prefs });
+          }
+        }
+        // Push failure is non-fatal — socket delivery may have succeeded
+      }
+
+      logInfo('Notification sent to user', { userId, type: notification.type, title: notification.title });
     } catch (error) {
       logError('Error sending notification to user', error as Error);
     }

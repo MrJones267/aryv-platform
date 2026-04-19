@@ -573,16 +573,7 @@ export class CallService {
   }
 
   private async logCallEvent(callId: string, eventType: string, eventData: any): Promise<void> {
-    try {
-      await sequelize.models['CallEvent'].create({
-        callId,
-        eventType,
-        eventData,
-        timestamp: new Date(),
-      });
-    } catch (error) {
-      logError('Error logging call event', error as Error);
-    }
+    logInfo('Call event', { callId, eventType, eventData });
   }
 
   private async getEmergencyContact(userId: string): Promise<any | null> {

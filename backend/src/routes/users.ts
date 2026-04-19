@@ -5,12 +5,15 @@
  * @lastModified 2025-01-27
  */
 
+import crypto from 'crypto';
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
+import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { UserController } from '../controllers/UserController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
+import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError } from '../middleware/upload';
 
 const router = Router();
 const userController = new UserController();
@@ -111,13 +114,15 @@ router.put(
 
 /**
  * @route   POST /api/users/profile/avatar
- * @desc    Upload user profile avatar
+ * @desc    Upload user profile avatar (multipart/form-data, field: avatar)
  * @access  Private
  */
 router.post(
   '/profile/avatar',
   userRateLimit,
   authenticateToken,
+  uploadAvatar,
+  handleMulterError,
   userController.uploadAvatar.bind(userController),
 );
 
@@ -187,13 +192,15 @@ router.get(
 
 /**
  * @route   POST /api/users/driving-license
- * @desc    Upload driving license for verification
+ * @desc    Upload driving license for verification (multipart/form-data, field: document)
  * @access  Private
  */
 router.post(
   '/driving-license',
   userRateLimit,
   authenticateToken,
+  uploadDocument,
+  handleMulterError,
   [
     body('licenseNumber')
       .isLength({ min: 5, max: 20 })
@@ -304,6 +311,16 @@ router.put(
   userController.updateVehicle.bind(userController),
 );
 
+// PATCH alias for mobile app compatibility
+router.patch(
+  '/vehicles/:id',
+  userRateLimit,
+  authenticateToken,
+  [param('id').isUUID()],
+  validateInput,
+  userController.updateVehicle.bind(userController),
+);
+
 /**
  * @route   DELETE /api/users/vehicles/:id
  * @desc    Remove a vehicle
@@ -330,6 +347,37 @@ router.post(
   [param('id').isUUID().withMessage('Vehicle ID must be a valid UUID')],
   validateInput,
   userController.submitVehicleVerification.bind(userController),
+);
+
+router.post(
+  '/vehicles/:id/documents',
+  userRateLimit,
+  authenticateToken,
+  [param('id').isUUID()],
+  validateInput,
+  uploadVehicleDocument,
+  handleMulterError,
+  userController.uploadVehicleDocument.bind(userController),
+);
+
+router.post(
+  '/vehicles/:id/photos',
+  userRateLimit,
+  authenticateToken,
+  [param('id').isUUID()],
+  validateInput,
+  uploadVehiclePhoto,
+  handleMulterError,
+  userController.uploadVehiclePhoto.bind(userController),
+);
+
+router.post(
+  '/vehicles/:id/photos/delete',
+  userRateLimit,
+  authenticateToken,
+  [param('id').isUUID(), body('photoUrl').notEmpty()],
+  validateInput,
+  userController.deleteVehiclePhoto.bind(userController),
 );
 
 /**
@@ -472,6 +520,89 @@ router.post(
 );
 
 /**
+ * @route   GET /api/users/settings
+ * @desc    Get user app settings
+ * @access  Private
+ */
+router.get(
+  '/settings',
+  userRateLimit,
+  authenticateToken,
+  userController.getSettings.bind(userController),
+);
+
+/**
+ * @route   PUT /api/users/settings
+ * @desc    Update user app settings
+ * @access  Private
+ */
+router.put(
+  '/settings',
+  userRateLimit,
+  authenticateToken,
+  [
+    body('language').optional().isLength({ min: 2, max: 10 }).withMessage('Language must be a valid locale code'),
+    body('theme').optional().isIn(['light', 'dark', 'system']).withMessage('Theme must be light, dark, or system'),
+    body('currency').optional().isLength({ min: 3, max: 3 }).isAlpha().withMessage('Currency must be a 3-letter ISO code'),
+    body('timezone').optional().isString().isLength({ max: 60 }).withMessage('Timezone must be a valid string'),
+    body('countryCode').optional().isLength({ min: 2, max: 3 }).isAlpha().withMessage('Country code must be 2-3 letters'),
+    body('notifications').optional().isObject().withMessage('Notifications must be an object'),
+    body('notifications.push').optional().isBoolean().withMessage('Push must be boolean'),
+    body('notifications.email').optional().isBoolean().withMessage('Email must be boolean'),
+    body('notifications.sms').optional().isBoolean().withMessage('SMS must be boolean'),
+    body('privacy').optional().isObject().withMessage('Privacy must be an object'),
+    body('privacy.shareLocation').optional().isBoolean().withMessage('shareLocation must be boolean'),
+    body('privacy.showOnline').optional().isBoolean().withMessage('showOnline must be boolean'),
+    body('dataUsage').optional().isObject().withMessage('dataUsage must be an object'),
+  ],
+  validateInput,
+  userController.updateSettings.bind(userController),
+);
+
+/**
+ * @route   GET /api/users/preferences
+ * @desc    Get user ride/app preferences
+ * @access  Private
+ */
+router.get(
+  '/preferences',
+  userRateLimit,
+  authenticateToken,
+  userController.getPreferences.bind(userController),
+);
+
+/**
+ * @route   PUT /api/users/preferences
+ * @desc    Update user ride/app preferences
+ * @access  Private
+ */
+router.put(
+  '/preferences',
+  userRateLimit,
+  authenticateToken,
+  [
+    body('ridePreferences').optional().isObject().withMessage('ridePreferences must be an object'),
+    body('ridePreferences.smokingAllowed').optional().isBoolean().withMessage('smokingAllowed must be boolean'),
+    body('ridePreferences.petsAllowed').optional().isBoolean().withMessage('petsAllowed must be boolean'),
+    body('ridePreferences.musicAllowed').optional().isBoolean().withMessage('musicAllowed must be boolean'),
+    body('ridePreferences.maxDetour').optional().isInt({ min: 0, max: 50 }).withMessage('maxDetour must be 0-50 km'),
+    body('driverPreferences').optional().isObject().withMessage('driverPreferences must be an object'),
+    body('driverPreferences.acceptCash').optional().isBoolean().withMessage('acceptCash must be boolean'),
+    body('driverPreferences.acceptCard').optional().isBoolean().withMessage('acceptCard must be boolean'),
+    body('driverPreferences.maxPassengers').optional().isInt({ min: 1, max: 8 }).withMessage('maxPassengers must be 1-8'),
+    body('searchPreferences').optional().isObject().withMessage('searchPreferences must be an object'),
+    body('searchPreferences.defaultRadius').optional().isInt({ min: 1, max: 100 }).withMessage('defaultRadius must be 1-100 km'),
+    body('searchPreferences.defaultSeats').optional().isInt({ min: 1, max: 8 }).withMessage('defaultSeats must be 1-8'),
+    body('searchPreferences.sortBy').optional().isIn(['time', 'price', 'rating', 'distance']).withMessage('sortBy must be time, price, rating, or distance'),
+  ],
+  validateInput,
+  userController.updatePreferences.bind(userController),
+);
+
+// PATCH alias for mobile app compatibility
+router.patch('/preferences', userRateLimit, authenticateToken, userController.updatePreferences.bind(userController));
+
+/**
  * @route   POST /api/users/deactivate
  * @desc    Deactivate user account
  * @access  Private
@@ -491,5 +622,107 @@ router.post(
   validateInput,
   userController.deactivateAccount.bind(userController),
 );
+
+// ─── Additional routes expected by mobile app ───────────────────────────────
+
+/** PATCH /profile — same handler as PUT (mobile app uses PATCH) */
+router.patch('/profile', userRateLimit, authenticateToken, updateProfileValidation, validateInput, userController.updateProfile.bind(userController));
+
+/** POST /upload-avatar — mobile app uses this path (same as /profile/avatar) */
+router.post('/upload-avatar', userRateLimit, authenticateToken, uploadAvatar, handleMulterError, userController.uploadAvatar.bind(userController));
+
+/** POST /change-password */
+router.post(
+  '/change-password',
+  userRateLimit,
+  authenticateToken,
+  [body('currentPassword').notEmpty(), body('newPassword').isLength({ min: 8 })],
+  validateInput,
+  userController.changePassword.bind(userController),
+);
+
+/** DELETE /account */
+router.delete('/account', userRateLimit, authenticateToken, [body('password').notEmpty()], validateInput, userController.deleteAccount.bind(userController));
+
+/** GET /stats */
+router.get('/stats', userRateLimit, authenticateToken, userController.getUserStats.bind(userController));
+
+/** GET/PATCH /emergency-contact */
+router.get('/emergency-contact', userRateLimit, authenticateToken, userController.getEmergencyContact.bind(userController));
+router.patch(
+  '/emergency-contact',
+  userRateLimit,
+  authenticateToken,
+  [body('name').notEmpty(), body('phone').isMobilePhone('any')],
+  validateInput,
+  userController.updateEmergencyContact.bind(userController),
+);
+
+/** GET /blocked — list blocked users */
+router.get('/blocked', userRateLimit, authenticateToken, userController.getBlockedUsers.bind(userController));
+
+/** GET /reviews — authenticated user's received reviews */
+router.get(
+  '/reviews',
+  userRateLimit,
+  authenticateToken,
+  [query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 })],
+  validateInput,
+  userController.getReviews.bind(userController),
+);
+
+/** POST /reviews — submit a review */
+router.post(
+  '/reviews',
+  userRateLimit,
+  authenticateToken,
+  [
+    body('toUserId').isUUID(),
+    body('rideId').isUUID(),
+    body('rating').isInt({ min: 1, max: 5 }),
+    body('comment').optional().isLength({ max: 1000 }),
+  ],
+  validateInput,
+  userController.submitReview.bind(userController),
+);
+
+/** POST /driver-verification — upload docs for driver verification */
+const ALLOWED_DV_FIELDS = new Set(['driverLicense', 'vehicleRegistration', 'insurance']);
+const driverVerificationUpload = multer({ storage: multer.diskStorage({
+  destination: './uploads/documents',
+  filename: (req: any, _file, cb) => {
+    const uid = (req.user?.id || 'unknown').replace(/[^a-zA-Z0-9-]/g, '');
+    cb(null, `${uid}-dv-${crypto.randomBytes(8).toString('hex')}.jpg`);
+  },
+}), limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_DV_FIELDS.has(file.fieldname));
+  },
+}).fields([
+  { name: 'driverLicense', maxCount: 1 },
+  { name: 'vehicleRegistration', maxCount: 1 },
+  { name: 'insurance', maxCount: 1 },
+]);
+router.post('/driver-verification', userRateLimit, authenticateToken, driverVerificationUpload, handleMulterError, userController.submitDriverVerification.bind(userController));
+
+// ─── Parameterised routes (must come after static routes) ────────────────────
+
+/** GET /users/:id — public profile */
+router.get('/:id', userRateLimit, [param('id').isUUID()], validateInput, userController.getUserById.bind(userController));
+
+/** GET /users/:id/reviews */
+router.get(
+  '/:id/reviews',
+  userRateLimit,
+  [param('id').isUUID(), query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 })],
+  validateInput,
+  userController.getReviews.bind(userController),
+);
+
+/** POST /users/:id/block */
+router.post('/:id/block', userRateLimit, authenticateToken, [param('id').isUUID()], validateInput, userController.blockUser.bind(userController));
+
+/** DELETE /users/:id/block */
+router.delete('/:id/block', userRateLimit, authenticateToken, [param('id').isUUID()], validateInput, userController.unblockUser.bind(userController));
 
 export default router;

@@ -2,11 +2,15 @@
  * @fileoverview API Documentation Routes
  * @author Oabona-Majoko
  * @created 2025-01-27
+ * @lastModified 2026-03-28
  */
 
-const express = require('express');
-const router = express.Router();
+import express, { Request, Response } from 'express';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { specs, swaggerUi, swaggerUiOptions } = require('../config/swagger');
+
+const router = express.Router();
 
 /**
  * @swagger
@@ -61,29 +65,29 @@ router.use('/', swaggerUi.serve);
 router.get('/', swaggerUi.setup(specs, swaggerUiOptions));
 
 // Serve OpenAPI JSON specification
-router.get('/json', (req, res) => {
+router.get('/json', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(specs);
 });
 
 // Generate and serve Postman collection
-router.get('/postman', (req, res) => {
+router.get('/postman', (_req: Request, res: Response) => {
   try {
     const postmanCollection = generatePostmanCollection(specs);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename="hitch-api.postman_collection.json"');
     res.send(postmanCollection);
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
       error: 'Failed to generate Postman collection',
-      code: 'POSTMAN_GENERATION_ERROR'
+      code: 'POSTMAN_GENERATION_ERROR',
     });
   }
 });
 
 // API Testing Interface
-router.get('/test', (req, res) => {
+router.get('/test', (_req: Request, res: Response) => {
   const testInterface = `
 <!DOCTYPE html>
 <html lang="en">
@@ -222,7 +226,7 @@ router.get('/test', (req, res) => {
         async function testLogin() {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
-            
+
             if (!email || !password) {
                 alert('Please enter email and password');
                 return;
@@ -236,7 +240,7 @@ router.get('/test', (req, res) => {
                 });
 
                 const data = await response.json();
-                
+
                 if (data.success && data.data.tokens) {
                     authToken = data.data.tokens.accessToken;
                     document.getElementById('auth-token').value = authToken;
@@ -293,7 +297,7 @@ router.get('/test', (req, res) => {
 
                 const response = await fetch(endpoint, requestOptions);
                 const data = await response.text();
-                
+
                 let formattedResponse;
                 try {
                     formattedResponse = JSON.stringify(JSON.parse(data), null, 2);
@@ -319,18 +323,18 @@ router.get('/test', (req, res) => {
 </body>
 </html>
   `;
-  
+
   res.send(testInterface);
 });
 
-// Helper function to generate Postman collection
-function generatePostmanCollection(openApiSpec) {
-  const collection = {
+// Helper function to generate Postman collection from OpenAPI spec
+function generatePostmanCollection(openApiSpec: Record<string, any>): Record<string, any> {
+  const collection: Record<string, any> = {
     info: {
       name: 'ARYV Platform API',
-      description: openApiSpec.info.description,
-      version: openApiSpec.info.version,
-      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
+      description: openApiSpec['info']?.description,
+      version: openApiSpec['info']?.version,
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
     auth: {
       type: 'bearer',
@@ -338,23 +342,23 @@ function generatePostmanCollection(openApiSpec) {
         {
           key: 'token',
           value: '{{access_token}}',
-          type: 'string'
-        }
-      ]
+          type: 'string',
+        },
+      ],
     },
     variable: [
       {
         key: 'base_url',
         value: 'http://localhost:3001',
-        type: 'string'
+        type: 'string',
       },
       {
         key: 'access_token',
         value: '',
-        type: 'string'
-      }
+        type: 'string',
+      },
     ],
-    item: []
+    item: [] as any[],
   };
 
   // Add authentication folder
@@ -365,24 +369,16 @@ function generatePostmanCollection(openApiSpec) {
         name: 'Login',
         request: {
           method: 'POST',
-          header: [
-            {
-              key: 'Content-Type',
-              value: 'application/json'
-            }
-          ],
+          header: [{ key: 'Content-Type', value: 'application/json' }],
           body: {
             mode: 'raw',
-            raw: JSON.stringify({
-              email: 'user@example.com',
-              password: 'password'
-            })
+            raw: JSON.stringify({ email: 'user@example.com', password: 'password' }),
           },
           url: {
             raw: '{{base_url}}/api/auth/login',
             host: ['{{base_url}}'],
-            path: ['api', 'auth', 'login']
-          }
+            path: ['api', 'auth', 'login'],
+          },
         },
         event: [
           {
@@ -394,22 +390,17 @@ function generatePostmanCollection(openApiSpec) {
                 '    if (response.success && response.data.tokens) {',
                 '        pm.collectionVariables.set("access_token", response.data.tokens.accessToken);',
                 '    }',
-                '}'
-              ]
-            }
-          }
-        ]
+                '}',
+              ],
+            },
+          },
+        ],
       },
       {
         name: 'Register',
         request: {
           method: 'POST',
-          header: [
-            {
-              key: 'Content-Type',
-              value: 'application/json'
-            }
-          ],
+          header: [{ key: 'Content-Type', value: 'application/json' }],
           body: {
             mode: 'raw',
             raw: JSON.stringify({
@@ -417,20 +408,20 @@ function generatePostmanCollection(openApiSpec) {
               password: 'password123',
               firstName: 'John',
               lastName: 'Doe',
-              role: 'user'
-            })
+              role: 'user',
+            }),
           },
           url: {
             raw: '{{base_url}}/api/auth/register',
             host: ['{{base_url}}'],
-            path: ['api', 'auth', 'register']
-          }
-        }
-      }
-    ]
+            path: ['api', 'auth', 'register'],
+          },
+        },
+      },
+    ],
   };
 
-  collection.item.push(authFolder);
+  collection['item'].push(authFolder);
 
   // Add other endpoint folders
   const endpoints = [
@@ -439,10 +430,10 @@ function generatePostmanCollection(openApiSpec) {
     { name: 'Rides', path: 'rides' },
     { name: 'Packages', path: 'packages' },
     { name: 'Payments', path: 'payments' },
-    { name: 'Admin', path: 'admin' }
+    { name: 'Admin', path: 'admin' },
   ];
 
-  endpoints.forEach(endpoint => {
+  endpoints.forEach((endpoint) => {
     const folder = {
       name: endpoint.name,
       item: [
@@ -454,16 +445,16 @@ function generatePostmanCollection(openApiSpec) {
             url: {
               raw: `{{base_url}}/api/${endpoint.path}`,
               host: ['{{base_url}}'],
-              path: ['api', endpoint.path]
-            }
-          }
-        }
-      ]
+              path: ['api', endpoint.path],
+            },
+          },
+        },
+      ],
     };
-    collection.item.push(folder);
+    collection['item'].push(folder);
   });
 
   return collection;
 }
 
-module.exports = router;
+export default router;

@@ -5,19 +5,21 @@
  * @lastModified 2025-01-25
  */
 
-import { Request, Response } from 'express';
-import { Op } from 'sequelize';
+import { Response } from 'express';
+import { Op, QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
-import { RideStatus } from '../types';
+import User from '../models/User';
+import Vehicle from '../models/Vehicle';
+import { RideStatus, AdminAuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
 
 export class AdminRideController {
   /**
-   * Get all rides with filtering and pagination for admin panel - SIMPLIFIED
+   * Get all rides with filtering, pagination, and driver/vehicle details for admin panel
    */
-  static async getAllRides(req: Request, res: Response): Promise<void> {
+  static async getAllRides(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const {
         page = 1,
@@ -30,17 +32,28 @@ export class AdminRideController {
       const offset = (Number(page) - 1) * Number(limit);
       const whereClause: any = {};
 
-      // Filter by status
       if (status && status !== 'all') {
         whereClause.status = status;
       }
 
-      // Simple query without joins to debug
       const { rows: rides, count: total } = await Ride.findAndCountAll({
         where: whereClause,
+        include: [
+          {
+            model: User,
+            as: 'driver',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'profileImage'],
+          },
+          {
+            model: Vehicle,
+            as: 'vehicle',
+            attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'vehicleType'],
+          },
+        ],
         order: [[sortBy as string, sortOrder as string]],
         limit: Number(limit),
         offset,
+        distinct: true,
       });
 
       res.status(200).json({
@@ -58,7 +71,6 @@ export class AdminRideController {
       });
 
     } catch (error) {
-      console.error('DEBUG - getAllRides error details:', error);
       logError('Admin getAllRides error', error as Error);
       res.status(500).json({
         success: false,
@@ -72,7 +84,7 @@ export class AdminRideController {
   /**
    * Get detailed ride information by ID for admin
    */
-  static async getRideById(req: Request, res: Response): Promise<void> {
+  static async getRideById(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
@@ -110,13 +122,13 @@ export class AdminRideController {
   /**
    * Cancel a ride as admin (with reason)
    */
-  static async cancelRide(req: Request, res: Response): Promise<void> {
+  static async cancelRide(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       if (!reason) {
         res.status(400).json({
@@ -173,8 +185,8 @@ export class AdminRideController {
 
       // Log admin action
       logInfo('Admin cancelled ride', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         rideId: id,
         reason,
       });
@@ -204,7 +216,7 @@ export class AdminRideController {
   /**
    * Get ride analytics and statistics
    */
-  static async getRideAnalytics(req: Request, res: Response): Promise<void> {
+  static async getRideAnalytics(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const {
         startDate,
@@ -247,7 +259,7 @@ export class AdminRideController {
           AND r.created_at BETWEEN :start AND :end
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       // Top routes
@@ -265,7 +277,7 @@ export class AdminRideController {
         LIMIT 10
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       // Driver performance
@@ -295,7 +307,7 @@ export class AdminRideController {
         LIMIT 10
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       // Time-based trend data
@@ -313,7 +325,7 @@ export class AdminRideController {
         ORDER BY period
       `, {
         replacements: { start, end },
-        type: (sequelize as any).QueryTypes.SELECT,
+        type: QueryTypes.SELECT,
       });
 
       res.status(200).json({
@@ -349,13 +361,13 @@ export class AdminRideController {
   /**
    * Update ride status (admin override)
    */
-  static async updateRideStatus(req: Request, res: Response): Promise<void> {
+  static async updateRideStatus(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     const transaction = await sequelize.transaction();
 
     try {
       const { id } = req.params;
       const { status, reason } = req.body;
-      const adminUser = (req as any).user;
+      const adminUser = req.user;
 
       if (!Object.values(RideStatus).includes(status)) {
         res.status(400).json({
@@ -390,8 +402,8 @@ export class AdminRideController {
 
       // Log admin action
       logInfo('Admin updated ride status', {
-        adminId: adminUser.id,
-        adminEmail: adminUser.email,
+        adminId: adminUser?.id,
+        adminEmail: adminUser?.email,
         rideId: id,
         oldStatus,
         newStatus: status,
@@ -425,7 +437,7 @@ export class AdminRideController {
   /**
    * Get ride bookings for admin review
    */
-  static async getRideBookings(req: Request, res: Response): Promise<void> {
+  static async getRideBookings(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
       const { status, page = 1, limit = 50 } = req.query;
