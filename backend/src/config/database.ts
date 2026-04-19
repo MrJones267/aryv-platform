@@ -10,41 +10,36 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Database configuration
-const DB_CONFIG = {
-  host: process.env['DB_HOST'] || 'localhost',
-  port: parseInt(process.env['DB_PORT'] || '5432'),
-  database: process.env['DB_NAME'] || 'aryv',
-  username: process.env['DB_USER'] || 'aryv_user',
-  password: process.env['DB_PASSWORD'] || '',
+const isProduction = process.env['NODE_ENV'] === 'production';
+
+const SHARED_CONFIG = {
   dialect: 'postgres' as const,
   logging: false,
-  pool: {
-    max: 10,
-    min: 0,
-    acquire: 30000,
-    idle: 10000,
-  },
+  pool: { max: 10, min: 0, acquire: 30000, idle: 10000 },
   dialectOptions: {
-    ssl: process.env['NODE_ENV'] === 'production' ? {
-      require: true,
-      rejectUnauthorized: false,
-    } : false,
+    ssl: isProduction ? { require: true, rejectUnauthorized: false } : false,
   },
-  define: {
-    timestamps: true,
-    underscored: true,
-    freezeTableName: true,
-  },
+  define: { timestamps: true, underscored: true, freezeTableName: true },
 };
 
-// Create Sequelize instance
-const sequelize = new Sequelize(
-  DB_CONFIG.database,
-  DB_CONFIG.username,
-  DB_CONFIG.password,
-  DB_CONFIG,
-);
+// Railway injects DATABASE_URL; fall back to individual PG* / DB_* vars
+const DATABASE_URL =
+  process.env['DATABASE_URL'] ||
+  process.env['POSTGRES_URL'] ||
+  process.env['POSTGRESQL_URL'];
+
+const sequelize = DATABASE_URL
+  ? new Sequelize(DATABASE_URL, SHARED_CONFIG)
+  : new Sequelize(
+      process.env['DB_NAME'] || process.env['PGDATABASE'] || 'aryv',
+      process.env['DB_USER'] || process.env['PGUSER'] || 'aryv_user',
+      process.env['DB_PASSWORD'] || process.env['PGPASSWORD'] || '',
+      {
+        ...SHARED_CONFIG,
+        host: process.env['DB_HOST'] || process.env['PGHOST'] || 'localhost',
+        port: parseInt(process.env['DB_PORT'] || process.env['PGPORT'] || '5432'),
+      },
+    );
 
 // Test database connection
 const testConnection = async (): Promise<void> => {
