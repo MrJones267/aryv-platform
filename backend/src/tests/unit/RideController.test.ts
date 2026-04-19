@@ -5,7 +5,7 @@
  * @lastModified 2026-03-28
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { RideController } from '../../controllers/RideController';
 import { AuthenticatedRequest } from '../../types';
 import { RideStatus } from '../../types';
@@ -96,7 +96,7 @@ describe('RideController', () => {
 
   describe('rateRide', () => {
     it('returns 401 when user is not authenticated', async () => {
-      const req = mockRequest({ user: undefined, params: { id: 'ride-1' }, body: { rating: 5 } });
+      const req = mockRequest({ user: undefined as any, params: { id: 'ride-1' }, body: { rating: 5 } });
       const res = mockResponse();
 
       await controller.rateRide(req, res);
@@ -130,7 +130,7 @@ describe('RideController', () => {
 
   describe('updateRideStatus', () => {
     it('returns 401 when unauthenticated', async () => {
-      const req = mockRequest({ user: undefined, params: { id: 'ride-1' }, body: { status: 'cancelled' } });
+      const req = mockRequest({ user: undefined as any, params: { id: 'ride-1' }, body: { status: 'cancelled' } });
       const res = mockResponse();
 
       await controller.updateRideStatus(req, res);

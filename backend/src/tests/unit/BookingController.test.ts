@@ -28,7 +28,6 @@ jest.mock('../../services/PaymentService', () => ({ paymentService: { createPaym
 jest.mock('../../services/NotificationService', () => ({ notificationService: { notifyBookingUpdate: jest.fn() } }));
 
 import Booking from '../../models/Booking';
-import Ride from '../../models/Ride';
 
 const mockResponse = () => {
   const res = {} as Response;
@@ -56,7 +55,7 @@ describe('BookingController', () => {
 
   describe('getMyBookings', () => {
     it('returns 401 when unauthenticated', async () => {
-      const req = mockRequest({ user: undefined });
+      const req = mockRequest({ user: undefined as any });
       const res = mockResponse();
 
       await controller.getMyBookings(req, res);
@@ -100,7 +99,7 @@ describe('BookingController', () => {
 
   describe('cancelBooking', () => {
     it('returns 401 when unauthenticated', async () => {
-      const req = mockRequest({ user: undefined, params: { id: 'booking-1' } });
+      const req = mockRequest({ user: undefined as any, params: { id: 'booking-1' } });
       const res = mockResponse();
 
       await controller.cancelBooking(req, res);
@@ -149,12 +148,12 @@ describe('BookingController', () => {
     });
   });
 
-  describe('getBookingDetails', () => {
+  describe('getBookingById', () => {
     it('returns 401 when unauthenticated', async () => {
-      const req = mockRequest({ user: undefined, params: { id: 'booking-1' } });
+      const req = mockRequest({ user: undefined as any, params: { id: 'booking-1' } });
       const res = mockResponse();
 
-      await controller.getBookingDetails(req, res);
+      await controller.getBookingById(req, res);
 
       expect(res.status).toHaveBeenCalledWith(401);
     });
@@ -164,7 +163,7 @@ describe('BookingController', () => {
       const req = mockRequest({ params: { id: 'nonexistent' } });
       const res = mockResponse();
 
-      await controller.getBookingDetails(req, res);
+      await controller.getBookingById(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
     });
@@ -181,7 +180,7 @@ describe('BookingController', () => {
       const req = mockRequest({ params: { id: 'booking-1' } });
       const res = mockResponse();
 
-      await controller.getBookingDetails(req, res);
+      await controller.getBookingById(req, res);
 
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true })

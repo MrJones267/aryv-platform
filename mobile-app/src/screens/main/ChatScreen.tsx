@@ -43,7 +43,7 @@ interface ChatMessage {
   location?: {
     latitude: number;
     longitude: number;
-    address: string;
+    address?: string;
   };
 }
 
@@ -272,7 +272,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     if (!location) return;
     const url = Platform.select({
       ios: `maps:0,0?q=${location.latitude},${location.longitude}`,
-      android: `geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(${encodeURIComponent(location.address)})`,
+      android: `geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(${encodeURIComponent(location.address ?? '')})`,
     });
     if (url) {
       Linking.openURL(url).catch(() => {

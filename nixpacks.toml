@@ -1,5 +1,4 @@
 # Nixpacks configuration for Railway deployment
-# Updated: Force Node.js 20 (Node 18 is EOL)
 
 [variables]
 NIXPACKS_NODE_VERSION = "20"
@@ -8,10 +7,10 @@ NIXPACKS_NODE_VERSION = "20"
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install --legacy-peer-deps --force"]
+cmds = ["cd backend && npm install --legacy-peer-deps"]
 
 [phases.build]
-cmds = ["echo 'Build complete - using server-simple.js'"]
+cmds = ["cd backend && npm run build"]
 
 [start]
-cmd = "node backend/server-simple.js"
+cmd = "node backend/dist/index.js"

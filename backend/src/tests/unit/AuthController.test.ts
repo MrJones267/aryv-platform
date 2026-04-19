@@ -5,9 +5,9 @@
  * @lastModified 2026-03-28
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AuthController } from '../../controllers/AuthController';
-import { AuthenticatedRequest, AppError } from '../../types';
+import { AppError } from '../../types';
 
 jest.mock('../../services/AuthService');
 jest.mock('../../config/redis', () => ({

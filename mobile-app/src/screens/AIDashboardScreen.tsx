@@ -105,9 +105,9 @@ export const AIDashboardScreen: React.FC = () => {
 
   const buildHistoricalChart = (market: MarketConditions | null) => {
     // Build 24-hour trend seeded from real market conditions when available
-    const baseDemand = market ? market.demand_level * 25 : 12;
-    const basePrice = market ? market.average_price : 25;
-    const baseSurge = market ? market.surge_multiplier : 1;
+    const baseDemand = market ? market.composite_scores.demand_multiplier * 12 : 12;
+    const basePrice = 25;
+    const baseSurge = market ? market.composite_scores.price_impact : 1;
 
     const timestamps: string[] = [];
     const demand: number[] = [];
