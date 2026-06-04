@@ -5,12 +5,16 @@
  * @lastModified 2026-03-28
  */
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { PaymentController } from '../controllers/PaymentController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
+import { verifyOrangeMoneyWebhook, verifyMyZakaWebhook, verifySmegaWebhook } from '../services/MobileMoneyService';
+import { redisClient } from '../config/redis';
+import logger from '../utils/logger';
 
 const router = Router();
 const controller = new PaymentController();
@@ -19,6 +23,7 @@ const paymentRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { success: false, error: 'Too many payment requests, please try again later', code: 'RATE_LIMIT_EXCEEDED' },
+  store: makeStore('payments'),
 });
 
 // All payment routes require authentication
@@ -169,5 +174,47 @@ router.post(
   validateInput,
   controller.requestRefund.bind(controller),
 );
+
+// ─── Mobile Money Webhooks (no auth — provider calls these) ──────────────────
+
+const webhookHandler = (
+  verifyFn: (payload: string, sig: string) => boolean,
+  providerName: string,
+) => async (req: Request, res: Response): Promise<void> => {
+  try {
+    const sig = (req.headers['x-signature'] || req.headers['x-webhook-signature'] || '') as string;
+    const payload = JSON.stringify(req.body);
+
+    if (!verifyFn(payload, sig)) {
+      logger.warn(`${providerName} webhook signature invalid`);
+      res.status(401).json({ success: false, error: 'Invalid signature' });
+      return;
+    }
+
+    const { reference, status, providerRef } = req.body as {
+      reference: string; status: string; providerRef?: string;
+    };
+
+    if (reference) {
+      const MM_PREFIX = 'mm_tx:';
+      const raw = await redisClient.get(`${MM_PREFIX}${reference}`);
+      if (raw) {
+        const tx = JSON.parse(raw);
+        const updated = { ...tx, status, providerRef, updatedAt: new Date().toISOString() };
+        await redisClient.set(`${MM_PREFIX}${reference}`, JSON.stringify(updated), 86400);
+        logger.info(`${providerName} webhook processed`, { reference, status });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error(`${providerName} webhook error`, { error: (error as Error).message });
+    res.status(500).json({ success: false });
+  }
+};
+
+router.post('/mobile-money/webhook/orange', webhookHandler(verifyOrangeMoneyWebhook, 'OrangeMoney'));
+router.post('/mobile-money/webhook/myzaka', webhookHandler(verifyMyZakaWebhook, 'MyZaka'));
+router.post('/mobile-money/webhook/smega', webhookHandler(verifySmegaWebhook, 'Smega'));
 
 export default router;

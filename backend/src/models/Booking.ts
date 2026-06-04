@@ -39,6 +39,8 @@ export interface BookingModel extends Model<
   cancelReason: CreationOptional<string | null>;
   ratingGiven: CreationOptional<number | null>;
   reviewText: CreationOptional<string | null>;
+  passengerRatingGiven: CreationOptional<number | null>;
+  passengerReviewText: CreationOptional<string | null>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 
@@ -195,10 +197,24 @@ const Booking = sequelize.define<BookingModel>(
       allowNull: true,
       field: 'review_text',
       validate: {
-        len: {
-          args: [0, 1000],
-          msg: 'Review text cannot exceed 1000 characters',
-        },
+        len: { args: [0, 1000], msg: 'Review text cannot exceed 1000 characters' },
+      },
+    },
+    passengerRatingGiven: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'passenger_rating_given',
+      validate: {
+        min: { args: [1], msg: 'Rating must be at least 1' },
+        max: { args: [5], msg: 'Rating cannot exceed 5' },
+      },
+    },
+    passengerReviewText: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: 'passenger_review_text',
+      validate: {
+        len: { args: [0, 1000], msg: 'Review text cannot exceed 1000 characters' },
       },
     },
     createdAt: {

@@ -7,6 +7,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { AuthController } from '../controllers/AuthController';
 import { validateRequest, authSchemas } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -120,6 +121,7 @@ const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('auth'),
 });
 
 const loginLimiter = rateLimit({
@@ -132,6 +134,7 @@ const loginLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('login'),
 });
 
 // Per-email rate limiter for password reset (max 3 per email per 15 min)

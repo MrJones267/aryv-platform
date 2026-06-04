@@ -102,6 +102,17 @@ export class AuthController {
   static async refreshToken(req: Request, res: Response): Promise<void> {
     try {
       const { refreshToken } = req.body;
+
+      if (!refreshToken || typeof refreshToken !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'Refresh token is required',
+          code: 'REFRESH_TOKEN_REQUIRED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       const result = await AuthService.refreshToken(refreshToken);
 
       res.status(200).json({

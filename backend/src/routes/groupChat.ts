@@ -7,6 +7,7 @@
 
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import GroupChatController, { groupChatValidationRules } from '../controllers/GroupChatController';
 import { authenticateToken } from '../middleware/auth';
 
@@ -15,24 +16,28 @@ const createGroupLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // limit each IP to 10 group creations per minute
   message: 'Too many group creation attempts, please try again later.',
+  store: makeStore('group-create'),
 });
 
 const joinGroupLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 20, // limit each IP to 20 join attempts per minute
   message: 'Too many join attempts, please try again later.',
+  store: makeStore('group-join'),
 });
 
 const generalGroupLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 60, // limit each IP to 60 requests per minute
   message: 'Too many requests, please try again later.',
+  store: makeStore('group-general'),
 });
 
 const groupActionLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // limit each IP to 10 actions per minute
   message: 'Too many group actions, please try again later.',
+  store: makeStore('group-action'),
 });
 
 const router = Router();

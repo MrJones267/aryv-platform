@@ -5,12 +5,13 @@
  * @lastModified 2025-01-24
  */
 
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import courierController from '../controllers/CourierController';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 import { CourierProfile, User, Package, DeliveryAgreement } from '../models';
+import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -599,6 +600,84 @@ router.put('/profile',
       });
     }
   },
+);
+
+/**
+ * POST /api/courier/deliveries/:id/rate
+ * Sender rates courier OR courier rates sender, depending on caller's role in the delivery.
+ */
+router.post(
+  '/deliveries/:id/rate',
+  [
+    param('id').isUUID(),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+    body('review').optional().isString().isLength({ max: 1000 }),
+  ],
+  validateInput,
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params as { id: string };
+      const { rating, review } = req.body as { rating: number; review?: string };
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const agreement = await DeliveryAgreement.findByPk(id, {
+        include: [{ model: Package, as: 'package' }],
+      });
+
+      if (!agreement) {
+        res.status(404).json({ success: false, error: 'Delivery not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (agreement.status !== 'completed') {
+        res.status(400).json({ success: false, error: 'Can only rate a completed delivery', code: 'DELIVERY_NOT_RATABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const isCourier = agreement.courierId === userId;
+      const isSender = agreement.package?.senderId === userId;
+
+      if (!isCourier && !isSender) {
+        res.status(403).json({ success: false, error: 'You are not part of this delivery', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (isSender) {
+        if (agreement.courierRating !== null && agreement.courierRating !== undefined) {
+          res.status(409).json({ success: false, error: 'Courier already rated', code: 'ALREADY_RATED', timestamp: new Date().toISOString() });
+          return;
+        }
+        await agreement.update({ courierRating: rating, ...(review !== undefined && { courierReview: review }) });
+
+        // Update courier's aggregate rating on their profile
+        const profile = await CourierProfile.findOne({ where: { userId: agreement.courierId } });
+        if (profile) {
+          const total = profile.totalDeliveries || 1;
+          const current = profile.courierRating ?? 5.0;
+          const newRating = ((current * (total - 1)) + rating) / total;
+          await profile.update({ courierRating: Math.round(newRating * 100) / 100 });
+        }
+      } else {
+        if (agreement.senderRating !== null && agreement.senderRating !== undefined) {
+          res.status(409).json({ success: false, error: 'Sender already rated', code: 'ALREADY_RATED', timestamp: new Date().toISOString() });
+          return;
+        }
+        await agreement.update({ senderRating: rating, ...(review !== undefined && { senderReview: review }) });
+      }
+
+      logger.info('Delivery rated', { agreementId: id, ratedBy: userId, role: isSender ? 'sender' : 'courier', rating });
+
+      res.json({ success: true, message: 'Rating submitted successfully', data: { rating, review }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('Error rating delivery', { error: (error as Error).message, agreementId: (req as any).params['id'] });
+      res.status(500).json({ success: false, error: 'Failed to submit rating', code: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+    }
+  }) as any,
 );
 
 export default router;

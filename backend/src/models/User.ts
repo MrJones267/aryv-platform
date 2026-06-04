@@ -43,6 +43,11 @@ export interface UserModel extends Model<
   deactivationReason: CreationOptional<string | null>;
   rating: CreationOptional<number>;
   totalRides: CreationOptional<number>;
+  passengerRating: CreationOptional<number>;
+  totalPassengerRatings: CreationOptional<number>;
+  referralCode: CreationOptional<string | null>;
+  referredBy: CreationOptional<string | null>;
+  referralCredits: CreationOptional<number>;
   preferences: CreationOptional<Record<string, any> | null>;
   emergencyContactName: CreationOptional<string | null>;
   emergencyContactPhone: CreationOptional<string | null>;
@@ -224,6 +229,35 @@ const User = sequelize.define<UserModel>(
       allowNull: true,
       defaultValue: 0,
       field: 'total_rides',
+    },
+    passengerRating: {
+      type: DataTypes.DECIMAL(3, 2),
+      allowNull: true,
+      defaultValue: 5.0,
+      field: 'passenger_rating',
+    },
+    totalPassengerRatings: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0,
+      field: 'total_passenger_ratings',
+    },
+    referralCode: {
+      type: DataTypes.STRING(12),
+      allowNull: true,
+      unique: true,
+      field: 'referral_code',
+    },
+    referredBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: 'referred_by',
+    },
+    referralCredits: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 0,
+      field: 'referral_credits',
     },
     preferences: {
       type: DataTypes.JSONB,

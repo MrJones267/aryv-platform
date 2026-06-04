@@ -80,7 +80,20 @@ export class UserController {
 
     try {
       const userId = req.user?.id;
-      const updateData = req.body;
+      const {
+        firstName, lastName, phone, dateOfBirth,
+        gender, bio, emergencyContact, preferences,
+      } = req.body;
+      const updateData = {
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(phone !== undefined && { phone }),
+        ...(dateOfBirth !== undefined && { dateOfBirth }),
+        ...(gender !== undefined && { gender }),
+        ...(bio !== undefined && { bio }),
+        ...(emergencyContact !== undefined && { emergencyContact }),
+        ...(preferences !== undefined && { preferences }),
+      };
 
       if (!userId) {
         res.status(401).json({

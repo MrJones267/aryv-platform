@@ -19,9 +19,23 @@ jest.mock('../../config/database', () => ({
       commit: jest.fn(),
       rollback: jest.fn(),
     })),
+    fn: jest.fn(),
+    col: jest.fn(),
+    literal: jest.fn(),
+    // Returned stub lets model files load under automock without a real DB.
+    define: jest.fn(() => ({
+      findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+      findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn(),
+      update: jest.fn(), destroy: jest.fn(), sum: jest.fn(), max: jest.fn(),
+      belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+      beforeCreate: jest.fn(), beforeUpdate: jest.fn(), beforeSave: jest.fn(),
+      afterCreate: jest.fn(), afterUpdate: jest.fn(), afterSave: jest.fn(),
+      addHook: jest.fn(), addScope: jest.fn(), sync: jest.fn(), prototype: {},
+    })),
   },
 }));
 jest.mock('../../utils/logger', () => ({
+  __esModule: true,
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   getErrorMessage: (e: any) => String(e?.message || e),
   getErrorStack: () => '',
@@ -29,6 +43,7 @@ jest.mock('../../utils/logger', () => ({
   logError: jest.fn(),
 }));
 jest.mock('../../services/SMSService', () => ({
+  __esModule: true,
   default: { sendVerificationCode: jest.fn(), verifyCode: jest.fn() },
 }));
 jest.mock('../../config/redis', () => ({
@@ -36,7 +51,6 @@ jest.mock('../../config/redis', () => ({
 }));
 
 import User from '../../models/User';
-import Vehicle from '../../models/Vehicle';
 import { UserController } from '../../controllers/UserController';
 
 // ---------------------------------------------------------------------------
@@ -133,11 +147,19 @@ describe('UserController', () => {
       expect(res.status).toHaveBeenCalledWith(401);
     });
 
-    it('returns 404 when user not found', async () => {
-      (User.findByPk as jest.Mock).mockResolvedValue(null);
+    it('returns 200 with aggregated statistics', async () => {
+      const Ride = require('../../models/Ride').default;
+      const Booking = require('../../models/Booking').default;
+      (Ride.findAll as jest.Mock).mockResolvedValue([]);
+      (Booking.findAll as jest.Mock).mockResolvedValue([]);
       const res = mockRes();
       await controller.getUserStatistics(mockReq({ id: 'u1' }), res);
-      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({ asDriver: {}, asPassenger: {} }),
+        }),
+      );
     });
   });
 

@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { RideController } from '../controllers/RideController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -20,12 +21,14 @@ const rideRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many ride requests from this IP, please try again later',
+  store: makeStore('rides'),
 });
 
 const createRideRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10, // Limit ride creation to 10 per hour per IP
   message: 'Too many ride creation attempts, please try again later',
+  store: makeStore('ride-create'),
 });
 
 // Validation schemas

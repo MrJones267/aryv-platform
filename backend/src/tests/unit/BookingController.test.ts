@@ -22,6 +22,16 @@ jest.mock('../../config/database', () => ({
     })),
     fn: jest.fn(),
     col: jest.fn(),
+    // Returned stub lets model files load under automock without a real DB.
+    define: jest.fn(() => ({
+      findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+      findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn(),
+      update: jest.fn(), destroy: jest.fn(), sum: jest.fn(), max: jest.fn(),
+      belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+      beforeCreate: jest.fn(), beforeUpdate: jest.fn(), beforeSave: jest.fn(),
+      afterCreate: jest.fn(), afterUpdate: jest.fn(), afterSave: jest.fn(),
+      addHook: jest.fn(), addScope: jest.fn(), sync: jest.fn(), prototype: {},
+    })),
   },
 }));
 jest.mock('../../services/PaymentService', () => ({ paymentService: { createPaymentIntent: jest.fn() } }));

@@ -9,12 +9,13 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from './config/rateLimitStore';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
 
 // Import custom modules
-import { testConnection } from './models';
+import { testConnection, sequelize } from './models';
 import { globalErrorHandler, notFound } from './middleware/errorHandler';
 import { requestLogger, logInfo, logError } from './utils/logger';
 import authRoutes from './routes/auth';
@@ -31,7 +32,7 @@ import groupChatRoutes from './routes/groupChat';
 import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
-import promoRoutes from './routes/promos';
+import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
 import { notificationService } from './services/NotificationService';
@@ -42,7 +43,13 @@ import { redisClient } from './config/redis';
 dotenv.config();
 
 // Validate required environment variables before anything else starts
-const REQUIRED_ENV_VARS = ['JWT_SECRET', 'DATABASE_URL'];
+const REQUIRED_ENV_VARS = [
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'ADMIN_JWT_SECRET',
+  'SESSION_SECRET',
+  'DATABASE_URL',
+];
 const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
   console.error(`[STARTUP] Missing required environment variables: ${missing.join(', ')}`);
@@ -81,15 +88,13 @@ if (NODE_ENV === 'production' && corsOrigins.length === 0) {
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-    // In development, allow all origins
+    // In development, allow all origins (including no-origin for curl/Postman)
     if (NODE_ENV === 'development') return callback(null, true);
-    // In production, check against allowed list
-    if (corsOrigins.includes(origin)) {
+    // In production, require an explicit origin matching the allowlist
+    if (origin && corsOrigins.includes(origin)) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS: origin ${origin} not allowed`));
+    return callback(new Error(`CORS: origin ${origin ?? '(none)'} not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -107,6 +112,7 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('global'),
 });
 
 app.use(limiter);
@@ -154,30 +160,37 @@ app.use(express.urlencoded({
 }));
 
 // Health check endpoint - both with and without /api prefix for compatibility
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'ARYV Backend API is running',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-    version: '1.0.0',
-    database: 'connected',
-    uptime: process.uptime(),
-  });
-});
+const handleHealthCheck = async (_req: express.Request, res: express.Response): Promise<void> => {
+  const checks: Record<string, 'ok' | 'error'> = {};
 
-// Health check endpoint with /api prefix for mobile app compatibility
-app.get('/api/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'ARYV Backend API is running',
+  try {
+    await sequelize.authenticate();
+    checks['database'] = 'ok';
+  } catch {
+    checks['database'] = 'error';
+  }
+
+  try {
+    await redisClient.ping();
+    checks['redis'] = 'ok';
+  } catch {
+    checks['redis'] = 'error';
+  }
+
+  const healthy = Object.values(checks).every((v) => v === 'ok');
+  res.status(healthy ? 200 : 503).json({
+    success: healthy,
+    message: healthy ? 'ARYV Backend API is running' : 'ARYV Backend API is degraded',
     timestamp: new Date().toISOString(),
     environment: NODE_ENV,
     version: '1.0.0',
-    database: 'connected',
+    checks,
     uptime: process.uptime(),
   });
-});
+};
+
+app.get('/health', handleHealthCheck);
+app.get('/api/health', handleHealthCheck);
 
 // Root endpoint
 app.get('/', (_req, res) => {
@@ -281,6 +294,10 @@ const startServer = async (): Promise<void> => {
     notificationService.setSocketIO(socketService['io']);
     logInfo('Notification service integrated with Socket.io');
     
+    // Seed built-in promo codes (idempotent)
+    await seedBuiltInPromos();
+    logInfo('Built-in promo codes seeded');
+
     // Start group cleanup scheduler
     groupCleanupService.startScheduler();
     logInfo('Group cleanup scheduler started');
@@ -311,13 +328,23 @@ const startServer = async (): Promise<void> => {
     // Graceful shutdown handlers
     const gracefulShutdown = (signal: string) => {
       logInfo(`${signal} received, shutting down gracefully`);
-      
-      // Stop cleanup scheduler
+
       groupCleanupService.stopScheduler();
-      logInfo('Group cleanup scheduler stopped');
-      
-      httpServer.close(() => {
-        logInfo('Server closed successfully');
+
+      httpServer.close(async () => {
+        try {
+          await sequelize.close();
+          logInfo('Database pool closed');
+        } catch (err) {
+          logError('Error closing database pool', err as Error);
+        }
+        try {
+          await redisClient.quit();
+          logInfo('Redis connection closed');
+        } catch (err) {
+          logError('Error closing Redis connection', err as Error);
+        }
+        logInfo('Server shutdown complete');
         process.exit(0);
       });
     };
