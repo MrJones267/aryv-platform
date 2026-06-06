@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { BookingController } from '../controllers/BookingController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -24,12 +25,14 @@ const bookingRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 50, // Limit each IP to 50 requests per windowMs
   message: 'Too many booking requests from this IP, please try again later',
+  store: makeStore('booking'),
 });
 
 const cancelBookingRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // Limit cancellations to 5 per hour per IP
   message: 'Too many booking cancellation attempts, please try again later',
+  store: makeStore('booking-cancel'),
 });
 
 // Validation schemas
@@ -199,6 +202,20 @@ router.post(
   rateBookingValidation,
   validateInput,
   bookingController.rateBooking.bind(bookingController),
+);
+
+/**
+ * @route   POST /api/bookings/:id/rate-passenger
+ * @desc    Driver rates a passenger after a completed booking
+ * @access  Private (driver only)
+ */
+router.post(
+  '/:id/rate-passenger',
+  bookingRateLimit,
+  authenticateToken,
+  rateBookingValidation,
+  validateInput,
+  bookingController.ratePassenger.bind(bookingController),
 );
 
 /**

@@ -7,25 +7,23 @@
 
 import { PaymentService } from '../../services/PaymentService';
 import Booking from '../../models/Booking';
-import Ride from '../../models/Ride';
-import User from '../../models/User';
 import { BookingStatus } from '../../types';
 
-// Mock Stripe
-jest.mock('stripe', () => {
-  return jest.fn().mockImplementation(() => ({
-    paymentIntents: {
-      create: jest.fn(),
-      retrieve: jest.fn(),
-    },
-    refunds: {
-      create: jest.fn(),
-    },
-    webhooks: {
-      constructEvent: jest.fn(),
-    },
-  }));
-});
+// Mock Stripe — a single shared instance so the service under test and the
+// test assertions operate on the same mock functions.
+const mockStripeInstance = {
+  paymentIntents: {
+    create: jest.fn(),
+    retrieve: jest.fn(),
+  },
+  refunds: {
+    create: jest.fn(),
+  },
+  webhooks: {
+    constructEvent: jest.fn(),
+  },
+};
+jest.mock('stripe', () => jest.fn().mockImplementation(() => mockStripeInstance));
 
 // Mock models
 jest.mock('../../models/Booking');
@@ -37,6 +35,16 @@ jest.mock('../../config/database', () => ({
       commit: jest.fn(),
       rollback: jest.fn(),
     }),
+    // Returned stub lets model files load under automock without a real DB.
+    define: jest.fn(() => ({
+      findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+      findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn(),
+      update: jest.fn(), destroy: jest.fn(), sum: jest.fn(), max: jest.fn(),
+      belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+      beforeCreate: jest.fn(), beforeUpdate: jest.fn(), beforeSave: jest.fn(),
+      afterCreate: jest.fn(), afterUpdate: jest.fn(), afterSave: jest.fn(),
+      addHook: jest.fn(), addScope: jest.fn(), sync: jest.fn(), prototype: {},
+    })),
   },
 }));
 
@@ -47,20 +55,21 @@ describe('PaymentService', () => {
   beforeEach(() => {
     // Clear all mocks
     jest.clearAllMocks();
-    
-    // Create PaymentService instance
-    paymentService = new PaymentService();
-    
-    // Get mocked Stripe instance
-    const Stripe = require('stripe');
-    mockStripe = new Stripe();
-    
-    // Mock environment variable
+
+    // Configure Stripe key BEFORE constructing so the service initialises Stripe
     process.env['STRIPE_SECRET_KEY'] = 'sk_test_123456789';
+
+    // Create PaymentService instance (constructs its Stripe client)
+    paymentService = new PaymentService();
+
+    // Shared mocked Stripe instance (same object the service holds)
+    mockStripe = mockStripeInstance;
   });
 
   afterEach(() => {
     delete process.env['STRIPE_SECRET_KEY'];
+    // Restore the default unit-test environment in case a test switched it
+    process.env['NODE_ENV'] = 'test';
   });
 
   describe('createPaymentIntent', () => {
@@ -125,8 +134,9 @@ describe('PaymentService', () => {
       });
     });
 
-    it('should return mock payment intent when Stripe API key is not available', async () => {
+    it('should return mock payment intent when Stripe API key is not available (development)', async () => {
       delete process.env['STRIPE_SECRET_KEY'];
+      process.env['NODE_ENV'] = 'development';
       paymentService = new PaymentService();
 
       const result = await paymentService.createPaymentIntent({
@@ -196,8 +206,9 @@ describe('PaymentService', () => {
       expect(mockStripe.paymentIntents.retrieve).toHaveBeenCalledWith('pi_1234567890');
     });
 
-    it('should return mock verification when Stripe API key is not available', async () => {
+    it('should return mock verification when Stripe API key is not available (development)', async () => {
       delete process.env['STRIPE_SECRET_KEY'];
+      process.env['NODE_ENV'] = 'development';
       paymentService = new PaymentService();
 
       const result = await paymentService.verifyPaymentIntent('pi_mock_123');
@@ -206,8 +217,9 @@ describe('PaymentService', () => {
       expect(result.data.status).toBe('succeeded');
     });
 
-    it('should handle invalid payment intent ID', async () => {
+    it('should handle invalid payment intent ID (development mock)', async () => {
       delete process.env['STRIPE_SECRET_KEY'];
+      process.env['NODE_ENV'] = 'development';
       paymentService = new PaymentService();
 
       const result = await paymentService.verifyPaymentIntent('pi_invalid_123');
@@ -304,8 +316,9 @@ describe('PaymentService', () => {
       });
     });
 
-    it('should return mock refund when Stripe API key is not available', async () => {
+    it('should return mock refund when Stripe API key is not available (development)', async () => {
       delete process.env['STRIPE_SECRET_KEY'];
+      process.env['NODE_ENV'] = 'development';
       paymentService = new PaymentService();
 
       const mockBooking = {
@@ -473,6 +486,7 @@ describe('PaymentService', () => {
 
   describe('constructWebhookEvent', () => {
     it('should construct webhook event successfully', () => {
+      process.env['STRIPE_WEBHOOK_SECRET'] = 'whsec_test';
       const mockEvent = { id: 'evt_123', type: 'payment_intent.succeeded' };
       mockStripe.webhooks.constructEvent.mockReturnValue(mockEvent);
 
@@ -482,8 +496,9 @@ describe('PaymentService', () => {
       expect(mockStripe.webhooks.constructEvent).toHaveBeenCalledWith(
         'payload',
         'signature',
-        undefined // No webhook secret in test
+        'whsec_test'
       );
+      delete process.env['STRIPE_WEBHOOK_SECRET'];
     });
 
     it('should return null when Stripe is not available', () => {

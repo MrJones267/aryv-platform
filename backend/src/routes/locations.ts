@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { LocationController } from '../controllers/LocationController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -20,12 +21,14 @@ const locationRateLimit = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 60, // Allow 60 location updates per minute
   message: 'Too many location requests from this IP, please try again later',
+  store: makeStore('location'),
 });
 
 const trackingRateLimit = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 120, // Allow 120 tracking requests per minute for real-time updates
   message: 'Too many tracking requests from this IP, please try again later',
+  store: makeStore('tracking'),
 });
 
 // Validation schemas

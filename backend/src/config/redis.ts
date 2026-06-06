@@ -103,6 +103,35 @@ class RedisClient {
     }
   }
 
+  async ping(): Promise<void> {
+    if (!this.isReady()) throw new Error('Redis not connected');
+    await this.client!.ping();
+  }
+
+  async quit(): Promise<void> {
+    if (!this.isReady()) return;
+    try {
+      await this.client!.quit();
+    } catch {
+      // ignore errors on shutdown
+    }
+    this.connected = false;
+    this.client = null;
+  }
+
+  // Used by rate-limit-redis; gracefully returns null when Redis is unavailable
+  async sendCommand(args: string[]): Promise<unknown> {
+    if (!this.isReady()) {
+      // When Redis is down: return a value that lets the request through
+      return args[0] === 'EVAL' ? [1, 60000] : null;
+    }
+    try {
+      return await this.client!.sendCommand(args);
+    } catch {
+      return args[0] === 'EVAL' ? [1, 60000] : null;
+    }
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

@@ -42,7 +42,7 @@ export class CurrencyService {
     {
       name: 'fixer',
       url: 'http://data.fixer.io/api/latest',
-      apiKey: process.env['FIXER_API_KEY'] || 'default-key',
+      ...(process.env['FIXER_API_KEY'] && { apiKey: process.env['FIXER_API_KEY'] }),
       isActive: false,
     },
   ];

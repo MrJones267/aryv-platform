@@ -6,14 +6,18 @@
  */
 
 import crypto from 'crypto';
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { body, query, param } from 'express-validator';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { UserController } from '../controllers/UserController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError } from '../middleware/upload';
+import User from '../models/User';
+import { AuthenticatedRequest } from '../types';
+import logger from '../utils/logger';
 
 const router = Router();
 const userController = new UserController();
@@ -23,12 +27,14 @@ const userRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many user requests from this IP, please try again later',
+  store: makeStore('users'),
 });
 
 const profileUpdateRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // Limit profile updates to 5 per hour per IP
   message: 'Too many profile update attempts, please try again later',
+  store: makeStore('profile-update'),
 });
 
 // Validation schemas
@@ -724,5 +730,92 @@ router.post('/:id/block', userRateLimit, authenticateToken, [param('id').isUUID(
 
 /** DELETE /users/:id/block */
 router.delete('/:id/block', userRateLimit, authenticateToken, [param('id').isUUID()], validateInput, userController.unblockUser.bind(userController));
+
+
+// ─── Referral System ─────────────────────────────────────────────────────────
+
+/** GET /users/me/referral — get my referral code (generate if missing) */
+router.get(
+  '/me/referral',
+  userRateLimit,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() }); return; }
+
+      const user = await User.findByPk(userId, { attributes: ['id', 'referralCode', 'referralCredits'] });
+      if (!user) { res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() }); return; }
+
+      if (!user.referralCode) {
+        const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+        await user.update({ referralCode: code });
+        user.referralCode = code;
+      }
+
+      res.json({
+        success: true,
+        data: { referralCode: user.referralCode, referralCredits: user.referralCredits ?? 0 },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error getting referral code', { error: (error as Error).message });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
+  },
+);
+
+/** POST /users/me/referral/apply — apply a referral code */
+router.post(
+  '/me/referral/apply',
+  userRateLimit,
+  authenticateToken,
+  [body('referralCode').notEmpty().isLength({ min: 8, max: 8 }).withMessage('Invalid referral code format')],
+  validateInput,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() }); return; }
+
+      const { referralCode } = req.body as { referralCode: string };
+
+      const me = await User.findByPk(userId);
+      if (!me) { res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() }); return; }
+
+      if (me.referredBy) {
+        res.status(400).json({ success: false, error: 'You have already applied a referral code', code: 'REFERRAL_ALREADY_APPLIED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const referrer = await User.findOne({ where: { referralCode: referralCode.toUpperCase() } });
+      if (!referrer) {
+        res.status(404).json({ success: false, error: 'Invalid referral code', code: 'REFERRAL_INVALID', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (referrer.id === userId) {
+        res.status(400).json({ success: false, error: 'You cannot use your own referral code', code: 'REFERRAL_SELF', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Credit the referrer (BWP 10 per successful referral)
+      const REFERRAL_BONUS = 10;
+      await me.update({ referredBy: referrer.id });
+      await referrer.update({ referralCredits: (referrer.referralCredits ?? 0) + REFERRAL_BONUS });
+
+      logger.info('Referral applied', { userId, referrerId: referrer.id, bonus: REFERRAL_BONUS });
+
+      res.json({
+        success: true,
+        message: 'Referral code applied successfully',
+        data: { referrerName: referrer.firstName, bonus: REFERRAL_BONUS },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error applying referral code', { error: (error as Error).message });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
+  },
+);
 
 export default router;

@@ -301,7 +301,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
           },
           {
             model: Vehicle,
@@ -482,7 +482,24 @@ export class RideController {
     try {
       const { id } = req.params;
       const userId = req.user?.id;
-      const updateData = req.body;
+      const {
+        originAddress, originCoordinates,
+        destinationAddress, destinationCoordinates,
+        departureTime, availableSeats, pricePerSeat,
+        description, estimatedDuration, distance,
+      } = req.body;
+      const updateData: any = {
+        ...(originAddress !== undefined && { originAddress }),
+        ...(originCoordinates !== undefined && { originCoordinates }),
+        ...(destinationAddress !== undefined && { destinationAddress }),
+        ...(destinationCoordinates !== undefined && { destinationCoordinates }),
+        ...(departureTime !== undefined && { departureTime }),
+        ...(availableSeats !== undefined && { availableSeats }),
+        ...(pricePerSeat !== undefined && { pricePerSeat }),
+        ...(description !== undefined && { description }),
+        ...(estimatedDuration !== undefined && { estimatedDuration }),
+        ...(distance !== undefined && { distance }),
+      };
 
       if (!userId) {
         res.status(401).json({

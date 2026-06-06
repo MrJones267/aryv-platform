@@ -42,6 +42,9 @@ import GroupChat from './GroupChat';
 import GroupChatParticipant from './GroupChatParticipant';
 import GroupChatMessage from './GroupChatMessage';
 
+// Promo model
+import PromoCode from './PromoCode';
+
 // Define model associations
 const defineAssociations = (): void => {
   // User associations
@@ -479,6 +482,8 @@ export default {
   GroupChat,
   GroupChatParticipant,
   GroupChatMessage,
+  // Promo model
+  PromoCode,
   syncDatabase,
   defineAssociations,
 };

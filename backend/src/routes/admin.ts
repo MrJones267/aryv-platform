@@ -5,10 +5,11 @@
  * @lastModified 2025-01-24
  */
 
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { AdminController } from '../controllers/AdminController';
 import AdminRideController from '../controllers/AdminRideController';
 import AdminUserController from '../controllers/AdminUserController';
@@ -24,6 +25,20 @@ import { redisClient } from '../config/redis';
 
 const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
+
+const requireSuperAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  const admin = (req as any).user;
+  if (!admin || admin.role !== 'super_admin') {
+    res.status(403).json({
+      success: false,
+      error: 'Super admin access required',
+      code: 'SUPER_ADMIN_REQUIRED',
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+  next();
+};
 
 const DEFAULT_SETTINGS = {
   maintenanceMode: false,
@@ -57,6 +72,7 @@ const adminAuthLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('admin-auth'),
 });
 
 // General admin API rate limiting
@@ -70,6 +86,7 @@ const adminApiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('admin-api'),
 });
 
 // Apply general rate limiting to all admin routes
@@ -389,7 +406,7 @@ router.get('/courier/packages', authenticateAdminToken, async (req, res) => {
  * @desc    Release payment for delivery agreement
  * @access  Private (Admin)
  */
-router.post('/courier/agreements/:id/release-payment', authenticateAdminToken, async (req, res) => {
+router.post('/courier/agreements/:id/release-payment', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -615,7 +632,7 @@ router.get('/settings', authenticateAdminToken, async (_req, res) => {
  * @desc    Update platform settings
  * @access  Private (Admin)
  */
-router.put('/settings', authenticateAdminToken, async (req, res) => {
+router.put('/settings', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
   try {
     const raw = await redisClient.get(SETTINGS_KEY);
     const current = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
@@ -647,7 +664,7 @@ router.get('/settings/commission', authenticateAdminToken, async (_req, res) => 
  * @desc    Update commission settings
  * @access  Private (Admin)
  */
-router.put('/settings/commission', authenticateAdminToken, async (req, res) => {
+router.put('/settings/commission', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
   try {
     const { platformFeePercent, minimumFee, driverSharePercent, courierFeePercent } = req.body;
 

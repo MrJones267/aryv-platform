@@ -24,6 +24,16 @@ jest.mock('../../config/database', () => ({
     fn: jest.fn(),
     col: jest.fn(),
     literal: jest.fn(),
+    // Returned stub lets model files load under automock without a real DB.
+    define: jest.fn(() => ({
+      findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+      findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn(),
+      update: jest.fn(), destroy: jest.fn(), sum: jest.fn(), max: jest.fn(),
+      belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+      beforeCreate: jest.fn(), beforeUpdate: jest.fn(), beforeSave: jest.fn(),
+      afterCreate: jest.fn(), afterUpdate: jest.fn(), afterSave: jest.fn(),
+      addHook: jest.fn(), addScope: jest.fn(), sync: jest.fn(), prototype: {},
+    })),
   },
 }));
 jest.mock('../../services/AIService', () => ({ aiService: { predictDemand: jest.fn() } }));
@@ -32,8 +42,6 @@ jest.mock('../../services/GroupChatService', () => jest.fn().mockImplementation(
 jest.mock('../../services/SocketService', () => jest.fn());
 
 import Ride from '../../models/Ride';
-import Booking from '../../models/Booking';
-import User from '../../models/User';
 
 const mockResponse = () => {
   const res = {} as Response;
@@ -57,15 +65,19 @@ describe('RideController', () => {
   beforeEach(() => {
     controller = new RideController();
     jest.clearAllMocks();
+    // clearAllMocks does not flush queued mockResolvedValueOnce values, which
+    // otherwise leak between tests; reset the model query mocks explicitly.
+    (Ride.findByPk as jest.Mock).mockReset();
+    (Ride.findAll as jest.Mock).mockReset();
   });
 
-  describe('getRide', () => {
+  describe('getRideById', () => {
     it('returns 404 when ride not found', async () => {
       (Ride.findByPk as jest.Mock).mockResolvedValueOnce(null);
       const req = mockRequest({ params: { id: 'nonexistent-ride' } });
       const res = mockResponse();
 
-      await controller.getRide(req, res);
+      await controller.getRideById(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith(
@@ -86,7 +98,7 @@ describe('RideController', () => {
       const req = mockRequest({ params: { id: 'ride-1' } });
       const res = mockResponse();
 
-      await controller.getRide(req, res);
+      await controller.getRideById(req, res);
 
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true })
@@ -155,7 +167,7 @@ describe('RideController', () => {
         status: RideStatus.PENDING,
       });
       const req = mockRequest({
-        user: { id: 'user-1', email: 'test@test.com', role: 'passenger' as any },
+        user: { id: 'user-1', email: 'test@test.com', role: 'passenger' } as any,
         params: { id: 'ride-1' },
         body: { status: 'cancelled' },
       });
@@ -176,6 +188,9 @@ describe('RideController', () => {
           originCoordinates: null,
           destinationCoordinates: null,
           dataValues: { count: '15', averagePrice: '30.00' },
+          getDataValue(key: string) {
+            return (this as any).dataValues[key];
+          },
           toJSON: () => ({ originAddress: 'A', destinationAddress: 'B' }),
         },
       ]);

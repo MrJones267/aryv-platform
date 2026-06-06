@@ -266,8 +266,26 @@ export class AdminUserController {
 
     try {
       const { id } = req.params;
-      const updateData = req.body;
       const adminUser = req.user;
+      const {
+        firstName, lastName, email, phone,
+        role, status, isEmailVerified, isPhoneVerified,
+        dateOfBirth, gender, bio, emergencyContact,
+      } = req.body;
+      const updateData = {
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(email !== undefined && { email }),
+        ...(phone !== undefined && { phone }),
+        ...(role !== undefined && { role }),
+        ...(status !== undefined && { status }),
+        ...(isEmailVerified !== undefined && { isEmailVerified }),
+        ...(isPhoneVerified !== undefined && { isPhoneVerified }),
+        ...(dateOfBirth !== undefined && { dateOfBirth }),
+        ...(gender !== undefined && { gender }),
+        ...(bio !== undefined && { bio }),
+        ...(emergencyContact !== undefined && { emergencyContact }),
+      };
 
       const user = await User.findByPk(id, { transaction });
 
@@ -281,10 +299,6 @@ export class AdminUserController {
         await transaction.rollback();
         return;
       }
-
-      // Remove sensitive fields that shouldn't be updated via this endpoint
-      delete updateData.password;
-      delete updateData.id;
 
       // Validate role changes
       if (updateData.role && !Object.values(UserRole).includes(updateData.role)) {
@@ -620,8 +634,11 @@ export class AdminUserController {
       const {
         startDate,
         endDate,
-        groupBy = 'day', // day, week, month
+        groupBy = 'day',
       } = req.query;
+
+      const ALLOWED_GROUP_BY = ['day', 'week', 'month'] as const;
+      const safeGroupBy = ALLOWED_GROUP_BY.includes(groupBy as any) ? groupBy as string : 'day';
 
       const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const end = endDate ? new Date(endDate as string) : new Date();
@@ -675,13 +692,13 @@ export class AdminUserController {
       // Growth trend data
       const trendData = await sequelize.query(`
         SELECT 
-          DATE_TRUNC('${groupBy}', created_at) as period,
+          DATE_TRUNC('${safeGroupBy}', created_at) as period,
           COUNT(*) as new_users,
           COUNT(CASE WHEN role = 'driver' THEN 1 END) as new_drivers,
           COUNT(CASE WHEN role = 'passenger' THEN 1 END) as new_passengers
         FROM users
         WHERE created_at BETWEEN :start AND :end
-        GROUP BY DATE_TRUNC('${groupBy}', created_at)
+        GROUP BY DATE_TRUNC('${safeGroupBy}', created_at)
         ORDER BY period
       `, {
         replacements: { start, end },

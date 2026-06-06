@@ -202,3 +202,11 @@ artillery-report/
 *.jks
 keystore.properties
 
+# Gradle build cache (auto-generated per build; never commit)
+.gradle/
+**/.gradle/
+
+# JVM crash dumps
+hs_err_pid*.log
+replay_pid*.log
+

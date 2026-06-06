@@ -7,9 +7,10 @@
 
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
 import { body, param, query } from 'express-validator';
 import { CurrencyController } from '../controllers/CurrencyController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authenticateAdminToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
 
 const router = express.Router();
@@ -25,6 +26,7 @@ const currencyRateLimit = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('currencies'),
 });
 
 // Apply rate limiting to all currency routes
@@ -140,6 +142,7 @@ const conversionRateLimit = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore('currency-convert'),
 });
 
 /**
@@ -196,8 +199,7 @@ router.post(
  */
 router.post(
   '/exchange-rates/update',
-  authenticateToken,
-  // Note: Admin role check is done in the controller
+  authenticateAdminToken,
   (req: Request, res: Response) => CurrencyController.updateExchangeRates(req, res),
 );
 

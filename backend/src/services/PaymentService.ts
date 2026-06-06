@@ -231,7 +231,9 @@ export class PaymentService {
       const refund = await this.stripe.refunds.create({
         payment_intent: booking.paymentIntentId,
         ...(amount && { amount: Math.round(amount * 100) }), // Full refund if no amount specified
-        reason: reason as Stripe.RefundCreateParams.Reason || 'requested_by_customer',
+        // Stripe's `reason` only accepts a fixed enum; the human-readable reason
+        // is preserved in metadata.refundReason below.
+        reason: 'requested_by_customer',
         metadata: {
           bookingId: booking.id,
           rideId: booking.rideId,

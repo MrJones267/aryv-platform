@@ -11,6 +11,7 @@ import { AuthenticatedRequest } from '../types';
 import { redisClient } from '../config/redis';
 import User from '../models/User';
 import cashWalletService from '../services/CashWalletService';
+import mobileMoneyService from '../services/MobileMoneyService';
 import logger from '../utils/logger';
 
 const INTENT_PREFIX = 'payment_intent:';
@@ -367,19 +368,36 @@ export class PaymentController {
         return;
       }
 
-      const reference = `mm_${crypto.randomBytes(8).toString('hex')}`;
-      // Store reference so checkMobileMoneyStatus can look it up
+      if (!mobileMoneyService.isSupportedProvider(provider)) {
+        res.status(400).json({ success: false, error: `Unsupported provider: ${provider}`, code: 'UNSUPPORTED_PROVIDER', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Fetch the payment intent to get the amount
+      const intentRaw = await redisClient.get(`${INTENT_PREFIX}${paymentIntentId}`);
+      const intent = intentRaw ? JSON.parse(intentRaw) : null;
+      const amount = intent?.amount ?? 0;
+      const currency = intent?.currency ?? 'BWP';
+
+      const reference = mobileMoneyService.generateReference();
+
+      const result = await mobileMoneyService.initiate({
+        phone, provider, reference,
+        amount, currency,
+        description: intent?.metadata?.rideId ? `ARYV ride payment` : `ARYV payment`,
+      });
+
       await redisClient.set(
         `${MM_PREFIX}${reference}`,
         JSON.stringify({ reference, phone, provider, paymentIntentId, userId, status: 'pending', createdAt: new Date().toISOString() }),
         MM_TTL,
       );
-      // In production this would call the mobile money provider API (MTN MoMo, Orange Money, etc.)
+
       logger.info('Mobile money payment initiated', { phone, provider, reference });
 
       res.json({
         success: true,
-        data: { reference, status: 'pending', ussdCode: `*182*1*1*${reference}#` },
+        data: { reference, status: 'pending', ussdCode: result.ussdCode, deepLink: result.deepLink, instructions: result.instructions },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -403,8 +421,19 @@ export class PaymentController {
       }
 
       const tx = JSON.parse(raw);
-      // In production this would poll the mobile money provider API for the current status
-      res.json({ success: true, data: tx, timestamp: new Date().toISOString() });
+
+      // Poll the provider for current status
+      let providerStatus = tx;
+      if (mobileMoneyService.isSupportedProvider(tx.provider)) {
+        const liveStatus = await mobileMoneyService.checkStatus(tx.provider, reference);
+        providerStatus = { ...tx, ...liveStatus };
+        // Persist updated status back to Redis
+        if (liveStatus.status !== tx.status) {
+          await redisClient.set(`${MM_PREFIX}${reference}`, JSON.stringify(providerStatus), MM_TTL);
+        }
+      }
+
+      res.json({ success: true, data: providerStatus, timestamp: new Date().toISOString() });
     } catch (error) {
       logger.error('checkMobileMoneyStatus error', { error: (error as Error).message });
       res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });

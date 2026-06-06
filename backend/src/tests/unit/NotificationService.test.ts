@@ -5,25 +5,19 @@
  * @lastModified 2025-01-25
  */
 
-import { Server as SocketIOServer } from 'socket.io';
 import { NotificationService } from '../../services/NotificationService';
 import Booking from '../../models/Booking';
 import Ride from '../../models/Ride';
-import User from '../../models/User';
 import { BookingStatus, RideStatus } from '../../types';
 
 // Mock Socket.IO
-const mockSocket = {
-  id: 'socket123',
-  join: jest.fn(),
-  emit: jest.fn(),
-  on: jest.fn(),
-  to: jest.fn(() => ({ emit: jest.fn() })),
-};
-
+// A single shared emit so `io.to(room).emit(...)` in the service and
+// `mockIO.to().emit` in the assertions reference the same mock function.
+const mockEmit = jest.fn();
+const mockTo = jest.fn(() => ({ emit: mockEmit }));
 const mockIO = {
   on: jest.fn(),
-  to: jest.fn(() => ({ emit: jest.fn() })),
+  to: mockTo,
   emit: jest.fn(),
 } as any;
 
@@ -83,7 +77,7 @@ describe('NotificationService', () => {
       await notificationService.sendToBooking('booking123', notification);
 
       expect(mockIO.to).toHaveBeenCalledWith('booking_booking123');
-      expect(mockIO.to().emit).toHaveBeenCalledWith('booking_notification', notification);
+      expect(mockIO.to().emit).toHaveBeenCalledWith('notification', notification);
     });
   });
 
@@ -99,7 +93,7 @@ describe('NotificationService', () => {
       await notificationService.sendToRide('ride123', notification);
 
       expect(mockIO.to).toHaveBeenCalledWith('ride_ride123');
-      expect(mockIO.to().emit).toHaveBeenCalledWith('ride_notification', notification);
+      expect(mockIO.to().emit).toHaveBeenCalledWith('notification', notification);
     });
   });
 
@@ -393,6 +387,7 @@ describe('NotificationService', () => {
 
     it('should handle Socket.IO emit errors gracefully', async () => {
       const mockIOWithError = {
+        on: jest.fn(),
         to: jest.fn(() => ({
           emit: jest.fn(() => {
             throw new Error('Socket.IO error');
@@ -447,14 +442,13 @@ describe('NotificationService', () => {
         'driver123'
       );
 
-      let emitCall = mockIO.to().emit.mock.calls.find(call => 
+      let emitCall = mockIO.to().emit.mock.calls.find((call: any[]) =>
         call[0] === 'notification' && call[1].title === 'Booking Confirmed!'
       );
       expect(emitCall[1].message).toBe('John confirmed your booking');
 
-      // Reset mocks
-      jest.clearAllMocks();
-      mockIO.to = jest.fn(() => ({ emit: jest.fn() }));
+      // Clear only the emit call history (keep the Booking.findByPk mock)
+      mockEmit.mockClear();
 
       // Test COMPLETED status
       await notificationService.notifyBookingStatusChange(
@@ -463,7 +457,7 @@ describe('NotificationService', () => {
         'driver123'
       );
 
-      emitCall = mockIO.to().emit.mock.calls.find(call => 
+      emitCall = mockIO.to().emit.mock.calls.find((call: any[]) =>
         call[0] === 'notification' && call[1].title === 'Ride Completed'
       );
       expect(emitCall[1].message).toBe('Your ride with John is completed');
@@ -500,7 +494,7 @@ describe('NotificationService', () => {
         'driver123'
       );
 
-      const emitCall = mockIO.to().emit.mock.calls.find(call => 
+      const emitCall = mockIO.to().emit.mock.calls.find((call: any[]) =>
         call[0] === 'notification'
       );
       expect(emitCall[1].message).toBe('Your ride with John has started');

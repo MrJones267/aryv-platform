@@ -47,6 +47,10 @@ export interface DeliveryAgreementAttributes {
   eventLog: DeliveryEvent[];
   chatChannelId?: string;
   courierLocations?: Array<{lat: number, lng: number, timestamp: string}>;
+  courierRating?: number | null;
+  courierReview?: string | null;
+  senderRating?: number | null;
+  senderReview?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,7 +58,8 @@ export interface DeliveryAgreementAttributes {
 export interface DeliveryAgreementCreationAttributes extends Optional<DeliveryAgreementAttributes,
   'id' | 'escrowPaymentId' | 'escrowHeldAt' | 'pickupConfirmedAt' | 'pickupLocation' |
   'deliveryConfirmedAt' | 'deliveryLocation' | 'paymentReleasedAt' | 'qrCodeToken' |
-  'qrCodeExpiresAt' | 'chatChannelId' | 'createdAt' | 'updatedAt'
+  'qrCodeExpiresAt' | 'chatChannelId' | 'courierRating' | 'courierReview' |
+  'senderRating' | 'senderReview' | 'createdAt' | 'updatedAt'
 > {}
 
 export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, DeliveryAgreementCreationAttributes>
@@ -78,6 +83,10 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
   public qrCodeExpiresAt?: Date;
   public eventLog!: DeliveryEvent[];
   public chatChannelId?: string;
+  public courierRating?: number | null;
+  public courierReview?: string | null;
+  public senderRating?: number | null;
+  public senderReview?: string | null;
   public createdAt!: Date;
   public updatedAt!: Date;
 
@@ -298,6 +307,26 @@ DeliveryAgreement.init({
     allowNull: true,
     field: 'courier_locations',
     defaultValue: [],
+  },
+  courierRating: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'courier_rating',
+  },
+  courierReview: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    field: 'courier_review',
+  },
+  senderRating: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'sender_rating',
+  },
+  senderReview: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    field: 'sender_review',
   },
   createdAt: {
     type: DataTypes.DATE,

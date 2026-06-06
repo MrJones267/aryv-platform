@@ -851,6 +851,73 @@ export class BookingController {
     }
   }
 
+  async ratePassenger(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const transaction = await sequelize.transaction();
+    try {
+      const { id } = req.params;
+      const { rating, review } = req.body as { rating: number; review?: string };
+      const userId = req.user?.id;
+
+      if (!userId) {
+        await transaction.rollback();
+        res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const booking = await Booking.findByPk(id, {
+        include: [{ model: Ride, as: 'ride' }],
+        transaction,
+      });
+
+      if (!booking) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, error: 'Booking not found', code: 'BOOKING_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (booking.status !== 'completed') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, error: 'Can only rate passenger on a completed booking', code: 'BOOKING_NOT_RATABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Only the driver of the ride can rate the passenger
+      if (booking.ride?.driverId !== userId) {
+        await transaction.rollback();
+        res.status(403).json({ success: false, error: 'Only the driver can rate the passenger', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (booking.passengerRatingGiven !== null && booking.passengerRatingGiven !== undefined) {
+        await transaction.rollback();
+        res.status(409).json({ success: false, error: 'Passenger already rated for this booking', code: 'ALREADY_RATED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      await booking.update({ passengerRatingGiven: rating, passengerReviewText: review ?? null }, { transaction });
+
+      // Update passenger's aggregate rating
+      const passenger = await User.findByPk(booking.passengerId, { transaction });
+      if (passenger) {
+        const currentTotal = passenger.totalPassengerRatings ?? 0;
+        const currentRating = passenger.passengerRating ?? 5.0;
+        const newTotal = currentTotal + 1;
+        const newRating = ((currentRating * currentTotal) + rating) / newTotal;
+        await passenger.update({ passengerRating: Math.round(newRating * 100) / 100, totalPassengerRatings: newTotal }, { transaction });
+      }
+
+      await transaction.commit();
+
+      logger.info('Passenger rated', { bookingId: id, driverId: userId, passengerId: booking.passengerId, rating });
+
+      res.json({ success: true, message: 'Passenger rated successfully', data: { rating, review }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      await transaction.rollback();
+      logger.error('Error in ratePassenger', { error: getErrorMessage(error), bookingId: req.params['id'], userId: req.user?.id });
+      res.status(500).json({ success: false, error: 'Failed to rate passenger', code: 'RATE_PASSENGER_FAILED', timestamp: new Date().toISOString() });
+    }
+  }
+
   async createPaymentIntent(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;

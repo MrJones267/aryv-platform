@@ -221,8 +221,11 @@ export class AdminRideController {
       const {
         startDate,
         endDate,
-        groupBy = 'day', // day, week, month
+        groupBy = 'day',
       } = req.query;
+
+      const ALLOWED_GROUP_BY = ['day', 'week', 'month'] as const;
+      const safeGroupBy = ALLOWED_GROUP_BY.includes(groupBy as any) ? groupBy as string : 'day';
 
       const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const end = endDate ? new Date(endDate as string) : new Date();
@@ -314,14 +317,14 @@ export class AdminRideController {
 
       const trendData = await sequelize.query(`
         SELECT 
-          DATE_TRUNC('${groupBy}', created_at) as period,
+          DATE_TRUNC('${safeGroupBy}', created_at) as period,
           COUNT(*) as rides_created,
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as rides_completed,
           COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as rides_cancelled,
           AVG(price_per_seat) as avg_price
         FROM rides
         WHERE created_at BETWEEN :start AND :end
-        GROUP BY DATE_TRUNC('${groupBy}', created_at)
+        GROUP BY DATE_TRUNC('${safeGroupBy}', created_at)
         ORDER BY period
       `, {
         replacements: { start, end },
