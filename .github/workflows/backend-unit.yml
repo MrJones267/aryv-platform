@@ -1,0 +1,55 @@
+name: Backend Unit Gate
+
+# Fast, infrastructure-free gate: type-check, build, and the Jest `unit`
+# project (no Postgres/Redis required). Integration tests live in a separate
+# job/command (`npm run test:integration`) because they need a live database.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-unit.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-unit.yml'
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: backend-unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Type-check, build & unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+        env:
+          NODE_ENV: test
