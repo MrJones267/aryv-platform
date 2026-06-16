@@ -26,6 +26,7 @@ import adminRoutes from './routes/admin';
 import userRoutes from './routes/users';
 import locationRoutes from './routes/locations';
 import cashPaymentRoutes from './routes/cashPayments';
+import commissionRoutes from './routes/commission';
 import currencyRoutes from './routes/currencies';
 import countryRoutes from './routes/countries';
 import groupChatRoutes from './routes/groupChat';
@@ -207,6 +208,7 @@ app.get('/', (_req, res) => {
       users: '/api/users',
       locations: '/api/locations',
       cashPayments: '/api/payments/cash',
+      commission: '/api/payments/commission',
       currencies: '/api/currencies',
       countries: '/api/countries',
       groupChats: '/api/group-chats',
@@ -229,6 +231,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/payments/cash', cashPaymentRoutes);
+app.use('/api/payments/commission', commissionRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/currencies', currencyRoutes);
 app.use('/api/countries', countryRoutes);

@@ -12,6 +12,7 @@ import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
 import UserWallet, { VerificationLevel } from '../models/UserWallet';
 import { Booking } from '../models';
 import { NotificationService } from './NotificationService';
+import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 
 export interface CashPaymentResult {
@@ -48,9 +49,11 @@ export interface LocationData {
 
 export class CashPaymentService {
   private notificationService: NotificationService;
+  private commissionService: CommissionService;
 
   constructor() {
     this.notificationService = new NotificationService();
+    this.commissionService = new CommissionService();
   }
 
   /**
@@ -78,6 +81,21 @@ export class CashPaymentService {
           success: false,
           error: canPay.reason || 'Payment not eligible',
           trustScore: canPay.trustScore,
+        };
+      }
+
+      // Block drivers who have not settled their outstanding cash-ride
+      // commission. This keeps cash rides open to riders (no card needed)
+      // while ensuring the platform's commission is actually collectable.
+      const driverCommission = await this.commissionService.isBlockedForUnpaidCommission(
+        driverId,
+        transaction,
+      );
+      if (driverCommission.blocked) {
+        return {
+          success: false,
+          error: `Driver must settle outstanding commission (${driverCommission.owed.toFixed(2)}) `
+            + `before accepting more cash rides. Limit: ${driverCommission.threshold.toFixed(2)}.`,
         };
       }
 
@@ -552,6 +570,17 @@ export class CashPaymentService {
           lastTrustScoreUpdate: new Date(),
         }, { transaction });
       }
+
+      // Accrue platform commission to the driver's owed balance. The rider
+      // paid 100% in cash; the platform collects its fee from the driver via
+      // periodic settlement (see CommissionService). This is what makes cash
+      // rides actually revenue-generating.
+      await this.commissionService.accrueCommission(
+        cashTransaction.driverId,
+        Number(cashTransaction.platformFee),
+        cashTransaction.id,
+        transaction,
+      );
 
       // Release trust hold
       await sequelize.models['TrustHold'].destroy({

@@ -112,7 +112,9 @@ export const authSchemas = {
     phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
     firstName: Joi.string().min(1).max(50).required(),
     lastName: Joi.string().min(1).max(50).required(),
-    role: Joi.string().valid('passenger', 'driver', 'admin', 'courier').default('passenger'),
+    // Public registration may only create passenger or driver accounts.
+    // admin/courier are privileged and must never be self-assigned here.
+    role: Joi.string().valid('passenger', 'driver').default('passenger'),
     dateOfBirth: Joi.date().iso().max('now').optional(),
   }),
 
