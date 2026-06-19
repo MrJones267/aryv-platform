@@ -116,6 +116,15 @@ export class AuthService {
         );
       }
 
+      // Self-registration may only create passenger or driver accounts.
+      // Privileged roles (admin, courier) can never be obtained via the public
+      // registration endpoint — defense in depth alongside the request schema.
+      const allowedSelfRoles: UserRole[] = [UserRole.PASSENGER, UserRole.DRIVER];
+      const requestedRole = userData.role as UserRole | undefined;
+      const safeRole = requestedRole && allowedSelfRoles.includes(requestedRole)
+        ? requestedRole
+        : UserRole.PASSENGER;
+
       // Create new user
       const user = await User.create({
         email: userData.email,
@@ -123,7 +132,7 @@ export class AuthService {
         phone: userData.phone,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role || UserRole.PASSENGER,
+        role: safeRole,
         dateOfBirth: userData.dateOfBirth,
       });
 

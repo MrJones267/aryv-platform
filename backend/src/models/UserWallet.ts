@@ -66,6 +66,14 @@ export interface UserWalletModel extends Model<
   suspensionReason: CreationOptional<string | null>;
   suspendedUntil: CreationOptional<Date | null>;
 
+  // Driver commission tracking (cash-ride revenue collection).
+  // commissionOwed accrues the platform fee on each completed cash ride and
+  // is settled by the driver later — riders never need an electronic payment.
+  commissionOwed: CreationOptional<number>;
+  totalCommissionPaid: CreationOptional<number>;
+  commissionBlockThreshold: CreationOptional<number>;
+  lastCommissionSettledAt: CreationOptional<Date | null>;
+
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 }
@@ -233,6 +241,29 @@ const UserWallet = sequelize.define<UserWalletModel>(
       type: DataTypes.DATE,
       allowNull: true,
       field: 'suspended_until',
+    },
+    commissionOwed: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0.00,
+      field: 'commission_owed',
+    },
+    totalCommissionPaid: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0.00,
+      field: 'total_commission_paid',
+    },
+    commissionBlockThreshold: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 50.00,
+      field: 'commission_block_threshold',
+    },
+    lastCommissionSettledAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'last_commission_settled_at',
     },
     createdAt: {
       type: DataTypes.DATE,

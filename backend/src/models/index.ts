@@ -24,6 +24,7 @@ import PackageImage from './PackageImage';
 // Cash payment models
 import CashTransaction from './CashTransaction';
 import UserWallet from './UserWallet';
+import CommissionLedger from './CommissionLedger';
 
 // Currency models
 import Currency from './Currency';
@@ -391,6 +392,28 @@ const defineAssociations = (): void => {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
   });
+
+  // Commission ledger associations
+  User.hasMany(CommissionLedger, {
+    foreignKey: 'driverId',
+    as: 'commissionEntries',
+    onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  });
+
+  CommissionLedger.belongsTo(User, {
+    foreignKey: 'driverId',
+    as: 'driver',
+    onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  });
+
+  CommissionLedger.belongsTo(CashTransaction, {
+    foreignKey: 'cashTransactionId',
+    as: 'cashTransaction',
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  });
 };
 
 // Initialize associations
@@ -433,6 +456,7 @@ export {
   // Cash payment models
   CashTransaction,
   UserWallet,
+  CommissionLedger,
   // Currency models
   Currency,
   UserCurrency,
@@ -469,6 +493,7 @@ export default {
   // Cash payment models
   CashTransaction,
   UserWallet,
+  CommissionLedger,
   // Currency models
   Currency,
   UserCurrency,

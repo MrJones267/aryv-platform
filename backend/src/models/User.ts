@@ -172,9 +172,9 @@ const User = sequelize.define<UserModel>(
     },
     isPhoneVerified: {
       type: DataTypes.BOOLEAN,
-      allowNull: true,
-      field: 'is_active',
-      defaultValue: true,
+      allowNull: false,
+      field: 'is_phone_verified',
+      defaultValue: false,
     },
     lastLoginAt: {
       type: DataTypes.DATE,
