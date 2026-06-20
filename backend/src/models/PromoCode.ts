@@ -148,8 +148,6 @@ PromoCode.init({
   modelName: 'PromoCode',
   tableName: 'promo_codes',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['code'], unique: true },
     { fields: ['is_active'] },

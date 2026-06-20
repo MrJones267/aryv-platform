@@ -174,8 +174,6 @@ DemandMetrics.init({
   modelName: 'DemandMetrics',
   tableName: 'demand_metrics',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['location_hash', 'time_slot'], unique: true },
     { fields: ['calculated_at'] },

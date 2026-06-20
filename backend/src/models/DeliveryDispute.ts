@@ -254,8 +254,6 @@ DeliveryDispute.init({
   modelName: 'DeliveryDispute',
   tableName: 'delivery_disputes',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['delivery_agreement_id'] },
     { fields: ['raised_by_user_id'] },

@@ -326,8 +326,6 @@ Package.init({
   modelName: 'Package',
   tableName: 'packages',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['sender_id'] },
     { fields: ['is_active'] },
