@@ -50,6 +50,9 @@ const REQUIRED_ENV_VARS = [
   'ADMIN_JWT_SECRET',
   'SESSION_SECRET',
   'DATABASE_URL',
+  // Consumed at import time by QRCodeService (delivery QR signing); missing it
+  // otherwise throws an opaque uncaught exception during module load.
+  'QR_CODE_SECRET',
 ];
 const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
