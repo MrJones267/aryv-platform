@@ -119,16 +119,26 @@ class RedisClient {
     this.client = null;
   }
 
-  // Used by rate-limit-redis; gracefully returns null when Redis is unavailable
+  // Used by rate-limit-redis; degrades gracefully when Redis is unavailable.
+  // Must satisfy rate-limit-redis v4, which uses SCRIPT LOAD (expects a SHA
+  // string) then EVALSHA/EVAL (expects [hits, ttl]). Returning the wrong shape
+  // here throws "unexpected reply from redis client" and crashes startup, so
+  // the offline fallbacks below mirror those reply shapes and allow requests.
+  private offlineReply(cmd: string): unknown {
+    if (cmd === 'SCRIPT') return '0'.repeat(40); // fake SHA so RedisStore.init() survives
+    if (cmd === 'EVAL' || cmd === 'EVALSHA') return [1, 60000]; // first-hit: allow through
+    return null;
+  }
+
   async sendCommand(args: string[]): Promise<unknown> {
+    const cmd = (args[0] || '').toUpperCase();
     if (!this.isReady()) {
-      // When Redis is down: return a value that lets the request through
-      return args[0] === 'EVAL' ? [1, 60000] : null;
+      return this.offlineReply(cmd);
     }
     try {
       return await this.client!.sendCommand(args);
     } catch {
-      return args[0] === 'EVAL' ? [1, 60000] : null;
+      return this.offlineReply(cmd);
     }
   }
 

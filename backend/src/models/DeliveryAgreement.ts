@@ -345,8 +345,6 @@ DeliveryAgreement.init({
   modelName: 'DeliveryAgreement',
   tableName: 'delivery_agreements',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['package_id'] },
     { fields: ['courier_id'] },

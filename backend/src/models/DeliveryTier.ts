@@ -168,8 +168,6 @@ DeliveryTier.init({
   modelName: 'DeliveryTier',
   tableName: 'delivery_tiers',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['tier_type'], unique: true },
     { fields: ['is_active'] },

@@ -190,7 +190,9 @@ export const config: Config = {
 // Validate required configuration
 const requiredEnvVars = [
   'JWT_SECRET',
-  'POSTGRES_PASSWORD',
+  // POSTGRES_PASSWORD is only needed when connecting via discrete PG* vars.
+  // When a full DATABASE_URL is provided (Railway), the password is embedded there.
+  ...(process.env['DATABASE_URL'] ? [] : ['POSTGRES_PASSWORD']),
 ];
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);

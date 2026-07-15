@@ -300,7 +300,7 @@ const User = sequelize.define<UserModel>(
         fields: ['email'],
       },
       {
-        fields: ['phone'],
+        fields: ['phone_number'],
       },
       {
         fields: ['role'],

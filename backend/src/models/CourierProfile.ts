@@ -209,8 +209,6 @@ CourierProfile.init({
   modelName: 'CourierProfile',
   tableName: 'courier_profiles',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
   indexes: [
     { fields: ['user_id'] },
     { fields: ['is_courier_active'] },

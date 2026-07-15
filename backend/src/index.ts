@@ -50,6 +50,9 @@ const REQUIRED_ENV_VARS = [
   'ADMIN_JWT_SECRET',
   'SESSION_SECRET',
   'DATABASE_URL',
+  // Consumed at import time by QRCodeService (delivery QR signing); missing it
+  // otherwise throws an opaque uncaught exception during module load.
+  'QR_CODE_SECRET',
 ];
 const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
@@ -91,11 +94,14 @@ app.use(cors({
   origin: (origin, callback) => {
     // In development, allow all origins (including no-origin for curl/Postman)
     if (NODE_ENV === 'development') return callback(null, true);
+    // Requests with no Origin header are not browser cross-origin requests
+    // (health checks, native mobile apps, server-to-server) — allow them.
+    if (!origin) return callback(null, true);
     // In production, require an explicit origin matching the allowlist
-    if (origin && corsOrigins.includes(origin)) {
+    if (corsOrigins.includes(origin)) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS: origin ${origin ?? '(none)'} not allowed`));
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
