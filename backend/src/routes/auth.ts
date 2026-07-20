@@ -373,4 +373,11 @@ router.post('/login/otp', loginLimiter, AuthController.loginWithOTP);
 router.post('/register/otp', authLimiter, AuthController.registerWithOTP);
 router.post('/password-reset/otp', authLimiter, AuthController.resetPasswordWithOTP);
 
+/**
+ * @route   POST /api/auth/google/verify
+ * @desc    Exchange a Google ID token for ARYV session tokens
+ * @access  Public
+ */
+router.post('/google/verify', loginLimiter, AuthController.verifyGoogleToken);
+
 export default router;
