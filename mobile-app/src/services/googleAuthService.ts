@@ -5,7 +5,7 @@
 
 import { GoogleSignin, statusCodes, type SignInResponse } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiConfig } from '../config/api';
+import { authFetch } from './authFetch';
 import logger from './LoggingService';
 
 const log = logger.createLogger('GoogleAuthService');
@@ -189,10 +189,7 @@ class GoogleAuthService {
    */
   private async verifyWithBackend(userInfo: { data: { idToken: string } }): Promise<AuthResponse> {
     try {
-      const apiConfig = getApiConfig();
-      const endpoint = `${apiConfig.apiUrl}/auth/google/verify`;
-
-      const response = await fetch(endpoint, {
+      const response = await authFetch('/auth/google/verify', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -334,8 +331,7 @@ class GoogleAuthService {
         return null;
       }
 
-      const apiConfig = getApiConfig();
-      const response = await fetch(`${apiConfig.apiUrl}/auth/refresh`, {
+      const response = await authFetch('/auth/refresh', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

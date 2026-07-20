@@ -7,12 +7,17 @@
 
 import crypto from 'crypto';
 import { Request, Response } from 'express';
+import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import nodemailer from 'nodemailer';
 import { AuthService } from '../services/AuthService';
 import { redisClient } from '../config/redis';
 import User from '../models/User';
 import { AuthenticatedRequest, AppError } from '../types';
 import logger from '../utils/logger';
+
+// Verifies Google ID tokens against Google's rotating public keys. Constructed
+// once at module load: the client caches those keys between requests.
+const googleOAuthClient = new OAuth2Client();
 
 const PW_RESET_PREFIX = 'pw_reset:';
 const PW_RESET_TTL = 3600; // 1 hour
@@ -1159,6 +1164,167 @@ export class AuthController {
         stack: (error as Error).stack,
       });
 
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        code: 'INTERNAL_SERVER_ERROR',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * Verify a Google ID token and issue ARYV session tokens.
+   *
+   * The mobile client obtains an ID token via @react-native-google-signin and
+   * POSTs it here; we verify it against Google's public keys rather than
+   * trusting anything the client tells us about the user.
+   *
+   * Account linking is deliberately gated on Google's `email_verified` claim:
+   * linking an unverified address to an existing password account would let
+   * anyone who can create a Google account with that address take it over.
+   */
+  static async verifyGoogleToken(req: Request, res: Response): Promise<void> {
+    try {
+      const { idToken } = req.body as { idToken?: string };
+
+      if (!idToken || typeof idToken !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'idToken is required',
+          code: 'IDTOKEN_REQUIRED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Every client ID that may legitimately mint tokens for this app. Google
+      // issues the ID token with the *web* client ID as audience even on
+      // native, so that one is required; the native IDs are accepted when set.
+      const audiences = [
+        process.env['GOOGLE_WEB_CLIENT_ID'],
+        process.env['GOOGLE_IOS_CLIENT_ID'],
+        process.env['GOOGLE_ANDROID_CLIENT_ID'],
+      ].filter((id): id is string => Boolean(id));
+
+      if (audiences.length === 0) {
+        logger.error('Google sign-in attempted but no GOOGLE_*_CLIENT_ID configured');
+        res.status(503).json({
+          success: false,
+          error: 'Google sign-in is not configured on this server',
+          code: 'GOOGLE_NOT_CONFIGURED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      let payload: TokenPayload | undefined;
+      try {
+        const ticket = await googleOAuthClient.verifyIdToken({ idToken, audience: audiences });
+        payload = ticket.getPayload();
+      } catch (verifyError) {
+        logger.warn('Google ID token verification failed', {
+          error: (verifyError as Error).message,
+        });
+        res.status(401).json({
+          success: false,
+          error: 'Invalid Google token',
+          code: 'INVALID_GOOGLE_TOKEN',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (!payload?.email) {
+        res.status(401).json({
+          success: false,
+          error: 'Google token did not contain an email address',
+          code: 'GOOGLE_EMAIL_MISSING',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const email = payload.email.toLowerCase();
+      const emailVerified = payload.email_verified === true;
+
+      let user = await User.findOne({ where: { email } });
+
+      if (user) {
+        // Existing account: only hand over a session when Google vouches for
+        // the address, otherwise this is a takeover vector.
+        if (!emailVerified) {
+          logger.warn('Google sign-in refused: unverified email matched an existing account', { email });
+          res.status(403).json({
+            success: false,
+            error: 'This email is already registered. Please sign in with your password.',
+            code: 'GOOGLE_EMAIL_UNVERIFIED',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        if (user.status === 'suspended' || user.status === 'deactivated') {
+          res.status(403).json({
+            success: false,
+            error: 'Account is suspended or deactivated',
+            code: 'ACCOUNT_SUSPENDED',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+      } else {
+        if (!emailVerified) {
+          res.status(403).json({
+            success: false,
+            error: 'Your Google email address is not verified',
+            code: 'GOOGLE_EMAIL_UNVERIFIED',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        // No password exists for a Google-provisioned account. The column is
+        // NOT NULL, so store an unguessable random value: bcrypt of 64 random
+        // bytes can never be matched by a supplied password, which makes
+        // password login inert until the user sets one via forgot-password.
+        const unusablePassword = crypto.randomBytes(64).toString('hex').slice(0, 128);
+
+        user = await User.create({
+          email,
+          password: unusablePassword,
+          firstName: payload.given_name || payload.name?.split(' ')[0] || 'User',
+          lastName: payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '',
+          role: 'passenger',
+          isEmailVerified: true,
+          profilePicture: payload.picture ?? null,
+        } as any);
+
+        logger.info('Created user from Google sign-in', { userId: user.id, email });
+      }
+
+      const accessToken = AuthService.generateAccessToken({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
+      const refreshToken = AuthService.generateRefreshToken();
+
+      await user.update({ refreshToken, lastLoginAt: new Date() });
+
+      res.status(200).json({
+        success: true,
+        message: 'Google sign-in successful',
+        data: {
+          user: user.toSafeObject(),
+          accessToken,
+          refreshToken,
+          expiresIn: 86400,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('verifyGoogleToken error', { error: (error as Error).message });
       res.status(500).json({
         success: false,
         error: 'Internal server error',

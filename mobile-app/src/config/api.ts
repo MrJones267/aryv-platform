@@ -31,10 +31,11 @@ export const APP_CONFIG = {
 
   // Google Services Configuration
   GOOGLE_SERVICES: {
-    // API keys - used in both dev and production builds
-    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
-    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
-    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
+    // API keys - supplied via the build environment only. Never hardcode a key
+    // here: this repo is public, so a literal fallback is a published key.
+    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || '',
+    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || '',
+    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || '',
 
     // Rate limiting
     MAX_REQUESTS_PER_DAY: 25000,
