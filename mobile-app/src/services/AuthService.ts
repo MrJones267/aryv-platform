@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { googleAuthService } from './googleAuthService';
 import { User, UserSession, LoginCredentials, RegisterData } from '../types/user';
 // jwt-decode is optional - token validation is done manually below
-import { getApiConfig } from '../config/api';
+import { authFetch } from './authFetch';
 import logger from './LoggingService';
 
 const log = logger.createLogger('AuthService');
@@ -141,7 +141,7 @@ export class AuthService {
     }
 
     try {
-      const response = await fetch(`${getApiConfig().apiUrl}/auth/refresh`, {
+      const response = await authFetch('/auth/refresh', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,7 +176,7 @@ export class AuthService {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${getApiConfig().apiUrl}/auth/login`, {
+      const response = await authFetch('/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -255,7 +255,7 @@ export class AuthService {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${getApiConfig().apiUrl}/auth/register`, {
+      const response = await authFetch('/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
