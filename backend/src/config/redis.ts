@@ -16,6 +16,10 @@ const REDIS_PASSWORD = process.env['REDIS_PASSWORD'];
 class RedisClient {
   private client: RedisClientType | null = null;
   private connected = false;
+  // Tracks whether we have ever successfully connected. Controls the
+  // reconnect strategy: fail fast before the first connect (so startup is
+  // never blocked when Redis is absent), then retry resiliently afterwards.
+  private everConnected = false;
 
   private isReady(): boolean {
     return this.client !== null && this.connected;
@@ -28,18 +32,32 @@ class RedisClient {
         url,
         ...(REDIS_PASSWORD ? { password: REDIS_PASSWORD } : {}),
         socket: {
-          // Give up after 1 retry to avoid blocking startup
           reconnectStrategy: (retries) => {
-            if (retries >= 1) return false;
-            return 500;
+            // Before the first successful connect, give up quickly so an
+            // absent Redis never blocks startup.
+            if (!this.everConnected) {
+              return retries >= 1 ? false : 500;
+            }
+            // Once a connection has been established, retry indefinitely with
+            // capped exponential backoff so a transient Redis outage (e.g. a
+            // Railway restart or private-network blip) self-heals instead of
+            // leaving Redis permanently disabled.
+            return Math.min(retries * 500, 5000);
           },
           connectTimeout: 4000,
         },
       }) as RedisClientType;
 
+      // node-redis v4 events: 'ready' when able to serve commands, 'end' when
+      // the connection is closed for good, 'reconnecting' between drops.
       client.on('error', (err) => logger.warn('Redis error', { error: err.message }));
-      client.on('connect', () => logger.info('Redis connected'));
-      client.on('disconnect', () => { this.connected = false; });
+      client.on('ready', () => {
+        this.connected = true;
+        this.everConnected = true;
+        logger.info('Redis connected');
+      });
+      client.on('reconnecting', () => { this.connected = false; });
+      client.on('end', () => { this.connected = false; });
 
       // Use a timeout race so startup is never blocked more than 6 seconds
       await Promise.race([
