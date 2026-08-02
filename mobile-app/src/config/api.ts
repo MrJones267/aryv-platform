@@ -31,11 +31,23 @@ export const APP_CONFIG = {
 
   // Google Services Configuration
   GOOGLE_SERVICES: {
-    // API keys - supplied via the build environment only. Never hardcode a key
-    // here: this repo is public, so a literal fallback is a published key.
-    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || '',
-    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || '',
-    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || '',
+    // Client-side Google API key.
+    //
+    // This is intentionally a literal. A Maps/Places/Geocoding key used from a
+    // mobile client cannot be kept secret: it ships inside every APK/IPA and
+    // can be extracted from the binary. The same key is already present in
+    // android/app/src/main/res/values/strings.xml and ios/aryv/Info.plist,
+    // which the native SDKs read directly.
+    //
+    // The control that actually matters is *restriction* in Google Cloud
+    // Console, not concealment: lock the key to the Android package name +
+    // signing SHA-1 (and the iOS bundle ID), limit it to only the APIs it
+    // needs, and set quota caps. A restricted key is useless to anyone who
+    // scrapes it. Note Metro only inlines process.env.NODE_ENV, so the env
+    // lookup below resolves to undefined unless build-time injection is added.
+    MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
+    PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
+    GEOCODING_API_KEY: process.env.GOOGLE_GEOCODING_API_KEY || 'AIzaSyBoVOEytCKTTsGsOObKdvzFuyxH-UXO8u8',
 
     // Rate limiting
     MAX_REQUESTS_PER_DAY: 25000,
