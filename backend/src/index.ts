@@ -280,6 +280,61 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Initialize database and start server
+/**
+ * Fail fast if the database is missing columns the models declare.
+ *
+ * Sequelize includes every declared attribute in its SELECT list, so a model
+ * that is ahead of the schema does not degrade — it breaks every query against
+ * that table. Without this check that surfaces as blanket 500s on unrelated
+ * endpoints, with the real cause buried in a driver error. Checking at boot
+ * turns it into one clear message naming the migration to run.
+ */
+const assertSchemaIsCurrent = async (): Promise<void> => {
+  const REQUIRED_COLUMNS: Array<{ table: string; column: string; migration: string }> = [
+    { table: 'users', column: 'driver_verification_status', migration: '013_driver_document_verification.sql' },
+    { table: 'users', column: 'driver_verified_at', migration: '013_driver_document_verification.sql' },
+  ];
+
+  const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
+    { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
+  ];
+
+  const missing: string[] = [];
+
+  for (const { table, column, migration } of REQUIRED_COLUMNS) {
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = $table AND column_name = $column LIMIT 1`,
+      { bind: { table, column } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`${table}.${column} (${migration})`);
+    }
+  }
+
+  for (const { table, migration } of REQUIRED_TABLES) {
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_name = $table LIMIT 1`,
+      { bind: { table } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`table ${table} (${migration})`);
+    }
+  }
+
+  if (missing.length > 0) {
+    logError('Database schema is behind the application', new Error('SCHEMA_OUT_OF_DATE'), {
+      missing,
+    });
+    console.error(
+      `[STARTUP] The database is missing: ${missing.join(', ')}.\n` +
+        '[STARTUP] Run `npm run db:migrate` before starting this build.',
+    );
+    process.exit(1);
+  }
+};
+
 const startServer = async (): Promise<void> => {
   try {
     // Test database connection (skip in dev if DB not available)
@@ -288,8 +343,9 @@ const startServer = async (): Promise<void> => {
     } else {
       logInfo('Testing database connection...');
       await testConnection();
+      await assertSchemaIsCurrent();
     }
-    
+
     // Skip database sync since tables already exist
     logInfo('Database tables already exist, skipping sync...');
 
