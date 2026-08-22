@@ -41,6 +41,12 @@ export interface UserModel extends Model<
   timezone: CreationOptional<string | null>;
   deactivatedAt: CreationOptional<Date | null>;
   deactivationReason: CreationOptional<string | null>;
+
+  // Driver vetting state, derived from driver_documents by VerificationService
+  // but denormalised here so the "may this user create a ride?" check is a
+  // single column read rather than a join on every request.
+  driverVerificationStatus: CreationOptional<string>;
+  driverVerifiedAt: CreationOptional<Date | null>;
   rating: CreationOptional<number>;
   totalRides: CreationOptional<number>;
   passengerRating: CreationOptional<number>;
@@ -217,6 +223,17 @@ const User = sequelize.define<UserModel>(
       type: DataTypes.TEXT,
       allowNull: true,
       field: 'deactivation_reason',
+    },
+    driverVerificationStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'unverified',
+      field: 'driver_verification_status',
+    },
+    driverVerifiedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'driver_verified_at',
     },
     rating: {
       type: DataTypes.DECIMAL(3, 2),

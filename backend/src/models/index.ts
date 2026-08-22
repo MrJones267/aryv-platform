@@ -26,6 +26,9 @@ import CashTransaction from './CashTransaction';
 import UserWallet from './UserWallet';
 import CommissionLedger from './CommissionLedger';
 
+// Driver verification models
+import DriverDocument from './DriverDocument';
+
 // Currency models
 import Currency from './Currency';
 import UserCurrency from './UserCurrency';
@@ -414,6 +417,28 @@ const defineAssociations = (): void => {
     onDelete: 'SET NULL',
     onUpdate: 'CASCADE',
   });
+
+  // Driver verification associations
+  User.hasMany(DriverDocument, {
+    foreignKey: 'userId',
+    as: 'driverDocuments',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  DriverDocument.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  DriverDocument.belongsTo(User, {
+    foreignKey: 'reviewedBy',
+    as: 'reviewer',
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  });
 };
 
 // Initialize associations
@@ -457,6 +482,8 @@ export {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  // Driver verification models
+  DriverDocument,
   // Currency models
   Currency,
   UserCurrency,
@@ -494,6 +521,8 @@ export default {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  // Driver verification models
+  DriverDocument,
   // Currency models
   Currency,
   UserCurrency,

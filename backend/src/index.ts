@@ -33,6 +33,7 @@ import groupChatRoutes from './routes/groupChat';
 import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
+import verificationRoutes from './routes/verification';
 import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
@@ -245,6 +246,7 @@ app.use('/api/group-chats', groupChatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ride-requests', rideRequestRoutes);
 app.use('/api/promos', promoRoutes);
+app.use('/api/verification', verificationRoutes);
 
 // API Documentation
 if (NODE_ENV !== 'production' || process.env['ENABLE_DOCS'] === 'true') {

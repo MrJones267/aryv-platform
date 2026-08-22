@@ -7,6 +7,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
+import { validationResult } from 'express-validator';
 import { ValidationError } from '../types';
 
 /**
@@ -216,5 +217,43 @@ export const rideSchemas = {
   }),
 };
 
-// Alias for compatibility with existing route imports
-export const validateInput = validateRequest;
+/**
+ * Terminal middleware for routes that declare their rules with
+ * express-validator chains. It reports whatever those chains recorded on the
+ * request and otherwise passes control on.
+ *
+ * This was previously an alias for `validateRequest`, which is a *factory*
+ * taking a Joi schema. Used bare in a route — as all ~130 call sites do —
+ * Express invoked it as `validateRequest(req, res, next)`, so it treated the
+ * request as a schema, returned a middleware function nobody called, and never
+ * invoked `next()`. Every route carrying it hung until the client timed out.
+ * Verified against production before the fix: GET /api/countries answered in
+ * 0.7s while GET /api/countries/search never responded.
+ *
+ * `validateRequest` keeps its factory signature for the Joi-schema call sites
+ * in routes/auth.ts, which use it correctly.
+ */
+export const validateInput = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const result = validationResult(req);
+
+  if (!result.isEmpty()) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      code: 'VALIDATION_FAILED',
+      details: result.array().map((e) => ({
+        field: (e as { path?: string; param?: string }).path
+          ?? (e as { param?: string }).param,
+        message: e.msg,
+      })),
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  next();
+};
