@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import { AuthService } from '../services/AuthService';
 import { redisClient } from '../config/redis';
 import User from '../models/User';
-import { AuthenticatedRequest, AppError } from '../types';
+import { AuthenticatedRequest, AppError, UserStatus } from '../types';
 import logger from '../utils/logger';
 
 // Verifies Google ID tokens against Google's rotating public keys. Constructed
@@ -295,7 +295,18 @@ export class AuthController {
   }
 
   /**
-   * Delete (deactivate) authenticated user's account
+   * Permanently delete the authenticated user's account.
+   *
+   * Re-authentication is required, and is accepted in either of the two forms
+   * an account can have: the current password, or a fresh Google ID token for
+   * accounts provisioned through Google sign-in. Those accounts are created
+   * with an unusable random password, so demanding a password locked them out
+   * of deletion entirely — which Play's account-deletion policy does not allow.
+   *
+   * Personal data is erased rather than merely flagged. Ride, booking and
+   * financial records are retained in anonymised form: they are another
+   * party's transaction history and are needed for tax and dispute purposes,
+   * which is a disclosed retention basis rather than a loophole.
    */
   static async deleteAccount(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -304,9 +315,13 @@ export class AuthController {
         return;
       }
 
-      const { password } = req.body as { password: string };
-      if (!password) {
-        res.status(400).json({ success: false, error: 'Password is required to delete account', code: 'PASSWORD_REQUIRED', timestamp: new Date().toISOString() });
+      const { password, googleIdToken } = req.body as {
+        password?: string;
+        googleIdToken?: string;
+      };
+
+      if (!password && !googleIdToken) {
+        res.status(400).json({ success: false, error: 'Re-authentication is required to delete your account', code: 'REAUTH_REQUIRED', timestamp: new Date().toISOString() });
         return;
       }
 
@@ -316,13 +331,75 @@ export class AuthController {
         return;
       }
 
-      const isValid = await user.comparePassword(password);
-      if (!isValid) {
-        res.status(400).json({ success: false, error: 'Password is incorrect', code: 'INVALID_PASSWORD', timestamp: new Date().toISOString() });
-        return;
+      if (password) {
+        const isValid = await user.comparePassword(password);
+        if (!isValid) {
+          res.status(400).json({ success: false, error: 'Password is incorrect', code: 'INVALID_PASSWORD', timestamp: new Date().toISOString() });
+          return;
+        }
+      } else {
+        const audiences = [
+          process.env['GOOGLE_WEB_CLIENT_ID'],
+          process.env['GOOGLE_IOS_CLIENT_ID'],
+          process.env['GOOGLE_ANDROID_CLIENT_ID'],
+        ].filter((id): id is string => Boolean(id));
+
+        if (audiences.length === 0) {
+          res.status(503).json({ success: false, error: 'Google sign-in is not configured on this server', code: 'GOOGLE_NOT_CONFIGURED', timestamp: new Date().toISOString() });
+          return;
+        }
+
+        let payload: TokenPayload | undefined;
+        try {
+          const ticket = await googleOAuthClient.verifyIdToken({
+            idToken: googleIdToken as string,
+            audience: audiences,
+          });
+          payload = ticket.getPayload();
+        } catch (verifyError) {
+          logger.warn('Account deletion Google re-auth failed', { error: (verifyError as Error).message });
+          res.status(401).json({ success: false, error: 'Invalid Google token', code: 'INVALID_GOOGLE_TOKEN', timestamp: new Date().toISOString() });
+          return;
+        }
+
+        // The token must belong to the account being deleted, or a valid token
+        // for any Google account would delete whichever account it was sent with.
+        const tokenEmail = payload?.email?.toLowerCase();
+        if (!tokenEmail || !payload?.email_verified || tokenEmail !== user.email.toLowerCase()) {
+          logger.warn('Account deletion Google re-auth identity mismatch', { userId: user.id });
+          res.status(403).json({ success: false, error: 'This Google account does not match the account being deleted', code: 'REAUTH_IDENTITY_MISMATCH', timestamp: new Date().toISOString() });
+          return;
+        }
       }
 
-      await user.update({ status: 'deactivated' as any, deactivatedAt: new Date(), refreshToken: null });
+      // Erase personal data. The row is retained as an anonymous tombstone so
+      // that foreign keys from rides and bookings stay intact; nothing
+      // identifying the person survives on it.
+      const tombstone = `deleted-${user.id}@deleted.aryv-app.com`;
+      await user.update({
+        email: tombstone,
+        password: crypto.randomBytes(64).toString('hex').slice(0, 128),
+        phone: null,
+        firstName: 'Deleted',
+        lastName: 'User',
+        profilePicture: null,
+        dateOfBirth: null,
+        address: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        preferences: null,
+        referralCode: null,
+        referredBy: null,
+        countryCode: null,
+        countryName: null,
+        timezone: null,
+        isEmailVerified: false,
+        isPhoneVerified: false,
+        refreshToken: null,
+        status: UserStatus.DEACTIVATED,
+        deactivatedAt: new Date(),
+        deactivationReason: 'account_deleted_by_user',
+      });
 
       // Revoke current access token if possible
       const accessToken = req.headers.authorization?.split(' ')[1];
@@ -332,7 +409,7 @@ export class AuthController {
 
       logger.info('Account deleted', { userId: req.user.id });
 
-      res.status(200).json({ success: true, message: 'Account deactivated successfully', timestamp: new Date().toISOString() });
+      res.status(200).json({ success: true, message: 'Your account and personal data have been deleted', timestamp: new Date().toISOString() });
     } catch (error) {
       logger.error('Delete account error', { error: (error as Error).message, userId: req.user?.id });
       res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });

@@ -12,6 +12,7 @@ import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { UserController } from '../controllers/UserController';
+import { AuthController } from '../controllers/AuthController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError } from '../middleware/upload';
@@ -648,7 +649,9 @@ router.post(
 );
 
 /** DELETE /account */
-router.delete('/account', userRateLimit, authenticateToken, [body('password').notEmpty()], validateInput, userController.deleteAccount.bind(userController));
+// Delegates to the single deletion implementation in AuthController so that
+// /users/account and /auth/account cannot drift apart on what "delete" means.
+router.delete('/account', userRateLimit, authenticateToken, [body('password').optional().notEmpty(), body('googleIdToken').optional().notEmpty()], validateInput, AuthController.deleteAccount);
 
 /** GET /stats */
 router.get('/stats', userRateLimit, authenticateToken, userController.getUserStats.bind(userController));

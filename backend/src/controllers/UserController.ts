@@ -1801,38 +1801,4 @@ export class UserController {
   }
 
   /** Delete account (alias — same behavior as deactivateAccount but simpler) */
-  async deleteAccount(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const { password } = req.body as { password: string };
-      if (!password) {
-        res.status(400).json({ success: false, error: 'Password is required', code: 'PASSWORD_REQUIRED', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const user = await User.findByPk(userId);
-      if (!user) {
-        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const isValid = await user.comparePassword(password);
-      if (!isValid) {
-        res.status(400).json({ success: false, error: 'Incorrect password', code: 'INVALID_PASSWORD', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      await user.update({ status: UserStatus.DEACTIVATED, deactivatedAt: new Date(), refreshToken: null });
-
-      res.json({ success: true, message: 'Account deleted successfully', timestamp: new Date().toISOString() });
-    } catch (error) {
-      logger.error('Error in deleteAccount', { error: getErrorMessage(error), userId: req.user?.id });
-      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
-    }
-  }
 }

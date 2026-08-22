@@ -15,10 +15,16 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import { useAppDispatch } from '../../store/hooks';
+import { deleteAccount } from '../../store/slices/userSlice';
+import { logoutUser } from '../../store/slices/authSlice';
 
 const log = logger.createLogger('PrivacySettingsScreen');
 
@@ -35,6 +41,11 @@ interface PrivacySetting {
 }
 
 const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigation }) => {
+  const dispatch = useAppDispatch();
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [settings, setSettings] = useState<PrivacySetting[]>([
     {
       id: 'location_sharing',
@@ -110,21 +121,102 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
         );
         break;
       case 'delete':
-        Alert.alert(
-          'Delete Account',
-          'This action cannot be undone. All your data will be permanently deleted.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Delete',
-              style: 'destructive',
-              onPress: () => log.info('Account deletion requested'),
-            },
-          ]
-        );
+        setDeleteError(null);
+        setDeletePassword('');
+        setDeleteModalVisible(true);
         break;
     }
   };
+
+  const handleConfirmDelete = async (): Promise<void> => {
+    if (!deletePassword) {
+      setDeleteError('Enter your password to confirm.');
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const result = await dispatch(deleteAccount({ password: deletePassword }));
+
+      if (deleteAccount.rejected.match(result)) {
+        setDeleteError(
+          (result.payload as string) || 'We could not delete your account. Try again.'
+        );
+        return;
+      }
+
+      setDeleteModalVisible(false);
+      // Clear the local session so the app cannot keep using a token that no
+      // longer maps to a real account.
+      await dispatch(logoutUser());
+      Alert.alert('Account deleted', 'Your account and personal data have been deleted.');
+    } catch (error) {
+      log.error('Account deletion failed', error);
+      setDeleteError('We could not delete your account. Try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const renderDeleteModal = (): React.ReactNode => (
+    <Modal
+      visible={deleteModalVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => !deleting && setDeleteModalVisible(false)}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Delete your account</Text>
+          <Text style={styles.modalBody}>
+            This permanently deletes your profile and personal data. Completed
+            rides stay on record in anonymised form for tax and dispute
+            purposes. This cannot be undone.
+          </Text>
+
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Confirm your password"
+            placeholderTextColor={colors.text.secondary}
+            secureTextEntry
+            autoCapitalize="none"
+            value={deletePassword}
+            onChangeText={setDeletePassword}
+            editable={!deleting}
+            accessibilityLabel="Confirm your password"
+          />
+
+          {deleteError ? <Text style={styles.modalError}>{deleteError}</Text> : null}
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              style={styles.modalCancel}
+              onPress={() => setDeleteModalVisible(false)}
+              disabled={deleting}
+              accessibilityRole="button"
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalConfirm, deleting && styles.modalConfirmDisabled]}
+              onPress={handleConfirmDelete}
+              disabled={deleting}
+              accessibilityRole="button"
+            >
+              {deleting ? (
+                <ActivityIndicator color={colors.text.inverse} size="small" />
+              ) : (
+                <Text style={styles.modalConfirmText}>Delete permanently</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   const renderHeader = (): React.ReactNode => (
     <View style={styles.header}>
@@ -215,6 +307,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
           </View>
         </View>
       </ScrollView>
+      {renderDeleteModal()}
     </SafeAreaView>
   );
 };
@@ -337,6 +430,75 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flex: 1,
     lineHeight: 20,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: colors.background.primary,
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 12,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text.secondary,
+    marginBottom: 20,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.text.primary,
+  },
+  modalError: {
+    marginTop: 10,
+    fontSize: 13,
+    color: colors.error,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  modalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginRight: 8,
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  modalConfirm: {
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  modalConfirmDisabled: {
+    opacity: 0.6,
+  },
+  modalConfirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.inverse,
   },
 });
 
