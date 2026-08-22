@@ -210,3 +210,8 @@ keystore.properties
 hs_err_pid*.log
 replay_pid*.log
 
+# Machine-specific Android SDK path. The file's own header says it must not be
+# committed, and a checked-in Windows path breaks builds on any other machine.
+mobile-app/android/local.properties
+android/local.properties
+local.properties
