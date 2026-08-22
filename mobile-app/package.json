@@ -23,8 +23,8 @@
     "build:ios:release": "react-native run-ios --configuration Release",
     "build:production": "npm run type-check && npm run lint && npm run test && npm run build:android && npm run build:ios",
     "bundle:analyze": "npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res --sourcemap-output android/sourcemap.js",
-    "icons:generate": "node scripts/generate-app-icons.js",
-    "icons:clean": "rm -rf android/app/src/main/res/mipmap-* ios/aryv/Images.xcassets/AppIcon.appiconset/*.png",
+    "icons:generate": "node scripts/generate-play-assets.js",
+    "icons:clean": "rm -rf android/app/src/main/res/mipmap-* assets/app-store/generated",
     "preinstall": "npx check-engine",
     "postinstall": "echo 'Skipping iOS pod install for Android-only build'"
   },
