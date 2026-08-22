@@ -15,7 +15,7 @@ import {
 } from '../models';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
-import { logInfo, logError } from '../utils/logger';
+import { logInfo, logError, logWarning } from '../utils/logger';
 
 // Mock payment provider interface - in production this would integrate with Stripe Connect, PayPal, etc.
 interface PaymentProvider {
@@ -102,12 +102,53 @@ class MockPaymentProvider implements PaymentProvider {
   }
 }
 
+/**
+ * Refuses every operation. Used in production until a real provider is wired
+ * up, so that couriers and senders get an honest error instead of the mock's
+ * cheerful success — the API reported `paymentReleased: true` and an earnings
+ * figure while no money had moved and none ever would.
+ */
+class UnconfiguredPaymentProvider implements PaymentProvider {
+  private static readonly MESSAGE =
+    'Courier payments are not available yet: no escrow payment provider is configured.';
+
+  async createEscrowPayment(): Promise<string> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async releaseEscrowPayment(): Promise<boolean> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async refundEscrowPayment(): Promise<boolean> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async getPaymentStatus(): Promise<'pending' | 'held' | 'released' | 'refunded' | 'failed'> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+}
+
 export class CourierEscrowService {
   private paymentProvider: PaymentProvider;
 
   constructor() {
-    // In production, this would be initialized with the actual payment provider
-    this.paymentProvider = new MockPaymentProvider();
+    // MockPaymentProvider keeps escrow state in a per-process Map. Beyond
+    // moving no money, that state does not survive a restart or exist on a
+    // second instance: after any redeploy every in-flight delivery becomes
+    // permanently uncompletable, because getPaymentStatus no longer reports
+    // 'held' and completeDelivery refuses to release. It must never run in
+    // production.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+
+    if (isProduction) {
+      logWarning(
+        'No escrow payment provider configured; courier payment operations will fail',
+      );
+      this.paymentProvider = new UnconfiguredPaymentProvider();
+    } else {
+      this.paymentProvider = new MockPaymentProvider();
+    }
   }
 
   /**
