@@ -113,8 +113,8 @@ class OTPService {
       }
 
       // Send SMS via Twilio API
-      const response = await this.apiClient.post('/otp/sms/send', {
-        to: request.recipient,
+      const response = await this.apiClient.post('/auth/otp/sms/send', {
+        phone: request.recipient,
         purpose: request.purpose,
         templateId: request.templateId,
       });
@@ -181,8 +181,8 @@ class OTPService {
       }
 
       // Send Email via SendGrid API
-      const response = await this.apiClient.post('/otp/email/send', {
-        to: request.recipient,
+      const response = await this.apiClient.post('/auth/otp/email/send', {
+        email: request.recipient,
         purpose: request.purpose,
         templateId: request.templateId,
       });
@@ -249,7 +249,7 @@ class OTPService {
       }
 
       // Verify with backend
-      const response = await this.apiClient.post('/otp/verify', {
+      const response = await this.apiClient.post('/auth/otp/verify', {
         type: verification.type,
         recipient: verification.recipient,
         code: verification.code,
@@ -290,13 +290,11 @@ class OTPService {
    * Get OTP settings
    */
   async getSettings(): Promise<OTPSettings> {
-    try {
-      const response = await this.apiClient.get('/otp/settings');
-      return response.success ? response.data : this.DEFAULT_SETTINGS;
-    } catch (error) {
-      log.error('Failed to get OTP settings:', error);
-      return this.DEFAULT_SETTINGS;
-    }
+    // The backend exposes no settings endpoint — only per-recipient cooldown
+    // state at GET /auth/otp/status. Calling a non-existent route on every
+    // read just burned a guaranteed 404, so serve the defaults directly until
+    // a real endpoint exists.
+    return this.DEFAULT_SETTINGS;
   }
 
   /**

@@ -50,6 +50,26 @@ const ChatList: React.FC<ChatListProps> = ({
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
+
+  const handleScroll = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      contentSize: { height: number };
+      layoutMeasurement: { height: number };
+    };
+  }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isNearBottom =
+      contentOffset.y + layoutMeasurement.height >= contentSize.height - 100;
+    setShowScrollToBottom(!isNearBottom && messages.length > 10);
+    onScrollToTop?.();
+  };
+
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setShowScrollToBottom(false);
+  };
 
   useEffect(() => {
     // Scroll to bottom when new messages arrive
@@ -140,19 +160,6 @@ const ChatList: React.FC<ChatListProps> = ({
   );
 
   const renderScrollToBottom = () => {
-    const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
-
-    const handleScroll = (event: { nativeEvent: { contentOffset: { y: number }; contentSize: { height: number }; layoutMeasurement: { height: number } } }) => {
-      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-      const isNearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 100;
-      setShowScrollToBottom(!isNearBottom && messages.length > 10);
-    };
-
-    const scrollToBottom = () => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-      setShowScrollToBottom(false);
-    };
-
     if (!showScrollToBottom) return null;
 
     return (
@@ -234,7 +241,8 @@ const ChatList: React.FC<ChatListProps> = ({
             />
           ) : undefined
         }
-        onScroll={onScrollToTop}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         inverted={false}

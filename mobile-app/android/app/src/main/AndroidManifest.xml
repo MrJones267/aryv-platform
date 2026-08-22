@@ -6,7 +6,18 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- Legacy storage only; a no-op from API 29 and refused by Play without a cap. -->
+    <uses-permission
+      android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+      android:maxSdkVersion="28" />
+
+    <!--
+      Required from API 33. Without the declaration Android silently denies the
+      runtime request made in usePushNotifications/NotificationService, so no
+      FCM notification is ever shown on Android 13+.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
       android:name="com.aryvmobile.MainApplication"

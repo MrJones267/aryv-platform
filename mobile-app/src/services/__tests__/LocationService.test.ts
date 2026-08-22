@@ -37,6 +37,11 @@ describe('LocationService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // LocationService is a singleton, so watch state and the location cache
+    // survive between tests. Clearing the mocks alone left earlier tests
+    // deciding whether watchPosition ran and what the cache held.
+    locationService.stopWatchingLocation();
+    locationService.clearCache();
   });
 
   describe('requestLocationPermission', () => {
@@ -291,8 +296,18 @@ describe('LocationService', () => {
   });
 
   describe('geocodeAddress', () => {
-    it('returns mock coordinate data', async () => {
-      const results = await locationService.geocodeAddress('123 Main St, San Francisco, CA');
+    it('returns a [longitude, latitude] tuple', async () => {
+      const result = await locationService.geocodeAddress('123 Main St, San Francisco, CA');
+
+      expect(result).toBeInstanceOf(Array);
+      expect(result).toHaveLength(2);
+      const [longitude, latitude] = result as [number, number];
+      expect(typeof longitude).toBe('number');
+      expect(typeof latitude).toBe('number');
+    });
+
+    it('returns detailed coordinate objects from geocodeAddressDetailed', async () => {
+      const results = await locationService.geocodeAddressDetailed('123 Main St, San Francisco, CA');
 
       expect(results).toBeInstanceOf(Array);
       expect(results.length).toBeGreaterThan(0);

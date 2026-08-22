@@ -48,13 +48,10 @@ router.post('/create',
       .isUUID()
       .withMessage('Valid booking ID is required'),
 
-    body('driverId')
-      .isUUID()
-      .withMessage('Valid driver ID is required'),
-
-    body('amount')
-      .isFloat({ min: 0.01, max: 10000.00 })
-      .withMessage('Amount must be between $0.01 and $10,000.00'),
+    // driverId and amount are accepted for backwards compatibility with
+    // shipped clients but are ignored — both are resolved from the booking.
+    body('driverId').optional().isUUID(),
+    body('amount').optional().isFloat({ min: 0.01, max: 10000.00 }),
 
     validateInput,
   ],

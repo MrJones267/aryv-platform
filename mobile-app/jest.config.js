@@ -12,6 +12,9 @@ module.exports = {
   
   // Setup files
   setupFilesAfterEnv: [
+    // Ships with the library; registers the RNGoogleSignin turbo module so
+    // anything importing it can load outside a native runtime.
+    '<rootDir>/node_modules/@react-native-google-signin/google-signin/jest/build/jest/setup.js',
     '<rootDir>/src/__tests__/setup.ts',
   ],
   
@@ -19,8 +22,10 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   
   // Test match patterns
+  // Match on the .test/.spec suffix only. Sweeping every file under
+  // __tests__/ also collected setup.ts and utils/test-utils.tsx, which carry
+  // no tests and so failed the run outright.
   testMatch: [
-    '<rootDir>/src/**/__tests__/**/*.(ts|tsx|js)',
     '<rootDir>/src/**/?(*.)(test|spec).(ts|tsx|js)',
   ],
   
@@ -96,7 +101,9 @@ module.exports = {
     'react-native|@react-native|@react-navigation|react-native-vector-icons|' +
     'react-native-maps|@react-native-community|react-native-reanimated|' +
     'react-native-gesture-handler|react-native-screens|react-native-safe-area-context|' +
-    '@react-native/js-polyfills' +
+    '@react-native/js-polyfills|@react-native-google-signin|react-native-paper|' +
+    'react-native-permissions|@react-native-firebase|react-native-chart-kit|' +
+    'react-native-svg' +
     ')/)',
   ],
   

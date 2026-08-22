@@ -10,7 +10,8 @@ import { Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
 import UserWallet, { VerificationLevel } from '../models/UserWallet';
-import { Booking } from '../models';
+import { Booking, Ride } from '../models';
+import { BookingStatus } from '../types';
 import { NotificationService } from './NotificationService';
 import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
@@ -62,21 +63,82 @@ export class CashPaymentService {
   async createCashPayment(
     bookingId: string,
     riderId: string,
-    driverId: string,
-    amount: number,
   ): Promise<CashPaymentResult> {
     const transaction = await sequelize.transaction();
 
     try {
-      // Verify booking exists and is valid
-      const booking = await Booking.findByPk(bookingId, { transaction });
+      // Verify booking exists and is valid. The ride carries the driver, so
+      // both counterparty and fare are read from server state — never from the
+      // request body, which the rider controls.
+      const booking = await Booking.findByPk(bookingId, {
+        include: [{ model: Ride, as: 'ride' }],
+        transaction,
+      });
       if (!booking) {
         throw new Error('Booking not found');
+      }
+
+      // The caller must own the booking. Without this, any authenticated user
+      // could open a cash transaction against a stranger's ride.
+      if (booking.passengerId !== riderId) {
+        await transaction.rollback();
+        await this.logSuspiciousActivity(riderId, 'cash_payment_booking_ownership_mismatch', {
+          bookingId,
+          actualPassengerId: booking.passengerId,
+        });
+        return { success: false, error: 'Booking not found' };
+      }
+
+      if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status)) {
+        await transaction.rollback();
+        return {
+          success: false,
+          error: `Cannot take cash payment for a ${booking.status} booking`,
+        };
+      }
+
+      const ride = (booking as unknown as { ride?: { driverId: string } }).ride;
+      if (!ride?.driverId) {
+        await transaction.rollback();
+        return { success: false, error: 'Booking has no assigned driver' };
+      }
+      const driverId = ride.driverId;
+
+      // The fare is whatever the booking says it is. Accepting a client-supplied
+      // figure let a rider and driver under-report the fare and pay platform
+      // commission on the smaller number.
+      const amount = Number(booking.totalAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await transaction.rollback();
+        return { success: false, error: 'Booking has no payable amount' };
+      }
+
+      // One live cash transaction per booking.
+      const existing = await CashTransaction.findOne({
+        where: {
+          bookingId,
+          status: [
+            CashPaymentStatus.PENDING_VERIFICATION,
+            CashPaymentStatus.DRIVER_CONFIRMED,
+            CashPaymentStatus.RIDER_CONFIRMED,
+            CashPaymentStatus.BOTH_CONFIRMED,
+            CashPaymentStatus.DISPUTED,
+          ],
+        },
+        transaction,
+      });
+      if (existing) {
+        await transaction.rollback();
+        return {
+          success: false,
+          error: 'A cash payment is already in progress for this booking',
+        };
       }
 
       // Check if user can make cash payments
       const canPay = await this.checkCashPaymentEligibility(riderId, amount, transaction);
       if (!canPay.eligible) {
+        await transaction.rollback();
         return {
           success: false,
           error: canPay.reason || 'Payment not eligible',
@@ -92,6 +154,7 @@ export class CashPaymentService {
         transaction,
       );
       if (driverCommission.blocked) {
+        await transaction.rollback();
         return {
           success: false,
           error: `Driver must settle outstanding commission (${driverCommission.owed.toFixed(2)}) `
@@ -123,11 +186,11 @@ export class CashPaymentService {
         } as any,
       }, { transaction });
 
-      // Update booking with cash transaction reference
-      await (booking as any).update({
-        cashTransactionId: cashTransaction.id,
-        paymentMethod: 'cash',
-      }, { transaction });
+      // NOTE: this previously wrote `cashTransactionId` and `paymentMethod` back
+      // onto the booking. Neither column exists on the Booking model, so the
+      // cast-to-any update silently did nothing. The link is held on the
+      // CashTransaction side (its `bookingId`) and the duplicate guard above
+      // reads it from there; adding the reverse column needs a migration.
 
       // Create trust hold
       await this.createTrustHold(riderId, amount, cashTransaction.id, transaction);
@@ -160,8 +223,6 @@ export class CashPaymentService {
       logError('Error creating cash payment', error as Error, {
         bookingId,
         riderId,
-        driverId,
-        amount,
       });
 
       return {

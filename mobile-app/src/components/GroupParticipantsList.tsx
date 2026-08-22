@@ -115,7 +115,7 @@ export const GroupParticipantsList: React.FC<GroupParticipantsListProps> = ({
 
   const executeParticipantAction = async (participant: Participant, action: string) => {
     try {
-      let updates: Record<string, string> = {};
+      const updates: Record<string, string> = {};
 
       switch (action) {
         case 'promote':

@@ -119,8 +119,17 @@ android {
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
+            } else if (gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }) {
+                // Never silently fall back to the debug key: that produces a
+                // "release" artifact signed with a publicly known key, which
+                // Play rejects and which cannot be upgraded later.
+                throw new GradleException(
+                    "android/app/keystore.properties is missing. Release builds require the " +
+                    "production upload keystore — restore it before building."
+                )
             } else {
-                // Fallback to debug keystore if production keystore not configured
+                // Non-release tasks (configuration, debug assembly) still need a
+                // resolvable config for this block to evaluate.
                 storeFile file('debug.keystore')
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
