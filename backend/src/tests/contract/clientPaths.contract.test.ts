@@ -134,9 +134,12 @@ describe('mobile client / backend path contract', () => {
    * work.
    */
   const KNOWN_GAPS: string[] = [
-    // Escrow payments. EscrowPaymentService drives an entire payment
-    // flow with no server side at all — see the courier findings: the escrow
-    // provider itself is a mock. These cannot be fixed by renaming a path.
+    // Escrow payments. Deferred rather than broken: deliveries are paid in
+    // cash to the courier on arrival, so no escrow provider is needed for
+    // launch and none is configured. EscrowPaymentService is kept for whenever
+    // one is wired up, and no screen calls it any more — these entries are its
+    // own call sites, which the scan reaches directly. Delete the service and
+    // these go with it.
     'GET /api/payments/escrow/:param  (EscrowPaymentService.ts)',
     'GET /api/payments/escrow/:param/auto-release-check  (EscrowPaymentService.ts)',
     'GET /api/payments/escrow/history  (EscrowPaymentService.ts)',

@@ -27,7 +27,6 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import ImagePicker from '../../components/common/ImagePicker';
 import DeliveryTierSelector from '../../components/courier/DeliveryTierSelector';
 import LocationService from '../../services/LocationService';
-import EscrowPaymentService from '../../services/EscrowPaymentService';
 import { useAppDispatch } from '../../store/hooks';
 import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
 import logger from '../../services/LoggingService';
@@ -197,29 +196,16 @@ const CreatePackageScreen: React.FC = () => {
       const response = await (dispatch(createPackageAction(packageData)) as unknown as Promise<{ type?: string; payload?: { id?: string }; error?: string }>);
       
       if (response.type?.endsWith('/fulfilled')) {
-        // Create escrow transaction for the package
-        if (response.payload?.id) {
-          const escrowResult = await EscrowPaymentService.createEscrowTransaction({
-            rideId: response.payload.id, // Use package ID as ride ID
-            bookingId: `package_${response.payload.id}`,
-            payeeId: '', // Will be set when courier accepts
-            amount: formData.senderPriceOffer,
-            paymentMethod: 'card', // Default payment method
-            metadata: {
-              rideDetails: { type: 'package_delivery', packageId: response.payload.id },
-              autoReleaseHours: 24,
-              requiresBothConfirmation: true,
-            },
-          });
-          
-          if (!escrowResult.success) {
-            log.warn('Failed to create escrow transaction:', escrowResult.error);
-          }
-        }
-        
+        // No payment is taken here. Deliveries are paid in cash to the courier
+        // on arrival, so nothing is funded up front. This previously opened an
+        // escrow transaction against an endpoint that does not exist — the
+        // call failed every time, logged a warning, and the flow carried on
+        // regardless.
         Alert.alert(
-          'Success!',
-          'Your package has been created and is now available for couriers.',
+          'Package listed',
+          'Couriers can now accept your delivery. The recipient pays the '
+            + 'courier in cash when it arrives, and we will text them a code to '
+            + 'hand over once they have it.',
           [
             {
               text: 'OK',

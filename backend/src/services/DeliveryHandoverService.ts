@@ -172,11 +172,22 @@ export class DeliveryHandoverService {
 
       if (destination) {
         const recipient = packageData.dropoffContactName || 'there';
+
+        // On cash on delivery the recipient has to know what to pay before the
+        // courier arrives. A code with no amount attached leaves them working
+        // it out at the door, with the courier as the only source of the
+        // figure — which is the wrong party to take it from.
+        const isCash = (agreement.paymentMethod ?? 'cash_on_delivery') === 'cash_on_delivery';
+        const amountDue = isCash
+          ? await this.formatAmount(agreement.agreedPrice, packageData.senderId)
+          : null;
+
         const sent = await smsService.sendMessage(
           destination,
-          `ARYV: Hi ${recipient}, your delivery code is ${code}. `
-            + 'Give it to the courier only when you have your package. '
-            + `Valid for ${CODE_TTL_HOURS} hours.`,
+          `ARYV: Hi ${recipient}, your delivery code is ${code}.`
+            + (amountDue ? ` Amount due on delivery: ${amountDue}.` : '')
+            + ' Give the code to the courier only once you have paid and have your package.'
+            + ` Valid for ${CODE_TTL_HOURS} hours.`,
         );
 
         await record.update(
@@ -223,6 +234,43 @@ export class DeliveryHandoverService {
       logError('Error issuing handover code', error as Error, { agreementId });
       return { success: false, error: 'Could not issue handover code' };
     }
+  }
+
+  /**
+   * Render an amount in the sender's currency.
+   *
+   * Falls back to a bare number rather than guessing a symbol: a wrong
+   * currency marker on a payment instruction is worse than none, and this
+   * platform is not dollar-denominated despite what some older strings assume.
+   */
+  private async formatAmount(amount: number, senderId: string): Promise<string | null> {
+    // A missing or malformed price must not take the whole pickup down: the
+    // delivery is already under way, and the code matters more than the
+    // amount line in the message.
+    if (!Number.isFinite(Number(amount))) {
+      logWarning('Delivery has no usable amount to quote in its SMS', { senderId });
+      return null;
+    }
+
+    try {
+      const { CurrencyService } = await import('./CurrencyService');
+      const preferences = await CurrencyService.getUserCurrencies(senderId);
+      const currency = preferences?.primaryCurrency;
+
+      if (currency?.symbol) {
+        return `${currency.symbol}${Number(amount).toFixed(currency.decimalPlaces ?? 2)}`;
+      }
+      if (currency?.code) {
+        return `${Number(amount).toFixed(2)} ${currency.code}`;
+      }
+    } catch (error) {
+      logWarning('Could not resolve currency for delivery SMS', {
+        senderId,
+        error: (error as Error).message,
+      });
+    }
+
+    return Number(amount).toFixed(2);
   }
 
   /**

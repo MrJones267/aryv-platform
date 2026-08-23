@@ -40,6 +40,8 @@ const makeAgreement = (overrides: Record<string, unknown> = {}) => ({
   packageId: 'package-1',
   courierId: COURIER_ID,
   status: DeliveryStatus.IN_TRANSIT,
+  agreedPrice: 120,
+  paymentMethod: 'cash_on_delivery',
   ...overrides,
 });
 
@@ -144,6 +146,40 @@ describe('DeliveryHandoverService', () => {
         '+26777654321',
         expect.any(String),
       );
+    });
+
+    it('tells the recipient what to pay on a cash delivery', async () => {
+      // Without the amount the recipient works it out at the door, with the
+      // courier as the only source of the figure — the wrong party to take it
+      // from.
+      await service.issueCode(AGREEMENT_ID);
+
+      const [, body] = (smsService.sendMessage as jest.Mock).mock.calls[0];
+      expect(body).toMatch(/Amount due on delivery: .*120/);
+    });
+
+    it('quotes no amount on an escrow delivery, where nothing is owed at the door', async () => {
+      jest.spyOn(DeliveryAgreement, 'findByPk').mockResolvedValue(
+        makeAgreement({ paymentMethod: 'escrow' }) as any,
+      );
+
+      await service.issueCode(AGREEMENT_ID);
+
+      const [, body] = (smsService.sendMessage as jest.Mock).mock.calls[0];
+      expect(body).not.toMatch(/Amount due/);
+    });
+
+    it('still issues a code when the amount cannot be formatted', async () => {
+      // A formatting problem must not lose the code: the delivery is already
+      // under way and the code matters more than the amount line.
+      jest.spyOn(DeliveryAgreement, 'findByPk').mockResolvedValue(
+        makeAgreement({ agreedPrice: undefined }) as any,
+      );
+
+      const result = await service.issueCode(AGREEMENT_ID);
+
+      expect(result.success).toBe(true);
+      expect(smsService.sendMessage).toHaveBeenCalled();
     });
 
     it('still issues a code when there is no number to send it to', async () => {

@@ -635,6 +635,13 @@ export class CourierController {
           handover: {
             codeIssued: issued.success,
             sentVia: issued.channel ?? 'none',
+            // What to collect at the door. The courier needs the figure and
+            // has no other reliable source for it — but never the code, which
+            // is the recipient's to give.
+            paymentMethod: agreement.paymentMethod,
+            collectOnDelivery: agreement.paymentMethod === 'cash_on_delivery'
+              ? agreement.agreedPrice
+              : null,
           },
         },
         timestamp: new Date().toISOString(),

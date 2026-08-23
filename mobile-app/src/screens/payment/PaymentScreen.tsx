@@ -29,7 +29,6 @@ import {
   PaymentMethod,
   Transaction,
 } from '../../components/payment';
-import EscrowPaymentService, { EscrowTransaction } from '../../services/EscrowPaymentService';
 import CashPaymentService from '../../services/CashPaymentService';
 import { paymentApi } from '../../services/api/paymentApi';
 
@@ -92,13 +91,11 @@ const PaymentScreen: React.FC = () => {
         setRecentPayments(mappedTx.slice(0, 5) as any);
       }
 
-      // Load active escrow data
-      try {
-        const escrowData = await EscrowPaymentService.getEscrowHistory(10, 0, 'held');
-        if (escrowData) setActiveEscrows(escrowData as any);
-      } catch {
-        // Escrow data is non-critical
-      }
+      // Escrow is not in use: deliveries are paid in cash on arrival, and no
+      // escrow provider is configured, so there is nothing to fetch and the
+      // endpoint does not exist. The display is kept for whenever a provider
+      // is wired up rather than torn out and rebuilt later.
+      setActiveEscrows([]);
     } catch {
       Alert.alert('Error', 'Failed to load payment data.');
     } finally {
@@ -225,9 +222,11 @@ const PaymentScreen: React.FC = () => {
         {activeEscrows.length === 0 ? (
           <View style={styles.emptyState}>
             <Icon name="security" size={64} color={colors.text.secondary} />
-            <Text style={styles.emptyTitle}>No Active Escrows</Text>
+            <Text style={styles.emptyTitle}>Nothing held in escrow</Text>
             <Text style={styles.emptySubtitle}>
-              Create a package delivery to see escrow status here
+              Deliveries are paid in cash to the courier on arrival, so nothing
+              is held up front. This is where funds would appear if a delivery
+              is ever paid for in advance.
             </Text>
           </View>
         ) : (
