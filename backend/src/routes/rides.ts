@@ -262,6 +262,63 @@ router.get(
 );
 
 /**
+ * @route   GET /api/rides/demand
+ * @desc    How busy this area is, from real rides and bookings
+ * @access  Private
+ *
+ * Before /:id so 'demand' is not read as a ride ID.
+ */
+router.get(
+  '/demand',
+  rideRateLimit,
+  authenticateToken,
+  [
+    query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+    query('radiusKm').optional().isFloat({ min: 1, max: 200 }).withMessage('Radius must be 1 to 200 km'),
+  ],
+  validateInput,
+  rideController.getDemand.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/recommendations
+ * @desc    Upcoming rides on the routes this passenger travels often
+ * @access  Private
+ *
+ * Before /:id so 'recommendations' is not read as a ride ID.
+ */
+router.get(
+  '/recommendations',
+  rideRateLimit,
+  authenticateToken,
+  rideController.getRecommendations.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/price-suggestion
+ * @desc    What comparable rides charged on this route
+ * @access  Private
+ *
+ * Advice for a driver listing a ride, not a price anyone is charged. Declared
+ * before /:id so 'price-suggestion' is not read as a ride ID.
+ */
+router.get(
+  '/price-suggestion',
+  rideRateLimit,
+  authenticateToken,
+  [
+    query('originLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid origin latitude'),
+    query('originLng').isFloat({ min: -180, max: 180 }).withMessage('Invalid origin longitude'),
+    query('destinationLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid destination latitude'),
+    query('destinationLng').isFloat({ min: -180, max: 180 }).withMessage('Invalid destination longitude'),
+    query('distanceKm').optional().isFloat({ min: 0.1, max: 5000 }).withMessage('Invalid distance'),
+  ],
+  validateInput,
+  rideController.getPriceSuggestion.bind(rideController),
+);
+
+/**
  * @route   GET /api/rides/:id
  * @desc    Get ride by ID
  * @access  Public

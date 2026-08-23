@@ -22,8 +22,6 @@ import { Button, Card, Badge, Avatar } from '../../components/ui';
 import { ridesApi } from '../../services/api';
 import type { RideStop } from '../../services/api';
 import { BookingScreenProps } from '../../navigation/types';
-import AIPricingService, { PricingRequest, PricingResponse } from '../../services/AIPricingService';
-import PricingDisplay from '../../components/pricing/PricingDisplay';
 import PaymentMethodSelector, { PaymentMethodType } from '../../components/payment/PaymentMethodSelector';
 import { paymentApi } from '../../services/api';
 import { CurrencyService, Currency } from '../../services/CurrencyService';
@@ -78,6 +76,12 @@ interface BookingDetails {
 }
 
 /**
+ * The platform's cut, matching BOOKING_PLATFORM_FEE_RATE on the server. Both
+ * must agree or the screen quotes a total the server will not charge.
+ */
+const PLATFORM_FEE_RATE = 0.05;
+
+/**
  * What the ride from one stop to another costs per seat.
  *
  * Stop fares are cumulative from the origin, so a segment is one subtraction.
@@ -117,9 +121,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState(seatsRequested);
-  const [aiPricing, setAiPricing] = useState<PricingResponse | null>(null);
-  const [isPricingLoading, setIsPricingLoading] = useState(false);
-  const [rideType, setRideType] = useState<'economy' | 'comfort' | 'premium' | 'shared'>('economy');
   const [showPaymentSelector, setShowPaymentSelector] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodType | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
@@ -138,11 +139,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     loadBookingDetails();
   }, [rideId]);
 
+  // Keyed on the seat count only. It previously also depended on
+  // bookingDetails, which the same effect then wrote to — so each run
+  // scheduled the next.
   useEffect(() => {
-    if (bookingDetails) {
-      calculateAIPricing();
-    }
-  }, [bookingDetails, rideType, selectedSeats]);
+    recalculateTotal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSeats]);
 
   const loadBookingDetails = async () => {
     setIsLoading(true);
@@ -224,50 +227,35 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     }
   };
 
-  const calculateAIPricing = async () => {
+  /**
+   * Price the booking from the driver's fare.
+   *
+   * This used to call a client-side pricing model and overwrite the total with
+   * its "final price" — a figure built partly from Math.random(), so two
+   * passengers could see different prices for the same ride, varying by up to
+   * half again. The server meanwhile charged the driver's actual fare, so the
+   * number on this screen was not the number billed.
+   *
+   * ARYV is carpooling: the driver sets the price, and that is the price. The
+   * arithmetic here now matches the server's exactly — fare for the segment
+   * being travelled, plus the platform fee.
+   */
+  const recalculateTotal = () => {
     if (!bookingDetails) return;
 
-    setIsPricingLoading(true);
-    try {
-      const pricingRequest: PricingRequest = {
-        origin: {
-          latitude: bookingDetails.ride.origin.latitude,
-          longitude: bookingDetails.ride.origin.longitude,
-          address: bookingDetails.ride.origin.address,
-        },
-        destination: {
-          latitude: bookingDetails.ride.destination.latitude,
-          longitude: bookingDetails.ride.destination.longitude,
-          address: bookingDetails.ride.destination.address,
-        },
-        rideType,
-        requestTime: new Date().toISOString(),
-        passengerCount: selectedSeats,
-        scheduledTime: bookingDetails.ride.departureTime,
-      };
+    const farePerSeat = boardingSequence !== null && alightingSequence !== null
+      ? fareBetween(stops, boardingSequence, alightingSequence) ?? bookingDetails.ride.pricePerSeat
+      : bookingDetails.ride.pricePerSeat;
 
-      const pricing = await AIPricingService.calculatePrice(pricingRequest);
-      setAiPricing(pricing);
+    const subtotal = farePerSeat * selectedSeats;
+    const platformFee = Math.max(1, subtotal * PLATFORM_FEE_RATE);
 
-      // Update booking details with AI pricing
-      setBookingDetails(prev => prev ? {
-        ...prev,
-        totalAmount: pricing.finalPrice * selectedSeats,
-        platformFee: pricing.breakdown.fees,
-      } : null);
-    } catch (error) {
-      log.error('AI Pricing calculation failed:', error);
-      // Fallback to basic pricing
-      const subtotal = bookingDetails.ride.pricePerSeat * selectedSeats;
-      const platformFee = Math.max(1, subtotal * 0.05);
-      setBookingDetails(prev => prev ? {
-        ...prev,
-        totalAmount: subtotal + platformFee,
-        platformFee,
-      } : null);
-    } finally {
-      setIsPricingLoading(false);
-    }
+    setBookingDetails(prev => prev ? {
+      ...prev,
+      ride: { ...prev.ride, pricePerSeat: farePerSeat },
+      totalAmount: subtotal + platformFee,
+      platformFee,
+    } : null);
   };
 
   const handleSeatChange = (increment: boolean) => {
@@ -343,7 +331,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 rideId,
                 metadata: {
                   seats: selectedSeats.toString(),
-                  rideType,
                 },
               });
 
@@ -626,52 +613,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     );
   };
 
-  const renderRideTypeSelector = () => {
-    const rideTypes = [
-      { id: 'economy', name: 'Economy', icon: 'directions-car', description: 'Affordable rides' },
-      { id: 'comfort', name: 'Comfort', icon: 'airline-seat-recline-extra', description: 'Extra legroom' },
-      { id: 'premium', name: 'Premium', icon: 'star', description: 'Luxury vehicles' },
-      { id: 'shared', name: 'Shared', icon: 'people', description: 'Split the cost' },
-    ];
-
-    return (
-      <Card style={styles.rideTypeCard}>
-        <Text style={styles.sectionTitle}>Ride Type</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.rideTypeList}>
-            {rideTypes.map((type) => (
-              <TouchableOpacity
-                key={type.id}
-                style={[
-                  styles.rideTypeItem,
-                  rideType === type.id && styles.rideTypeItemSelected,
-                ]}
-                onPress={() => setRideType(type.id as 'economy' | 'comfort' | 'premium' | 'shared')}
-              >
-                <Icon 
-                  name={type.icon} 
-                  size={24} 
-                  color={rideType === type.id ? '#FFFFFF' : '#666666'} 
-                />
-                <Text style={[
-                  styles.rideTypeName,
-                  rideType === type.id && styles.rideTypeNameSelected,
-                ]}>
-                  {type.name}
-                </Text>
-                <Text style={[
-                  styles.rideTypeDescription,
-                  rideType === type.id && styles.rideTypeDescriptionSelected,
-                ]}>
-                  {type.description}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      </Card>
-    );
-  };
+  /*
+   * The "Ride Type" selector (Economy / Comfort / Premium / Shared) used to
+   * sit here, above a pricing panel showing a demand score, a weather
+   * condition and a surge multiplier.
+   *
+   * Both are gone. A passenger booking a carpool seat is booking one named
+   * driver's one specific vehicle — there is no tier to pick, and the driver
+   * set the fare, so nothing on this screen can change what it costs. The
+   * panel's figures were largely Math.random() and did not match what the
+   * server charged.
+   */
 
   const renderBookingOptions = () => {
     if (!bookingDetails) return null;
@@ -722,25 +674,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     );
   };
 
-  const renderAIPricing = () => {
-    return (
-      <PricingDisplay
-        pricing={aiPricing}
-        isLoading={isPricingLoading}
-        alternatives={aiPricing?.alternatives}
-        onSelectAlternative={(alternative) => {
-          setRideType(alternative.rideType);
-        }}
-        onRefresh={() => {
-          if (bookingDetails) {
-            calculateAIPricing();
-          }
-        }}
-        showBreakdown={true}
-      />
-    );
-  };
-
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -770,9 +703,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           
           {renderRideDetails()}
           {renderSegmentSelector()}
-          {renderRideTypeSelector()}
           {renderBookingOptions()}
-          {renderAIPricing()}
         </View>
       </ScrollView>
 

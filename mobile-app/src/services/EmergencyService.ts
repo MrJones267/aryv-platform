@@ -1,56 +1,86 @@
 /**
- * @fileoverview Emergency services for safety features
+ * @fileoverview Raising and tracking an emergency from the app.
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-08-23
+ *
+ * This replaces two services that disagreed with each other and with the
+ * server. The one the screens actually imported posted to `/locations/emergency`
+ * — the route is `/locations/emergency-alert` — so every SOS 404'd, and the
+ * failure was caught and shown as a mild notice while the user believed help
+ * was coming. The other, longer one called `/user/emergency-contacts` and
+ * `/emergency/alerts`, neither of which existed at all.
+ *
+ * Two rules run through what follows.
+ *
+ * Never claim help is coming unless somebody was actually reached. The server
+ * reports how many contacts it got through to, and that number is shown as-is.
+ *
+ * 999 always works, and is offered on every failure path. When the network is
+ * gone, the app cannot raise anything — dialling is the only thing left, so it
+ * is put in front of the user rather than buried behind a retry.
  */
 
-import { Linking, Alert, Platform } from 'react-native';
-import Geolocation from 'react-native-geolocation-service';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiClient } from './api';
+import { Alert, Linking } from 'react-native';
+import { apiClient } from './api/baseApi';
+import locationService from './LocationService';
 import logger from './LoggingService';
 
 const log = logger.createLogger('EmergencyService');
 
+/** Botswana's emergency number. Offered whenever we cannot reach anyone. */
+export const EMERGENCY_NUMBER = '999';
+
+/** How often an open alert reports its position while the user moves. */
+const LOCATION_PING_MS = 15000;
+
+export type EmergencyAlertType =
+  | 'panic'
+  | 'harassment'
+  | 'accident'
+  | 'medical'
+  | 'breakdown'
+  | 'safety'
+  | 'other';
+
+export type EmergencyAlertStatus = 'raised' | 'acknowledged' | 'resolved' | 'false_alarm';
+
 export interface EmergencyContact {
   id: string;
   name: string;
-  phoneNumber: string;
-  relationship: string;
+  /** E.164, as stored by the server. */
+  phone: string;
+  relationship?: string | null;
   isPrimary: boolean;
 }
 
 export interface EmergencyAlert {
   id: string;
-  userId: string;
-  location: {
-    latitude: number;
-    longitude: number;
-    address?: string;
-  };
-  timestamp: string;
-  type: 'panic' | 'medical' | 'accident' | 'harassment' | 'other';
-  description?: string;
-  status: 'active' | 'resolved' | 'false_alarm';
-  rideId?: string;
-  emergencyContacts: string[];
+  alertType: EmergencyAlertType;
+  status: EmergencyAlertStatus;
+  message?: string | null;
+  raisedLocation: { latitude: number; longitude: number } | null;
+  lastLocation: { latitude: number; longitude: number } | null;
+  rideId?: string | null;
+  /** How many contacts the server actually reached. Zero is meaningful. */
+  contactsNotified: number;
+  createdAt: string;
 }
 
-export interface EmergencyLocation {
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-  address?: string;
-  timestamp: string;
+export interface RaiseResult {
+  ok: boolean;
+  alert: EmergencyAlert | null;
+  /** What to tell the user. Written by the server so the two never disagree. */
+  guidance: string;
 }
 
 class EmergencyService {
   private static instance: EmergencyService;
-  private currentAlert: EmergencyAlert | null = null;
-  private locationWatchId: number | null = null;
 
-  public static getInstance(): EmergencyService {
+  private activeAlert: EmergencyAlert | null = null;
+  private locationTimer: ReturnType<typeof setInterval> | null = null;
+
+  static getInstance(): EmergencyService {
     if (!EmergencyService.instance) {
       EmergencyService.instance = new EmergencyService();
     }
@@ -58,425 +88,281 @@ class EmergencyService {
   }
 
   /**
-   * Trigger emergency alert with location sharing
+   * Raise an alert.
+   *
+   * The location is fetched first but never allowed to block: a fix can take
+   * many seconds indoors, and an alert with no coordinates still reaches the
+   * user's contacts, which is most of the value. If the request itself fails
+   * the user is offered the dialler, because at that point nothing else works.
    */
-  async triggerEmergency(type: EmergencyAlert['type'] = 'panic', description?: string): Promise<void> {
-    try {
-      // Get current location
-      const location = await this.getCurrentLocation();
-      
-      // Get user's emergency contacts
-      const contacts = await this.getEmergencyContacts();
-      
-      if (contacts.length === 0) {
-        Alert.alert(
-          'No Emergency Contacts',
-          'Please add emergency contacts in your profile before using this feature.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Add Contacts', onPress: () => this.navigateToEmergencySettings() }
-          ]
-        );
-        return;
-      }
+  async triggerEmergency(
+    alertType: EmergencyAlertType = 'panic',
+    message?: string,
+    rideId?: string,
+  ): Promise<RaiseResult> {
+    const coordinates = await this.getCoordinates();
 
-      // Create emergency alert
-      const alert: EmergencyAlert = {
-        id: Date.now().toString(),
-        userId: await this.getCurrentUserId(),
-        location,
-        timestamp: new Date().toISOString(),
-        type,
-        description,
-        status: 'active',
-        emergencyContacts: contacts.map(c => c.id),
+    if (!coordinates) {
+      // Without a position there is nothing useful to send responders, and
+      // the server requires one. Go straight to the thing that works.
+      this.offerDialler(
+        'We could not get your location',
+        `Call ${EMERGENCY_NUMBER} to reach emergency services directly.`,
+      );
+
+      return {
+        ok: false,
+        alert: null,
+        guidance: `Location unavailable. Call ${EMERGENCY_NUMBER}.`,
       };
-
-      this.currentAlert = alert;
-
-      // Send alert to server
-      await this.sendEmergencyAlert(alert);
-
-      // Start location tracking
-      this.startLocationTracking(alert.id);
-
-      // Notify emergency contacts
-      await this.notifyEmergencyContacts(alert, contacts);
-
-      // Show emergency interface
-      this.showEmergencyInterface(alert);
-
-    } catch (error) {
-      log.error('Emergency trigger failed', error);
-      Alert.alert('Emergency Alert Failed', 'Unable to send emergency alert. Please call emergency services directly.');
     }
-  }
 
-  /**
-   * Get current GPS location
-   */
-  private getCurrentLocation(): Promise<EmergencyLocation> {
-    return new Promise((resolve, reject) => {
-      Geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: new Date().toISOString(),
-          });
-        },
-        (error) => {
-          log.error('Location error', error);
-          reject(new Error('Unable to get location'));
-        },
-        { 
-          enableHighAccuracy: true, 
-          timeout: 10000, 
-          maximumAge: 60000 
-        }
+    try {
+      const response = await apiClient.post('/emergency/alerts', {
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        alertType,
+        message,
+        rideId,
+      });
+
+      const data = response.data?.data;
+
+      if (!data?.id) {
+        throw new Error('Alert was not created');
+      }
+
+      this.activeAlert = data as EmergencyAlert;
+      this.startLocationUpdates();
+
+      // The server's own words, which state whether anyone was reached rather
+      // than assuming they were.
+      const guidance: string = data.guidance
+        ?? `Alert raised. If you are in immediate danger, call ${EMERGENCY_NUMBER}.`;
+
+      if (this.activeAlert.contactsNotified > 0) {
+        Alert.alert('Emergency alert sent', guidance, [
+          { text: `Call ${EMERGENCY_NUMBER}`, onPress: () => this.callEmergencyServices() },
+          { text: 'OK', style: 'cancel' },
+        ]);
+      } else {
+        // Nobody was reached. This is not a success message.
+        this.offerDialler('Nobody could be reached', guidance);
+      }
+
+      return { ok: true, alert: this.activeAlert, guidance };
+    } catch (error) {
+      log.error('Failed to raise emergency alert', { error: String(error) });
+
+      this.offerDialler(
+        'Your alert could not be sent',
+        `We could not reach ARYV. Call ${EMERGENCY_NUMBER} now if you are in danger.`,
       );
-    });
-  }
 
-  /**
-   * Start continuous location tracking during emergency
-   */
-  private startLocationTracking(alertId: string): void {
-    this.locationWatchId = Geolocation.watchPosition(
-      (position) => {
-        const location: EmergencyLocation = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: new Date().toISOString(),
-        };
-        
-        // Send location update to server
-        this.updateEmergencyLocation(alertId, location);
-      },
-      (error) => log.error('Location tracking error', error),
-      { 
-        enableHighAccuracy: true, 
-        distanceFilter: 10, // Update every 10 meters
-        interval: 30000 // Update every 30 seconds
-      }
-    );
-  }
-
-  /**
-   * Stop location tracking
-   */
-  private stopLocationTracking(): void {
-    if (this.locationWatchId !== null) {
-      Geolocation.clearWatch(this.locationWatchId);
-      this.locationWatchId = null;
-    }
-  }
-
-  /**
-   * Get user's emergency contacts
-   */
-  async getEmergencyContacts(): Promise<EmergencyContact[]> {
-    try {
-      const stored = await AsyncStorage.getItem('@emergency_contacts');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-      
-      // Try to get from server
-      try {
-        const response = await apiClient.get('/user/emergency-contacts');
-        if (response.data) {
-          await AsyncStorage.setItem('@emergency_contacts', JSON.stringify(response.data));
-          return response.data;
-        }
-      } catch (serverError) {
-        log.warn('Server request failed, using local data only', { error: serverError instanceof Error ? serverError.message : String(serverError) });
-      }
-      
-      return [];
-    } catch (error) {
-      log.error('Error getting emergency contacts', error);
-      return [];
-    }
-  }
-
-  /**
-   * Add emergency contact
-   */
-  async addEmergencyContact(contact: Omit<EmergencyContact, 'id'>): Promise<void> {
-    try {
-      const newContact: EmergencyContact = {
-        ...contact,
-        id: Date.now().toString(),
+      return {
+        ok: false,
+        alert: null,
+        guidance: `Alert could not be sent. Call ${EMERGENCY_NUMBER}.`,
       };
-      
-      const contacts = await this.getEmergencyContacts();
-      const updatedContacts = [...contacts, newContact];
-      
-      await AsyncStorage.setItem('@emergency_contacts', JSON.stringify(updatedContacts));
-      
-      // Sync with server (optional - don't fail if server is down)
-      try {
-        await apiClient.post('/user/emergency-contacts', newContact);
-      } catch (serverError) {
-        log.warn('Failed to sync contact with server', { error: serverError instanceof Error ? serverError.message : String(serverError) });
-      }
-    } catch (error) {
-      log.error('Error adding emergency contact', error);
-      throw error;
     }
   }
 
   /**
-   * Remove emergency contact
+   * Report the user's position while an alert is open, so responders follow
+   * them rather than going to where they were when they pressed the button.
+   * Failures are silent by design — a dropped ping is not worth a dialog on a
+   * screen someone is using in an emergency.
    */
-  async removeEmergencyContact(contactId: string): Promise<void> {
-    try {
-      const contacts = await this.getEmergencyContacts();
-      const updatedContacts = contacts.filter(c => c.id !== contactId);
-      
-      await AsyncStorage.setItem('@emergency_contacts', JSON.stringify(updatedContacts));
-      
-      // Sync with server (optional)
-      try {
-        await apiClient.delete(`/user/emergency-contacts/${contactId}`);
-      } catch (serverError) {
-        log.warn('Failed to remove contact from server', { error: serverError instanceof Error ? serverError.message : String(serverError) });
-      }
-    } catch (error) {
-      log.error('Error removing emergency contact', error);
-      throw error;
-    }
-  }
+  private startLocationUpdates(): void {
+    this.stopLocationUpdates();
 
-  /**
-   * Call emergency services (999, local emergency number)
-   */
-  async callEmergencyServices(): Promise<void> {
-    const emergencyNumber = this.getLocalEmergencyNumber();
-    
-    Alert.alert(
-      'Call Emergency Services',
-      `This will call ${emergencyNumber}. Continue?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Call', 
-          style: 'destructive',
-          onPress: () => {
-            Linking.openURL(`tel:${emergencyNumber}`);
-          }
-        }
-      ]
-    );
-  }
+    this.locationTimer = setInterval(async () => {
+      const alert = this.activeAlert;
 
-  /**
-   * Get local emergency number based on region
-   */
-  private getLocalEmergencyNumber(): string {
-    // Default to Botswana/SADC emergency number
-    return '999';
-  }
-
-  /**
-   * Call primary emergency contact
-   */
-  async callPrimaryContact(): Promise<void> {
-    try {
-      const contacts = await this.getEmergencyContacts();
-      const primaryContact = contacts.find(c => c.isPrimary) || contacts[0];
-      
-      if (!primaryContact) {
-        Alert.alert('No Emergency Contact', 'Please add emergency contacts first.');
+      if (!alert) {
+        this.stopLocationUpdates();
         return;
       }
 
-      Alert.alert(
-        'Call Emergency Contact',
-        `Call ${primaryContact.name} at ${primaryContact.phoneNumber}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Call', 
-            onPress: () => {
-              Linking.openURL(`tel:${primaryContact.phoneNumber}`);
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      log.error('Error calling primary contact:', error);
-      Alert.alert('Error', 'Unable to call emergency contact.');
-    }
-  }
+      const coordinates = await this.getCoordinates();
 
-  /**
-   * Send SMS to emergency contacts
-   */
-  private async notifyEmergencyContacts(alert: EmergencyAlert, contacts: EmergencyContact[]): Promise<void> {
-    try {
-      const message = `EMERGENCY ALERT from Hitch App: ${alert.type.toUpperCase()} at ${alert.location.latitude}, ${alert.location.longitude}. Time: ${new Date(alert.timestamp).toLocaleString()}. ${alert.description || ''}`;
-      
-      for (const contact of contacts) {
-        try {
-          // In a real app, this would use a service like Twilio to send SMS
-          // For now, we'll use the device's SMS app
-          const smsUrl = `sms:${contact.phoneNumber}?body=${encodeURIComponent(message)}`;
-          await Linking.openURL(smsUrl);
-        } catch (contactError) {
-          log.warn(`Failed to notify contact ${contact.name}:`, contactError);
-        }
-      }
-    } catch (error) {
-      log.error('Error notifying contacts:', error);
-    }
-  }
-
-  /**
-   * Send emergency alert to server
-   */
-  private async sendEmergencyAlert(alert: EmergencyAlert): Promise<void> {
-    try {
-      await apiClient.post('/emergency/alerts', alert);
-      
-      // Also store locally for offline capability
-      await AsyncStorage.setItem(`@emergency_alert_${alert.id}`, JSON.stringify(alert));
-    } catch (error) {
-      log.error('Error sending emergency alert:', error);
-      // Still store locally even if server fails
-      try {
-        await AsyncStorage.setItem(`@emergency_alert_${alert.id}`, JSON.stringify(alert));
-      } catch (storageError) {
-        log.error('Failed to store emergency alert locally:', storageError);
-      }
-    }
-  }
-
-  /**
-   * Update emergency location on server
-   */
-  private async updateEmergencyLocation(alertId: string, location: EmergencyLocation): Promise<void> {
-    try {
-      await apiClient.put(`/emergency/alerts/${alertId}/location`, { location });
-    } catch (error) {
-      log.error('Error updating emergency location:', error);
-    }
-  }
-
-  /**
-   * Resolve emergency alert
-   */
-  async resolveEmergency(alertId?: string): Promise<void> {
-    try {
-      const activeAlert = this.currentAlert || (alertId ? await this.getEmergencyAlert(alertId) : null);
-      
-      if (!activeAlert) {
-        Alert.alert('No Active Emergency', 'There is no active emergency to resolve.');
+      if (!coordinates) {
         return;
       }
 
-      Alert.alert(
-        'Resolve Emergency',
-        'Are you safe? This will mark the emergency as resolved.',
-        [
-          { text: 'No - Keep Active', style: 'cancel' },
-          { 
-            text: 'Yes - Resolve', 
-            style: 'default',
-            onPress: async () => {
-              await this.markEmergencyResolved(activeAlert.id);
-              this.stopLocationTracking();
-              this.currentAlert = null;
-              Alert.alert('Emergency Resolved', 'Emergency has been marked as resolved. Stay safe!');
-            }
-          }
-        ]
-      );
+      try {
+        await apiClient.put(`/emergency/alerts/${alert.id}/location`, coordinates);
+      } catch (error) {
+        log.warn('Emergency location update failed', { error: String(error) });
+      }
+    }, LOCATION_PING_MS);
+  }
+
+  private stopLocationUpdates(): void {
+    if (this.locationTimer) {
+      clearInterval(this.locationTimer);
+      this.locationTimer = null;
+    }
+  }
+
+  /** Stand the alert down. Local state clears even if the server call fails. */
+  async resolveEmergency(options: { falseAlarm?: boolean; note?: string } = {}): Promise<boolean> {
+    const alert = this.activeAlert;
+    this.stopLocationUpdates();
+
+    if (!alert) {
+      return true;
+    }
+
+    try {
+      await apiClient.put(`/emergency/alerts/${alert.id}/resolve`, {
+        falseAlarm: Boolean(options.falseAlarm),
+        note: options.note,
+      });
+
+      this.activeAlert = null;
+      return true;
     } catch (error) {
-      log.error('Error resolving emergency:', error);
-      Alert.alert('Error', 'Unable to resolve emergency.');
+      log.error('Failed to resolve emergency alert', { error: String(error) });
+
+      // Clear locally regardless: leaving the UI stuck in an emergency the
+      // user has ended is its own problem, and the server keeps the record.
+      this.activeAlert = null;
+      return false;
     }
   }
 
   /**
-   * Mark emergency as resolved on server
+   * Re-read any open alert from the server.
+   *
+   * Called on startup so an alert raised before the app was killed is still
+   * shown as open, rather than silently forgotten with its location updates
+   * stopped.
    */
-  private async markEmergencyResolved(alertId: string): Promise<void> {
+  async refreshActiveAlert(): Promise<EmergencyAlert | null> {
     try {
-      await apiClient.put(`/emergency/alerts/${alertId}`, { status: 'resolved' });
-    } catch (error) {
-      log.error('Error marking emergency resolved:', error);
-    }
-  }
+      const response = await apiClient.get('/emergency/alerts/active');
+      this.activeAlert = (response.data?.data as EmergencyAlert) ?? null;
 
-  /**
-   * Get emergency alert by ID
-   */
-  private async getEmergencyAlert(alertId: string): Promise<EmergencyAlert | null> {
-    try {
-      const stored = await AsyncStorage.getItem(`@emergency_alert_${alertId}`);
-      return stored ? JSON.parse(stored) : null;
+      if (this.activeAlert) {
+        this.startLocationUpdates();
+      }
+
+      return this.activeAlert;
     } catch (error) {
-      log.error('Error getting emergency alert:', error);
+      log.warn('Could not load active emergency alert', { error: String(error) });
       return null;
     }
   }
 
-  /**
-   * Get current user ID
-   */
-  private async getCurrentUserId(): Promise<string> {
+  async getEmergencyContacts(): Promise<EmergencyContact[]> {
     try {
-      const userData = await AsyncStorage.getItem('@user_data');
-      if (userData) {
-        const user = JSON.parse(userData);
-        return user.id || 'unknown';
-      }
-      return 'unknown';
+      const response = await apiClient.get('/emergency/contacts');
+      return (response.data?.data as EmergencyContact[]) ?? [];
     } catch (error) {
-      log.error('Error getting user ID:', error);
-      return 'unknown';
+      log.error('Failed to load emergency contacts', { error: String(error) });
+      return [];
     }
   }
 
-  /**
-   * Navigate to emergency settings (placeholder)
-   */
-  private navigateToEmergencySettings(): void {
-    // This would navigate to emergency settings screen
-    log.info('Navigate to emergency settings');
+  async addEmergencyContact(input: {
+    name: string;
+    phone: string;
+    relationship?: string;
+    isPrimary?: boolean;
+  }): Promise<{ ok: boolean; contact: EmergencyContact | null; error?: string }> {
+    try {
+      const response = await apiClient.post('/emergency/contacts', input);
+      return { ok: true, contact: (response.data?.data as EmergencyContact) ?? null };
+    } catch (error: any) {
+      // The server explains an unreadable phone number precisely; pass that
+      // through rather than replacing it with something vaguer.
+      const message = error?.response?.data?.error ?? 'Could not save the contact';
+      log.error('Failed to add emergency contact', { error: String(error) });
+      return { ok: false, contact: null, error: message };
+    }
   }
 
-  /**
-   * Show emergency interface modal
-   */
-  private showEmergencyInterface(alert: EmergencyAlert): void {
-    Alert.alert(
-      '🚨 Emergency Alert Sent',
-      `Emergency alert activated. Your location is being shared with emergency contacts.\n\nType: ${alert.type}\nTime: ${new Date(alert.timestamp).toLocaleString()}`,
-      [
-        { text: 'Call 911', onPress: () => this.callEmergencyServices() },
-        { text: 'Call Emergency Contact', onPress: () => this.callPrimaryContact() },
-        { text: 'I\'m Safe', onPress: () => this.resolveEmergency(alert.id) }
-      ]
-    );
+  async updateEmergencyContact(
+    id: string,
+    updates: { name?: string; phone?: string; relationship?: string; isPrimary?: boolean },
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await apiClient.put(`/emergency/contacts/${id}`, updates);
+      return { ok: true };
+    } catch (error: any) {
+      const message = error?.response?.data?.error ?? 'Could not update the contact';
+      log.error('Failed to update emergency contact', { error: String(error) });
+      return { ok: false, error: message };
+    }
   }
 
-  /**
-   * Check if there's an active emergency
-   */
+  async removeEmergencyContact(id: string): Promise<boolean> {
+    try {
+      await apiClient.delete(`/emergency/contacts/${id}`);
+      return true;
+    } catch (error) {
+      log.error('Failed to remove emergency contact', { error: String(error) });
+      return false;
+    }
+  }
+
+  /** Dial 999. Works with no network and no account. */
+  async callEmergencyServices(): Promise<void> {
+    await Linking.openURL(`tel:${EMERGENCY_NUMBER}`);
+  }
+
+  /** Dial whoever the user marked primary, or say plainly that nobody is set. */
+  async callPrimaryContact(): Promise<void> {
+    const contacts = await this.getEmergencyContacts();
+    const primary = contacts.find((c) => c.isPrimary) ?? contacts[0];
+
+    if (!primary) {
+      this.offerDialler(
+        'No emergency contact set',
+        `You have not added an emergency contact yet. You can still call ${EMERGENCY_NUMBER}.`,
+      );
+      return;
+    }
+
+    await Linking.openURL(`tel:${primary.phone}`);
+  }
+
   hasActiveEmergency(): boolean {
-    return this.currentAlert !== null && this.currentAlert.status === 'active';
+    return this.activeAlert !== null;
+  }
+
+  getCurrentEmergency(): EmergencyAlert | null {
+    return this.activeAlert;
   }
 
   /**
-   * Get current active emergency
+   * A position, or null.
+   *
+   * Bounded so a slow fix cannot hold up an emergency: five seconds, then
+   * proceed without it rather than leaving someone staring at a spinner.
    */
-  getCurrentEmergency(): EmergencyAlert | null {
-    return this.currentAlert;
+  private async getCoordinates(): Promise<{ latitude: number; longitude: number } | null> {
+    try {
+      const position = await locationService.getCurrentLocation({ timeout: 5000 });
+
+      if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) {
+        return null;
+      }
+
+      return { latitude: position.latitude, longitude: position.longitude };
+    } catch (error) {
+      log.warn('Could not get a location for the emergency alert', { error: String(error) });
+      return null;
+    }
+  }
+
+  /** Every failure path ends with the dialler in front of the user. */
+  private offerDialler(title: string, body: string): void {
+    Alert.alert(title, body, [
+      { text: `Call ${EMERGENCY_NUMBER}`, onPress: () => this.callEmergencyServices() },
+      { text: 'Close', style: 'cancel' },
+    ]);
   }
 }
 

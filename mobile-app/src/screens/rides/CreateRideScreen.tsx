@@ -22,6 +22,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Input, Card } from '../../components/ui';
 import { LocationPicker } from '../../components/maps';
+import PriceSuggestionService, { PriceSuggestion } from '../../services/PriceSuggestionService';
 import { ridesApi } from '../../services/api';
 import { LocationData } from '../../services/LocationService';
 
@@ -76,6 +77,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   const [showLocationPicker, setShowLocationPicker] =
     useState<'origin' | 'destination' | number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [priceSuggestion, setPriceSuggestion] = useState<PriceSuggestion | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const availableAmenities = [
@@ -98,6 +100,38 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   useEffect(() => {
     validateForm();
   }, [formData]);
+
+  /*
+   * What comparable rides charged, once the driver has picked both ends.
+   *
+   * Advice, not a default: the field is never filled in for them. A driver
+   * knows things about their own trip that completed rides do not capture,
+   * and the point is to inform the decision rather than make it.
+   */
+  useEffect(() => {
+    const origin = formData.origin;
+    const destination = formData.destination;
+
+    if (!origin || !destination) {
+      setPriceSuggestion(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    PriceSuggestionService.forRoute(
+      { latitude: origin.latitude, longitude: origin.longitude },
+      { latitude: destination.latitude, longitude: destination.longitude },
+    ).then((suggestion) => {
+      if (!cancelled) {
+        setPriceSuggestion(suggestion);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.origin, formData.destination]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -508,6 +542,29 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
             error={errors.pricePerSeat}
             containerStyle={styles.priceInput}
           />
+
+          {priceSuggestion?.suggested != null && (
+            <TouchableOpacity
+              style={styles.suggestionRow}
+              onPress={() => setFormData(prev => ({
+                ...prev,
+                pricePerSeat: String(priceSuggestion.suggested),
+              }))}
+            >
+              <Icon name="insights" size={16} color="#2196F3" />
+              <Text style={styles.suggestionText}>
+                {priceSuggestion.basis === 'comparable_routes'
+                  ? `Similar trips charge around P${priceSuggestion.suggested}`
+                  : `Trips this length charge around P${priceSuggestion.suggested}`}
+                {priceSuggestion.range
+                  ? ` (most are P${priceSuggestion.range.low}–P${priceSuggestion.range.high})`
+                  : ''}
+                {/* The sample size is shown so a driver can weigh the advice
+                    rather than take it as fact. */}
+                {` · based on ${priceSuggestion.sampleSize} rides`}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Card>
@@ -758,6 +815,22 @@ const styles = StyleSheet.create({
   dateTimeCard: {
     marginBottom: 16,
     padding: 16,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#0D47A1',
   },
   stopsCard: {
     marginBottom: 16,

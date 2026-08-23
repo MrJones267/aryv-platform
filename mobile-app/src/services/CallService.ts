@@ -172,19 +172,76 @@ export class CallService {
   }
 
   /**
-   * WebRTC configuration with STUN servers
+   * Public STUN only — the fallback when the server cannot be reached.
+   *
+   * This is what the app used to run on permanently, with a commented-out
+   * placeholder where TURN should go. STUN can only connect peers that are
+   * directly reachable once their public address is known, which frequently
+   * fails on mobile networks behind carrier-grade NAT. A call configured this
+   * way does not error; it simply never connects.
    */
-  private static getWebRTCConfig(): WebRTCConfiguration {
-    return {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        // Add TURN servers for production
-        // { urls: 'turn:your-turn-server.com', username: 'user', credential: 'pass' }
-      ],
-      iceCandidatePoolSize: 10,
-    };
+  private static readonly FALLBACK_ICE_SERVERS: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+
+  /** Cached server config, with the moment its TURN credentials expire. */
+  private static iceConfig: { servers: RTCIceServer[]; expiresAt: number } | null = null;
+
+  /**
+   * ICE servers for this call, from the server.
+   *
+   * TURN credentials are short-lived and issued per user, so they are fetched
+   * rather than shipped: a TURN secret inside the app binary is extractable by
+   * anyone who downloads it, and relay bandwidth is metered.
+   *
+   * Cached until shortly before the credentials expire. On any failure the
+   * call still proceeds on STUN — degraded, and logged as such, but a call
+   * that might connect beats refusing to try.
+   */
+  private static async getWebRTCConfig(): Promise<WebRTCConfiguration> {
+    const cached = this.iceConfig;
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return { iceServers: cached.servers, iceCandidatePoolSize: 10 };
+    }
+
+    try {
+      const response = await this.apiClient.get('/calls/ice-servers');
+      const data = response?.data?.data ?? response?.data;
+
+      if (!data?.iceServers?.length) {
+        throw new Error('No ICE servers returned');
+      }
+
+      if (!data.turnConfigured) {
+        // Worth knowing: calls will fail for a meaningful share of users on
+        // mobile networks until a TURN server is configured server-side.
+        log.warn('No TURN server configured; calls may fail behind carrier NAT');
+      }
+
+      // Refresh a minute early so a call placed at the boundary does not start
+      // with credentials that expire mid-connection.
+      const ttlMs = Math.max(0, (data.ttlSeconds ?? 0) * 1000 - 60000);
+
+      this.iceConfig = {
+        servers: data.iceServers as RTCIceServer[],
+        // Static credentials report ttl 0 and never need refreshing; cache
+        // those for an hour rather than re-fetching on every call.
+        expiresAt: Date.now() + (ttlMs || 60 * 60 * 1000),
+      };
+
+      return { iceServers: this.iceConfig.servers, iceCandidatePoolSize: 10 };
+    } catch (error) {
+      log.warn('Could not fetch ICE servers; falling back to STUN only', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        iceServers: this.FALLBACK_ICE_SERVERS,
+        iceCandidatePoolSize: 10,
+      };
+    }
   }
 
   /**
@@ -196,7 +253,7 @@ export class CallService {
         this.peerConnection.close();
       }
 
-      const config = this.getWebRTCConfig();
+      const config = await this.getWebRTCConfig();
       this.peerConnection = new RTCPeerConnection(config);
     } catch (error) {
       log.warn('WebRTC initialization failed', { error: error instanceof Error ? error.message : String(error) });

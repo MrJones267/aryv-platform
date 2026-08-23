@@ -16,13 +16,13 @@ import {
   SafeAreaView,
   TextInput,
   Modal,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
-import EmergencyService, { EmergencyContact } from '../../services/EmergencyServiceSimple';
+import EmergencyService, { EmergencyContact } from '../../services/EmergencyService';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
-import { authApi } from '../../services/api/authApi';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -78,23 +78,27 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       ? `${selectedCountry.dialCode}${newContact.phoneNumber.replace(/\s/g, '')}`
       : newContact.phoneNumber.replace(/\s/g, '');
 
-    try {
-      // Save emergency contact via user profile update
-      await authApi.updateProfile({
-        emergencyContact: {
-          name: newContact.name.trim(),
-          phone: fullPhoneNumber,
-        },
-      } as any);
-      setShowAddModal(false);
-      setNewContact({ name: '', phoneNumber: '', relationship: '', isPrimary: false });
-      setSelectedCountry(null);
-      await loadEmergencyContacts();
-      Alert.alert('Success', 'Emergency contact saved successfully');
-    } catch (error) {
-      log.error('Error adding contact:', error);
-      Alert.alert('Error', 'Failed to save emergency contact');
+    // This used to write to the single emergencyContact pair on the profile,
+    // so adding a second contact silently overwrote the first while reporting
+    // success. Contacts are their own records now and a user can have several.
+    const result = await EmergencyService.addEmergencyContact({
+      name: newContact.name.trim(),
+      phone: fullPhoneNumber,
+      relationship: newContact.relationship.trim() || undefined,
+      isPrimary: newContact.isPrimary,
+    });
+
+    if (!result.ok) {
+      // The server explains an unreadable number precisely; show that rather
+      // than a generic failure the user cannot act on.
+      Alert.alert('Could not save contact', result.error ?? 'Please try again.');
+      return;
     }
+
+    setShowAddModal(false);
+    setNewContact({ name: '', phoneNumber: '', relationship: '', isPrimary: false });
+    setSelectedCountry(null);
+    await loadEmergencyContacts();
   };
 
   const handleCountryChange = (country: PhoneCountry): void => {
@@ -117,24 +121,27 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
   };
 
   const removeContact = async (contactId: string): Promise<void> => {
-    try {
-      // Implementation would remove from AsyncStorage and server
-      const updatedContacts = contacts.filter(c => c.id !== contactId);
-      setContacts(updatedContacts);
-      Alert.alert('Success', 'Emergency contact removed');
-    } catch (error) {
-      log.error('Error removing contact:', error);
-      Alert.alert('Error', 'Failed to remove contact');
+    // This used to filter local state and report success while the contact
+    // stayed on the server and reappeared on the next load.
+    const removed = await EmergencyService.removeEmergencyContact(contactId);
+
+    if (!removed) {
+      Alert.alert('Could not remove contact', 'Please try again.');
+      return;
     }
+
+    // Reload rather than filtering locally: deleting the primary promotes the
+    // next contact server-side, and the list must show who that now is.
+    await loadEmergencyContacts();
   };
 
   const handleCallContact = (contact: EmergencyContact): void => {
     Alert.alert(
       'Call Emergency Contact',
-      `Call ${contact.name} at ${contact.phoneNumber}?`,
+      `Call ${contact.name} at ${contact.phone}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => log.info(`Calling ${contact.phoneNumber}`) },
+        { text: 'Call', onPress: () => Linking.openURL(`tel:${contact.phone}`) },
       ]
     );
   };
@@ -151,7 +158,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
               </View>
             )}
           </View>
-          <Text style={styles.contactPhone}>{contact.phoneNumber}</Text>
+          <Text style={styles.contactPhone}>{contact.phone}</Text>
           {contact.relationship && (
             <Text style={styles.contactRelationship}>{contact.relationship}</Text>
           )}

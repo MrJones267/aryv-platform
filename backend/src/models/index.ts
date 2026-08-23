@@ -30,6 +30,8 @@ import CommissionLedger from './CommissionLedger';
 import DriverDocument from './DriverDocument';
 import PromoRedemption from './PromoRedemption';
 import RideStop from './RideStop';
+import EmergencyContact from './EmergencyContact';
+import EmergencyAlert from './EmergencyAlert';
 
 // Currency models
 import Currency from './Currency';
@@ -428,6 +430,35 @@ const defineAssociations = (): void => {
     onUpdate: 'CASCADE',
   });
 
+  // Emergency contacts and alerts belong to the user who owns them; both
+  // cascade on delete so removing an account leaves nothing behind.
+  User.hasMany(EmergencyContact, {
+    foreignKey: 'userId',
+    as: 'emergencyContacts',
+    onDelete: 'CASCADE',
+  });
+
+  EmergencyContact.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+  });
+
+  User.hasMany(EmergencyAlert, {
+    foreignKey: 'userId',
+    as: 'emergencyAlerts',
+    onDelete: 'CASCADE',
+  });
+
+  EmergencyAlert.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+  });
+
+  EmergencyAlert.belongsTo(Ride, {
+    foreignKey: 'rideId',
+    as: 'ride',
+  });
+
   RideStop.belongsTo(Ride, {
     foreignKey: 'rideId',
     as: 'ride',
@@ -503,6 +534,8 @@ export {
   DriverDocument,
   PromoRedemption,
   RideStop,
+  EmergencyContact,
+  EmergencyAlert,
   // Currency models
   Currency,
   UserCurrency,
@@ -544,6 +577,8 @@ export default {
   DriverDocument,
   PromoRedemption,
   RideStop,
+  EmergencyContact,
+  EmergencyAlert,
   // Currency models
   Currency,
   UserCurrency,

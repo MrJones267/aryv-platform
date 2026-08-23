@@ -655,144 +655,58 @@ class AIMatchingService {
     return 'Poor';
   }
 
-  private static generateMockDrivers(request: MatchingRequest): Array<{
-    driver: DriverProfile;
-    vehicle: VehicleInfo;
-    route: RouteInfo;
-    availability: AvailabilityInfo;
-    estimatedArrival: number;
-  }> {
-    const mockData = [];
-    const numDrivers = Math.floor(Math.random() * 8) + 5; // 5-12 drivers
-
-    for (let i = 0; i < numDrivers; i++) {
-      mockData.push({
-        driver: AIMatchingService.generateMockDriver(i),
-        vehicle: AIMatchingService.generateMockVehicle(i),
-        route: AIMatchingService.generateMockRoute(request),
-        availability: AIMatchingService.generateMockAvailability(),
-        estimatedArrival: Math.floor(Math.random() * 15) + 2, // 2-17 minutes
-      });
-    }
-
-    return mockData;
-  }
-
-  private static generateMockDriver(index: number): DriverProfile {
-    const names = [
-      { first: 'Alex', last: 'Johnson' },
-      { first: 'Sarah', last: 'Williams' },
-      { first: 'Mike', last: 'Davis' },
-      { first: 'Lisa', last: 'Brown' },
-      { first: 'David', last: 'Wilson' },
-      { first: 'Emma', last: 'Garcia' },
-      { first: 'Chris', last: 'Martinez' },
-      { first: 'Anna', last: 'Anderson' },
-    ];
-
-    const name = names[index % names.length];
-    
-    return {
-      id: `driver-${index + 1}`,
-      firstName: name.first,
-      lastName: name.last,
-      rating: 4.2 + Math.random() * 0.8,
-      totalRides: Math.floor(Math.random() * 500) + 50,
-      verified: Math.random() > 0.2,
-      preferences: {
-        smokingPolicy: (['prohibited', 'allowed', 'outdoor_only'] as const)[Math.floor(Math.random() * 3)],
-        musicPolicy: (['driver_choice', 'passenger_choice', 'mutual_agreement'] as const)[Math.floor(Math.random() * 3)],
-        conversationStyle: (['minimal', 'polite', 'friendly', 'chatty'] as const)[Math.floor(Math.random() * 4)],
-        petsPolicy: (['none', 'small_only', 'medium_allowed', 'all_welcome'] as const)[Math.floor(Math.random() * 4)],
-        maxPassengers: Math.floor(Math.random() * 3) + 2,
-      },
-      behaviorProfile: {
-        punctuality: 0.7 + Math.random() * 0.3,
-        cleanliness: 0.8 + Math.random() * 0.2,
-        professionalism: 0.75 + Math.random() * 0.25,
-        reliability: 0.8 + Math.random() * 0.2,
-        safetyScore: 0.85 + Math.random() * 0.15,
-      },
-      specializations: Math.random() > 0.5 ? ['Airport Rides', 'Long Distance'] : [],
-    };
-  }
-
-  private static generateMockVehicle(index: number): VehicleInfo {
-    const vehicles = [
-      { make: 'Toyota', model: 'Camry', color: 'Silver' },
-      { make: 'Honda', model: 'Civic', color: 'Blue' },
-      { make: 'Hyundai', model: 'Elantra', color: 'White' },
-      { make: 'Nissan', model: 'Altima', color: 'Black' },
-      { make: 'Mazda', model: 'Mazda3', color: 'Red' },
-    ];
-
-    const vehicle = vehicles[index % vehicles.length];
-    
-    return {
-      id: `vehicle-${index + 1}`,
-      make: vehicle.make,
-      model: vehicle.model,
-      year: 2018 + Math.floor(Math.random() * 6),
-      color: vehicle.color,
-      licensePlate: `ABC${Math.floor(Math.random() * 900) + 100}`,
-      features: ['Air Conditioning', 'Bluetooth', 'USB Charging'].filter(() => Math.random() > 0.3),
-      capacity: Math.floor(Math.random() * 2) + 4,
-      condition: (['excellent', 'good', 'fair'] as const)[Math.floor(Math.random() * 3)],
-    };
-  }
-
-  private static generateMockRoute(request: MatchingRequest): RouteInfo {
-    return {
-      currentLocation: {
-        latitude: request.origin.latitude + (Math.random() - 0.5) * 0.02,
-        longitude: request.origin.longitude + (Math.random() - 0.5) * 0.02,
-      },
-      plannedRoute: [], // Would be populated with actual route points
-      detourDistance: Math.random() * 3,
-      detourTime: Math.random() * 8,
-      routeCompatibility: 0.6 + Math.random() * 0.4,
-    };
-  }
-
-  private static generateMockAvailability(): AvailabilityInfo {
-    const statuses = ['available', 'busy', 'offline'] as const;
-    const status = statuses[Math.floor(Math.random() * 3)];
-    
-    return {
-      status,
-      currentPassengers: status === 'available' ? 0 : Math.floor(Math.random() * 2),
-      availableSeats: status === 'available' ? Math.floor(Math.random() * 3) + 1 : 0,
-      estimatedFreeTime: status === 'available' ? 0 : Math.floor(Math.random() * 10),
-    };
-  }
-
-  /**
-   * Fetch available drivers from backend instead of generating mock data
+  /*
+   * generateMockDrivers, generateMockDriver, generateMockVehicle,
+   * generateMockRoute and generateMockAvailability stood here.
+   *
+   * They fabricated whole people — names, ratings, verification status,
+   * punctuality scores — and handed them to passengers as bookable drivers.
+   * There is no honest fallback for "who is available": either real drivers
+   * are returned or none are.
    */
+
   private static async fetchAvailableDrivers(request: MatchingRequest): Promise<any[]> {
     try {
       const authService = new AuthService();
       const apiClient = new ApiClient();
       const authToken = await authService.getValidToken();
-      const response = await apiClient.post('/drivers/available', {
-        origin: request.origin,
-        destination: request.destination,
-        radius: (request as unknown as { maxDistance?: number }).maxDistance || 10,
-        maxResults: 10
-      }, {
-        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+
+      // Real rides on this route, from the same search the rest of the app
+      // uses. This used to POST to /drivers/available, an endpoint that does
+      // not exist — so it failed every time and fell through to invented
+      // drivers.
+      const params = new URLSearchParams({
+        originLat: String(request.origin.latitude),
+        originLng: String(request.origin.longitude),
+        destinationLat: String(request.destination.latitude),
+        destinationLng: String(request.destination.longitude),
+        departureDate: request.requestTime,
+        radius: String((request as unknown as { maxDetour?: number }).maxDetour || 10),
+        limit: '10',
       });
 
-      if (response.success && response.data?.drivers) {
-        log.info('Fetched real drivers from backend', { count: response.data.drivers.length });
-        return response.data.drivers;
-      }
-    } catch (error) {
-      log.warn('Backend drivers unavailable, using fallback data', { error: String(error) });
-    }
+      const response = await apiClient.get(
+        `/rides/search?${params.toString()}`,
+        { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} },
+      );
 
-    // Fallback to improved mock data if backend unavailable
-    return AIMatchingService.generateMockDrivers(request);
+      const rides = response.success ? response.data?.rides : null;
+
+      if (Array.isArray(rides)) {
+        log.info('Fetched matching rides from backend', { count: rides.length });
+        return rides;
+      }
+
+      return [];
+    } catch (error) {
+      // Returning nothing is the honest answer. This previously fell back to
+      // generateMockDrivers, which invented five to twelve people with
+      // fabricated names, ratings and verification badges and showed them to
+      // passengers as drivers they could book. Nobody should be offered a ride
+      // with someone who does not exist.
+      log.warn('Could not load matching rides', { error: String(error) });
+      return [];
+    }
   }
 
   /**

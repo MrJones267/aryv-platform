@@ -1,320 +1,206 @@
 /**
- * @fileoverview AI Recommendations screen with personalized travel suggestions
+ * @fileoverview Rides on the routes this passenger travels often.
  * @author Oabona-Majoko
- * @created 2025-09-07
- * @lastModified 2025-09-07
+ * @created 2025-01-27
+ * @lastModified 2026-08-23
+ *
+ * This screen used to render recommendations built from an invented ride
+ * history — the service generated the user's own past trips around San
+ * Francisco and reasoned from them — alongside a randomly generated "expected
+ * savings" figure presented as money.
+ *
+ * What it shows now comes from the routes the user has actually completed
+ * bookings on, and the real upcoming rides listed on those routes. Someone
+ * with no history sees a plain explanation instead of invented suggestions.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Alert,
-  RefreshControl,
+  ScrollView,
   TouchableOpacity,
+  SafeAreaView,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import AIRecommendationsService, {
-  RecommendationRequest,
-  RecommendationsResponse,
-  RecommendationContext,
-} from '../../services/AIRecommendationsService';
-import RecommendationsDisplay from '../../components/recommendations/RecommendationsDisplay';
-import { locationService } from '../../services/LocationService';
-import logger from '../../services/LoggingService';
-
-const log = logger.createLogger('RecommendationsScreen');
+import RideRecommendationService, {
+  RideRecommendation,
+} from '../../services/RideRecommendationService';
 
 interface RecommendationsScreenProps {
-  navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
-  route?: { params?: Record<string, unknown> };
+  navigation?: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
+  };
 }
 
+const formatDeparture = (iso: string): string => {
+  const date = new Date(iso);
+
+  return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })}, ${
+    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }`;
+};
+
 const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigation }) => {
-  const dispatch = useAppDispatch();
-  const { profile: user } = useAppSelector((state) => state.user);
-  
-  const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
+  const [recommendations, setRecommendations] = useState<RideRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadRecommendations();
+  const load = useCallback(async () => {
+    const results = await RideRecommendationService.getRecommendations();
+    setRecommendations(results);
+    setIsLoading(false);
   }, []);
 
-  const getCurrentContext = (): RecommendationContext => {
-    const now = new Date();
-    return {
-      timeOfDay: now.getHours(),
-      dayOfWeek: now.getDay(),
-      weather: 'clear', // Would be fetched from weather API
-      urgency: 'low',
-      budget: 'normal',
-      purpose: 'other',
-    };
-  };
-
-  const loadRecommendations = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Get current location for location-based recommendations
-      let currentLocation = null;
-      try {
-        currentLocation = await locationService.getCurrentLocation();
-      } catch (locationError) {
-        log.warn('Failed to get location for recommendations:', locationError);
-        // Continue without location - recommendations will be less personalized
-      }
-      
-      const request: RecommendationRequest = {
-        userId: user?.id || 'user-1',
-        context: getCurrentContext(),
-        requestType: 'all',
-        currentLocation: currentLocation ? {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-        } : undefined,
-      };
-
-      const response = await AIRecommendationsService.getRecommendations(request);
-      setRecommendations(response);
-    } catch (error: unknown) {
-      log.error('Failed to load recommendations:', error);
-      Alert.alert(
-        'Error',
-        'Failed to load personalized recommendations. Please try again.',
-        [
-          { text: 'Retry', onPress: loadRecommendations },
-          { text: 'Cancel' },
-        ]
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadRecommendations();
+    await load();
     setRefreshing(false);
   };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.headerContent}>
-        <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>AI Recommendations</Text>
-          <Text style={styles.headerSubtitle}>
-            Personalized suggestions to improve your rides
+  const renderRoute = (recommendation: RideRecommendation) => {
+    const { route, upcoming } = recommendation;
+
+    return (
+      <View key={`${route.originAddress}-${route.destinationAddress}`} style={styles.routeCard}>
+        <View style={styles.routeHeader}>
+          <Icon name="repeat" size={18} color="#2196F3" />
+          <Text style={styles.routeTitle} numberOfLines={2}>
+            {route.originAddress} → {route.destinationAddress}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => {
-            // Navigate to AI preferences/settings
-            navigation?.navigate('AISettings');
-          }}
-        >
-          <Icon name="tune" size={24} color="#666666" />
-        </TouchableOpacity>
+
+        {/* The count is shown so the suggestion explains itself rather than
+            arriving as an unaccountable recommendation. */}
+        <Text style={styles.routeMeta}>
+          You have travelled this {route.tripCount} times
+        </Text>
+
+        {upcoming.length === 0 ? (
+          <Text style={styles.emptyRoute}>
+            No upcoming rides on this route yet.
+          </Text>
+        ) : (
+          upcoming.map((ride) => (
+            <TouchableOpacity
+              key={ride.id}
+              style={styles.rideRow}
+              onPress={() => navigation?.navigate('RideDetails', { rideId: ride.id })}
+            >
+              <View style={styles.rideInfo}>
+                <Text style={styles.rideTime}>{formatDeparture(ride.departureTime)}</Text>
+                <Text style={styles.rideSeats}>
+                  {ride.availableSeats} seat{ride.availableSeats === 1 ? '' : 's'} left
+                </Text>
+              </View>
+              <Text style={styles.ridePrice}>P{ride.pricePerSeat}</Text>
+              <Icon name="chevron-right" size={20} color="#CCCCCC" />
+            </TouchableOpacity>
+          ))
+        )}
       </View>
-      
-      {recommendations && (
-        <View style={styles.headerStats}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{recommendations.recommendations.length}</Text>
-            <Text style={styles.statLabel}>Active Suggestions</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{recommendations.personalizedTips.length}</Text>
-            <Text style={styles.statLabel}>Personal Tips</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {recommendations.userInsights ? recommendations.userInsights.travelFrequency : 'N/A'}
-            </Text>
-            <Text style={styles.statLabel}>Travel Frequency</Text>
-          </View>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderLoadingState = () => (
-    <View style={styles.loadingContainer}>
-      <Icon name="auto-awesome" size={48} color="#2196F3" />
-      <Text style={styles.loadingText}>Analyzing your travel patterns...</Text>
-      <Text style={styles.loadingSubtext}>
-        Our AI is preparing personalized recommendations for you
-      </Text>
-    </View>
-  );
-
-  const renderErrorState = () => (
-    <View style={styles.errorContainer}>
-      <Icon name="error-outline" size={48} color="#F44336" />
-      <Text style={styles.errorText}>Unable to load recommendations</Text>
-      <Text style={styles.errorSubtext}>
-        Please check your connection and try again
-      </Text>
-      <TouchableOpacity style={styles.retryButton} onPress={loadRecommendations}>
-        <Icon name="refresh" size={20} color="#FFFFFF" />
-        <Text style={styles.retryText}>Retry</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {renderHeader()}
-      
-      {isLoading ? (
-        renderLoadingState()
-      ) : !recommendations ? (
-        renderErrorState()
-      ) : (
-        <RecommendationsDisplay
-          recommendations={recommendations.recommendations}
-          userInsights={recommendations.userInsights}
-          trendingPatterns={recommendations.trendingPatterns}
-          personalizedTips={recommendations.personalizedTips}
-          style={styles.recommendationsContainer}
-        />
-      )}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backButton}>
+          <Icon name="arrow-back" size={24} color="#333333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Rides for You</Text>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        {isLoading ? (
+          <View style={styles.centred}>
+            <ActivityIndicator size="large" color="#2196F3" />
+          </View>
+        ) : recommendations.length === 0 ? (
+          // The honest state for a new passenger, rather than filling the
+          // screen with journeys they have never made.
+          <View style={styles.centred}>
+            <Icon name="explore" size={48} color="#CCCCCC" />
+            <Text style={styles.emptyTitle}>Nothing to suggest yet</Text>
+            <Text style={styles.emptyBody}>
+              Once you have taken a few rides, the journeys you make regularly
+              will show up here with the next available seats on them.
+            </Text>
+            <TouchableOpacity
+              style={styles.searchButton}
+              onPress={() => navigation?.navigate('Search')}
+            >
+              <Text style={styles.searchButtonText}>Find a ride</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.content}>{recommendations.map(renderRoute)}</View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
+  container: { flex: 1, backgroundColor: '#F5F5F5' },
   header: {
-    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: '#EEEEEE',
   },
-  headerContent: {
+  backButton: { padding: 4 },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#333333' },
+  scrollView: { flex: 1 },
+  content: { padding: 16, gap: 16 },
+  centred: { alignItems: 'center', paddingHorizontal: 32, paddingVertical: 64, gap: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', color: '#333333' },
+  emptyBody: { fontSize: 14, lineHeight: 20, color: '#777777', textAlign: 'center' },
+  searchButton: {
+    marginTop: 8,
+    backgroundColor: '#2196F3',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  searchButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  routeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  routeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  routeTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#333333' },
+  routeMeta: { fontSize: 12, color: '#888888' },
+  emptyRoute: { fontSize: 13, color: '#999999', paddingTop: 4 },
+  rideRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerText: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#666666',
-  },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 12,
+    gap: 12,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#E0E0E0',
-  },
-  recommendationsContainer: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  loadingText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  loadingSubtext: {
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  errorText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  errorSubtext: {
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    gap: 8,
-  },
-  retryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
+  rideInfo: { flex: 1 },
+  rideTime: { fontSize: 14, color: '#333333' },
+  rideSeats: { fontSize: 12, color: '#888888', marginTop: 2 },
+  ridePrice: { fontSize: 15, fontWeight: '600', color: '#2196F3' },
 });
 
 export default RecommendationsScreen;

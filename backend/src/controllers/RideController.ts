@@ -17,6 +17,9 @@ import PromoCode from '../models/PromoCode';
 import PromoRedemption from '../models/PromoRedemption';
 import RideStop from '../models/RideStop';
 import rideSegmentService from '../services/RideSegmentService';
+import priceSuggestionService from '../services/PriceSuggestionService';
+import rideRecommendationService from '../services/RideRecommendationService';
+import demandService from '../services/DemandService';
 import { CurrencyService } from '../services/CurrencyService';
 import { RideStatus, BookingStatus, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
@@ -458,6 +461,131 @@ export class RideController {
         success: false,
         error: 'Failed to search rides',
         code: 'RIDE_SEARCH_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * How busy an area is.
+   *
+   * Counted from upcoming rides and the bookings against them, rather than
+   * proxied to a model service that was never deployed and whose fallback
+   * returned the constant 10 with a confidence of 0.3.
+   */
+  async getDemand(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { latitude, longitude, radiusKm } = req.query;
+
+      const snapshot = await demandService.getSnapshot(
+        { latitude: Number(latitude), longitude: Number(longitude) },
+        radiusKm ? { radiusMetres: Number(radiusKm) * 1000 } : {},
+      );
+
+      res.json({
+        success: true,
+        data: snapshot,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building a demand snapshot', {
+        error: getErrorMessage(error), query: req.query,
+      });
+
+      res.status(500).json({
+        success: false, error: 'Could not read demand', code: 'DEMAND_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * Upcoming rides on the routes this passenger travels often.
+   *
+   * Built from their actual completed bookings. The app previously generated
+   * this from a fabricated history — ten to thirty invented past rides around
+   * San Francisco — and derived recommendations, and a random "expected
+   * savings" figure, from that.
+   *
+   * An empty list is the correct answer for someone who has not travelled with
+   * us yet, and the screen says so rather than filling itself with invention.
+   */
+  async getRecommendations(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false, error: 'User not authenticated', code: 'UNAUTHORIZED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    try {
+      const recommendations = await rideRecommendationService.getRecommendations(userId);
+
+      res.json({
+        success: true,
+        data: recommendations,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building ride recommendations', {
+        error: getErrorMessage(error), userId,
+      });
+
+      res.status(500).json({
+        success: false, error: 'Could not load recommendations', code: 'RECOMMENDATIONS_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * What comparable rides charged on this route.
+   *
+   * This is advice for a driver about to set their own price, not a fare
+   * anyone is charged. It replaces a client-side model that derived a "final
+   * price" partly from Math.random() and showed it to passengers, while the
+   * server went on charging the driver's actual price — so the app displayed
+   * one number and billed another.
+   *
+   * Returns nulls rather than a fabricated figure when there is not enough
+   * history. A driver who is told nothing prices from experience; one who is
+   * told a made-up number prices from a made-up number.
+   */
+  async getPriceSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { originLat, originLng, destinationLat, destinationLng, distanceKm } = req.query;
+
+      const currency = req.user?.id
+        ? await CurrencyService.getUserCurrencyCode(req.user.id)
+        : undefined;
+
+      const suggestion = await priceSuggestionService.suggestForRoute(
+        { latitude: Number(originLat), longitude: Number(originLng) },
+        { latitude: Number(destinationLat), longitude: Number(destinationLng) },
+        {
+          ...(distanceKm ? { distanceKm: Number(distanceKm) } : {}),
+          ...(currency ? { currency } : {}),
+        },
+      );
+
+      res.json({
+        success: true,
+        data: suggestion,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building a price suggestion', {
+        error: getErrorMessage(error),
+        query: req.query,
+      });
+
+      res.status(500).json({
+        success: false,
+        error: 'Could not work out a suggested price',
+        code: 'PRICE_SUGGESTION_FAILED',
         timestamp: new Date().toISOString(),
       });
     }

@@ -35,6 +35,8 @@ import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
 import verificationRoutes from './routes/verification';
+import emergencyRoutes from './routes/emergency';
+import callRoutes from './routes/calls';
 import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
@@ -256,6 +258,8 @@ app.use('/api/notifications', wrapRouterAsync(notificationRoutes));
 app.use('/api/ride-requests', wrapRouterAsync(rideRequestRoutes));
 app.use('/api/promos', wrapRouterAsync(promoRoutes));
 app.use('/api/verification', wrapRouterAsync(verificationRoutes));
+app.use('/api/emergency', wrapRouterAsync(emergencyRoutes));
+app.use('/api/calls', wrapRouterAsync(callRoutes));
 
 // API Documentation
 if (NODE_ENV !== 'production' || process.env['ENABLE_DOCS'] === 'true') {
