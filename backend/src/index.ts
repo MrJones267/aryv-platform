@@ -37,6 +37,7 @@ import verificationRoutes from './routes/verification';
 import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
+import { wrapRouterAsync } from './middleware/asyncSafety';
 import { notificationService } from './services/NotificationService';
 import { groupCleanupService } from './services/GroupCleanupService';
 import { redisClient } from './config/redis';
@@ -160,6 +161,15 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
 app.use(express.json({
   limit: '10mb',
   type: 'application/json',
+  // Stripe signature verification needs the exact bytes that were signed, and
+  // this is the only chance to keep them: once the body parser has consumed
+  // the stream, re-reading it yields nothing. Captured only for the webhook
+  // path so the rest of the API does not carry a second copy of every body.
+  verify: (req, _res, buf) => {
+    if ((req as any).originalUrl?.includes('/stripe-webhook')) {
+      (req as any).rawBody = buf.toString('utf8');
+    }
+  },
 }));
 app.use(express.urlencoded({ 
   extended: true,
@@ -230,23 +240,23 @@ app.get('/', (_req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rides', rideRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/courier', courierRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/locations', locationRoutes);
-app.use('/api/payments/cash', cashPaymentRoutes);
-app.use('/api/payments/commission', commissionRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/currencies', currencyRoutes);
-app.use('/api/countries', countryRoutes);
-app.use('/api/group-chats', groupChatRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/ride-requests', rideRequestRoutes);
-app.use('/api/promos', promoRoutes);
-app.use('/api/verification', verificationRoutes);
+app.use('/api/auth', wrapRouterAsync(authRoutes));
+app.use('/api/rides', wrapRouterAsync(rideRoutes));
+app.use('/api/bookings', wrapRouterAsync(bookingRoutes));
+app.use('/api/courier', wrapRouterAsync(courierRoutes));
+app.use('/api/admin', wrapRouterAsync(adminRoutes));
+app.use('/api/users', wrapRouterAsync(userRoutes));
+app.use('/api/locations', wrapRouterAsync(locationRoutes));
+app.use('/api/payments/cash', wrapRouterAsync(cashPaymentRoutes));
+app.use('/api/payments/commission', wrapRouterAsync(commissionRoutes));
+app.use('/api/payments', wrapRouterAsync(paymentRoutes));
+app.use('/api/currencies', wrapRouterAsync(currencyRoutes));
+app.use('/api/countries', wrapRouterAsync(countryRoutes));
+app.use('/api/group-chats', wrapRouterAsync(groupChatRoutes));
+app.use('/api/notifications', wrapRouterAsync(notificationRoutes));
+app.use('/api/ride-requests', wrapRouterAsync(rideRequestRoutes));
+app.use('/api/promos', wrapRouterAsync(promoRoutes));
+app.use('/api/verification', wrapRouterAsync(verificationRoutes));
 
 // API Documentation
 if (NODE_ENV !== 'production' || process.env['ENABLE_DOCS'] === 'true') {

@@ -61,6 +61,18 @@ module.exports = {
     },
     {
       ...sharedConfig,
+      // Contract tests — real routers, real middleware, real token
+      // verification; only Redis and the auth model lookup are stubbed. No
+      // database, so this can gate CI. Covers the seams that unit tests miss:
+      // routing, middleware chains, auth enforcement, and the client/server
+      // path contract.
+      displayName: 'contract',
+      testMatch: ['**/src/tests/contract/**/*.test.ts'],
+      setupFilesAfterEnv: ['<rootDir>/src/tests/setup-contract.ts'],
+      testTimeout: 180000,
+    },
+    {
+      ...sharedConfig,
       // Integration tests — require a live PostgreSQL (and optionally Redis).
       displayName: 'integration',
       testMatch: [

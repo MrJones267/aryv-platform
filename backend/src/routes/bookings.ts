@@ -259,23 +259,12 @@ router.post(
  */
 router.post(
   '/stripe-webhook',
-  // Raw body parser for webhook signature verification
-  (req: Request, _res: Response, next): void => {
-    if (req.headers['content-type'] === 'application/json') {
-      // Store raw body for webhook verification
-      let data = '';
-      req.setEncoding('utf8');
-      req.on('data', chunk => {
-        data += chunk;
-      });
-      req.on('end', () => {
-        (req as any).rawBody = data;
-        next();
-      });
-    } else {
-      next();
-    }
-  },
+  // The raw body is captured by the express.json() verify hook in index.ts.
+  //
+  // This previously attached its own 'data'/'end' listeners here, but
+  // express.json() has already consumed the stream by this point: those events
+  // never fire again, next() was never called, and the request hung forever —
+  // on exactly the content type Stripe sends.
   async (req: Request, res: Response): Promise<void> => {
     try {
       const signature = req.headers['stripe-signature'] as string;
