@@ -47,6 +47,9 @@ export interface UserModel extends Model<
   // single column read rather than a join on every request.
   driverVerificationStatus: CreationOptional<string>;
   driverVerifiedAt: CreationOptional<Date | null>;
+
+  /** Access tokens issued before this are refused. See migration 018. */
+  passwordChangedAt: CreationOptional<Date | null>;
   rating: CreationOptional<number>;
   totalRides: CreationOptional<number>;
   passengerRating: CreationOptional<number>;
@@ -234,6 +237,11 @@ const User = sequelize.define<UserModel>(
       type: DataTypes.DATE,
       allowNull: true,
       field: 'driver_verified_at',
+    },
+    passwordChangedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'password_changed_at',
     },
     rating: {
       type: DataTypes.DECIMAL(3, 2),

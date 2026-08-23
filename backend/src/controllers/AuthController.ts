@@ -283,7 +283,14 @@ export class AuthController {
         return;
       }
 
-      await user.update({ password: newPassword });
+      // Ends every other session. Without this, changing a password left any
+      // stolen access token working for its full life and the refresh token
+      // working indefinitely — at the exact moment that matters most.
+      await user.update({
+        password: newPassword,
+        passwordChangedAt: new Date(),
+        refreshToken: null,
+      });
 
       logger.info('Password changed', { userId: req.user.id });
 
@@ -1078,7 +1085,11 @@ export class AuthController {
         return;
       }
 
-      await user.update({ password: newPassword });
+      await user.update({
+        password: newPassword,
+        passwordChangedAt: new Date(),
+        refreshToken: null,
+      });
 
       res.status(200).json({ success: true, message: 'Password reset successfully', timestamp: new Date().toISOString() });
     } catch (error) {
@@ -1183,8 +1194,14 @@ export class AuthController {
         return;
       }
 
-      // Sequelize beforeUpdate hook hashes the password automatically
-      await user.update({ password: newPassword });
+      // Sequelize beforeUpdate hook hashes the password automatically.
+      // Clearing the refresh token and stamping the change ends any session an
+      // attacker still holds — which is the point of resetting.
+      await user.update({
+        password: newPassword,
+        passwordChangedAt: new Date(),
+        refreshToken: null,
+      });
 
       // Invalidate the token so it can't be reused
       await redisClient.del(redisKey);

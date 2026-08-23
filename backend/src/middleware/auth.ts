@@ -62,6 +62,23 @@ export const authenticateToken = async (
       return;
     }
 
+    // Refuse tokens minted before the password last changed. Clearing the
+    // refresh token stops new access tokens being issued, but the one in hand
+    // stays valid for its full life without this — so a reset prompted by a
+    // compromise would leave the attacker signed in for up to 24 hours.
+    const passwordChangedAt = (user as unknown as { passwordChangedAt?: Date | null })
+      .passwordChangedAt;
+
+    if (passwordChangedAt && decoded.iat && decoded.iat * 1000 < passwordChangedAt.getTime()) {
+      res.status(401).json({
+        success: false,
+        error: 'Session ended because the password was changed',
+        code: 'PASSWORD_CHANGED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     // Check if user account is active
     if (user.status === 'suspended' || user.status === 'deactivated') {
       res.status(403).json({
