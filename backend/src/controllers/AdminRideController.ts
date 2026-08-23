@@ -42,7 +42,7 @@ export class AdminRideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profilePicture'],
           },
           {
             model: Vehicle,

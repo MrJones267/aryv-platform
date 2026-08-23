@@ -967,7 +967,7 @@ export class UserController {
             {
               model: User,
               as: 'driver',
-              attributes: ['firstName', 'lastName', 'profileImage'],
+              attributes: ['firstName', 'lastName', 'profilePicture'],
             },
             {
               model: Booking,

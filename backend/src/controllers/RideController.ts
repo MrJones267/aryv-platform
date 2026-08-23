@@ -129,7 +129,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -246,7 +246,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -323,7 +323,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -417,7 +417,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -600,7 +600,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -871,14 +871,14 @@ export class RideController {
               {
                 model: User,
                 as: 'driver',
-                attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
               },
             ],
           },
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
       });
@@ -949,7 +949,7 @@ export class RideController {
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
         order: [['createdAt', 'ASC']],

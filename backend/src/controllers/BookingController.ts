@@ -58,7 +58,7 @@ export class BookingController {
                 {
                   model: User,
                   as: 'driver',
-                  attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+                  attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
                 },
                 {
                   model: Vehicle,
@@ -96,7 +96,7 @@ export class BookingController {
             {
               model: User,
               as: 'passenger',
-              attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+              attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
             },
           ],
           order: [['createdAt', 'DESC']],
@@ -166,7 +166,7 @@ export class BookingController {
               {
                 model: User,
                 as: 'driver',
-                attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
               },
               {
                 model: Vehicle,
@@ -178,7 +178,7 @@ export class BookingController {
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
       });
@@ -394,7 +394,7 @@ export class BookingController {
               {
                 model: User,
                 as: 'driver',
-                attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
               },
               {
                 model: Vehicle,
@@ -406,7 +406,7 @@ export class BookingController {
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
       });
@@ -631,7 +631,7 @@ export class BookingController {
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
       });
@@ -1172,7 +1172,7 @@ export class BookingController {
               {
                 model: User,
                 as: 'driver',
-                attributes: ['id', 'firstName', 'lastName', 'phoneNumber'],
+                attributes: ['id', 'firstName', 'lastName', 'phone'],
               },
             ],
           },
