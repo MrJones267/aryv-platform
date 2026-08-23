@@ -7,8 +7,8 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import jwt from 'jsonwebtoken';
 import { logInfo, logError, logWarn } from '../utils/logger';
+import { AuthService } from './AuthService';
 import User from '../models/User';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
@@ -71,6 +71,63 @@ interface CallNotification {
   action: 'initiate' | 'accept' | 'reject' | 'end';
 }
 
+export type SocketAuthResult =
+  | { ok: true; user: any }
+  | { ok: false; error: string };
+
+/**
+ * Authenticate a socket handshake token.
+ *
+ * Extracted from the connection middleware so it can be tested without
+ * standing up a server, and so it stays aligned with the HTTP middleware:
+ * both verify through AuthService, both reject blacklisted tokens, and both
+ * refuse suspended or deactivated accounts.
+ *
+ * The bug this replaced read `decoded.id`. Access tokens carry `userId` —
+ * `id` belongs to the separate admin token shape — so the lookup was always
+ * User.findByPk(undefined), which Sequelize short-circuits to null. Every
+ * socket connection was rejected as 'Invalid user', which took live tracking,
+ * chat, typing indicators and calls down with it.
+ */
+export const authenticateSocketToken = async (
+  token: string | undefined,
+  socketId?: string,
+): Promise<SocketAuthResult> => {
+  if (!token) {
+    logWarn('Socket connection attempted without token', { socketId });
+    return { ok: false, error: 'Authentication token required' };
+  }
+
+  try {
+    const decoded = AuthService.verifyToken(token);
+
+    if (await AuthService.isTokenBlacklisted(token)) {
+      logWarn('Socket connection attempted with invalidated token', { socketId });
+      return { ok: false, error: 'Token has been invalidated' };
+    }
+
+    const user = await User.findByPk(decoded.userId);
+
+    if (!user) {
+      logWarn('Socket connection attempted with invalid user', { userId: decoded.userId });
+      return { ok: false, error: 'Invalid user' };
+    }
+
+    if (user.status === 'suspended' || user.status === 'deactivated') {
+      logWarn('Socket connection attempted by inactive account', {
+        userId: user.id,
+        status: user.status,
+      });
+      return { ok: false, error: 'Account is suspended or deactivated' };
+    }
+
+    return { ok: true, user };
+  } catch (error) {
+    logError('Socket authentication failed', error as Error, { socketId });
+    return { ok: false, error: 'Authentication failed' };
+  }
+};
+
 export class SocketService {
   private io: SocketIOServer;
   private connectedUsers: Map<string, string> = new Map(); // userId -> socketId
@@ -114,33 +171,21 @@ export class SocketService {
   }
 
   private setupMiddleware(): void {
-    // Authentication middleware
     this.io.use(async (socket: any, next) => {
-      try {
-        const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+      const token =
+        socket.handshake.auth?.token
+        || socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
-        if (!token) {
-          logWarn('Socket connection attempted without token', { socketId: socket.id });
-          return next(new Error('Authentication token required'));
-        }
+      const result = await authenticateSocketToken(token, socket.id);
 
-        const decoded = jwt.verify(token, process.env['JWT_SECRET']!) as any;
-        const user = await User.findByPk(decoded.id);
-
-        if (!user) {
-          logWarn('Socket connection attempted with invalid user', { userId: decoded.id });
-          return next(new Error('Invalid user'));
-        }
-
-        socket.userId = user.id;
-        socket.user = user;
-
-        logInfo('Socket authenticated', { userId: user.id, socketId: socket.id });
-        next();
-      } catch (error) {
-        logError('Socket authentication failed', error as Error, { socketId: socket.id });
-        next(new Error('Authentication failed'));
+      if (!result.ok) {
+        return next(new Error(result.error));
       }
+
+      socket.userId = result.user.id;
+      socket.user = result.user;
+      logInfo('Socket authenticated', { userId: result.user.id, socketId: socket.id });
+      return next();
     });
   }
 
