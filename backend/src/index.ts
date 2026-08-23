@@ -40,6 +40,7 @@ import { authenticateToken } from './middleware/auth';
 import { wrapRouterAsync } from './middleware/asyncSafety';
 import { notificationService } from './services/NotificationService';
 import { groupCleanupService } from './services/GroupCleanupService';
+import { scheduledTasks } from './services/ScheduledTasks';
 import { redisClient } from './config/redis';
 
 // Load environment variables
@@ -383,6 +384,12 @@ const startServer = async (): Promise<void> => {
 
     // Start group cleanup scheduler
     groupCleanupService.startScheduler();
+
+    // Exchange rate refresh and the expiry sweeps for driver documents and
+    // handover codes. Nothing started a scheduler for these before, so seeded
+    // placeholder rates would have stayed in place indefinitely and an expired
+    // licence would have left its driver marked verified.
+    scheduledTasks.start();
     logInfo('Group cleanup scheduler started');
     
     // Make services available globally

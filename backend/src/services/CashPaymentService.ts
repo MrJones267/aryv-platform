@@ -16,12 +16,7 @@ import { NotificationService } from './NotificationService';
 import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 import { formatMoneyInCurrency } from '../utils/money';
-import {
-  CASH_COMMISSION_RATE,
-  CASH_COMMISSION_CAP_IN_PLATFORM_CURRENCY,
-  convertFromPlatformCurrency,
-  round2,
-} from '../utils/fees';
+import { CASH_COMMISSION_RATE, round2 } from '../utils/fees';
 
 export interface CashPaymentResult {
   success: boolean;
@@ -174,7 +169,7 @@ export class CashPaymentService {
       const driverCode = this.generateConfirmationCode();
 
       // Calculate platform fee
-      const platformFee = await this.calculatePlatformFee(amount, booking.currency);
+      const platformFee = this.calculatePlatformFee(amount);
 
       // Create cash transaction record
       const cashTransaction = await CashTransaction.create({
@@ -564,35 +559,16 @@ export class CashPaymentService {
    * Calculate platform fee
    */
   /**
-   * The platform's cut of a cash ride: a percentage, capped.
+   * The platform's cut of a cash ride: a flat share of what was collected.
    *
-   * The cap has to be denominated in something. It was a bare `10.00`, which
-   * meant ten Pula in Botswana and ten dollars in South Africa — the same
-   * number standing for roughly thirteen times the value depending on where
-   * the ride happened, with nothing in the code or the data saying which.
-   *
-   * It is now defined in the platform currency and converted into the ride's,
-   * which is why money records carry a currency as of migration 020. If the
-   * conversion cannot be made the cap is not applied rather than applied
-   * wrongly: charging an unconverted cap would silently under- or over-charge
-   * by the exchange rate.
+   * Deliberately uncapped. The cap was a bare `10.00` — ten Pula in Botswana
+   * and ten dollars elsewhere — and converting it at the point of use made the
+   * fee depend on a live exchange rate, so the same fare could attract a
+   * different commission from one day to the next. A percentage needs no rate
+   * and is what a driver can be told plainly.
    */
-  private async calculatePlatformFee(amount: number, currency: string): Promise<number> {
-    const uncapped = amount * CASH_COMMISSION_RATE;
-
-    const capInRideCurrency = await convertFromPlatformCurrency(
-      CASH_COMMISSION_CAP_IN_PLATFORM_CURRENCY,
-      currency,
-    );
-
-    if (capInRideCurrency === null) {
-      logWarning('Commission cap not applied: no rate to convert it into the ride currency', {
-        currency,
-      });
-      return round2(uncapped);
-    }
-
-    return round2(Math.min(uncapped, capInRideCurrency));
+  private calculatePlatformFee(amount: number): number {
+    return round2(amount * CASH_COMMISSION_RATE);
   }
 
   /**

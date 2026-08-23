@@ -130,9 +130,9 @@ describe('CashPaymentService.createCashPayment', () => {
 
     await service.createCashPayment(BOOKING, RIDER);
 
-    // The fee is now computed against the booking's currency, because a bare
-    // cap meant ten Pula in Botswana and ten dollars elsewhere.
-    expect(feeSpy).toHaveBeenCalledWith(120, 'BWP');
+    // A flat percentage of what was collected. It takes no currency because a
+    // percentage does not need one — the cap that did is gone.
+    expect(feeSpy).toHaveBeenCalledWith(120);
   });
 
   it('refuses a booking that is already cancelled', async () => {
