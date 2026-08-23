@@ -44,8 +44,14 @@ export class CommissionService {
   async accrueCommission(
     driverId: string,
     amount: number,
-    cashTransactionId: string,
+    /**
+     * The cash ride this commission came from, or null for a source that is
+     * not a cash ride — courier cash-on-delivery, where the money changes
+     * hands at the door and there is no CashTransaction row.
+     */
+    cashTransactionId: string | null,
     transaction: Transaction,
+    options?: { description?: string; metadata?: Record<string, unknown> },
   ): Promise<void> {
     if (amount <= 0) {
       return;
@@ -66,10 +72,11 @@ export class CommissionService {
       amount: round2(amount),
       balanceAfter: newOwed,
       cashTransactionId,
-      description: 'Platform commission on cash ride',
+      description: options?.description ?? 'Platform commission on cash ride',
+      ...(options?.metadata ? { metadata: options.metadata } : {}),
     }, { transaction });
 
-    logInfo('Commission accrued for cash ride', {
+    logInfo('Commission accrued', {
       driverId,
       amount: round2(amount),
       commissionOwed: newOwed,

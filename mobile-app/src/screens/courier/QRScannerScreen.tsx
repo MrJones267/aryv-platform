@@ -258,8 +258,9 @@ const QRScannerScreen: React.FC = () => {
       <View style={styles.manualEntry}>
         <Text style={styles.manualLabel}>Enter the recipient's code</Text>
         <Text style={styles.manualHint}>
-          Ask the recipient for the six-character code in their SMS. Only enter
-          it once they have their package.
+          Collect the cash, hand over the package, then ask the recipient for
+          the six-character code in their SMS. Entering it completes the
+          delivery — do not enter it before you have been paid.
         </Text>
         <View style={styles.manualRow}>
           <TextInput

@@ -302,6 +302,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'users', column: 'driver_verified_at', migration: '013_driver_document_verification.sql' },
     { table: 'delivery_qr_codes', column: 'failed_attempts', migration: '014_delivery_handover_codes.sql' },
     { table: 'delivery_qr_codes', column: 'delivery_channel', migration: '014_delivery_handover_codes.sql' },
+    { table: 'packages', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
+    { table: 'delivery_agreements', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
   ];
 
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [

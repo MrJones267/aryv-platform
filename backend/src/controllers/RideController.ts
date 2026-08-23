@@ -12,6 +12,7 @@ import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import User from '../models/User';
 import Vehicle from '../models/Vehicle';
+import { DriverVerificationStatus } from '../models/DriverDocument';
 import { RideStatus, BookingStatus, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
@@ -26,6 +27,40 @@ export class RideController {
     this.groupChatService = new GroupChatService();
   }
   async createRide(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const driverId = req.user?.id;
+
+    if (!driverId) {
+      res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+        code: 'UNAUTHORIZED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Driver verification gates offering rides. The verification system
+    // computed this state but nothing consumed it, so an unverified account
+    // with a vehicle row could still carry passengers — the exact thing the
+    // documents exist to prevent.
+    //
+    // Checked before the transaction opens: neither this nor the auth check
+    // writes anything, and refusing should not need a transaction held open.
+    const driver = await User.findByPk(driverId);
+    const verificationStatus = (driver as unknown as { driverVerificationStatus?: string })
+      ?.driverVerificationStatus;
+
+    if (verificationStatus !== DriverVerificationStatus.VERIFIED) {
+      res.status(403).json({
+        success: false,
+        error: 'Your driver documents must be approved before you can offer rides',
+        code: 'DRIVER_NOT_VERIFIED',
+        data: { verificationStatus: verificationStatus ?? 'unverified' },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     const transaction = await sequelize.transaction();
 
     try {
@@ -42,19 +77,6 @@ export class RideController {
         estimatedDuration,
         distance,
       } = req.body;
-
-      const driverId = req.user?.id;
-
-      if (!driverId) {
-        res.status(401).json({
-          success: false,
-          error: 'User not authenticated',
-          code: 'UNAUTHORIZED',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
-      }
 
       // Verify vehicle ownership
       const vehicle = await Vehicle.findOne({
