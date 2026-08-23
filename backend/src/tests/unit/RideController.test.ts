@@ -15,6 +15,24 @@ jest.mock('../../models/Ride');
 jest.mock('../../models/Booking');
 jest.mock('../../models/User');
 jest.mock('../../models/Vehicle');
+// Factory mocks, not automocks: these models use Model.init, which needs a real
+// Sequelize instance rather than the define() stub below.
+jest.mock('../../models/PromoCode', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn() },
+}));
+jest.mock('../../models/PromoRedemption', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), create: jest.fn() },
+}));
+jest.mock('../../models/DriverDocument', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findAll: jest.fn() },
+  DriverVerificationStatus: {
+    UNVERIFIED: 'unverified', PENDING: 'pending', VERIFIED: 'verified',
+    REJECTED: 'rejected', SUSPENDED: 'suspended',
+  },
+}));
 jest.mock('../../config/database', () => ({
   sequelize: {
     transaction: jest.fn(() => ({

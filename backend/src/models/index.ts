@@ -28,6 +28,7 @@ import CommissionLedger from './CommissionLedger';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
+import PromoRedemption from './PromoRedemption';
 
 // Currency models
 import Currency from './Currency';
@@ -484,6 +485,7 @@ export {
   CommissionLedger,
   // Driver verification models
   DriverDocument,
+  PromoRedemption,
   // Currency models
   Currency,
   UserCurrency,
@@ -523,6 +525,7 @@ export default {
   CommissionLedger,
   // Driver verification models
   DriverDocument,
+  PromoRedemption,
   // Currency models
   Currency,
   UserCurrency,

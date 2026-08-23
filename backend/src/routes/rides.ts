@@ -277,6 +277,12 @@ router.post(
     body('seatsRequested')
       .isInt({ min: 1, max: 7 })
       .withMessage('Seats requested must be between 1 and 7'),
+    body('promoCode')
+      .optional()
+      .isLength({ min: 3, max: 20 })
+      .withMessage('Promo code must be between 3 and 20 characters')
+      .matches(/^[A-Za-z0-9]+$/)
+      .withMessage('Promo code must be letters and numbers only'),
     body('pickupAddress')
       .optional()
       .isLength({ max: 500 })

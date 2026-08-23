@@ -304,11 +304,13 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'delivery_qr_codes', column: 'delivery_channel', migration: '014_delivery_handover_codes.sql' },
     { table: 'packages', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
     { table: 'users', column: 'password_changed_at', migration: '018_password_changed_at.sql' },
+    { table: 'bookings', column: 'discount_amount', migration: '019_promo_redemption_at_booking.sql' },
     { table: 'delivery_agreements', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
   ];
 
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
     { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
+    { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
   ];
 
   const missing: string[] = [];

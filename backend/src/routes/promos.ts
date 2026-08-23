@@ -108,62 +108,33 @@ router.post(
 /**
  * POST /api/promos/apply
  */
+/**
+ * POST /api/promos/apply
+ *
+ * Retired. It marked a code as used in a Redis key and incremented used_count,
+ * independently of any booking — so a code could be spent without booking, or
+ * a booking made with no redemption recorded, and a Redis eviction handed
+ * everybody their one-per-user promo back.
+ *
+ * A code is now applied by passing `promoCode` to POST /api/rides/:id/book,
+ * where the discount, the booking and the redemption are written in one
+ * transaction. Kept as an explicit refusal rather than deleted, so a shipped
+ * client calling it gets an explanation instead of a 404.
+ */
 router.post(
   '/apply',
   promoRateLimit,
   authenticateToken,
-  [
-    body('code').notEmpty().isLength({ min: 2, max: 20 }),
-    body('rideId').notEmpty().isUUID(),
-    body('orderAmount').isFloat({ min: 0 }),
-  ],
-  validateInput,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    try {
-      const { code, rideId, orderAmount } = req.body as { code: string; rideId: string; orderAmount: number };
-      const normalised = code.toUpperCase().trim();
-      const userId = req.user?.id;
-
-      const promo = await PromoCode.findOne({ where: { code: normalised } });
-      if (!promo) {
-        res.status(404).json({ success: false, error: 'Invalid promo code', code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const validity = promo.isValid(orderAmount);
-      if (!validity.valid) {
-        res.status(400).json({ success: false, error: validity.reason, code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      // Mark as used per-user
-      const usageKey = `promo_use:${normalised}:${userId}`;
-      await redisClient.set(usageKey, JSON.stringify({ rideId, appliedAt: new Date().toISOString() }), 365 * 24 * 3600);
-
-      // Increment global usage count
-      await promo.increment('usedCount');
-
-      const discount = promo.calculateDiscount(orderAmount);
-      logger.info('Promo code applied', { code: normalised, userId, rideId, discount });
-
-      res.json({
-        success: true,
-        message: 'Promo code applied',
-        data: { discount },
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error('Error in promo apply', { error: (error as Error).message });
-      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
-    }
+  async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+    res.status(410).json({
+      success: false,
+      error: 'Promo codes are applied when you book. Pass promoCode to the booking request.',
+      code: 'PROMO_APPLY_RETIRED',
+      timestamp: new Date().toISOString(),
+    });
   },
 );
 
-// ─── Admin routes ─────────────────────────────────────────────────────────────
-
-/**
- * GET /api/promos/admin/list
- */
 router.get(
   '/admin/list',
   authenticateAdminToken,

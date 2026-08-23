@@ -13,12 +13,38 @@ import Booking from '../models/Booking';
 import User from '../models/User';
 import Vehicle from '../models/Vehicle';
 import { DriverVerificationStatus } from '../models/DriverDocument';
+import PromoCode from '../models/PromoCode';
+import PromoRedemption from '../models/PromoRedemption';
 import { RideStatus, BookingStatus, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
 import { notificationService } from '../services/NotificationService';
 import GroupChatService from '../services/GroupChatService';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
+
+/**
+ * The platform's cut of a booking. A promo is discounted from this, and only
+ * this — see PROMO_FUNDING.
+ */
+const PLATFORM_FEE_RATE = 0.05;
+
+/**
+ * PROMO_FUNDING
+ *
+ * A promo reduces what the passenger pays. On a cash ride the passenger hands
+ * that money directly to the driver, so a discount off the total is money out
+ * of the driver's pocket, not the platform's — a driver would earn less
+ * because the platform ran a promotion, without agreeing to it or being told.
+ *
+ * So a discount is capped at the platform's own fee on that booking. That is
+ * the portion the platform can give away on its own authority.
+ *
+ * The consequence is real and worth knowing: the seeded codes offer BWP 20 and
+ * BWP 50 off, while the fee on a BWP 200 fare is BWP 10 — so those codes will
+ * grant BWP 10 and log the shortfall. Honouring them in full needs a way to
+ * reimburse drivers for the difference, which does not exist. Building that is
+ * a product decision, not a code change.
+ */
 
 export class RideController {
   private groupChatService: GroupChatService;
@@ -739,7 +765,7 @@ export class RideController {
 
     try {
       const { id: rideId } = req.params;
-      const { seatsRequested, pickupAddress, dropoffAddress, specialRequests } = req.body;
+      const { seatsRequested, pickupAddress, dropoffAddress, specialRequests, promoCode } = req.body;
       const passengerId = req.user?.id;
 
       if (!passengerId) {
@@ -837,8 +863,66 @@ export class RideController {
       }
 
       // Calculate total amount (simple calculation, can be enhanced)
-      const totalAmount = ride.pricePerSeat * seatsRequested;
-      const platformFee = totalAmount * 0.05; // 5% platform fee
+      const fare = ride.pricePerSeat * seatsRequested;
+      const platformFee = fare * PLATFORM_FEE_RATE;
+      const grossTotal = fare + platformFee;
+
+      // Apply a promo code, if one was given and it holds up.
+      //
+      // This is done here, inside the booking transaction, rather than through
+      // the separate /promos/redeem call: a code could otherwise be redeemed
+      // without booking, or a booking made without the redemption recorded.
+      let discountAmount = 0;
+      let appliedPromoCode: string | null = null;
+      let promoRecord: any = null;
+
+      if (promoCode) {
+        const normalised = String(promoCode).toUpperCase().trim();
+
+        // Locked, because used_count and the usage limit are read then written.
+        const promo = await PromoCode.findOne({
+          where: { code: normalised },
+          transaction,
+          lock: Transaction.LOCK.UPDATE,
+        });
+
+        if (!promo) {
+          res.status(400).json({ success: false, error: 'That promo code is not valid', code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        const validity = promo.isValid(grossTotal);
+        if (!validity.valid) {
+          res.status(400).json({ success: false, error: validity.reason ?? 'That promo code is not valid', code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        const alreadyRedeemed = await PromoRedemption.findOne({
+          where: { promoCodeId: promo.id, userId: passengerId },
+          transaction,
+        });
+
+        if (alreadyRedeemed) {
+          res.status(409).json({ success: false, error: 'You have already used this promo code', code: 'PROMO_ALREADY_USED', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        // Capped at what the platform earns on this booking. See PROMO_FUNDING.
+        const faceValue = promo.calculateDiscount(grossTotal);
+        discountAmount = Math.min(faceValue, platformFee);
+        discountAmount = Math.round(discountAmount * 100) / 100;
+        appliedPromoCode = normalised;
+        promoRecord = promo;
+
+        if (faceValue > discountAmount) {
+          logger.warn('Promo capped at the platform fee; the rest cannot be funded', {
+            code: normalised, faceValue, granted: discountAmount, platformFee,
+          });
+        }
+      }
 
       // Create booking
       const booking = await Booking.create(
@@ -846,8 +930,10 @@ export class RideController {
           rideId,
           passengerId,
           seatsBooked: seatsRequested,
-          totalAmount: totalAmount + platformFee,
+          totalAmount: Math.round((grossTotal - discountAmount) * 100) / 100,
           platformFee,
+          promoCode: appliedPromoCode,
+          discountAmount,
           pickupAddress,
           dropoffAddress,
           specialRequests,
@@ -855,6 +941,23 @@ export class RideController {
         },
         { transaction },
       );
+
+      if (promoRecord && discountAmount > 0) {
+        // The unique index on (promo_code_id, user_id) is what actually
+        // enforces one-per-user; the check above only produces a better error.
+        await PromoRedemption.create(
+          {
+            promoCodeId: promoRecord.id,
+            userId: passengerId,
+            bookingId: booking.id,
+            discountAmount,
+            orderAmount: grossTotal,
+          },
+          { transaction },
+        );
+
+        await promoRecord.increment('usedCount', { transaction });
+      }
 
       await transaction.commit();
 

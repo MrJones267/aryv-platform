@@ -31,6 +31,8 @@ export interface BookingModel extends Model<
   seatsBooked: number;
   totalAmount: number;
   platformFee: number;
+  promoCode: CreationOptional<string | null>;
+  discountAmount: CreationOptional<number>;
   status: CreationOptional<BookingStatus>;
   pickupAddress: CreationOptional<string | null>;
   dropoffAddress: CreationOptional<string | null>;
@@ -109,6 +111,17 @@ const Booking = sequelize.define<BookingModel>(
           msg: 'Total amount must be greater than 0',
         },
       },
+    },
+    promoCode: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      field: 'promo_code',
+    },
+    discountAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      field: 'discount_amount',
     },
     platformFee: {
       type: DataTypes.DECIMAL(10, 2),
