@@ -21,7 +21,11 @@
 --   Do not treat them as accurate.
 -- =====================================================================
 
-INSERT INTO currencies (code, name, symbol, decimal_places, is_active, exchange_rate, country_code, flag) VALUES
+-- id and the timestamps are NOT NULL with no database default on this table,
+-- so they are supplied explicitly rather than relied on.
+INSERT INTO currencies (id, code, name, symbol, decimal_places, is_active, exchange_rate, country_code, flag, last_updated, created_at, updated_at)
+SELECT uuid_generate_v4(), v.code, v.name, v.symbol, v.decimal_places, v.is_active, v.exchange_rate, v.country_code, v.flag, NOW(), NOW(), NOW()
+FROM (VALUES
     ('BWP', 'Botswana Pula',        'P',    2, true, 13.600000,   'BW', '🇧🇼'),
     ('NAD', 'Namibian Dollar',      'N$',   2, true, 18.500000,   'NA', '🇳🇦'),
     ('ZMW', 'Zambian Kwacha',       'ZK',   2, true, 26.500000,   'ZM', '🇿🇲'),
@@ -32,13 +36,15 @@ INSERT INTO currencies (code, name, symbol, decimal_places, is_active, exchange_
     ('MZN', 'Mozambican Metical',   'MT',   2, true, 63.900000,   'MZ', '🇲🇿'),
     ('AOA', 'Angolan Kwanza',       'Kz',   2, true, 912.000000,  'AO', '🇦🇴'),
     ('TZS', 'Tanzanian Shilling',   'TSh',  2, true, 2680.000000, 'TZ', '🇹🇿')
+) AS v(code, name, symbol, decimal_places, is_active, exchange_rate, country_code, flag)
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     symbol = EXCLUDED.symbol,
     decimal_places = EXCLUDED.decimal_places,
     country_code = EXCLUDED.country_code,
     flag = EXCLUDED.flag,
-    is_active = true;
+    is_active = true,
+    updated_at = NOW();
 
 -- Keep USD (the reference currency and a common quote for cross-border work)
 -- and the regional set. Everything else from migration 005's global list is
