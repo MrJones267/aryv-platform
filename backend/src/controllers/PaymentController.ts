@@ -12,6 +12,7 @@ import { redisClient } from '../config/redis';
 import User from '../models/User';
 import cashWalletService from '../services/CashWalletService';
 import mobileMoneyService from '../services/MobileMoneyService';
+import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import logger from '../utils/logger';
 
 const INTENT_PREFIX = 'payment_intent:';
@@ -476,42 +477,81 @@ export class PaymentController {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() }); return; }
 
-      const { amount, currency, paymentMethodId } = req.body;
+      const { amount, currency, provider, phone } = req.body as {
+        amount: number; currency?: string; provider?: string; phone?: string;
+      };
+
       if (!amount || amount <= 0) {
         res.status(400).json({ success: false, error: 'Valid amount is required', code: 'INVALID_AMOUNT', timestamp: new Date().toISOString() });
         return;
       }
 
-      // Ensure wallet exists
-      let walletResult = await cashWalletService.getWalletBalance(userId);
-      if (!walletResult.success || !walletResult.data) {
-        walletResult = await cashWalletService.createWallet(userId);
-      }
-
-      const loadResult = await cashWalletService.loadWallet({
-        userId,
-        amount,
-        source: 'mobile_money',
-        sourceReference: paymentMethodId || 'topup',
-        metadata: { description: `Wallet top-up (${currency || 'USD'})` },
-      });
-
-      if (!loadResult.success) {
-        res.status(400).json({ success: false, error: loadResult.error || 'Top-up failed', code: 'TOPUP_FAILED', timestamp: new Date().toISOString() });
+      // This used to credit the wallet immediately from the amount in the
+      // request body, without taking a payment or verifying that one had been
+      // made — so any authenticated user could mint balance from nothing. That
+      // balance is real: settleCommission spends it, so a driver could clear
+      // what they owe the platform for free.
+      //
+      // A top-up now only *initiates* a payment. The wallet is credited when
+      // the provider confirms it, through the signed webhook.
+      if (!provider) {
+        res.status(400).json({ success: false, error: 'A mobile money provider is required', code: 'PROVIDER_REQUIRED', timestamp: new Date().toISOString() });
         return;
       }
 
-      // Return as a payment intent shape for the mobile app
-      const intentId = `pi_topup_${crypto.randomBytes(8).toString('hex')}`;
+      // Ensure the wallet exists so the credit has somewhere to land later.
+      const walletResult = await cashWalletService.getWalletBalance(userId);
+      if (!walletResult.success || !walletResult.data) {
+        await cashWalletService.createWallet(userId);
+      }
+
+      const reference = mobileMoneyService.generateReference();
+
+      let initiated;
+      try {
+        initiated = await mobileMoneyService.initiate({
+          provider: provider as any,
+          amount,
+          currency: currency || PLATFORM_DEFAULT_CURRENCY,
+          reference,
+          phone: phone || '',
+          description: 'ARYV wallet top-up',
+        } as any);
+      } catch (initiateError) {
+        res.status(400).json({ success: false, error: (initiateError as Error).message, code: 'PROVIDER_UNSUPPORTED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // Park the intent so the webhook can find it and know who to credit.
+      await redisClient.set(
+        `mm_tx:${reference}`,
+        JSON.stringify({
+          userId,
+          amount,
+          currency: currency || PLATFORM_DEFAULT_CURRENCY,
+          provider,
+          purpose: 'wallet_topup',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        }),
+        86400,
+      );
+
+      logger.info('Wallet top-up initiated', { userId, reference, provider, amount });
+
       res.status(201).json({
         success: true,
         data: {
-          id: intentId,
+          id: reference,
           amount,
-          currency: currency || 'USD',
-          status: 'completed',
-          paymentMethod: 'wallet',
-          provider: 'cash',
+          currency: currency || PLATFORM_DEFAULT_CURRENCY,
+          // Pending, not completed: nothing has been paid yet.
+          status: 'pending',
+          paymentMethod: 'mobile_money',
+          provider,
+          instructions: initiated.instructions,
+          ussdCode: initiated.ussdCode,
+          deepLink: initiated.deepLink,
         },
         timestamp: new Date().toISOString(),
       });
@@ -622,12 +662,40 @@ export class PaymentController {
         return;
       }
 
+      // This wrote a log line and returned a generated id with status
+      // 'pending'. Nothing was recorded anywhere, so a user was told their
+      // refund request had been accepted and no human would ever see it.
+      // Answering honestly is better than a receipt for something that did not
+      // happen.
       const refundId = `refund_${crypto.randomBytes(8).toString('hex')}`;
-      logger.info('Refund requested (queued for review)', { userId, transactionId, reason, amount, refundId });
+
+      await redisClient.set(
+        `refund_request:${refundId}`,
+        JSON.stringify({
+          refundId,
+          userId,
+          transactionId,
+          reason,
+          amount: amount ?? null,
+          status: 'awaiting_review',
+          requestedAt: new Date().toISOString(),
+        }),
+        30 * 24 * 60 * 60,
+      );
+
+      logger.warn('Refund requested — no automated refund path exists; needs manual handling', {
+        userId, transactionId, reason, amount, refundId,
+      });
 
       res.json({
         success: true,
-        data: { refundId, status: 'pending', amount: amount || 0 },
+        data: {
+          refundId,
+          status: 'awaiting_review',
+          amount: amount ?? null,
+          message: 'Your request has been recorded. Refunds are handled manually; '
+            + 'our team will contact you.',
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {

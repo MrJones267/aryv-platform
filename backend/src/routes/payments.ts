@@ -13,6 +13,7 @@ import { PaymentController } from '../controllers/PaymentController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { verifyOrangeMoneyWebhook, verifyMyZakaWebhook, verifySmegaWebhook } from '../services/MobileMoneyService';
+import cashWalletService from '../services/CashWalletService';
 import { redisClient } from '../config/redis';
 import logger from '../utils/logger';
 
@@ -185,7 +186,17 @@ const webhookHandler = (
     const sig = (req.headers['x-signature'] || req.headers['x-webhook-signature'] || '') as string;
     const payload = JSON.stringify(req.body);
 
-    if (!verifyFn(payload, sig)) {
+    let signatureValid = false;
+    try {
+      signatureValid = verifyFn(payload, sig);
+    } catch {
+      // timingSafeEqual throws when the buffers differ in length, so a
+      // malformed signature reached the catch below as a 500 rather than
+      // being refused.
+      signatureValid = false;
+    }
+
+    if (!signatureValid) {
       logger.warn(`${providerName} webhook signature invalid`);
       res.status(401).json({ success: false, error: 'Invalid signature' });
       return;
@@ -200,7 +211,44 @@ const webhookHandler = (
       const raw = await redisClient.get(`${MM_PREFIX}${reference}`);
       if (raw) {
         const tx = JSON.parse(raw);
-        const updated = { ...tx, status, providerRef, updatedAt: new Date().toISOString() };
+
+        // Credit the wallet here, and only here: this is the one point where
+        // the provider has told us — over a signed webhook — that money
+        // actually moved. The top-up endpoint no longer credits anything.
+        const isSuccess = ['success', 'successful', 'completed', 'paid'].includes(
+          String(status).toLowerCase(),
+        );
+        const alreadyCredited = tx.status === 'credited';
+
+        if (isSuccess && !alreadyCredited && tx.purpose === 'wallet_topup' && tx.userId) {
+          const load = await cashWalletService.loadWallet({
+            userId: tx.userId,
+            amount: Number(tx.amount),
+            source: 'mobile_money',
+            sourceReference: providerRef || reference,
+            metadata: { description: `Wallet top-up via ${providerName}`, reference },
+          });
+
+          if (load.success) {
+            tx.status = 'credited';
+            logger.info('Wallet credited from confirmed mobile money payment', {
+              reference, userId: tx.userId, amount: tx.amount,
+            });
+          } else {
+            // Left uncredited deliberately: a retry of the same webhook can
+            // pick it up, and the alternative is losing a real payment.
+            logger.error('Confirmed payment could not be credited to the wallet', {
+              reference, userId: tx.userId, error: load.error,
+            });
+          }
+        }
+
+        const updated = {
+          ...tx,
+          status: tx.status === 'credited' ? 'credited' : status,
+          providerRef,
+          updatedAt: new Date().toISOString(),
+        };
         await redisClient.set(`${MM_PREFIX}${reference}`, JSON.stringify(updated), 86400);
         logger.info(`${providerName} webhook processed`, { reference, status });
       }
