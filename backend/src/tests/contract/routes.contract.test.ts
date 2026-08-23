@@ -139,6 +139,8 @@ describe('route contract', () => {
       // Sign-up, sign-in, token refresh, password reset, OTP: all necessarily
       // reachable without a token.
       /^\/api\/auth\//,
+      // Admin sign-in, necessarily reachable without an admin token.
+      /^\/api\/admin\/auth\/login$/,
       // Stripe calls this; it authenticates by signature, not by bearer token.
       /^\/api\/bookings\/stripe-webhook$/,
       // Reference data with nothing user-specific in it.

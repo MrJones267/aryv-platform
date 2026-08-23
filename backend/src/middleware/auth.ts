@@ -260,6 +260,19 @@ export const authenticateAdminToken = async (
       return;
     }
 
+    // A token invalidated at logout must stop working. Admin sessions last 24
+    // hours (7 days with "remember me"), so without this a signed-out or
+    // revoked admin keeps full access for the rest of that window.
+    if (await AuthService.isTokenBlacklisted(token)) {
+      res.status(401).json({
+        success: false,
+        error: 'Token has been invalidated',
+        code: 'TOKEN_INVALIDATED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     // Find admin user in database
     const admin = await AdminUser.findByPk(decoded.id);
     if (!admin || !admin.isActive) {
@@ -289,4 +302,58 @@ export const authenticateAdminToken = async (
       timestamp: new Date().toISOString(),
     });
   }
+};
+
+/**
+ * Restrict an admin route to particular admin roles.
+ *
+ * AdminUser carries `role` ('super_admin' | 'admin' | 'moderator') and a
+ * `permissions` array. Both were stored, embedded in the issued token, and
+ * never checked anywhere — so every authenticated admin had the full surface,
+ * including resolving disputes, releasing escrow payments, changing the
+ * platform commission, and granting another account the admin role. A
+ * moderator was a super-admin in practice.
+ *
+ * Roles are hierarchical: super_admin implies admin implies moderator.
+ */
+export type AdminRole = 'super_admin' | 'admin' | 'moderator';
+
+const ADMIN_ROLE_RANK: Record<AdminRole, number> = {
+  moderator: 1,
+  admin: 2,
+  super_admin: 3,
+};
+
+export const authorizeAdminRoles = (minimum: AdminRole) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    const role = (req.user as unknown as { role?: AdminRole })?.role;
+
+    if (!role || !(role in ADMIN_ROLE_RANK)) {
+      res.status(403).json({
+        success: false,
+        error: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (ADMIN_ROLE_RANK[role] < ADMIN_ROLE_RANK[minimum]) {
+      logError('Admin privilege check failed', new Error('INSUFFICIENT_ADMIN_ROLE'), {
+        adminId: (req.user as unknown as { id?: string })?.id,
+        role,
+        required: minimum,
+        url: req.url,
+      });
+      res.status(403).json({
+        success: false,
+        error: 'This action requires a higher admin role',
+        code: 'INSUFFICIENT_ADMIN_ROLE',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    next();
+  };
 };

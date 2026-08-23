@@ -5,7 +5,7 @@
  * @lastModified 2025-01-24
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import rateLimit from 'express-rate-limit';
@@ -13,7 +13,7 @@ import { makeStore } from '../config/rateLimitStore';
 import { AdminController } from '../controllers/AdminController';
 import AdminRideController from '../controllers/AdminRideController';
 import AdminUserController from '../controllers/AdminUserController';
-import { authenticateAdminToken } from '../middleware/auth';
+import { authenticateAdminToken, authorizeAdminRoles } from '../middleware/auth';
 import Booking from '../models/Booking';
 import Ride from '../models/Ride';
 import User from '../models/User';
@@ -26,19 +26,12 @@ import { redisClient } from '../config/redis';
 const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
 
-const requireSuperAdmin = (req: Request, res: Response, next: NextFunction): void => {
-  const admin = (req as any).user;
-  if (!admin || admin.role !== 'super_admin') {
-    res.status(403).json({
-      success: false,
-      error: 'Super admin access required',
-      code: 'SUPER_ADMIN_REQUIRED',
-      timestamp: new Date().toISOString(),
-    });
-    return;
-  }
-  next();
-};
+// Hierarchical: super_admin implies admin implies moderator. The local
+// equality check this replaced could only express "super_admin or nothing",
+// which is why the middle ground — operations a full admin should do but a
+// moderator should not — ended up with no role check at all.
+const requireSuperAdmin = authorizeAdminRoles('super_admin');
+const requireAdmin = authorizeAdminRoles('admin');
 
 const DEFAULT_SETTINGS = {
   maintenanceMode: false,
@@ -185,28 +178,28 @@ router.get('/users/:id', authenticateAdminToken, AdminUserController.getUserById
  * @desc    Update user information
  * @access  Private (Admin)
  */
-router.put('/users/:id', authenticateAdminToken, AdminUserController.updateUser);
+router.put('/users/:id', authenticateAdminToken, requireAdmin, AdminUserController.updateUser);
 
 /**
  * @route   POST /api/admin/users/:id/block
  * @desc    Block user account
  * @access  Private (Admin)
  */
-router.post('/users/:id/block', authenticateAdminToken, AdminUserController.blockUser);
+router.post('/users/:id/block', authenticateAdminToken, requireAdmin, AdminUserController.blockUser);
 
 /**
  * @route   POST /api/admin/users/:id/unblock
  * @desc    Unblock user account
  * @access  Private (Admin)
  */
-router.post('/users/:id/unblock', authenticateAdminToken, AdminUserController.unblockUser);
+router.post('/users/:id/unblock', authenticateAdminToken, requireAdmin, AdminUserController.unblockUser);
 
 /**
  * @route   PUT /api/admin/users/:id/verify
  * @desc    Verify user identity (email/phone/documents)
  * @access  Private (Admin)
  */
-router.put('/users/:id/verify', authenticateAdminToken, AdminUserController.verifyUser);
+router.put('/users/:id/verify', authenticateAdminToken, requireAdmin, AdminUserController.verifyUser);
 
 /**
  * Rides Management Routes (to be implemented)
@@ -341,7 +334,7 @@ router.get('/courier/disputes', authenticateAdminToken, async (req, res) => {
  * @desc    Resolve courier dispute
  * @access  Private (Admin)
  */
-router.post('/courier/disputes/:id/resolve', authenticateAdminToken, async (req: any, res) => {
+router.post('/courier/disputes/:id/resolve', authenticateAdminToken, requireAdmin, async (req: any, res) => {
   try {
     const { id } = req.params;
     const { resolutionAmount, notes } = req.body;

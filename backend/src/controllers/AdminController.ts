@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
+import { redisClient } from '../config/redis';
 import { logInfo, logError, logWarn } from '../utils/logger';
 import { AdminUser } from '../models/AdminUser';
 import User from '../models/User';
@@ -192,7 +193,17 @@ export class AdminController {
    */
   static async logout(req: Request, res: Response): Promise<void> {
     try {
-      // In production, you would blacklist the token or handle token invalidation
+      // Actually invalidate the token. This previously only logged, with a
+      // comment saying blacklisting was what production would need — so an
+      // admin session stayed usable for its full 24-hour (or 7-day) life after
+      // the admin signed out.
+      const token = req.headers.authorization?.split(' ')[1];
+      if (token) {
+        // Held for the longest admin token lifetime, after which expiry takes
+        // over and the entry is dead weight.
+        await redisClient.set(`bl:${token}`, '1', 7 * 24 * 60 * 60);
+      }
+
       logInfo('Admin logout', { adminId: req.user?.id, ip: req.ip });
 
       res.status(200).json({

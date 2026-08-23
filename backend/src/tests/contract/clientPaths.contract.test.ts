@@ -202,7 +202,6 @@ describe('mobile client / backend path contract', () => {
     'PUT /api/notifications/preferences  (NotificationService.ts)',
 
     // Assorted single endpoints.
-    'GET /api/admin/analytics/revenue  (AnalyticsService.ts)',
     'GET /api/currencies/country/:param  (CurrencyService.ts)',
     'POST /api/locations/emergency  (EmergencyServiceSimple.ts)',
     'POST /api/users/currency  (CurrencyService.ts)',
