@@ -159,20 +159,26 @@ export class DeliveryHandoverService {
       let channel: 'recipient_sms' | 'sender_sms' | 'none' = 'none';
       let destination: string | null = packageData.dropoffContactPhone ?? null;
 
+      // Fetched regardless: the sender's country is what makes a locally
+      // written recipient number resolvable, not just a fallback destination.
+      const sender = await User.findByPk(packageData.senderId, {
+        ...(transaction ? { transaction } : {}),
+      });
+
       if (destination) {
         channel = 'recipient_sms';
-      } else {
-        const sender = await User.findByPk(packageData.senderId, {
-          ...(transaction ? { transaction } : {}),
-        });
-        if (sender?.phone) {
-          destination = sender.phone;
-          channel = 'sender_sms';
-        }
+      } else if (sender?.phone) {
+        destination = sender.phone;
+        channel = 'sender_sms';
       }
 
       if (destination) {
         const recipient = packageData.dropoffContactName || 'there';
+
+        // The sender's country resolves a locally-written number. Without it a
+        // dropoff contact entered as 71234567 never receives the code, and the
+        // courier arrives at a door where nobody can complete the delivery.
+        const senderCountry = (sender as unknown as { countryCode?: string })?.countryCode;
 
         // On cash on delivery the recipient has to know what to pay before the
         // courier arrives. A code with no amount attached leaves them working
@@ -189,6 +195,7 @@ export class DeliveryHandoverService {
             + (amountDue ? ` Amount due on delivery: ${amountDue}.` : '')
             + ' Give the code to the courier only once you have paid and have your package.'
             + ` Valid for ${CODE_TTL_HOURS} hours.`,
+          senderCountry,
         );
 
         await record.update(

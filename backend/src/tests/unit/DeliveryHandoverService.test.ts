@@ -81,7 +81,11 @@ describe('DeliveryHandoverService', () => {
     jest.spyOn(DeliveryAgreement, 'findByPk').mockResolvedValue(makeAgreement() as any);
     jest.spyOn(DeliveryAgreement, 'findOne').mockResolvedValue(makeAgreement() as any);
     jest.spyOn(Package, 'findByPk').mockResolvedValue(makePackage() as any);
-    jest.spyOn(User, 'findByPk').mockResolvedValue({ id: SENDER_ID, phone: '+26777654321' } as any);
+    jest.spyOn(User, 'findByPk').mockResolvedValue({
+      id: SENDER_ID,
+      phone: '+26777654321',
+      countryCode: 'BW',
+    } as any);
     jest.spyOn(DeliveryQRCode, 'update').mockResolvedValue([0] as any);
     jest.spyOn(DeliveryQRCode, 'increment').mockResolvedValue([[], 0] as any);
     jest.spyOn(DeliveryQRCode, 'create').mockImplementation((async (values: any) => {
@@ -101,6 +105,7 @@ describe('DeliveryHandoverService', () => {
       expect(smsService.sendMessage).toHaveBeenCalledWith(
         '+26771234567',
         expect.stringContaining(created[0].qrToken),
+        expect.anything(),
       );
     });
 
@@ -145,6 +150,7 @@ describe('DeliveryHandoverService', () => {
       expect(smsService.sendMessage).toHaveBeenCalledWith(
         '+26777654321',
         expect.any(String),
+        expect.anything(),
       );
     });
 
@@ -186,7 +192,11 @@ describe('DeliveryHandoverService', () => {
       jest.spyOn(Package, 'findByPk').mockResolvedValue(
         makePackage({ dropoffContactPhone: null }) as any,
       );
-      jest.spyOn(User, 'findByPk').mockResolvedValue({ id: SENDER_ID, phone: null } as any);
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        id: SENDER_ID,
+        phone: null,
+        countryCode: 'BW',
+      } as any);
 
       const result = await service.issueCode(AGREEMENT_ID);
 
