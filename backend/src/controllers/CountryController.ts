@@ -7,6 +7,14 @@
 
 import { Request, Response } from 'express';
 import logger from '../utils/logger';
+import Country from '../models/Country';
+import { COUNTRY_DEFAULT_CURRENCY } from '../services/CurrencyService';
+
+/**
+ * Surfaced first in the picker. These are the markets ARYV serves, not a
+ * sample of large economies — the previous list led with the United States.
+ */
+const POPULAR_COUNTRIES = ['BW', 'ZA', 'NA', 'ZM', 'ZW'];
 
 export class CountryController {
   
@@ -91,6 +99,37 @@ export class CountryController {
    */
   static async getCountries(_req: Request, res: Response): Promise<Response> {
     try {
+      // Read the countries table. This returned the hardcoded list below and
+      // never queried anything, reporting source: 'fallback' — so the picker
+      // offered eight countries, none of them Botswana, and a user in the
+      // platform's own market could not select where they were.
+      const rows = await Country.findAll({
+        where: { isActive: true },
+        order: [['name', 'ASC']],
+      });
+
+      if (rows.length > 0) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            countries: rows.map((country) => ({
+              code: country.code,
+              name: country.name,
+              flag: country.flag,
+              dialingCode: (country as unknown as { phonePrefix?: string }).phonePrefix,
+              currency: COUNTRY_DEFAULT_CURRENCY[country.code] ?? null,
+              region: country.region,
+              isPopular: POPULAR_COUNTRIES.includes(country.code),
+            })),
+            total: rows.length,
+            source: 'database',
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Only if the table is empty — a database that has not been seeded.
+      logger.warn('Countries table is empty; serving the built-in list');
       return res.status(200).json({
         success: true,
         data: {
