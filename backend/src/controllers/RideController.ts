@@ -15,6 +15,7 @@ import Vehicle from '../models/Vehicle';
 import { DriverVerificationStatus } from '../models/DriverDocument';
 import PromoCode from '../models/PromoCode';
 import PromoRedemption from '../models/PromoRedemption';
+import { CurrencyService } from '../services/CurrencyService';
 import { RideStatus, BookingStatus, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
@@ -122,9 +123,15 @@ export class RideController {
       }
 
       // Create ride
+      // The driver sets the price, so a ride is denominated in the driver's
+      // currency. Everything downstream — bookings, cash transactions,
+      // commission — inherits it rather than assuming the platform default.
+      const rideCurrency = await CurrencyService.getUserCurrencyCode(driverId);
+
       const ride = await Ride.create(
         {
           driverId,
+          currency: rideCurrency,
           vehicleId,
           originAddress,
           originCoordinates: {
@@ -930,6 +937,9 @@ export class RideController {
           rideId,
           passengerId,
           seatsBooked: seatsRequested,
+          // Inherited from the ride: the passenger pays the price the driver
+          // set, in the currency the driver set it in.
+          currency: ride.currency,
           totalAmount: Math.round((grossTotal - discountAmount) * 100) / 100,
           platformFee,
           promoCode: appliedPromoCode,

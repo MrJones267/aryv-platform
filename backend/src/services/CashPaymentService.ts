@@ -15,7 +15,13 @@ import { BookingStatus } from '../types';
 import { NotificationService } from './NotificationService';
 import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
-import { formatMoneyForUser } from '../utils/money';
+import { formatMoneyInCurrency } from '../utils/money';
+import {
+  CASH_COMMISSION_RATE,
+  CASH_COMMISSION_CAP_IN_PLATFORM_CURRENCY,
+  convertFromPlatformCurrency,
+  round2,
+} from '../utils/fees';
 
 export interface CashPaymentResult {
   success: boolean;
@@ -168,7 +174,7 @@ export class CashPaymentService {
       const driverCode = this.generateConfirmationCode();
 
       // Calculate platform fee
-      const platformFee = this.calculatePlatformFee(amount);
+      const platformFee = await this.calculatePlatformFee(amount, booking.currency);
 
       // Create cash transaction record
       const cashTransaction = await CashTransaction.create({
@@ -176,6 +182,8 @@ export class CashPaymentService {
         riderId,
         driverId,
         amount,
+        // Inherited from the booking, which inherited it from the ride.
+        currency: booking.currency,
         platformFee,
         expectedAmount: amount,
         riderConfirmationCode: riderCode,
@@ -199,7 +207,7 @@ export class CashPaymentService {
       await transaction.commit();
 
       // Send notifications
-      await this.sendCashPaymentNotifications(riderId, driverId, amount, riderCode);
+      await this.sendCashPaymentNotifications(riderId, driverId, amount, riderCode, booking.currency);
 
       logInfo('Cash payment created successfully', {
         transactionId: cashTransaction.id,
@@ -214,7 +222,7 @@ export class CashPaymentService {
         transactionId: cashTransaction.id,
         riderCode,
         driverCode: null, // Don't expose driver code to rider
-        instructions: await this.getCashPaymentInstructions(amount, riderId),
+        instructions: await this.getCashPaymentInstructions(amount, booking.currency),
         trustScore: canPay.trustScore || 0,
       };
 
@@ -555,10 +563,36 @@ export class CashPaymentService {
   /**
    * Calculate platform fee
    */
-  private calculatePlatformFee(amount: number): number {
-    const feePercentage = 0.10; // 10%
-    const maxFee = 10.00;
-    return Math.min(amount * feePercentage, maxFee);
+  /**
+   * The platform's cut of a cash ride: a percentage, capped.
+   *
+   * The cap has to be denominated in something. It was a bare `10.00`, which
+   * meant ten Pula in Botswana and ten dollars in South Africa — the same
+   * number standing for roughly thirteen times the value depending on where
+   * the ride happened, with nothing in the code or the data saying which.
+   *
+   * It is now defined in the platform currency and converted into the ride's,
+   * which is why money records carry a currency as of migration 020. If the
+   * conversion cannot be made the cap is not applied rather than applied
+   * wrongly: charging an unconverted cap would silently under- or over-charge
+   * by the exchange rate.
+   */
+  private async calculatePlatformFee(amount: number, currency: string): Promise<number> {
+    const uncapped = amount * CASH_COMMISSION_RATE;
+
+    const capInRideCurrency = await convertFromPlatformCurrency(
+      CASH_COMMISSION_CAP_IN_PLATFORM_CURRENCY,
+      currency,
+    );
+
+    if (capInRideCurrency === null) {
+      logWarning('Commission cap not applied: no rate to convert it into the ride currency', {
+        currency,
+      });
+      return round2(uncapped);
+    }
+
+    return round2(Math.min(uncapped, capInRideCurrency));
   }
 
   /**
@@ -713,11 +747,12 @@ export class CashPaymentService {
   /**
    * Get cash payment instructions for user
    */
-  private async getCashPaymentInstructions(amount: number, riderId: string): Promise<string> {
-    // Rendered in the rider's own currency. This read `$${amount}`, which
-    // quoted a Gaborone rider their fare in US dollars on the one screen where
-    // the number has to be right.
-    const rendered = await formatMoneyForUser(amount, riderId);
+  private async getCashPaymentInstructions(amount: number, currency: string): Promise<string> {
+    // Rendered in the *booking's* currency. This read `$${amount}`, quoting a
+    // Gaborone rider in US dollars on the one screen where the number has to
+    // be right — and rendering it in the reader's preferred currency would
+    // simply relabel a fare that is denominated in the driver's.
+    const rendered = await formatMoneyInCurrency(amount, currency);
     return `Please pay exactly ${rendered} in cash to your driver. After payment, the driver will confirm receipt and you'll need to enter your confirmation code to complete the transaction.`;
   }
 
@@ -729,19 +764,20 @@ export class CashPaymentService {
     driverId: string,
     amount: number,
     riderCode: string,
+    currency: string,
   ): Promise<void> {
     try {
       // Each party is quoted in their own currency: a cross-border ride can
       // have a rider and driver who do not share one.
-      const [riderAmount, driverAmount] = await Promise.all([
-        formatMoneyForUser(amount, riderId),
-        formatMoneyForUser(amount, driverId),
-      ]);
+      // One rendering, in the currency the fare is actually in. Quoting each
+      // party in their own preferred currency would show two different symbols
+      // for the same banknotes changing hands.
+      const rendered = await formatMoneyInCurrency(amount, currency);
 
       // Notify rider
       await (this.notificationService as any).sendNotification(riderId, {
         title: 'Cash Payment Created',
-        body: `Pay ${riderAmount} in cash. Your confirmation code: ${riderCode}`,
+        body: `Pay ${rendered} in cash. Your confirmation code: ${riderCode}`,
         type: 'cash_payment_created',
         data: { amount, riderCode },
       });
@@ -749,7 +785,7 @@ export class CashPaymentService {
       // Notify driver
       await (this.notificationService as any).sendNotification(driverId, {
         title: 'Cash Payment Expected',
-        body: `Passenger will pay ${driverAmount} in cash`,
+        body: `Passenger will pay ${rendered} in cash`,
         type: 'cash_payment_expected',
         data: { amount },
       });

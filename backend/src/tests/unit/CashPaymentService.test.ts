@@ -51,6 +51,7 @@ const makeBooking = (overrides: Record<string, unknown> = {}) => ({
   passengerId: RIDER,
   totalAmount: 120,
   status: BookingStatus.CONFIRMED,
+  currency: 'BWP',
   ride: { driverId: DRIVER },
   ...overrides,
 });
@@ -129,7 +130,9 @@ describe('CashPaymentService.createCashPayment', () => {
 
     await service.createCashPayment(BOOKING, RIDER);
 
-    expect(feeSpy).toHaveBeenCalledWith(120);
+    // The fee is now computed against the booking's currency, because a bare
+    // cap meant ten Pula in Botswana and ten dollars elsewhere.
+    expect(feeSpy).toHaveBeenCalledWith(120, 'BWP');
   });
 
   it('refuses a booking that is already cancelled', async () => {

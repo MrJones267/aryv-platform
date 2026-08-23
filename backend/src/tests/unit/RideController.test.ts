@@ -17,6 +17,11 @@ jest.mock('../../models/User');
 jest.mock('../../models/Vehicle');
 // Factory mocks, not automocks: these models use Model.init, which needs a real
 // Sequelize instance rather than the define() stub below.
+jest.mock('../../services/CurrencyService', () => ({
+  CurrencyService: { getUserCurrencyCode: jest.fn().mockResolvedValue('BWP') },
+  PLATFORM_DEFAULT_CURRENCY: 'BWP',
+  COUNTRY_DEFAULT_CURRENCY: { BW: 'BWP' },
+}));
 jest.mock('../../models/PromoCode', () => ({
   __esModule: true,
   default: { findOne: jest.fn() },

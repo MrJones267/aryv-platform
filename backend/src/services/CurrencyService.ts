@@ -154,6 +154,22 @@ export class CurrencyService {
   }
 
   /**
+   * The ISO code a user's money should be denominated in.
+   *
+   * Never throws and always returns something: a money record must have a
+   * currency, and refusing to create a booking because a preference lookup
+   * failed would be worse than recording the platform default.
+   */
+  static async getUserCurrencyCode(userId: string): Promise<string> {
+    try {
+      const preferences = await this.getUserCurrencies(userId);
+      return preferences?.primaryCurrency?.code ?? PLATFORM_DEFAULT_CURRENCY;
+    } catch {
+      return PLATFORM_DEFAULT_CURRENCY;
+    }
+  }
+
+  /**
    * Read stored preferences without seeding. Used for the single retry after
    * a default is created, so that path cannot loop.
    */

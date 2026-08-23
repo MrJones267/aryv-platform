@@ -41,7 +41,7 @@ import Package from '../models/Package';
 import User from '../models/User';
 import smsService from './SMSService';
 import { logInfo, logError, logWarning } from '../utils/logger';
-import { formatMoneyForUser } from '../utils/money';
+import { formatMoneyInCurrency } from '../utils/money';
 
 /**
  * Unambiguous alphabet: no O/0, I/1, S/5, B/8. Codes get read aloud down a
@@ -186,7 +186,7 @@ export class DeliveryHandoverService {
         // figure — which is the wrong party to take it from.
         const isCash = (agreement.paymentMethod ?? 'cash_on_delivery') === 'cash_on_delivery';
         const amountDue = isCash
-          ? await formatMoneyForUser(agreement.agreedPrice, packageData.senderId)
+          ? await formatMoneyInCurrency(agreement.agreedPrice, agreement.currency)
           : null;
 
         const sent = await smsService.sendMessage(

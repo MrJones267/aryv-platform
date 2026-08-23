@@ -36,6 +36,7 @@ export interface RideModel extends Model<
   distance: CreationOptional<number | null>; // in kilometers
   availableSeats: number;
   pricePerSeat: number;
+  currency: CreationOptional<string>;
   status: CreationOptional<RideStatus>;
   description: CreationOptional<string | null>;
   route: CreationOptional<Coordinates[] | null>; // Polyline coordinates
@@ -196,6 +197,11 @@ const Ride = sequelize.define<RideModel>(
           msg: 'Available seats cannot exceed 7',
         },
       },
+    },
+    currency: {
+      type: DataTypes.CHAR(3),
+      allowNull: false,
+      defaultValue: 'BWP',
     },
     pricePerSeat: {
       type: DataTypes.DECIMAL(10, 2),

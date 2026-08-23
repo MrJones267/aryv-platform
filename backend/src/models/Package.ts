@@ -41,6 +41,7 @@ export interface PackageAttributes {
   packageImages?: string[];
   distance?: number;
   senderPriceOffer: number;
+  currency: string;
   paymentMethod: 'cash_on_delivery' | 'escrow';
   systemSuggestedPrice?: number;
   deliveryTierId?: string; // New: Selected delivery tier
@@ -85,6 +86,7 @@ export class Package extends Model<PackageAttributes, PackageCreationAttributes>
   public packageImages?: string[];
   public distance?: number;
   public senderPriceOffer!: number;
+  public currency!: string;
   public paymentMethod!: 'cash_on_delivery' | 'escrow';
   public systemSuggestedPrice?: number;
   public deliveryTierId?: string;
@@ -262,6 +264,11 @@ Package.init({
     defaultValue: 'cash_on_delivery',
     field: 'payment_method',
     validate: { isIn: [['cash_on_delivery', 'escrow']] },
+  },
+  currency: {
+    type: DataTypes.CHAR(3),
+    allowNull: false,
+    defaultValue: 'BWP',
   },
   senderPriceOffer: {
     type: DataTypes.DECIMAL(8, 2),

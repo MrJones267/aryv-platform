@@ -22,6 +22,7 @@ import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
 import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
+import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
 
 export class CourierController {
   /**
@@ -211,7 +212,11 @@ export class CourierController {
         ? pricingSuggestions[0].demandMultiplier
         : 1.0;
 
+      const packageCurrency = await CurrencyService.getUserCurrencyCode(userId);
+
       const packageData = await Package.create({
+        // The sender names the price, so the package is in their currency.
+        currency: packageCurrency,
         senderId: userId,
         title,
         description,
@@ -507,6 +512,8 @@ export class CourierController {
         agreedPrice,
         platformFee,
         escrowAmount,
+        // The sender set the price, so it is in the sender's currency.
+        currency: packageData.currency ?? PLATFORM_DEFAULT_CURRENCY,
         status: DeliveryStatus.PENDING_PICKUP,
         eventLog: [{
           timestamp: new Date().toISOString(),

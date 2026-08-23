@@ -30,6 +30,7 @@ export interface BookingModel extends Model<
   passengerId: ForeignKey<string>;
   seatsBooked: number;
   totalAmount: number;
+  currency: CreationOptional<string>;
   platformFee: number;
   promoCode: CreationOptional<string | null>;
   discountAmount: CreationOptional<number>;
@@ -100,6 +101,11 @@ const Booking = sequelize.define<BookingModel>(
           msg: 'Cannot book more than 7 seats',
         },
       },
+    },
+    currency: {
+      type: DataTypes.CHAR(3),
+      allowNull: false,
+      defaultValue: 'BWP',
     },
     totalAmount: {
       type: DataTypes.DECIMAL(10, 2),

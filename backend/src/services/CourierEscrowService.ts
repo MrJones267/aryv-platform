@@ -16,6 +16,7 @@ import {
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
 import { CommissionService } from './CommissionService';
+import { PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 
 // Mock payment provider interface - in production this would integrate with Stripe Connect, PayPal, etc.
@@ -246,6 +247,9 @@ export class CourierEscrowService {
         agreedPrice,
         platformFee,
         paymentMethod,
+        // Inherited from the package: the sender set the price, so the price
+        // is in their currency.
+        currency: packageData.currency ?? PLATFORM_DEFAULT_CURRENCY,
         escrowAmount,
         ...(escrowPaymentId ? { escrowPaymentId } : {}),
         ...(paymentMethod === 'escrow' ? { escrowHeldAt: new Date() } : {}),

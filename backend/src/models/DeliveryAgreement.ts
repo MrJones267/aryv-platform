@@ -32,6 +32,7 @@ export interface DeliveryAgreementAttributes {
   packageId: string;
   courierId: string;
   agreedPrice: number;
+  currency: string;
   paymentMethod: 'cash_on_delivery' | 'escrow';
   cashCollectedAt?: Date | null;
   cashAmountCollected?: number | null;
@@ -73,6 +74,7 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
   public packageId!: string;
   public courierId!: string;
   public agreedPrice!: number;
+  public currency!: string;
   public paymentMethod!: 'cash_on_delivery' | 'escrow';
   public cashCollectedAt?: Date | null;
   public cashAmountCollected?: number | null;
@@ -238,6 +240,11 @@ DeliveryAgreement.init({
     type: DataTypes.DECIMAL(12, 2),
     allowNull: true,
     field: 'cash_amount_collected',
+  },
+  currency: {
+    type: DataTypes.CHAR(3),
+    allowNull: false,
+    defaultValue: 'BWP',
   },
   agreedPrice: {
     type: DataTypes.DECIMAL(8, 2),

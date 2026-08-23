@@ -305,6 +305,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'packages', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
     { table: 'users', column: 'password_changed_at', migration: '018_password_changed_at.sql' },
     { table: 'bookings', column: 'discount_amount', migration: '019_promo_redemption_at_booking.sql' },
+    { table: 'bookings', column: 'currency', migration: '020_money_currency.sql' },
+    { table: 'rides', column: 'currency', migration: '020_money_currency.sql' },
     { table: 'delivery_agreements', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
   ];
 
