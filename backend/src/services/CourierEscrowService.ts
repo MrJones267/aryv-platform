@@ -19,6 +19,25 @@ import { CommissionService } from './CommissionService';
 import { PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 
+/**
+ * ESCROW IS SHELVED.
+ *
+ * Deliveries are paid in cash to the courier on arrival, and the platform
+ * earns through the commission ledger — the same mechanism as cash rides. That
+ * needs no payment provider, which is what made the courier service launchable
+ * at all: the provider below is a mock that moves no money.
+ *
+ * The escrow path is kept rather than deleted because the payment method is
+ * recorded per agreement, so any agreement struck under it must still settle
+ * correctly. Nothing creates one: package creation does not accept a payment
+ * method, so every new package is cash on delivery.
+ *
+ * If escrow is revived, the work is a real provider behind PaymentProvider —
+ * not re-enabling MockPaymentProvider, which reports success while nothing
+ * happens, and holds its state in a per-process Map that does not survive a
+ * restart.
+ */
+
 // Mock payment provider interface - in production this would integrate with Stripe Connect, PayPal, etc.
 interface PaymentProvider {
   createEscrowPayment(amount: number, senderId: string, metadata?: Record<string, any>): Promise<string>;
