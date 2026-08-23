@@ -27,16 +27,27 @@ export interface DeliveryQRCodeAttributes {
   scannedByUserId?: string;
   scanLocation?: [number, number];
   verificationData?: Record<string, any>;
+
+  // Handover protocol (migration 014)
+  failedAttempts: number;
+  sentToPhone?: string | null;
+  sentAt?: Date | null;
+  deliveryChannel?: 'recipient_sms' | 'sender_sms' | 'none' | null;
 }
 
 export interface DeliveryQRCodeCreationAttributes extends Optional<DeliveryQRCodeAttributes,
   'id' | 'scannedAt' | 'scannedByUserId' | 'scanLocation' | 'verificationData'
+  | 'failedAttempts' | 'sentToPhone' | 'sentAt' | 'deliveryChannel'
 > {}
 
 export class DeliveryQRCode extends Model<DeliveryQRCodeAttributes, DeliveryQRCodeCreationAttributes>
   implements DeliveryQRCodeAttributes {
 
   public id!: string;
+  public failedAttempts!: number;
+  public sentToPhone?: string | null;
+  public sentAt?: Date | null;
+  public deliveryChannel?: 'recipient_sms' | 'sender_sms' | 'none' | null;
   public deliveryAgreementId!: string;
   public qrToken!: string;
   public status!: QRCodeStatus;
@@ -162,6 +173,27 @@ DeliveryQRCode.init({
     type: DataTypes.JSONB,
     allowNull: true,
     field: 'verification_data',
+  },
+  failedAttempts: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    field: 'failed_attempts',
+  },
+  sentToPhone: {
+    type: DataTypes.STRING(32),
+    allowNull: true,
+    field: 'sent_to_phone',
+  },
+  sentAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'sent_at',
+  },
+  deliveryChannel: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    field: 'delivery_channel',
   },
 }, {
   sequelize,

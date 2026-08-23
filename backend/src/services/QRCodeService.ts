@@ -27,14 +27,13 @@ export interface QRCodeData {
 
 export class QRCodeService {
   private readonly QR_CODE_VALIDITY_HOURS = 24;
-  private readonly SECRET_KEY: string;
 
+  // QR_CODE_SECRET was held here to HMAC a token signature. That signature was
+  // generated but never verified — the check returned `token.length >= 24` —
+  // so the secret protected nothing. Verification is now a database lookup
+  // plus an identity check, which needs no secret, and the variable is no
+  // longer required at startup.
   constructor() {
-    const secret = process.env['QR_CODE_SECRET'];
-    if (!secret) {
-      throw new Error('QR_CODE_SECRET environment variable is required');
-    }
-    this.SECRET_KEY = secret;
   }
 
   /**
@@ -195,13 +194,15 @@ export class QRCodeService {
         };
       }
 
-      // Verify token signature (additional security)
-      if (!this.verifyTokenSignature(token, agreement.id, agreement.courierId)) {
+      // The scanner must be the assigned courier. This path previously called
+      // a signature check that computed nothing and returned
+      // `token.length >= 24`, so it verified only that the string was long.
+      if (agreement.courierId !== scannedByUserId) {
         return {
           qrCode,
           agreement,
           isValid: false,
-          message: 'Invalid QR code signature',
+          message: 'QR code not found',
         };
       }
 
@@ -267,51 +268,14 @@ export class QRCodeService {
   /**
    * Get QR code data for mobile app display
    */
-  async getQRCodeData(agreementId: string, courierId: string): Promise<QRCodeData | null> {
-    try {
-      const qrCode = await DeliveryQRCode.findOne({
-        where: {
-          deliveryAgreementId: agreementId,
-          status: QRCodeStatus.ACTIVE,
-        },
-        include: [{
-          model: DeliveryAgreement,
-          as: 'deliveryAgreement',
-          where: {
-            courierId,
-            status: DeliveryStatus.IN_TRANSIT,
-          },
-        }],
-      });
+  // getQRCodeData(agreementId, courierId) was removed deliberately.
+  //
+  // It returned the handover code to the *courier*, which is the one party the
+  // protocol depends on not having it: a courier who can read the code can
+  // complete a delivery, and collect on it, without ever meeting the
+  // recipient. It had no callers. Nothing should reintroduce a path from a
+  // courier's identity to a code.
 
-      if (!qrCode || !qrCode.isValid()) {
-        return null;
-      }
-
-      const timestamp = qrCode.generatedAt.getTime();
-      const signature = this.generateTokenSignature(qrCode.qrToken, agreementId, courierId);
-
-      return {
-        token: qrCode.qrToken,
-        agreementId,
-        courierId,
-        timestamp,
-        signature,
-      };
-
-    } catch (error) {
-      logError('Failed to get QR code data', error as Error, {
-        agreementId,
-        courierId,
-      });
-
-      return null;
-    }
-  }
-
-  /**
-   * Refresh/regenerate QR code if expired
-   */
   async refreshQRCode(
     agreementId: string,
     courierId: string,
@@ -432,22 +396,10 @@ export class QRCodeService {
     return `${timestamp}${random}`.toUpperCase();
   }
 
-  private generateTokenSignature(token: string, agreementId: string, courierId: string): string {
-    const data = `${token}:${agreementId}:${courierId}`;
-    return crypto
-      .createHmac('sha256', this.SECRET_KEY)
-      .update(data)
-      .digest('hex');
-  }
-
-  private verifyTokenSignature(_token: string, _agreementId: string, _courierId: string): boolean {
-    // const expectedSignature = this.generateTokenSignature(token, agreementId, courierId);
-
-    // In a real implementation, you might embed the signature in the token
-    // For now, we'll assume the token format includes the signature
-    // This is a simplified verification
-    return _token.length >= 24; // Basic token format validation
-  }
+  // verifyTokenSignature was removed. It computed nothing and returned
+  // `token.length >= 24`, so a "signature check" passed on any long enough
+  // string. Verification now runs through DeliveryHandoverService, which
+  // checks the code against the database and against the caller's identity.
 }
 
 export default new QRCodeService();

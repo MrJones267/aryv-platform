@@ -170,6 +170,96 @@ export class PaymentReleaseService {
   }
 
   /**
+   * Release escrow for a delivery whose handover has already been verified.
+   *
+   * Separate from processQRCodePaymentRelease, which did its own token lookup.
+   * Handover verification now lives in DeliveryHandoverService, because it has
+   * to enforce courier identity and an attempt cap — properties that belong
+   * with the protocol rather than with payment. By the time this is called the
+   * code has been consumed, so re-verifying here would fail.
+   */
+  async processConfirmedDeliveryRelease(
+    agreementId: string,
+    courierId: string,
+    location?: [number, number],
+    transaction?: Transaction,
+  ): Promise<PaymentReleaseResult> {
+    const t = transaction || await sequelize.transaction();
+    const shouldCommit = !transaction;
+
+    const failed = (error: string, id = agreementId): PaymentReleaseResult => ({
+      success: false,
+      agreementId: id,
+      amount: 0,
+      platformFee: 0,
+      courierEarnings: 0,
+      trigger: PaymentReleaseTrigger.QR_CODE_SCAN,
+      timestamp: new Date(),
+      error,
+    });
+
+    try {
+      const agreement = await DeliveryAgreement.findByPk(agreementId, { transaction: t });
+
+      if (!agreement) {
+        if (shouldCommit) await t.rollback();
+        return failed('Delivery agreement not found');
+      }
+
+      if (agreement.courierId !== courierId) {
+        if (shouldCommit) await t.rollback();
+        return failed('This delivery belongs to another courier');
+      }
+
+      if (agreement.status !== DeliveryStatus.IN_TRANSIT) {
+        if (shouldCommit) await t.rollback();
+        return failed(`Delivery is ${agreement.status}, not in transit`);
+      }
+
+      const completedAgreement = await courierEscrowService.completeDelivery(
+        agreement.id,
+        {
+          handover_code_verified: true,
+          confirmed_by: courierId,
+          confirmation_location: location,
+          delivery_confirmed_at: new Date().toISOString(),
+        },
+        t,
+      );
+
+      const result: PaymentReleaseResult = {
+        success: true,
+        agreementId: completedAgreement.id,
+        amount: completedAgreement.agreedPrice,
+        platformFee: completedAgreement.platformFee,
+        courierEarnings: completedAgreement.agreedPrice - completedAgreement.platformFee,
+        trigger: PaymentReleaseTrigger.QR_CODE_SCAN,
+        timestamp: new Date(),
+      };
+
+      await this.logPaymentRelease(result, t);
+      await this.sendPaymentReleaseNotifications(completedAgreement, result, t);
+
+      if (shouldCommit) await t.commit();
+
+      logInfo('Payment released after verified handover', {
+        agreementId: agreement.id,
+        courierEarnings: result.courierEarnings,
+        platformFee: result.platformFee,
+      });
+
+      return result;
+    } catch (error) {
+      if (shouldCommit) await t.rollback();
+      logError('Failed to release payment after handover', error as Error, {
+        agreementId,
+        courierId,
+      });
+      return failed((error as Error).message);
+    }
+  }
+
+  /**
    * Process manual payment release by admin
    */
   async processManualPaymentRelease(

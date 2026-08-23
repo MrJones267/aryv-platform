@@ -52,9 +52,6 @@ const REQUIRED_ENV_VARS = [
   'ADMIN_JWT_SECRET',
   'SESSION_SECRET',
   'DATABASE_URL',
-  // Consumed at import time by QRCodeService (delivery QR signing); missing it
-  // otherwise throws an opaque uncaught exception during module load.
-  'QR_CODE_SECRET',
 ];
 const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
@@ -303,6 +300,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
   const REQUIRED_COLUMNS: Array<{ table: string; column: string; migration: string }> = [
     { table: 'users', column: 'driver_verification_status', migration: '013_driver_document_verification.sql' },
     { table: 'users', column: 'driver_verified_at', migration: '013_driver_document_verification.sql' },
+    { table: 'delivery_qr_codes', column: 'failed_attempts', migration: '014_delivery_handover_codes.sql' },
+    { table: 'delivery_qr_codes', column: 'delivery_channel', migration: '014_delivery_handover_codes.sql' },
   ];
 
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [

@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import CryptoJS from 'crypto-js';
 import {
   View,
+  TextInput,
   Text,
   StyleSheet,
   TouchableOpacity,
@@ -134,6 +135,9 @@ const CameraView: React.FC<{
 // QR Scanner Screen Component
 type QRScannerScreenRouteProp = RouteProp<CourierStackParamList, 'QRScanner'>;
 
+/** Mirrors CODE_ALPHABET in the backend's DeliveryHandoverService. */
+const HANDOVER_CODE_PATTERN = /^[ACDEFGHJKLMNPQRTUVWXYZ234679]{6}$/;
+
 const QRScannerScreen: React.FC = () => {
   const route = useRoute<QRScannerScreenRouteProp>();
   const navigation = useNavigation();
@@ -142,6 +146,8 @@ const QRScannerScreen: React.FC = () => {
   const [scanning, setScanning] = useState(true);
   const [flashOn, setFlashOn] = useState(false);
   const [scannedData, setScannedData] = useState<string | null>(null);
+  const [manualCode, setManualCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleBarCodeRead = async (data: { data: string }) => {
     if (!scanning) return;
@@ -150,9 +156,15 @@ const QRScannerScreen: React.FC = () => {
     setScannedData(data.data);
 
     try {
-      // Validate QR code format
-      if (!data.data || !data.data.includes('ARYV_QR_')) {
-        Alert.alert('Invalid QR Code', 'This QR code is not valid for ARYV deliveries.');
+      // A handover code is six characters from an unambiguous alphabet. The
+      // previous check required an 'ARYV_QR_' prefix that the server has never
+      // produced, so nothing a recipient could show would have passed it.
+      const scanned = (data.data || '').trim().toUpperCase();
+      if (!HANDOVER_CODE_PATTERN.test(scanned)) {
+        Alert.alert(
+          'Not a delivery code',
+          'That is not an ARYV delivery code. Ask the recipient for the six-character code from their SMS.',
+        );
         setScanning(true);
         return;
       }
@@ -162,15 +174,15 @@ const QRScannerScreen: React.FC = () => {
 
       // Verify delivery with backend
       const result = await PackageService.verifyDeliveryQR(
-        data.data,
+        scanned,
         [currentLocation.latitude, currentLocation.longitude],
       );
 
       if (result.success) {
         const resultData = result.data as Record<string, unknown> | undefined;
         Alert.alert(
-          'QR Code Verified',
-          `Package verified successfully for ${(resultData?.deliveryType as string) || 'delivery'}`,
+          'Delivery confirmed',
+          `Payment released${resultData?.courierEarnings ? `: ${resultData.courierEarnings}` : ''}.`,
           [
             {
               text: 'Continue',
@@ -182,7 +194,7 @@ const QRScannerScreen: React.FC = () => {
           ],
         );
       } else {
-        Alert.alert('Verification Failed', result.error || 'Unable to verify QR code');
+        Alert.alert('Could not confirm', result.error || 'That code was not accepted.');
         setScanning(true);
       }
     } catch (error) {
@@ -201,13 +213,37 @@ const QRScannerScreen: React.FC = () => {
     setScannedData(null);
   };
 
+  /**
+   * Manual entry is the path that matters. The code reaches the recipient by
+   * SMS as text, so in practice they read it out and the courier types it —
+   * scanning only helps if the recipient happens to display it as a QR.
+   */
+  const submitManualCode = async (): Promise<void> => {
+    const code = manualCode.trim().toUpperCase();
+
+    if (!HANDOVER_CODE_PATTERN.test(code)) {
+      Alert.alert(
+        'Check the code',
+        'Delivery codes are six characters, letters and numbers, from the recipient\'s SMS.',
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await handleBarCodeRead({ data: code });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Icon name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Scan QR Code</Text>
+        <Text style={styles.headerTitle}>Confirm delivery</Text>
         <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
           <Icon name={flashOn ? "flash-on" : "flash-off"} size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -218,6 +254,38 @@ const QRScannerScreen: React.FC = () => {
         scanning={scanning} 
         agreementId={agreementId}
       />
+
+      <View style={styles.manualEntry}>
+        <Text style={styles.manualLabel}>Enter the recipient's code</Text>
+        <Text style={styles.manualHint}>
+          Ask the recipient for the six-character code in their SMS. Only enter
+          it once they have their package.
+        </Text>
+        <View style={styles.manualRow}>
+          <TextInput
+            style={styles.manualInput}
+            value={manualCode}
+            onChangeText={(text) => setManualCode(text.toUpperCase())}
+            placeholder="A1B2C3"
+            placeholderTextColor={colors.text.secondary}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={6}
+            editable={!submitting}
+            accessibilityLabel="Delivery code"
+          />
+          <TouchableOpacity
+            style={[styles.manualSubmit, submitting && styles.manualSubmitDisabled]}
+            onPress={submitManualCode}
+            disabled={submitting}
+            accessibilityRole="button"
+          >
+            <Text style={styles.manualSubmitText}>
+              {submitting ? 'Checking…' : 'Confirm'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.resetButton} onPress={resetScanner}>
@@ -241,6 +309,53 @@ const QRScannerScreen: React.FC = () => {
 // Styles
 const { width, height } = Dimensions.get('window');
 const styles = StyleSheet.create({
+  manualEntry: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: colors.background.primary,
+  },
+  manualLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  manualHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text.secondary,
+    marginBottom: 12,
+  },
+  manualRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  manualInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 20,
+    letterSpacing: 4,
+    color: colors.text.primary,
+    marginRight: 12,
+  },
+  manualSubmit: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  manualSubmitDisabled: {
+    opacity: 0.6,
+  },
+  manualSubmitText: {
+    color: colors.text.inverse,
+    fontWeight: '700',
+    fontSize: 15,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.black,

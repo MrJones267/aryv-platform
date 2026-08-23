@@ -36,6 +36,33 @@ class SMSService {
   }
 
   /**
+   * Send an arbitrary message to a phone number.
+   *
+   * Returns whether the carrier accepted it. When Twilio is not configured the
+   * body is logged instead, so local development still works — but callers
+   * must treat a false return as "the recipient did not get this".
+   */
+  async sendMessage(phoneNumber: string, body: string): Promise<boolean> {
+    if (!this.initialized || !TWILIO_PHONE_NUMBER) {
+      logger.info('SMS not sent (Twilio not configured)', { phoneNumber, body });
+      return false;
+    }
+
+    try {
+      await this.client.messages.create({
+        body,
+        from: TWILIO_PHONE_NUMBER,
+        to: phoneNumber,
+      });
+      logger.info('SMS sent', { phoneNumber });
+      return true;
+    } catch (error: any) {
+      logger.error('Twilio send error', { error: error.message, phoneNumber });
+      return false;
+    }
+  }
+
+  /**
    * Send a verification code to a phone number.
    * Stores the code in Redis (or in-memory fallback) with a TTL.
    * Returns the code in development so callers can include it in API responses.
