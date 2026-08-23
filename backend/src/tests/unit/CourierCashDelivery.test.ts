@@ -21,6 +21,7 @@ import { CommissionService } from '../../services/CommissionService';
 import { DeliveryAgreement, DeliveryStatus } from '../../models/DeliveryAgreement';
 import Package from '../../models/Package';
 import CourierProfile from '../../models/CourierProfile';
+import Ride from '../../models/Ride';
 
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
@@ -145,6 +146,65 @@ describe('courier cash on delivery', () => {
       await service.createDeliveryAgreement('package-1', COURIER_ID);
 
       expect(DeliveryAgreement.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('carrying passengers and parcels at once', () => {
+    // A driver doing the Gaborone–Francistown run can take a parcel on the
+    // same trip. Nothing should couple the two, and this fails if anything
+    // later does — so adding such a rule has to be a decision, not a slip.
+    const cashPackage = () => ({
+      id: 'package-1',
+      senderId: SENDER_ID,
+      title: 'Documents',
+      senderPriceOffer: 120,
+      paymentMethod: 'cash_on_delivery',
+      deliveryTierId: null,
+      isActive: true,
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    beforeEach(() => {
+      jest.spyOn(Package, 'findByPk').mockResolvedValue(cashPackage() as any);
+      jest.spyOn(DeliveryAgreement, 'findOne').mockResolvedValue(null);
+      jest.spyOn(DeliveryAgreement, 'create').mockImplementation((async (values: any) =>
+        makeAgreement(values)) as any);
+    });
+
+    it('does not consult the courier\'s rides when they accept a parcel', async () => {
+      const rideFindOne = jest.spyOn(Ride, 'findOne');
+      const rideFindAll = jest.spyOn(Ride, 'findAll');
+
+      await service.createDeliveryAgreement('package-1', COURIER_ID);
+
+      expect(rideFindOne).not.toHaveBeenCalled();
+      expect(rideFindAll).not.toHaveBeenCalled();
+    });
+
+    it('accepts a parcel for a courier who is also an active driver', async () => {
+      // Being mid-ride is not a reason to refuse; the only gates are an active
+      // courier profile and a settled commission balance.
+      jest.spyOn(CourierProfile, 'findOne').mockResolvedValue({
+        userId: COURIER_ID,
+        isCourierActive: true,
+        recordSuccessfulDelivery: jest.fn(),
+      } as any);
+
+      await service.createDeliveryAgreement('package-1', COURIER_ID);
+
+      expect(DeliveryAgreement.create).toHaveBeenCalledWith(
+        expect.objectContaining({ courierId: COURIER_ID }),
+        expect.anything(),
+      );
+    });
+
+    it('does not consult deliveries when completing one, beyond the one being completed', async () => {
+      jest.spyOn(DeliveryAgreement, 'findByPk').mockResolvedValue(makeAgreement() as any);
+      const rideFindOne = jest.spyOn(Ride, 'findOne');
+
+      await service.completeDelivery(AGREEMENT_ID, { handover_code_verified: true });
+
+      expect(rideFindOne).not.toHaveBeenCalled();
     });
   });
 

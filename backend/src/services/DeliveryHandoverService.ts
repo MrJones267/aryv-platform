@@ -41,6 +41,7 @@ import Package from '../models/Package';
 import User from '../models/User';
 import smsService from './SMSService';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import { formatMoneyForUser } from '../utils/money';
 
 /**
  * Unambiguous alphabet: no O/0, I/1, S/5, B/8. Codes get read aloud down a
@@ -179,7 +180,7 @@ export class DeliveryHandoverService {
         // figure — which is the wrong party to take it from.
         const isCash = (agreement.paymentMethod ?? 'cash_on_delivery') === 'cash_on_delivery';
         const amountDue = isCash
-          ? await this.formatAmount(agreement.agreedPrice, packageData.senderId)
+          ? await formatMoneyForUser(agreement.agreedPrice, packageData.senderId)
           : null;
 
         const sent = await smsService.sendMessage(
@@ -234,43 +235,6 @@ export class DeliveryHandoverService {
       logError('Error issuing handover code', error as Error, { agreementId });
       return { success: false, error: 'Could not issue handover code' };
     }
-  }
-
-  /**
-   * Render an amount in the sender's currency.
-   *
-   * Falls back to a bare number rather than guessing a symbol: a wrong
-   * currency marker on a payment instruction is worse than none, and this
-   * platform is not dollar-denominated despite what some older strings assume.
-   */
-  private async formatAmount(amount: number, senderId: string): Promise<string | null> {
-    // A missing or malformed price must not take the whole pickup down: the
-    // delivery is already under way, and the code matters more than the
-    // amount line in the message.
-    if (!Number.isFinite(Number(amount))) {
-      logWarning('Delivery has no usable amount to quote in its SMS', { senderId });
-      return null;
-    }
-
-    try {
-      const { CurrencyService } = await import('./CurrencyService');
-      const preferences = await CurrencyService.getUserCurrencies(senderId);
-      const currency = preferences?.primaryCurrency;
-
-      if (currency?.symbol) {
-        return `${currency.symbol}${Number(amount).toFixed(currency.decimalPlaces ?? 2)}`;
-      }
-      if (currency?.code) {
-        return `${Number(amount).toFixed(2)} ${currency.code}`;
-      }
-    } catch (error) {
-      logWarning('Could not resolve currency for delivery SMS', {
-        senderId,
-        error: (error as Error).message,
-      });
-    }
-
-    return Number(amount).toFixed(2);
   }
 
   /**

@@ -32,7 +32,11 @@ export class UserCurrency extends Model<UserCurrencyAttributes, UserCurrencyCrea
   public readonly updatedAt!: Date;
 
   // Association helpers
-  public Currency?: Currency;
+  // Named for the association alias below ('currency'). It was declared as
+  // `Currency` with a capital C, which Sequelize never populates — the
+  // property it sets is named by the alias — so every read of it was
+  // undefined and the user's primary currency silently did not exist.
+  public currency?: Currency;
   public User?: typeof User;
 }
 

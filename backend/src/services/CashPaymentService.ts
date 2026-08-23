@@ -15,6 +15,7 @@ import { BookingStatus } from '../types';
 import { NotificationService } from './NotificationService';
 import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import { formatMoneyForUser } from '../utils/money';
 
 export interface CashPaymentResult {
   success: boolean;
@@ -213,7 +214,7 @@ export class CashPaymentService {
         transactionId: cashTransaction.id,
         riderCode,
         driverCode: null, // Don't expose driver code to rider
-        instructions: this.getCashPaymentInstructions(amount),
+        instructions: await this.getCashPaymentInstructions(amount, riderId),
         trustScore: canPay.trustScore || 0,
       };
 
@@ -521,7 +522,7 @@ export class CashPaymentService {
     if (wallet.dailyCashUsed + amount > wallet.dailyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Daily limit exceeded. Used: $${wallet.dailyCashUsed}, Limit: $${wallet.dailyCashLimit}` as string,
+        reason: `Daily cash limit exceeded. Used: ${wallet.dailyCashUsed}, limit: ${wallet.dailyCashLimit}` as string,
       };
     }
 
@@ -529,7 +530,7 @@ export class CashPaymentService {
     if (wallet.weeklyCashUsed + amount > wallet.weeklyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Weekly limit exceeded. Used: $${wallet.weeklyCashUsed}, Limit: $${wallet.weeklyCashLimit}` as string,
+        reason: `Weekly cash limit exceeded. Used: ${wallet.weeklyCashUsed}, limit: ${wallet.weeklyCashLimit}` as string,
       };
     }
 
@@ -537,7 +538,7 @@ export class CashPaymentService {
     if (wallet.monthlyCashUsed + amount > wallet.monthlyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Monthly limit exceeded. Used: $${wallet.monthlyCashUsed}, Limit: $${wallet.monthlyCashLimit}` as string,
+        reason: `Monthly cash limit exceeded. Used: ${wallet.monthlyCashUsed}, limit: ${wallet.monthlyCashLimit}` as string,
       };
     }
 
@@ -712,8 +713,12 @@ export class CashPaymentService {
   /**
    * Get cash payment instructions for user
    */
-  private getCashPaymentInstructions(amount: number): string {
-    return `Please pay exactly $${amount.toFixed(2)} in cash to your driver. After payment, the driver will confirm receipt and you'll need to enter your confirmation code to complete the transaction.`;
+  private async getCashPaymentInstructions(amount: number, riderId: string): Promise<string> {
+    // Rendered in the rider's own currency. This read `$${amount}`, which
+    // quoted a Gaborone rider their fare in US dollars on the one screen where
+    // the number has to be right.
+    const rendered = await formatMoneyForUser(amount, riderId);
+    return `Please pay exactly ${rendered} in cash to your driver. After payment, the driver will confirm receipt and you'll need to enter your confirmation code to complete the transaction.`;
   }
 
   /**
@@ -726,10 +731,17 @@ export class CashPaymentService {
     riderCode: string,
   ): Promise<void> {
     try {
+      // Each party is quoted in their own currency: a cross-border ride can
+      // have a rider and driver who do not share one.
+      const [riderAmount, driverAmount] = await Promise.all([
+        formatMoneyForUser(amount, riderId),
+        formatMoneyForUser(amount, driverId),
+      ]);
+
       // Notify rider
       await (this.notificationService as any).sendNotification(riderId, {
         title: 'Cash Payment Created',
-        body: `Pay $${amount.toFixed(2)} in cash. Your confirmation code: ${riderCode}`,
+        body: `Pay ${riderAmount} in cash. Your confirmation code: ${riderCode}`,
         type: 'cash_payment_created',
         data: { amount, riderCode },
       });
@@ -737,7 +749,7 @@ export class CashPaymentService {
       // Notify driver
       await (this.notificationService as any).sendNotification(driverId, {
         title: 'Cash Payment Expected',
-        body: `Passenger will pay $${amount.toFixed(2)} in cash`,
+        body: `Passenger will pay ${driverAmount} in cash`,
         type: 'cash_payment_expected',
         data: { amount },
       });

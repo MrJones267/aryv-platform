@@ -32,6 +32,33 @@ export interface ExchangeRateProvider {
   isActive: boolean;
 }
 
+/**
+ * The platform's home currency. ARYV operates from Botswana, and several
+ * places in the codebase already assume BWP — settings defaults, promo copy,
+ * payment fallbacks — so this makes that assumption explicit in one place.
+ */
+export const PLATFORM_DEFAULT_CURRENCY = 'BWP';
+
+/**
+ * Country to currency for the region ARYV serves. Only currencies that are
+ * actually seeded belong here: an unseeded code falls through to the platform
+ * default rather than leaving the user with none.
+ */
+export const COUNTRY_DEFAULT_CURRENCY: Record<string, string> = {
+  BW: 'BWP', // Botswana
+  ZA: 'ZAR', // South Africa
+  NA: 'NAD', // Namibia
+  ZM: 'ZMW', // Zambia
+  ZW: 'ZWL', // Zimbabwe
+  SZ: 'SZL', // Eswatini
+  LS: 'LSL', // Lesotho
+  MW: 'MWK', // Malawi
+  MZ: 'MZN', // Mozambique
+  AO: 'AOA', // Angola
+  TZ: 'TZS', // Tanzania
+  US: 'USD',
+};
+
 export class CurrencyService {
   private static exchangeProviders: ExchangeRateProvider[] = [
     {
@@ -95,16 +122,25 @@ export class CurrencyService {
       });
 
       if (userCurrencies.length === 0) {
-        // Set USD as default if no preferences exist
-        await this.setUserPrimaryCurrency(userId, 'USD');
-        return this.getUserCurrencies(userId);
+        // Seed a default from where the user actually is. Defaulting everyone
+        // to USD quoted Botswana riders their fares in dollars.
+        const seeded = await this.seedDefaultCurrency(userId);
+        if (!seeded) {
+          throw new Error('Could not establish a default currency for this user');
+        }
+
+        // Re-read once, never in a loop. The previous version recursed on
+        // failure, so a missing currency row meant unbounded recursion rather
+        // than an error.
+        return this.readUserCurrencies(userId);
       }
 
-      const primaryCurrency = userCurrencies.find(uc => uc.isPrimary)?.Currency || userCurrencies[0].Currency!;
+      const primaryCurrency = userCurrencies.find(uc => uc.isPrimary)?.currency
+        ?? userCurrencies[0]!.currency!;
       const availableCurrencies = await this.getActiveCurrencies();
       const paymentCurrencies = userCurrencies
         .filter(uc => uc.isPaymentEnabled)
-        .map(uc => uc.Currency!);
+        .map(uc => uc.currency!);
 
       return {
         primaryCurrency,
@@ -115,6 +151,58 @@ export class CurrencyService {
       logger.error('Error fetching user currencies', { error: (error as Error).message });
       throw new Error('Failed to fetch user currency preferences');
     }
+  }
+
+  /**
+   * Read stored preferences without seeding. Used for the single retry after
+   * a default is created, so that path cannot loop.
+   */
+  private static async readUserCurrencies(userId: string): Promise<CurrencyPreferences> {
+    const userCurrencies = await UserCurrency.findAll({
+      where: { userId },
+      include: [{ model: Currency, as: 'currency', where: { isActive: true } }],
+      order: [['isPrimary', 'DESC'], ['createdAt', 'ASC']],
+    });
+
+    if (userCurrencies.length === 0) {
+      throw new Error('Could not establish a default currency for this user');
+    }
+
+    const primaryCurrency = userCurrencies.find((uc) => uc.isPrimary)?.currency
+      ?? userCurrencies[0]!.currency!;
+
+    return {
+      primaryCurrency,
+      availableCurrencies: await this.getActiveCurrencies(),
+      paymentCurrencies: userCurrencies.filter((uc) => uc.isPaymentEnabled).map((uc) => uc.currency!),
+    };
+  }
+
+  /**
+   * Choose a starting currency for a user who has never set one: the currency
+   * of their country if we know it and support it, otherwise the platform
+   * default, otherwise USD.
+   */
+  private static async seedDefaultCurrency(userId: string): Promise<boolean> {
+    const { default: User } = await import('../models/User');
+    const user = await User.findByPk(userId);
+    const countryCode = (user as unknown as { countryCode?: string })?.countryCode;
+
+    const candidates = [
+      countryCode ? COUNTRY_DEFAULT_CURRENCY[countryCode.toUpperCase()] : undefined,
+      PLATFORM_DEFAULT_CURRENCY,
+      'USD',
+    ].filter((code): code is string => Boolean(code));
+
+    for (const code of candidates) {
+      if (await this.setUserPrimaryCurrency(userId, code)) {
+        logger.info('Seeded default currency for user', { userId, code, countryCode });
+        return true;
+      }
+    }
+
+    logger.error('No usable default currency could be set', { userId, countryCode });
+    return false;
   }
 
   /**
