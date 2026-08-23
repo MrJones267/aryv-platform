@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { rideService } from '../services/api';
 
 interface Ride {
   id: string;
@@ -24,38 +25,30 @@ export const RideManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedRides, setSelectedRides] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Fetch rides from API
+  // Goes through rideService so the request carries the admin token and the
+  // configured API host. This used to fetch localhost directly and, on
+  // failure, show a hardcoded Downtown-to-Airport ride — fabricated operational
+  // data an admin had no way to tell from the real thing.
   useEffect(() => {
     const fetchRides = async () => {
+      setLoading(true);
+      setLoadError(null);
+
       try {
-        const response = await fetch('http://localhost:3001/api/rides');
-        const data = await response.json();
-        
-        if (data.success) {
-          setRides(data.data);
-        }
+        const response = await rideService.getRides({ page: 1, limit: 100 });
+        setRides(response.data.data ?? []);
       } catch (error) {
         console.error('Failed to fetch rides:', error);
-        // Fallback to mock data if API fails
-        const mockRides: Ride[] = [
-          {
-            id: 'R001',
-            driverId: 'D001',
-            driverName: 'John Smith',
-            route: { from: 'Downtown', to: 'Airport' },
-            departureTime: '2025-12-14T08:00:00',
-            status: 'scheduled',
-            passengers: { booked: 3, capacity: 4 },
-            price: 45,
-            distance: 25.5,
-            created: '2025-12-13T10:30:00'
-          }
-        ];
-        setRides(mockRides);
+        setRides([]);
+        setLoadError('Could not load rides. Check your connection and try again.');
+      } finally {
+        setLoading(false);
       }
     };
-    
+
     fetchRides();
   }, []);
 
@@ -130,6 +123,26 @@ export const RideManagement: React.FC = () => {
 
   return (
     <div>
+      {loadError && (
+        <div
+          role="alert"
+          style={{
+            background: '#fdecea',
+            border: '1px solid #f5c2c0',
+            color: '#8b1f18',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1.5rem',
+          }}
+        >
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ color: '#666', marginBottom: '1.5rem' }}>Loading rides…</div>
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>

@@ -29,6 +29,7 @@ import CommissionLedger from './CommissionLedger';
 // Driver verification models
 import DriverDocument from './DriverDocument';
 import PromoRedemption from './PromoRedemption';
+import RideStop from './RideStop';
 
 // Currency models
 import Currency from './Currency';
@@ -419,6 +420,21 @@ const defineAssociations = (): void => {
     onUpdate: 'CASCADE',
   });
 
+  // Multi-stop rides
+  Ride.hasMany(RideStop, {
+    foreignKey: 'rideId',
+    as: 'stops',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  RideStop.belongsTo(Ride, {
+    foreignKey: 'rideId',
+    as: 'ride',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
   // Driver verification associations
   User.hasMany(DriverDocument, {
     foreignKey: 'userId',
@@ -486,6 +502,7 @@ export {
   // Driver verification models
   DriverDocument,
   PromoRedemption,
+  RideStop,
   // Currency models
   Currency,
   UserCurrency,
@@ -526,6 +543,7 @@ export default {
   // Driver verification models
   DriverDocument,
   PromoRedemption,
+  RideStop,
   // Currency models
   Currency,
   UserCurrency,

@@ -59,12 +59,19 @@ jest.mock('../../config/database', () => ({
     })),
   },
 }));
+// A ride with no stop rows: getStops reads it as the two-stop journey it is,
+// which is every intra-city trip.
+jest.mock('../../models/RideStop', () => ({
+  __esModule: true,
+  default: { findAll: jest.fn().mockResolvedValue([]), bulkCreate: jest.fn() },
+}));
 jest.mock('../../services/AIService', () => ({ aiService: { predictDemand: jest.fn() } }));
 jest.mock('../../services/NotificationService', () => ({ notificationService: { notifyRideUpdate: jest.fn() } }));
 jest.mock('../../services/GroupChatService', () => jest.fn().mockImplementation(() => ({})));
 jest.mock('../../services/SocketService', () => jest.fn());
 
 import Ride from '../../models/Ride';
+import Booking from '../../models/Booking';
 
 const mockResponse = () => {
   const res = {} as Response;
@@ -113,7 +120,11 @@ describe('RideController', () => {
         id: 'ride-1',
         driverId: 'driver-1',
         originAddress: 'Start',
+        originCoordinates: { type: 'Point', coordinates: [25.92, -24.65] },
         destinationAddress: 'End',
+        destinationCoordinates: { type: 'Point', coordinates: [25.87, -24.68] },
+        availableSeats: 4,
+        pricePerSeat: 25,
         status: RideStatus.PENDING,
         toJSON: () => ({ id: 'ride-1', status: RideStatus.PENDING }),
       };
@@ -121,11 +132,20 @@ describe('RideController', () => {
       const req = mockRequest({ params: { id: 'ride-1' } });
       const res = mockResponse();
 
+      (Booking.count as jest.Mock).mockResolvedValueOnce(0);
+      (Booking.findAll as jest.Mock).mockResolvedValueOnce([]);
+
       await controller.getRideById(req, res);
 
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true })
       );
+
+      // The route comes back so a passenger can pick where to board, even on a
+      // ride that has no intermediate stops.
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.data.stops).toHaveLength(2);
+      expect(payload.data.legs).toHaveLength(1);
     });
   });
 

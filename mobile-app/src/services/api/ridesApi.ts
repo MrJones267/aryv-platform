@@ -32,6 +32,30 @@ export interface Ride {
   description?: string;
   createdAt: string;
   updatedAt: string;
+
+  /**
+   * The route in order — origin first, destination last. Present on a single
+   * ride and on search results. A direct trip comes back as its two ends, so
+   * this is never empty and callers need not special-case it.
+   */
+  stops?: RideStop[];
+
+  /** Per-leg occupancy. Only on a single ride, for the driver's view. */
+  legs?: RideLeg[];
+
+  /**
+   * On a search result: the part of this ride that matches what the passenger
+   * searched for, with the fare and seat count for that part rather than for
+   * the whole journey. Pass the two sequences straight to bookRide.
+   */
+  segment?: {
+    boardingSequence: number;
+    alightingSequence: number;
+    boardingAddress?: string;
+    alightingAddress?: string;
+    pricePerSeat: number;
+    seatsAvailable: number;
+  };
   driver: {
     id: string;
     firstName: string;
@@ -62,10 +86,44 @@ export interface Ride {
   }>;
 }
 
+/**
+ * A stop the driver adds between origin and destination.
+ *
+ * `fareFromOrigin` is cumulative — what someone riding from the origin to this
+ * stop pays — so it must rise along the route and stay below the full price of
+ * the ride. The fare for any segment is then one subtraction.
+ */
+export interface RideStopInput extends Location {
+  fareFromOrigin: number;
+}
+
+/** A stop as the server reports it, once the ride exists. */
+export interface RideStop {
+  id: string | null;
+  sequence: number;
+  address: string;
+  fareFromOrigin: number;
+  /** What someone boarding here and riding to the end would pay. */
+  fareToDestination?: number;
+}
+
+/** How full one leg of the route is. */
+export interface RideLeg {
+  from: number;
+  to: number;
+  occupied: number;
+  seatsAvailable: number;
+}
+
 export interface CreateRideData {
   vehicleId: string;
   origin: Location;
   destination: Location;
+  /**
+   * Intermediate stops, in order. Omitted for a direct trip, which is every
+   * intra-city journey.
+   */
+  stops?: RideStopInput[];
   departureTime: string;
   availableSeats: number;
   pricePerSeat: number;
@@ -172,6 +230,17 @@ class RidesApiService extends BaseApiService {
       description: rideData.description,
       estimatedDuration: rideData.estimatedDuration,
       distance: rideData.distance,
+      // Only sent when the driver actually added stops — a direct trip must
+      // not send an empty array, which the server would treat as a route.
+      ...(rideData.stops?.length
+        ? {
+            stops: rideData.stops.map((stop) => ({
+              address: stop.address,
+              coordinates: { latitude: stop.latitude, longitude: stop.longitude },
+              fareFromOrigin: stop.fareFromOrigin,
+            })),
+          }
+        : {}),
     };
     return this.post<Ride>('/rides', payload);
   }
@@ -221,10 +290,26 @@ class RidesApiService extends BaseApiService {
   /**
    * Book a ride
    */
-  async bookRide(rideId: string, seats: number, message?: string): Promise<ApiResponse<Booking>> {
+  /**
+   * Book seats on a ride.
+   *
+   * `segment` names where the passenger boards and where they get off, by stop
+   * sequence. Leaving it out books the whole journey, which is what a direct
+   * trip always is. The fare charged is for that segment alone.
+   */
+  async bookRide(
+    rideId: string,
+    seats: number,
+    message?: string,
+    segment?: { boardingStop: number; alightingStop: number },
+  ): Promise<ApiResponse<Booking>> {
     return this.post<Booking>(`/rides/${rideId}/book`, {
       seatsRequested: seats,
       specialRequests: message,
+      // Both or neither: the server rejects a half-specified segment.
+      ...(segment
+        ? { boardingStop: segment.boardingStop, alightingStop: segment.alightingStop }
+        : {}),
     });
   }
 

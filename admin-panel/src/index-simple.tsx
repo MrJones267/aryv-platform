@@ -9,6 +9,10 @@ import './index.css';
 import { UserManagement } from './components/UserManagement';
 import { RideManagement } from './components/RideManagement';
 
+// Same host the rest of the panel talks to. This was hardcoded to localhost,
+// so signing in never worked anywhere but a developer's machine.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.aryv-app.com';
+
 // Simple App Component
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
@@ -30,7 +34,7 @@ const App: React.FC = () => {
   const handleLogin = async (email: string, password: string) => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:3001/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/admin/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })

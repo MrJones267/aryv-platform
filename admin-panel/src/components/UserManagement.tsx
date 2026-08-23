@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { userService } from '../services/api';
 
 interface User {
   id: string;
@@ -18,36 +19,32 @@ export const UserManagement: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [showAddUser, setShowAddUser] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Fetch users from API
+  // Goes through userService so the request carries the admin token and the
+  // configured API host. This used to fetch localhost directly, which reached
+  // nothing in a deployed panel, and then fell back to a hardcoded "John
+  // Smith" — so a failed load looked like a real user list with one user in
+  // it. An admin cannot act correctly on invented data, so a failure now says
+  // so instead.
   useEffect(() => {
     const fetchUsers = async () => {
+      setLoading(true);
+      setLoadError(null);
+
       try {
-        const response = await fetch('http://localhost:3001/api/users');
-        const data = await response.json();
-        
-        if (data.success) {
-          setUsers(data.data);
-        }
+        const response = await userService.getUsers({ page: 1, limit: 100 });
+        setUsers(response.data.data ?? []);
       } catch (error) {
         console.error('Failed to fetch users:', error);
-        // Fallback to mock data if API fails
-        const mockUsers: User[] = [
-          {
-            id: '1',
-            name: 'John Smith',
-            email: 'john.smith@email.com',
-            role: 'driver',
-            status: 'active',
-            verified: true,
-            joinDate: '2025-01-15',
-            lastActive: '2025-12-13'
-          }
-        ];
-        setUsers(mockUsers);
+        setUsers([]);
+        setLoadError('Could not load users. Check your connection and try again.');
+      } finally {
+        setLoading(false);
       }
     };
-    
+
     fetchUsers();
   }, []);
 
@@ -123,6 +120,28 @@ export const UserManagement: React.FC = () => {
 
   return (
     <div>
+      {/* A failed load is stated, not papered over — the counts and the table
+          below are empty, and an admin needs to know that is why. */}
+      {loadError && (
+        <div
+          role="alert"
+          style={{
+            background: '#fdecea',
+            border: '1px solid #f5c2c0',
+            color: '#8b1f18',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1.5rem',
+          }}
+        >
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ color: '#666', marginBottom: '1.5rem' }}>Loading users…</div>
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>

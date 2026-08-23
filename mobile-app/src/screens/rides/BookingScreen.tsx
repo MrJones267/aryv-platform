@@ -20,6 +20,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Card, Badge, Avatar } from '../../components/ui';
 import { ridesApi } from '../../services/api';
+import type { RideStop } from '../../services/api';
 import { BookingScreenProps } from '../../navigation/types';
 import AIPricingService, { PricingRequest, PricingResponse } from '../../services/AIPricingService';
 import PricingDisplay from '../../components/pricing/PricingDisplay';
@@ -76,10 +77,39 @@ interface BookingDetails {
   paymentMethod: string | null;
 }
 
+/**
+ * What the ride from one stop to another costs per seat.
+ *
+ * Stop fares are cumulative from the origin, so a segment is one subtraction.
+ * Returns null when either stop is not on the route, which is the caller's cue
+ * to fall back to the ride's own price.
+ */
+const fareBetween = (
+  stops: RideStop[],
+  boardingSequence: number,
+  alightingSequence: number,
+): number | null => {
+  const boarding = stops.find((stop) => stop.sequence === boardingSequence);
+  const alighting = stops.find((stop) => stop.sequence === alightingSequence);
+
+  if (!boarding || !alighting) {
+    return null;
+  }
+
+  return Math.max(0, alighting.fareFromOrigin - boarding.fareFromOrigin);
+};
+
 const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const typedNavigation = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
   const { rideId } = route.params;
-  const seatsRequested = (route.params as Record<string, unknown>).seatsRequested as number || 1;
+  const params = route.params as Record<string, unknown>;
+  const seatsRequested = (params.seatsRequested as number) || 1;
+
+  // A search result already knows which part of the ride matched what the
+  // passenger asked for, and passes it through. Absent, the passenger is
+  // taking the whole journey — which is what a direct trip always is.
+  const suggestedBoarding = params.boardingStop as number | undefined;
+  const suggestedAlighting = params.alightingStop as number | undefined;
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -93,6 +123,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [showPaymentSelector, setShowPaymentSelector] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodType | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
+
+  // The ride's route, and the part of it this passenger is taking.
+  const [stops, setStops] = useState<RideStop[]>([]);
+  const [boardingSequence, setBoardingSequence] = useState<number | null>(
+    suggestedBoarding ?? null,
+  );
+  const [alightingSequence, setAlightingSequence] = useState<number | null>(
+    suggestedAlighting ?? null,
+  );
+  const [editingSegment, setEditingSegment] = useState<'boarding' | 'alighting' | null>(null);
 
   useEffect(() => {
     loadBookingDetails();
@@ -113,7 +153,25 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       }
 
       const ride = response.data;
-      const subtotal = ride.pricePerSeat * selectedSeats;
+
+      // The server always reports a route, even for a direct trip, where it is
+      // just the two ends. Default to riding the whole of it.
+      const rideStops = ride.stops ?? [];
+      setStops(rideStops);
+
+      const firstStop = rideStops[0]?.sequence ?? 0;
+      const lastStop = rideStops[rideStops.length - 1]?.sequence ?? 1;
+
+      const boarding = suggestedBoarding ?? boardingSequence ?? firstStop;
+      const alighting = suggestedAlighting ?? alightingSequence ?? lastStop;
+      setBoardingSequence(boarding);
+      setAlightingSequence(alighting);
+
+      // Charge for the part of the journey being travelled, not the whole
+      // ride. On a direct trip these are the two ends and this is the full
+      // price, unchanged.
+      const farePerSeat = fareBetween(rideStops, boarding, alighting) ?? ride.pricePerSeat;
+      const subtotal = farePerSeat * selectedSeats;
       const platformFee = Math.max(1, subtotal * 0.05);
 
       setBookingDetails({
@@ -145,7 +203,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             longitude: ride.destination.longitude,
           },
           departureTime: ride.departureTime,
-          pricePerSeat: ride.pricePerSeat,
+          pricePerSeat: farePerSeat,
           availableSeats: ride.availableSeats,
           distance: ride.distance ?? 0,
           estimatedDuration: ride.estimatedDuration ?? 0,
@@ -290,7 +348,14 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               });
 
               // Step 2: Book the ride
-              const response = await ridesApi.bookRide(rideId, selectedSeats);
+              const response = await ridesApi.bookRide(
+                rideId,
+                selectedSeats,
+                undefined,
+                boardingSequence !== null && alightingSequence !== null
+                  ? { boardingStop: boardingSequence, alightingStop: alightingSequence }
+                  : undefined,
+              );
 
               if (response.success) {
                 // Step 3: Confirm payment (for non-cash methods)
@@ -446,6 +511,121 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     );
   };
 
+  /**
+   * Where the passenger gets on and off.
+   *
+   * Only shown when the driver listed stops — on a direct trip there is
+   * nothing to choose, and a control with one option is noise. Changing either
+   * end reprices the booking, because a shorter ride costs less.
+   */
+  const renderSegmentSelector = () => {
+    if (stops.length <= 2 || boardingSequence === null || alightingSequence === null) {
+      return null;
+    }
+
+    const boardingStop = stops.find((stop) => stop.sequence === boardingSequence);
+    const alightingStop = stops.find((stop) => stop.sequence === alightingSequence);
+
+    // A passenger can only get off after they get on, so each list is bounded
+    // by the other's choice.
+    const options = editingSegment === 'boarding'
+      ? stops.filter((stop) => stop.sequence < alightingSequence)
+      : stops.filter((stop) => stop.sequence > boardingSequence);
+
+    const applyChoice = (sequence: number) => {
+      const nextBoarding = editingSegment === 'boarding' ? sequence : boardingSequence;
+      const nextAlighting = editingSegment === 'alighting' ? sequence : alightingSequence;
+
+      setBoardingSequence(nextBoarding);
+      setAlightingSequence(nextAlighting);
+      setEditingSegment(null);
+
+      // Reprice here rather than in an effect: the pricing effect already
+      // depends on bookingDetails and writes to it, so adding another writer
+      // keyed on the same object would make the two chase each other.
+      const farePerSeat = fareBetween(stops, nextBoarding, nextAlighting);
+
+      if (farePerSeat === null) {
+        return;
+      }
+
+      const subtotal = farePerSeat * selectedSeats;
+      const platformFee = Math.max(1, subtotal * 0.05);
+
+      setBookingDetails(prev => prev ? {
+        ...prev,
+        ride: { ...prev.ride, pricePerSeat: farePerSeat },
+        totalAmount: subtotal + platformFee,
+        platformFee,
+      } : null);
+    };
+
+    return (
+      <Card style={styles.segmentCard}>
+        <Text style={styles.sectionTitle}>Your Part of the Trip</Text>
+
+        <TouchableOpacity
+          style={styles.segmentRow}
+          onPress={() => setEditingSegment(editingSegment === 'boarding' ? null : 'boarding')}
+        >
+          <Icon name="trip-origin" size={20} color="#2196F3" />
+          <View style={styles.segmentTextGroup}>
+            <Text style={styles.segmentLabel}>Get on at</Text>
+            <Text style={styles.segmentValue} numberOfLines={1}>
+              {boardingStop?.address ?? 'Start of the trip'}
+            </Text>
+          </View>
+          <Icon
+            name={editingSegment === 'boarding' ? 'expand-less' : 'expand-more'}
+            size={22}
+            color="#999999"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.segmentRow}
+          onPress={() => setEditingSegment(editingSegment === 'alighting' ? null : 'alighting')}
+        >
+          <Icon name="place" size={20} color="#4CAF50" />
+          <View style={styles.segmentTextGroup}>
+            <Text style={styles.segmentLabel}>Get off at</Text>
+            <Text style={styles.segmentValue} numberOfLines={1}>
+              {alightingStop?.address ?? 'End of the trip'}
+            </Text>
+          </View>
+          <Icon
+            name={editingSegment === 'alighting' ? 'expand-less' : 'expand-more'}
+            size={22}
+            color="#999999"
+          />
+        </TouchableOpacity>
+
+        {editingSegment && (
+          <View style={styles.segmentOptions}>
+            {options.map((stop) => (
+              <TouchableOpacity
+                key={stop.sequence}
+                style={styles.segmentOption}
+                onPress={() => applyChoice(stop.sequence)}
+              >
+                <Text style={styles.segmentOptionText} numberOfLines={1}>
+                  {stop.address}
+                </Text>
+                {stop.sequence === (editingSegment === 'boarding' ? boardingSequence : alightingSequence) && (
+                  <Icon name="check" size={18} color="#2196F3" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <Text style={styles.segmentHint}>
+          You only pay for the part you travel.
+        </Text>
+      </Card>
+    );
+  };
+
   const renderRideTypeSelector = () => {
     const rideTypes = [
       { id: 'economy', name: 'Economy', icon: 'directions-car', description: 'Affordable rides' },
@@ -589,6 +769,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <Text style={styles.screenTitle}>Confirm Your Booking</Text>
           
           {renderRideDetails()}
+          {renderSegmentSelector()}
           {renderRideTypeSelector()}
           {renderBookingOptions()}
           {renderAIPricing()}
@@ -785,6 +966,55 @@ const styles = StyleSheet.create({
   },
   amenitiesSection: {
     marginBottom: 0,
+  },
+  segmentCard: {
+    marginBottom: 16,
+    padding: 16,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  segmentTextGroup: {
+    flex: 1,
+  },
+  segmentLabel: {
+    fontSize: 12,
+    color: '#888888',
+    marginBottom: 2,
+  },
+  segmentValue: {
+    fontSize: 15,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  segmentOptions: {
+    paddingTop: 8,
+  },
+  segmentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#F7F9FA',
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  segmentOptionText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333333',
+  },
+  segmentHint: {
+    fontSize: 12,
+    color: '#777777',
+    marginTop: 10,
   },
   sectionTitle: {
     fontSize: 16,

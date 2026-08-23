@@ -80,6 +80,55 @@ const createRideValidation = [
     .optional()
     .isFloat({ min: 0.1, max: 2000 })
     .withMessage('Distance must be between 0.1 and 2000 km'),
+
+  // Intermediate stops, origin and destination excluded — those come from the
+  // ride itself. Absent for an intra-city trip, which is a single leg.
+  body('stops')
+    .optional()
+    .isArray({ max: 10 })
+    .withMessage('A ride can have at most 10 intermediate stops'),
+  body('stops.*.address')
+    .isLength({ min: 3, max: 500 })
+    .withMessage('Each stop needs an address of 3 to 500 characters'),
+  body('stops.*.coordinates.latitude')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Stop latitude must be between -90 and 90'),
+  body('stops.*.coordinates.longitude')
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Stop longitude must be between -180 and 180'),
+  // Cumulative fare from the origin to this stop. Must rise along the route and
+  // stay under the full fare, so a segment never costs more than the whole ride.
+  body('stops.*.fareFromOrigin')
+    .isFloat({ min: 0, max: 10000 })
+    .withMessage('Stop fare must be between 0 and 10,000'),
+  body('stops').optional().custom((stops, { req }) => {
+    if (!Array.isArray(stops)) {
+      return true;
+    }
+
+    const fullFare = Number(req.body.pricePerSeat);
+    let previous = 0;
+
+    for (const [index, stop] of stops.entries()) {
+      const fare = Number(stop?.fareFromOrigin);
+
+      if (!Number.isFinite(fare) || fare <= previous) {
+        throw new Error(
+          `Fare at stop ${index + 1} must be higher than the fare at the stop before it`,
+        );
+      }
+
+      if (Number.isFinite(fullFare) && fare >= fullFare) {
+        throw new Error(
+          `Fare at stop ${index + 1} must be below the full price of the ride`,
+        );
+      }
+
+      previous = fare;
+    }
+
+    return true;
+  }),
 ];
 
 const updateRideValidation = [
@@ -295,6 +344,30 @@ router.post(
       .optional()
       .isLength({ max: 1000 })
       .withMessage('Special requests cannot exceed 1000 characters'),
+
+    // Which part of the journey the passenger is taking. Omitted means the
+    // whole ride, which is every intra-city trip.
+    body('boardingStop')
+      .optional()
+      .isInt({ min: 0, max: 11 })
+      .withMessage('Boarding stop must be a stop on this ride')
+      .toInt(),
+    body('alightingStop')
+      .optional()
+      .isInt({ min: 1, max: 11 })
+      .withMessage('Drop-off stop must be a stop on this ride')
+      .toInt(),
+    // Both or neither: a segment with one end open is not a journey. Which
+    // stops actually exist is checked against the ride in the controller.
+    body('alightingStop').custom((alighting, { req }) => {
+      const boarding = req.body.boardingStop;
+
+      if ((boarding === undefined) !== (alighting === undefined)) {
+        throw new Error('Give both a boarding stop and a drop-off stop, or neither');
+      }
+
+      return true;
+    }),
   ],
   validateInput,
   rideController.bookRide.bind(rideController),

@@ -25,6 +25,7 @@ import Booking from '../../models/Booking';
 import User from '../../models/User';
 import PromoCode from '../../models/PromoCode';
 import PromoRedemption from '../../models/PromoRedemption';
+import RideStop from '../../models/RideStop';
 import { RideStatus, UserRole } from '../../types';
 
 jest.mock('../../utils/logger', () => ({
@@ -89,14 +90,22 @@ describe('promo codes at booking', () => {
     };
     jest.spyOn(sequelize, 'transaction').mockResolvedValue(mockTx as any);
 
+    // An ordinary intra-city ride: no intermediate stops, so the whole
+    // journey is one leg and the fare is the ride's price per seat.
     jest.spyOn(Ride, 'findByPk').mockResolvedValue({
       id: RIDE,
       driverId: DRIVER,
       status: RideStatus.PENDING,
       availableSeats: 4,
       pricePerSeat: FARE_PER_SEAT,
+      originAddress: 'Main Mall, Gaborone',
+      originCoordinates: { type: 'Point', coordinates: [25.92, -24.65] },
+      destinationAddress: 'Game City, Gaborone',
+      destinationCoordinates: { type: 'Point', coordinates: [25.87, -24.68] },
     } as any);
 
+    jest.spyOn(RideStop, 'findAll').mockResolvedValue([] as any);
+    jest.spyOn(Booking, 'findAll').mockResolvedValue([] as any);
     jest.spyOn(Booking, 'sum').mockResolvedValue(0 as any);
     jest.spyOn(Booking, 'findOne').mockResolvedValue(null);
     jest.spyOn(Booking, 'create').mockImplementation((async (values: any) => {

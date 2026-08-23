@@ -11,6 +11,7 @@ import verificationService from '../services/VerificationService';
 import DriverDocument, { DocumentStatus, DocumentType } from '../models/DriverDocument';
 import { AuthenticatedRequest, UserRole } from '../types';
 import { logError, logWarning } from '../utils/logger';
+import { UPLOADS_DIR } from '../middleware/upload';
 
 const ADMIN_ROLES = [UserRole.ADMIN];
 
@@ -297,8 +298,7 @@ export class VerificationController {
       // out of the documents directory.
       const path = await import('path');
       const safeName = path.basename(document.storageKey);
-      const uploadsDir = process.env['UPLOADS_DIR'] || './uploads';
-      const filePath = path.resolve(uploadsDir, 'documents', safeName);
+      const filePath = path.resolve(UPLOADS_DIR, 'documents', safeName);
 
       res.sendFile(filePath, (err) => {
         if (err) {

@@ -15,7 +15,8 @@ import { UserController } from '../controllers/UserController';
 import { AuthController } from '../controllers/AuthController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
-import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError } from '../middleware/upload';
+import path from 'path';
+import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError, UPLOADS_DIR } from '../middleware/upload';
 import User from '../models/User';
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
@@ -698,7 +699,7 @@ router.post(
 /** POST /driver-verification — upload docs for driver verification */
 const ALLOWED_DV_FIELDS = new Set(['driverLicense', 'vehicleRegistration', 'insurance']);
 const driverVerificationUpload = multer({ storage: multer.diskStorage({
-  destination: './uploads/documents',
+  destination: path.join(UPLOADS_DIR, 'documents'),
   filename: (req: any, _file, cb) => {
     const uid = (req.user?.id || 'unknown').replace(/[^a-zA-Z0-9-]/g, '');
     cb(null, `${uid}-dv-${crypto.randomBytes(8).toString('hex')}.jpg`);

@@ -33,6 +33,9 @@ export interface BookingModel extends Model<
   currency: CreationOptional<string>;
   platformFee: number;
   promoCode: CreationOptional<string | null>;
+  /** Which part of the journey this booking occupies. Null means all of it. */
+  boardingSequence: CreationOptional<number | null>;
+  alightingSequence: CreationOptional<number | null>;
   discountAmount: CreationOptional<number>;
   status: CreationOptional<BookingStatus>;
   pickupAddress: CreationOptional<string | null>;
@@ -117,6 +120,16 @@ const Booking = sequelize.define<BookingModel>(
           msg: 'Total amount must be greater than 0',
         },
       },
+    },
+    boardingSequence: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'boarding_sequence',
+    },
+    alightingSequence: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'alighting_sequence',
     },
     promoCode: {
       type: DataTypes.STRING(20),

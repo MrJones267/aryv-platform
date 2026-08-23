@@ -13,6 +13,7 @@ import { makeStore } from './config/rateLimitStore';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
+import { UPLOADS_DIR } from './middleware/upload';
 
 // Import custom modules
 import { testConnection, sequelize } from './models';
@@ -149,7 +150,7 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
     return res.status(403).json({ success: false, error: 'Access denied', code: 'FORBIDDEN' });
   }
 
-  const filePath = path.resolve('./uploads', type, safe);
+  const filePath = path.resolve(UPLOADS_DIR, type, safe);
   return res.sendFile(filePath, (err) => {
     if (err) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
   });
