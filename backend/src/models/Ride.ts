@@ -15,7 +15,7 @@ import {
   NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../config/database';
-import { RideStatus, Coordinates, GeoPoint } from '../types';
+import { RideStatus, RideTier, RIDE_TIERS, Coordinates, GeoPoint } from '../types';
 import type { UserModel } from './User';
 import type { VehicleModel } from './Vehicle';
 
@@ -36,6 +36,11 @@ export interface RideModel extends Model<
   distance: CreationOptional<number | null>; // in kilometers
   availableSeats: number;
   pricePerSeat: number;
+  /**
+   * Service level, set by the driver from the vehicle they are driving. Not a
+   * passenger choice: a passenger books one named driver's one specific car.
+   */
+  tier: CreationOptional<RideTier>;
   currency: CreationOptional<string>;
   status: CreationOptional<RideStatus>;
   description: CreationOptional<string | null>;
@@ -217,6 +222,12 @@ const Ride = sequelize.define<RideModel>(
           msg: 'Price per seat cannot exceed 10,000',
         },
       },
+    },
+    tier: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'standard',
+      validate: { isIn: [RIDE_TIERS as unknown as string[]] },
     },
     status: {
       type: DataTypes.ENUM(...Object.values(RideStatus)),

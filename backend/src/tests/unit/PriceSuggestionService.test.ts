@@ -16,7 +16,16 @@
  */
 
 import { PriceSuggestionService } from '../../services/PriceSuggestionService';
+import { surgeService } from '../../services/SurgeService';
 import Ride from '../../models/Ride';
+
+// Surge is exercised in SurgeService.test.ts and in the tier/surge block
+// below; neutral here so the existing figures read as plain medians.
+jest.mock('../../services/SurgeService', () => ({
+  surgeService: {
+    getSurge: jest.fn().mockResolvedValue({ multiplier: 1, reason: null, windows: [] }),
+  },
+}));
 
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
@@ -188,6 +197,91 @@ describe('PriceSuggestionService', () => {
       withHistory(fares([120, 140, 150, 160]));
 
       expect((await service.suggestForRoute(FRANCISTOWN, GABORONE)).currency).toBe('BWP');
+    });
+  });
+
+  describe('tiers', () => {
+    it('compares like with like, not against every tier on the road', async () => {
+      // A premium sedan should not be advised to charge what a shared minibus
+      // does on the same route.
+      withHistory(fares([300, 320, 340, 360]));
+
+      await service.suggestForRoute(FRANCISTOWN, GABORONE, { tier: 'premium' });
+
+      const where = (Ride.findAll as jest.Mock).mock.calls[0][0].where;
+      expect(where.tier).toBe('premium');
+    });
+
+    it('defaults to standard when no tier is named', async () => {
+      withHistory(fares([120, 140, 150, 160]));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE);
+
+      expect(result.tier).toBe('standard');
+    });
+
+    it('scales the platform-wide rate to the tier being asked about', async () => {
+      // The per-km fallback mixes every tier together, so it is adjusted.
+      // 20 rides at P100 over 50km is P2/km; premium is 1.8x, over 400km.
+      withHistory(fares([140]), rated(20, 100, 50));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE, {
+        distanceKm: 400, tier: 'premium',
+      });
+
+      expect(result.suggested).toBe(1440);
+    });
+  });
+
+  describe('surge', () => {
+    const holiday = { multiplier: 1.5, reason: 'Christmas 2026', windows: [] };
+
+    it('raises the suggestion during a dated period', async () => {
+      (surgeService.getSurge as jest.Mock).mockResolvedValueOnce(holiday);
+      withHistory(fares([120, 140, 150, 160]));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE);
+
+      // Median 145 at 1.5.
+      expect(result.suggested).toBe(217.5);
+    });
+
+    it('names the reason alongside the number', async () => {
+      // A raised price a driver cannot explain to a passenger is worse than
+      // no suggestion.
+      (surgeService.getSurge as jest.Mock).mockResolvedValueOnce(holiday);
+      withHistory(fares([120, 140, 150, 160]));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE);
+
+      expect(result.surge).toEqual({ multiplier: 1.5, reason: 'Christmas 2026' });
+    });
+
+    it('raises the range with the suggestion', async () => {
+      (surgeService.getSurge as jest.Mock).mockResolvedValueOnce(holiday);
+      withHistory(fares([100, 120, 140, 160, 180]));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE);
+
+      expect(result.range).toEqual({ low: 180, high: 240 });
+    });
+
+    it('reports no surge outside a period', async () => {
+      withHistory(fares([120, 140, 150, 160]));
+
+      const result = await service.suggestForRoute(FRANCISTOWN, GABORONE);
+
+      expect(result.surge).toBeNull();
+      expect(result.suggested).toBe(145);
+    });
+
+    it('asks about the departure time, not the moment the form is filled in', async () => {
+      const departure = new Date('2026-12-24T10:00:00+02:00');
+      withHistory(fares([120, 140, 150, 160]));
+
+      await service.suggestForRoute(FRANCISTOWN, GABORONE, { departureTime: departure });
+
+      expect(surgeService.getSurge).toHaveBeenCalledWith(departure, FRANCISTOWN);
     });
   });
 });

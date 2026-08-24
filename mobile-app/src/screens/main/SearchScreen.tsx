@@ -31,6 +31,15 @@ import type { Ride } from '../../store/slices/ridesSlice';
 
 /** The part of a ride that matched the search, as the server reports it. */
 type RideSegment = NonNullable<Ride['segment']>;
+
+type RideTier = NonNullable<Ride['tier']>;
+
+const TIER_LABELS: Record<RideTier, string> = {
+  shared: 'Shared',
+  standard: 'Standard',
+  comfort: 'Comfort',
+  premium: 'Premium',
+};
 import logger from '../../services/LoggingService';
 
 const log = logger.createLogger('SearchScreen');
@@ -445,6 +454,13 @@ const SearchScreen: React.FC = () => {
                   {formatPrice(ride.segment?.pricePerSeat ?? ride.pricePerSeat)}
                 </Text>
                 <Text style={styles.priceLabel}>per seat</Text>
+                {/* What kind of vehicle it is. Shown, not chosen — the
+                    passenger is booking this specific car. */}
+                {ride.tier && ride.tier !== 'standard' && (
+                  <View style={styles.tierBadge}>
+                    <Text style={styles.tierBadgeText}>{TIER_LABELS[ride.tier]}</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1033,6 +1049,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#3B82F6',
+  },
+  tierBadge: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#E3F2FD',
+  },
+  tierBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1565C0',
+    letterSpacing: 0.3,
   },
   priceLabel: {
     fontSize: 12,

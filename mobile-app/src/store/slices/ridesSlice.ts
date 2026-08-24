@@ -49,6 +49,9 @@ export interface Ride {
   createdAt: Date;
   updatedAt: Date;
 
+  /** Service level, set by the driver from their vehicle. */
+  tier?: 'shared' | 'standard' | 'comfort' | 'premium';
+
   /** The route in order, origin first and destination last. */
   stops?: Array<{
     id: string | null;

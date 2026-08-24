@@ -22,6 +22,8 @@ import logger from './LoggingService';
 
 const log = logger.createLogger('PriceSuggestionService');
 
+export type RideTier = 'shared' | 'standard' | 'comfort' | 'premium';
+
 export interface PriceSuggestion {
   /** Null when there is not enough history to say anything honest. */
   suggested: number | null;
@@ -32,6 +34,13 @@ export interface PriceSuggestion {
   perKilometre: number | null;
   currency: string;
   basis: 'comparable_routes' | 'distance_rate' | 'none';
+  /**
+   * A dated demand period covering the departure, if any. Advisory: it raises
+   * what is suggested to the driver and is shown as a named reason. It never
+   * changes what a passenger is charged.
+   */
+  surge: { multiplier: number; reason: string } | null;
+  tier: RideTier;
 }
 
 class PriceSuggestionService {
@@ -55,6 +64,7 @@ class PriceSuggestionService {
     origin: { latitude: number; longitude: number },
     destination: { latitude: number; longitude: number },
     distanceKm?: number,
+    options: { tier?: RideTier; departureTime?: string } = {},
   ): Promise<PriceSuggestion | null> {
     try {
       const params = new URLSearchParams({
@@ -63,6 +73,9 @@ class PriceSuggestionService {
         destinationLat: String(destination.latitude),
         destinationLng: String(destination.longitude),
         ...(distanceKm ? { distanceKm: String(distanceKm) } : {}),
+        ...(options.tier ? { tier: options.tier } : {}),
+        // Surge is dated, so the suggestion depends on when the ride runs.
+        ...(options.departureTime ? { departureTime: options.departureTime } : {}),
       });
 
       const response = await apiClient.get(`/rides/price-suggestion?${params.toString()}`);

@@ -33,6 +33,9 @@ export interface Ride {
   createdAt: string;
   updatedAt: string;
 
+  /** Service level, set by the driver from their vehicle. */
+  tier?: RideTier;
+
   /**
    * The route in order — origin first, destination last. Present on a single
    * ride and on search results. A direct trip comes back as its two ends, so
@@ -93,6 +96,13 @@ export interface Ride {
  * stop pays — so it must rise along the route and stay below the full price of
  * the ride. The fare for any segment is then one subtraction.
  */
+/**
+ * Service level of a ride, declared by the driver from the vehicle they are
+ * actually driving. Not a passenger selection: a passenger books one named
+ * driver's one specific car, so there is nothing to upgrade.
+ */
+export type RideTier = 'shared' | 'standard' | 'comfort' | 'premium';
+
 export interface RideStopInput extends Location {
   fareFromOrigin: number;
 }
@@ -117,6 +127,8 @@ export interface RideLeg {
 
 export interface CreateRideData {
   vehicleId: string;
+  /** Defaults to 'standard' — an ordinary car — when not given. */
+  tier?: RideTier;
   origin: Location;
   destination: Location;
   /**
@@ -225,6 +237,7 @@ class RidesApiService extends BaseApiService {
         longitude: rideData.destination.longitude,
       },
       departureTime: rideData.departureTime,
+      ...(rideData.tier ? { tier: rideData.tier } : {}),
       availableSeats: rideData.availableSeats,
       pricePerSeat: rideData.pricePerSeat,
       description: rideData.description,

@@ -42,6 +42,7 @@ export type {
   Ride,
   CreateRideData,
   RideStopInput,
+  RideTier,
   RideStop,
   RideLeg,
   SearchRidesParams,

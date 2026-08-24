@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
 import { UPLOADS_DIR } from './middleware/upload';
+import { fileStorageService } from './services/FileStorageService';
 
 // Import custom modules
 import { testConnection, sequelize } from './models';
@@ -402,6 +403,10 @@ const startServer = async (): Promise<void> => {
     app.set('notificationService', notificationService);
     app.set('groupCleanupService', groupCleanupService);
     
+    // Say where uploads are going. Left silent, an ephemeral filesystem
+    // destroys verification documents on every deploy without complaint.
+    fileStorageService.reportConfiguration();
+
     // Start server
     const httpServer = server.listen(PORT, () => {
       logInfo(`🚀 ARYV Backend API server started`);

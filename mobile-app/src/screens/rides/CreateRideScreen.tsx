@@ -22,7 +22,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Input, Card } from '../../components/ui';
 import { LocationPicker } from '../../components/maps';
-import PriceSuggestionService, { PriceSuggestion } from '../../services/PriceSuggestionService';
+import PriceSuggestionService, { PriceSuggestion, RideTier } from '../../services/PriceSuggestionService';
 import { ridesApi } from '../../services/api';
 import { LocationData } from '../../services/LocationService';
 
@@ -38,6 +38,11 @@ interface CreateRideFormData {
   stops: Array<{ location: LocationData; fare: string }>;
   availableSeats: number;
   pricePerSeat: string;
+  /**
+   * What kind of vehicle this is. The driver's own car decides it — it is not
+   * something a passenger picks, so it lives on the ride.
+   */
+  tier: RideTier;
   description: string;
   preferences: {
     smokingAllowed: boolean;
@@ -62,6 +67,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     departureDateTime: new Date(Date.now() + 3600000), // 1 hour from now
     stops: [],
     availableSeats: 3,
+    tier: 'standard',
     pricePerSeat: '',
     description: '',
     preferences: {
@@ -122,6 +128,11 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     PriceSuggestionService.forRoute(
       { latitude: origin.latitude, longitude: origin.longitude },
       { latitude: destination.latitude, longitude: destination.longitude },
+      undefined,
+      {
+        tier: formData.tier,
+        departureTime: formData.departureDateTime.toISOString(),
+      },
     ).then((suggestion) => {
       if (!cancelled) {
         setPriceSuggestion(suggestion);
@@ -131,7 +142,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     return () => {
       cancelled = true;
     };
-  }, [formData.origin, formData.destination]);
+  }, [formData.origin, formData.destination, formData.tier, formData.departureDateTime]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -312,6 +323,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         })),
         availableSeats: formData.availableSeats,
         pricePerSeat: parseFloat(formData.pricePerSeat),
+        tier: formData.tier,
         description: formData.description.trim(),
         preferences: formData.preferences,
         amenities: formData.amenities,
@@ -341,6 +353,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
                   departureDateTime: new Date(Date.now() + 3600000),
                   stops: [],
                   availableSeats: 3,
+                  tier: 'standard',
                   pricePerSeat: '',
                   description: '',
                   preferences: {
@@ -401,6 +414,55 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
    * travelling only part of the route be charged only for that part — and what
    * frees the seat for the rest of the journey once they get out.
    */
+  /**
+   * What the driver is driving.
+   *
+   * On the create screen because it describes the ride. The passenger-facing
+   * version of this — a tier selector on the booking screen — was removed:
+   * by then they are booking one specific car and there is nothing to choose.
+   */
+  const renderTierCard = () => {
+    const tiers: Array<{ id: RideTier; label: string; description: string; icon: string }> = [
+      { id: 'shared', label: 'Shared', description: 'Minibus or van, lower fare', icon: 'people' },
+      { id: 'standard', label: 'Standard', description: 'An ordinary car', icon: 'directions-car' },
+      { id: 'comfort', label: 'Comfort', description: 'Newer, more room', icon: 'airline-seat-recline-extra' },
+      { id: 'premium', label: 'Premium', description: 'Executive vehicle', icon: 'star' },
+    ];
+
+    return (
+      <Card style={styles.tierCard}>
+        <Text style={styles.sectionTitle}>Vehicle Type</Text>
+        <Text style={styles.tierHint}>
+          Passengers filter by this, and it sets what similar trips are compared against.
+        </Text>
+
+        <View style={styles.tierList}>
+          {tiers.map((tier) => (
+            <TouchableOpacity
+              key={tier.id}
+              style={[styles.tierItem, formData.tier === tier.id && styles.tierItemSelected]}
+              onPress={() => setFormData(prev => ({ ...prev, tier: tier.id }))}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: formData.tier === tier.id }}
+            >
+              <Icon
+                name={tier.icon}
+                size={22}
+                color={formData.tier === tier.id ? '#FFFFFF' : '#666666'}
+              />
+              <Text style={[styles.tierLabel, formData.tier === tier.id && styles.tierLabelSelected]}>
+                {tier.label}
+              </Text>
+              <Text style={[styles.tierDescription, formData.tier === tier.id && styles.tierLabelSelected]}>
+                {tier.description}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Card>
+    );
+  };
+
   const renderStopsCard = () => (
     <Card style={styles.stopsCard}>
       <View style={styles.stopsHeader}>
@@ -562,6 +624,11 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
                 {/* The sample size is shown so a driver can weigh the advice
                     rather than take it as fact. */}
                 {` · based on ${priceSuggestion.sampleSize} rides`}
+                {/* Named, so a driver can explain a raised price to a
+                    passenger rather than just charging more. */}
+                {priceSuggestion.surge
+                  ? ` · ${priceSuggestion.surge.reason} (×${priceSuggestion.surge.multiplier})`
+                  : ''}
               </Text>
             </TouchableOpacity>
           )}
@@ -689,6 +756,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
           {renderStopsCard()}
 
           {renderDateTimeCard()}
+          {renderTierCard()}
           {renderSeatsAndPriceCard()}
           {renderDescriptionCard()}
           {renderPreferencesCard()}
@@ -815,6 +883,49 @@ const styles = StyleSheet.create({
   dateTimeCard: {
     marginBottom: 16,
     padding: 16,
+  },
+  tierCard: {
+    marginBottom: 16,
+    padding: 16,
+  },
+  tierHint: {
+    fontSize: 12,
+    color: '#777777',
+    marginBottom: 12,
+  },
+  tierList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tierItem: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  tierItemSelected: {
+    backgroundColor: '#2196F3',
+    borderColor: '#1976D2',
+  },
+  tierLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  tierDescription: {
+    fontSize: 11,
+    color: '#777777',
+    textAlign: 'center',
+  },
+  tierLabelSelected: {
+    color: '#FFFFFF',
   },
   suggestionRow: {
     flexDirection: 'row',

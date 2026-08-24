@@ -20,8 +20,11 @@ import rideSegmentService from '../services/RideSegmentService';
 import priceSuggestionService from '../services/PriceSuggestionService';
 import rideRecommendationService from '../services/RideRecommendationService';
 import demandService from '../services/DemandService';
+import surgeService from '../services/SurgeService';
+import trafficService from '../services/TrafficService';
+import weatherService from '../services/WeatherService';
 import { CurrencyService } from '../services/CurrencyService';
-import { RideStatus, BookingStatus, GeoPoint } from '../types';
+import { RideStatus, BookingStatus, RideTier, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
 import { notificationService } from '../services/NotificationService';
@@ -109,6 +112,7 @@ export class RideController {
         estimatedDuration,
         distance,
         stops,
+        tier,
       } = req.body;
 
       // Verify vehicle ownership
@@ -152,6 +156,9 @@ export class RideController {
           departureTime: new Date(departureTime),
           availableSeats,
           pricePerSeat,
+          // The driver's own vehicle decides this; 'standard' is an ordinary
+          // car and the sensible default when they say nothing.
+          tier: tier ?? 'standard',
           description,
           estimatedDuration,
           distance,
@@ -281,6 +288,11 @@ export class RideController {
         whereClause.pricePerSeat = {
           [Op.lte]: Number(maxPrice),
         };
+      }
+
+      // Filtering by tier, not choosing one: the tier belongs to the ride.
+      if (req.query['tier']) {
+        whereClause.tier = String(req.query['tier']);
       }
 
       const parsedOriginLng = Number(originLng);
@@ -467,6 +479,40 @@ export class RideController {
   }
 
   /**
+   * Dated demand periods coming up.
+   *
+   * Shown to drivers so a public holiday is something they can plan around
+   * rather than discover. The multiplier is advisory — it raises the suggested
+   * price and is labelled as the reason; it never alters what a passenger is
+   * charged, since the driver's fare is charged as set.
+   */
+  async getSurgeCalendar(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const days = Number(req.query['days'] ?? 30);
+      const windows = await surgeService.getUpcoming(days);
+
+      res.json({
+        success: true,
+        data: windows.map((window) => ({
+          id: window.id,
+          name: window.name,
+          multiplier: window.multiplier,
+          startsAt: window.startsAt,
+          endsAt: window.endsAt,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error reading the surge calendar', { error: getErrorMessage(error) });
+
+      res.status(500).json({
+        success: false, error: 'Could not load the surge calendar', code: 'SURGE_CALENDAR_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
    * How busy an area is.
    *
    * Counted from upcoming rides and the bookings against them, rather than
@@ -475,16 +521,41 @@ export class RideController {
    */
   async getDemand(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { latitude, longitude, radiusKm } = req.query;
+      const { latitude, longitude, radiusKm, destinationLat, destinationLng } = req.query;
+      const origin = { latitude: Number(latitude), longitude: Number(longitude) };
 
       const snapshot = await demandService.getSnapshot(
-        { latitude: Number(latitude), longitude: Number(longitude) },
+        origin,
         radiusKm ? { radiusMetres: Number(radiusKm) * 1000 } : {},
       );
 
+      // Live traffic for a specific route, when one was named. Null when no
+      // Maps key is configured — the client renders nothing rather than a
+      // fabricated congestion level, which is what the old panel did.
+      const traffic = destinationLat && destinationLng
+        ? await trafficService.forRoute(origin, {
+            latitude: Number(destinationLat),
+            longitude: Number(destinationLng),
+          })
+        : null;
+
+      // Weather is a v2 feature and always null here; see WeatherService.
+      const weather = await weatherService.forLocation(origin);
+
+      // Whether the surge calendar has anything in force right now, so a
+      // driver sees the reason next to the demand reading.
+      const surge = await surgeService.getSurge(new Date(), origin);
+
       res.json({
         success: true,
-        data: snapshot,
+        data: {
+          ...snapshot,
+          traffic,
+          weather,
+          surge: surge.reason
+            ? { multiplier: surge.multiplier, reason: surge.reason }
+            : null,
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -556,7 +627,9 @@ export class RideController {
    */
   async getPriceSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { originLat, originLng, destinationLat, destinationLng, distanceKm } = req.query;
+      const {
+        originLat, originLng, destinationLat, destinationLng, distanceKm, tier, departureTime,
+      } = req.query;
 
       const currency = req.user?.id
         ? await CurrencyService.getUserCurrencyCode(req.user.id)
@@ -568,6 +641,10 @@ export class RideController {
         {
           ...(distanceKm ? { distanceKm: Number(distanceKm) } : {}),
           ...(currency ? { currency } : {}),
+          ...(tier ? { tier: tier as RideTier } : {}),
+          // Surge is dated, so the suggestion depends on when the ride runs,
+          // not on when the driver happens to be filling in the form.
+          ...(departureTime ? { departureTime: new Date(String(departureTime)) } : {}),
         },
       );
 

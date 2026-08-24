@@ -30,9 +30,24 @@
 import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import Ride from '../models/Ride';
-import { RideStatus } from '../types';
+import { RideStatus, RideTier } from '../types';
 import { round2 } from '../utils/fees';
 import { logWarning } from '../utils/logger';
+export type { RideTier };
+import { surgeService } from './SurgeService';
+
+/**
+ * Roughly what each tier charges relative to an ordinary car, used only when
+ * falling back to the platform-wide per-kilometre rate, which mixes tiers
+ * together. Comparable-route lookups filter by tier instead and need none of
+ * this.
+ */
+const TIER_MULTIPLIERS: Record<RideTier, number> = {
+  shared: 0.7,
+  standard: 1.0,
+  comfort: 1.3,
+  premium: 1.8,
+};
 
 export interface Coordinates {
   latitude: number;
@@ -56,6 +71,16 @@ export interface PriceSuggestion {
    *  'none'              — not enough data to suggest anything
    */
   basis: 'comparable_routes' | 'distance_rate' | 'none';
+
+  /**
+   * A dated demand period in force at departure, if any. Advisory: it raises
+   * the suggested figure and is shown as a labelled reason. It never alters
+   * what a passenger is charged, because the driver's fare is charged as set.
+   */
+  surge: { multiplier: number; reason: string } | null;
+
+  /** The tier the suggestion was drawn for. */
+  tier: RideTier;
 }
 
 /**
@@ -112,12 +137,25 @@ export class PriceSuggestionService {
   async suggestForRoute(
     origin: Coordinates,
     destination: Coordinates,
-    options: { distanceKm?: number; currency?: string } = {},
+    options: {
+      distanceKm?: number;
+      currency?: string;
+      tier?: RideTier;
+      departureTime?: Date;
+    } = {},
   ): Promise<PriceSuggestion> {
     const currency = options.currency ?? 'BWP';
+    const tier = options.tier ?? 'standard';
+
+    // A dated period around a public holiday, if the ride departs in one.
+    const surge = await surgeService.getSurge(options.departureTime ?? new Date(), origin);
+    const applySurge = (value: number) => round2(value * surge.multiplier);
+    const surgeSummary = surge.reason
+      ? { multiplier: surge.multiplier, reason: surge.reason }
+      : null;
 
     try {
-      const comparable = await this.findComparableFares(origin, destination);
+      const comparable = await this.findComparableFares(origin, destination, tier);
 
       if (comparable.length >= MIN_SAMPLE_FOR_ROUTE) {
         const sorted = [...comparable].sort((a, b) => a - b);
@@ -125,10 +163,10 @@ export class PriceSuggestionService {
         return {
           // The median, not the mean: one driver charging ten times the going
           // rate should not drag the suggestion up.
-          suggested: round2(percentile(sorted, 0.5)),
+          suggested: applySurge(percentile(sorted, 0.5)),
           range: {
-            low: round2(percentile(sorted, 0.25)),
-            high: round2(percentile(sorted, 0.75)),
+            low: applySurge(percentile(sorted, 0.25)),
+            high: applySurge(percentile(sorted, 0.75)),
           },
           sampleSize: sorted.length,
           perKilometre: options.distanceKm
@@ -136,6 +174,8 @@ export class PriceSuggestionService {
             : null,
           currency,
           basis: 'comparable_routes',
+          surge: surgeSummary,
+          tier,
         };
       }
 
@@ -145,16 +185,22 @@ export class PriceSuggestionService {
         const rate = await this.medianRatePerKilometre();
 
         if (rate) {
+          // The platform rate is drawn from every tier, so it is scaled to
+          // the one being asked about before surge is applied.
+          const tiered = rate.median * TIER_MULTIPLIERS[tier];
+
           return {
-            suggested: round2(rate.median * options.distanceKm),
+            suggested: applySurge(tiered * options.distanceKm),
             range: {
-              low: round2(rate.low * options.distanceKm),
-              high: round2(rate.high * options.distanceKm),
+              low: applySurge(rate.low * TIER_MULTIPLIERS[tier] * options.distanceKm),
+              high: applySurge(rate.high * TIER_MULTIPLIERS[tier] * options.distanceKm),
             },
             sampleSize: rate.sampleSize,
-            perKilometre: round2(rate.median),
+            perKilometre: round2(tiered),
             currency,
             basis: 'distance_rate',
+            surge: surgeSummary,
+            tier,
           };
         }
       }
@@ -166,6 +212,8 @@ export class PriceSuggestionService {
         perKilometre: null,
         currency,
         basis: 'none',
+        surge: surgeSummary,
+        tier,
       };
     } catch (error) {
       // A suggestion is a convenience. Failing to produce one must never stop
@@ -181,6 +229,8 @@ export class PriceSuggestionService {
         perKilometre: null,
         currency,
         basis: 'none',
+        surge: null,
+        tier,
       };
     }
   }
@@ -195,6 +245,7 @@ export class PriceSuggestionService {
   private async findComparableFares(
     origin: Coordinates,
     destination: Coordinates,
+    tier: RideTier,
   ): Promise<number[]> {
     const since = new Date();
     since.setDate(since.getDate() - HISTORY_DAYS);
@@ -204,6 +255,9 @@ export class PriceSuggestionService {
       where: {
         status: RideStatus.COMPLETED,
         createdAt: { [Op.gte]: since },
+        // Like for like: a premium sedan should not be advised to charge what
+        // a shared minibus does on the same road.
+        tier,
         [Op.and]: [
           sequelize.where(
             sequelize.fn(

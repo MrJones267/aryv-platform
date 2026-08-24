@@ -95,6 +95,15 @@ export interface Location extends Coordinates {
 }
 
 // Ride types
+/**
+ * Service level of a ride, declared by the driver from the vehicle they are
+ * actually driving. Not a passenger selection: a passenger books one named
+ * driver's one specific car, so there is nothing to upgrade.
+ */
+export type RideTier = 'shared' | 'standard' | 'comfort' | 'premium';
+
+export const RIDE_TIERS: readonly RideTier[] = ['shared', 'standard', 'comfort', 'premium'];
+
 export enum RideStatus {
   PENDING = 'pending',
   CONFIRMED = 'confirmed',

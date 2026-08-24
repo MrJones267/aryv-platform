@@ -68,6 +68,11 @@ const createRideValidation = [
   body('vehicleId')
     .isUUID()
     .withMessage('Vehicle ID must be a valid UUID'),
+  // The driver's vehicle decides this. Optional, defaulting to an ordinary car.
+  body('tier')
+    .optional()
+    .isIn(['shared', 'standard', 'comfort', 'premium'])
+    .withMessage('Tier must be shared, standard, comfort or premium'),
   body('description')
     .optional()
     .isLength({ max: 1000 })
@@ -262,6 +267,22 @@ router.get(
 );
 
 /**
+ * @route   GET /api/rides/surge
+ * @desc    Dated demand periods coming up, so a driver can plan around them
+ * @access  Private
+ *
+ * Before /:id so 'surge' is not read as a ride ID.
+ */
+router.get(
+  '/surge',
+  rideRateLimit,
+  authenticateToken,
+  [query('days').optional().isInt({ min: 1, max: 365 }).withMessage('Days must be 1 to 365').toInt()],
+  validateInput,
+  rideController.getSurgeCalendar.bind(rideController),
+);
+
+/**
  * @route   GET /api/rides/demand
  * @desc    How busy this area is, from real rides and bookings
  * @access  Private
@@ -276,6 +297,9 @@ router.get(
     query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
     query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
     query('radiusKm').optional().isFloat({ min: 1, max: 200 }).withMessage('Radius must be 1 to 200 km'),
+    // When a destination is given, live traffic for that route is included.
+    query('destinationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('Invalid destination latitude'),
+    query('destinationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('Invalid destination longitude'),
   ],
   validateInput,
   rideController.getDemand.bind(rideController),
@@ -313,6 +337,10 @@ router.get(
     query('destinationLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid destination latitude'),
     query('destinationLng').isFloat({ min: -180, max: 180 }).withMessage('Invalid destination longitude'),
     query('distanceKm').optional().isFloat({ min: 0.1, max: 5000 }).withMessage('Invalid distance'),
+    query('tier').optional().isIn(['shared', 'standard', 'comfort', 'premium'])
+      .withMessage('Unknown tier'),
+    query('departureTime').optional().isISO8601()
+      .withMessage('Departure time must be an ISO 8601 date'),
   ],
   validateInput,
   rideController.getPriceSuggestion.bind(rideController),
