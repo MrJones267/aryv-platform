@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import VerificationController from '../controllers/VerificationController';
 import { DocumentType } from '../models/DriverDocument';
 import { authenticateToken } from '../middleware/auth';
@@ -26,6 +27,7 @@ const uploadRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('verification-upload'),
+  keyGenerator: rateLimitKey,
 });
 
 const readRateLimit = rateLimit({
@@ -34,6 +36,7 @@ const readRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('verification-read'),
+  keyGenerator: rateLimitKey,
 });
 
 router.use(authenticateToken);

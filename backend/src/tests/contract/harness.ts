@@ -20,6 +20,7 @@
  */
 
 import express, { Express } from 'express';
+import jwt from 'jsonwebtoken';
 import { AuthService } from '../../services/AuthService';
 import { wrapRouterAsync } from '../../middleware/asyncSafety';
 import { UserRole } from '../../types';
@@ -42,7 +43,15 @@ export const TEST_ADMIN = {
   role: UserRole.ADMIN,
 };
 
-/** Router mount points, mirroring src/index.ts. */
+/**
+ * Router mount points, mirroring src/index.ts.
+ *
+ * This list drifted: `/api/emergency` and `/api/calls` were mounted in
+ * index.ts but missing here, so the path-contract test reported every SOS and
+ * calling endpoint as "not served by the server" and those failures were
+ * absorbed into KNOWN_GAPS as if the features were unbuilt. `mountsMatchIndex`
+ * below now fails if the two ever diverge again.
+ */
 export const MOUNTS: Array<{ path: string; module: string }> = [
   { path: '/api/auth', module: '../../routes/auth' },
   { path: '/api/rides', module: '../../routes/rides' },
@@ -61,6 +70,8 @@ export const MOUNTS: Array<{ path: string; module: string }> = [
   { path: '/api/ride-requests', module: '../../routes/rideRequests' },
   { path: '/api/promos', module: '../../routes/promos' },
   { path: '/api/verification', module: '../../routes/verification' },
+  { path: '/api/emergency', module: '../../routes/emergency' },
+  { path: '/api/calls', module: '../../routes/calls' },
 ];
 
 /**
@@ -104,4 +115,33 @@ export const tokenFor = (user = TEST_USER): string =>
 
 export const authHeader = (user = TEST_USER): Record<string, string> => ({
   Authorization: `Bearer ${tokenFor(user)}`,
+});
+
+/**
+ * An admin-shaped token, matching what AdminController.login issues: `id`
+ * rather than `userId`, a `type` of 'admin', and no issuer/audience.
+ *
+ * Deliberately signed with the same ADMIN_JWT_SECRET the real login uses, so
+ * tests exercise the genuine separation between the two token populations
+ * rather than a separation invented by the test.
+ */
+export const adminTokenFor = (
+  overrides: { id?: string; email?: string; role?: string } = {},
+): string =>
+  jwt.sign(
+    {
+      id: overrides.id ?? '33333333-3333-4333-8333-333333333333',
+      email: overrides.email ?? 'staff@example.com',
+      role: overrides.role ?? 'super_admin',
+      permissions: [],
+      type: 'admin',
+    },
+    process.env['ADMIN_JWT_SECRET'] as string,
+    { expiresIn: '1h' },
+  );
+
+export const adminAuthHeader = (
+  overrides: { id?: string; email?: string; role?: string } = {},
+): Record<string, string> => ({
+  Authorization: `Bearer ${adminTokenFor(overrides)}`,
 });

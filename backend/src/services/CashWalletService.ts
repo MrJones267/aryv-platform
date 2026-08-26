@@ -5,7 +5,7 @@
  * @lastModified 2025-01-27
  */
 
-import { Transaction } from 'sequelize';
+import { Transaction, UniqueConstraintError } from 'sequelize';
 import { sequelize } from '../config/database';
 import { CashWallet, CashWalletTransaction } from '../models/CashWallet';
 import User from '../models/User';
@@ -46,7 +46,25 @@ export interface WalletResult {
   data?: any;
   error?: string;
   code?: string;
+  /** Set when a load was refused because the reference was already credited. */
+  alreadyCredited?: boolean;
 }
+
+/**
+ * Was this failure the load-idempotency index refusing a repeat credit?
+ *
+ * Matched on the index name from migration 025 so an unrelated unique
+ * violation — two wallets for one user, say — is still reported as the error
+ * it is rather than being silently swallowed as a duplicate payment.
+ */
+const LOAD_REFERENCE_INDEX = 'cash_wallet_transactions_load_reference_unique';
+
+const isDuplicateLoadReference = (error: unknown): boolean => {
+  if (!(error instanceof UniqueConstraintError)) return false;
+  const constraint = (error as unknown as { parent?: { constraint?: string } }).parent?.constraint;
+  return constraint === LOAD_REFERENCE_INDEX
+    || (error.errors ?? []).some((e) => String(e.path ?? '').includes('source_reference'));
+};
 
 export class CashWalletService {
 
@@ -212,6 +230,24 @@ export class CashWalletService {
       };
     } catch (error) {
       await transaction.rollback();
+
+      // A unique violation on the load reference means this exact payment has
+      // already been credited — a provider retrying its webhook, which they
+      // all do. That is a success, not a failure: report it as one so the
+      // caller stops retrying, and above all do not credit again.
+      if (isDuplicateLoadReference(error)) {
+        logger.info('Wallet load ignored — this payment reference was already credited', {
+          userId: request.userId,
+          source: request.source,
+          sourceReference: request.sourceReference,
+        });
+        return {
+          success: true,
+          alreadyCredited: true,
+          data: { wallet: await this.getWalletBalance(request.userId) },
+        };
+      }
+
       logger.error('Error loading wallet', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),

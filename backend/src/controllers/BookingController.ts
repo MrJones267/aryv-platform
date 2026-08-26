@@ -500,6 +500,68 @@ export class BookingController {
         return;
       }
 
+      const cancelledByDriver = booking.ride?.driverId === userId;
+      const wasPaid = Boolean(booking.paymentIntentId);
+
+      // A paid booking has to give the money back, not just change status.
+      // Cancelling used to do neither — it flipped the row to CANCELLED and
+      // kept the passenger's payment, with the only refund path being an
+      // endpoint anyone could call for any amount. Refunding here is what makes
+      // it safe to have closed that endpoint.
+      //
+      // processRefund owns the cancellation for paid bookings: it cancels and
+      // refunds inside one transaction, so the two can never disagree. This
+      // transaction is released first so the two do not contend on the row.
+      if (wasPaid) {
+        await transaction.rollback();
+
+        const refund = await paymentService.processRefund(
+          booking.id,
+          undefined, // always the full amount — partial refunds are a staff decision
+          reason || 'Cancelled by user',
+          {
+            // A driver cancelling strands the passenger, so they are made whole
+            // whether or not the departure time has passed. A passenger
+            // cancelling after departure is refused here and told to contact
+            // support, which is the anti-fraud case.
+            allowAfterDeparture: cancelledByDriver,
+            requestedBy: `${cancelledByDriver ? 'driver' : 'passenger'}:${userId}`,
+          },
+        );
+
+        if (!refund.success) {
+          logger.warn('Cancellation refused because the refund could not be issued', {
+            bookingId: booking.id,
+            userId,
+            reason: refund.error,
+          });
+          res.status(400).json({
+            success: false,
+            error: refund.error || 'This booking could not be cancelled',
+            code: 'BOOKING_REFUND_FAILED',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        await booking.reload();
+
+        await notificationService.notifyBookingStatusChange(
+          booking.id,
+          BookingStatus.CANCELLED,
+          userId,
+        );
+
+        res.json({
+          success: true,
+          message: 'Booking cancelled and payment refunded',
+          data: booking,
+          refund: refund.data,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       await booking.update(
         {
           status: BookingStatus.CANCELLED,
@@ -524,7 +586,13 @@ export class BookingController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      await transaction.rollback();
+      // The paid-booking path releases this transaction before handing off to
+      // processRefund, so by the time an error lands here it may already be
+      // finished. Rolling back a finished transaction throws, and that throw
+      // would replace the real error with a misleading one.
+      if (!(transaction as unknown as { finished?: string }).finished) {
+        await transaction.rollback();
+      }
       logger.error('Error in cancelBooking', {
         error: getErrorMessage(error),
         stack: getErrorStack(error),
@@ -1137,11 +1205,13 @@ export class BookingController {
         return;
       }
 
-      // Update booking status to indicate payment completed
-      await booking.update({
-        // paymentIntentId already set during createPaymentIntent
-        // Could add a paymentStatus field to track payment completion
-      }, { transaction });
+      // Record that the money arrived. This used to be an empty update with a
+      // note about someday tracking payment state, so a verified, settled
+      // payment left the booking exactly as it found it — PENDING, and
+      // indistinguishable from one nobody had paid for.
+      if (booking.status === BookingStatus.PENDING) {
+        await booking.update({ status: BookingStatus.CONFIRMED }, { transaction });
+      }
 
       // Update ride status if this was the only pending booking
       const ride = booking.ride;

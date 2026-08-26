@@ -8,6 +8,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { AuthController } from '../controllers/AuthController';
 import { validateRequest, authSchemas } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -122,6 +123,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('auth'),
+  keyGenerator: rateLimitKey,
 });
 
 const loginLimiter = rateLimit({
@@ -135,7 +137,53 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('login'),
+  keyGenerator: rateLimitKey,
 });
+
+/**
+ * Rate limit by *recipient* rather than by IP.
+ *
+ * The OTP endpoints are unauthenticated and name their target in the body, so
+ * a per-IP limit does not protect the person being targeted at all: an
+ * attacker with a handful of addresses can send an unlimited number of codes
+ * to one victim's phone or inbox. This is what caps that, and it also caps the
+ * SMS spend a stranger can run up on the platform's behalf.
+ *
+ * Keyed per 15 minutes, matching the per-code issue throttle in OtpService.
+ */
+const otpRecipientLimiter = (field: 'phone' | 'email' | 'recipient') =>
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const raw = req.body?.[field];
+    const recipient = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
+    if (!recipient) { next(); return; }
+
+    const count = await redisClient.increment(`otp-recipient:${recipient}`, 15 * 60);
+
+    // 0 means the counter is unavailable. These endpoints send SMS and email at
+    // our own cost to an unauthenticated caller's chosen target, so an
+    // uncountable request is refused rather than waved through.
+    if (count === 0) {
+      res.status(503).json({
+        success: false,
+        error: 'Verification codes are temporarily unavailable. Please try again shortly.',
+        code: 'OTP_UNAVAILABLE',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (count > 10) {
+      res.status(429).json({
+        success: false,
+        error: 'Too many verification requests for this recipient. Please try again later.',
+        code: 'OTP_RECIPIENT_RATE_LIMITED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    next();
+  };
 
 // Per-email rate limiter for password reset (max 3 per email per 15 min)
 const emailPasswordResetLimiter = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -364,14 +412,31 @@ router.post('/verify-phone', authenticateToken, AuthController.verifyPhone);
 
 /**
  * OTP endpoints (Twilio / email OTP system)
+ *
+ * Three layers apply to every one of these:
+ *
+ *   authLimiter        per-IP, from express-rate-limit
+ *   otpRecipientLimiter per-recipient, so one address or number cannot be
+ *                      flooded from many IPs — the send endpoints are
+ *                      unauthenticated, so without this anyone could drive
+ *                      SMS cost and mail volume at a victim
+ *   OtpService         per-code attempt limit and purpose binding
+ *
+ * Only the first existed before, and only the first is defeated by an
+ * attacker with more than one IP address.
  */
-router.post('/otp/sms/send', authLimiter, AuthController.sendSMSOTP);
-router.post('/otp/email/send', authLimiter, AuthController.sendEmailOTP);
-router.post('/otp/verify', authLimiter, AuthController.verifyOTP);
+router.post('/otp/sms/send', authLimiter, otpRecipientLimiter('phone'), AuthController.sendSMSOTP);
+router.post('/otp/email/send', authLimiter, otpRecipientLimiter('email'), AuthController.sendEmailOTP);
+router.post('/otp/verify', authLimiter, otpRecipientLimiter('recipient'), AuthController.verifyOTP);
 router.get('/otp/status', authLimiter, AuthController.getOTPStatus);
-router.post('/login/otp', loginLimiter, AuthController.loginWithOTP);
+router.post('/login/otp', loginLimiter, otpRecipientLimiter('recipient'), AuthController.loginWithOTP);
 router.post('/register/otp', authLimiter, AuthController.registerWithOTP);
-router.post('/password-reset/otp', authLimiter, AuthController.resetPasswordWithOTP);
+router.post(
+  '/password-reset/otp',
+  authLimiter,
+  otpRecipientLimiter('recipient'),
+  AuthController.resetPasswordWithOTP,
+);
 
 /**
  * @route   POST /api/auth/google/verify

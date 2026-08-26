@@ -8,6 +8,7 @@
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { param, query } from 'express-validator';
 import { CountryController } from '../controllers/CountryController';
 import { validateInput } from '../middleware/validation';
@@ -26,6 +27,7 @@ const countryRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('countries'),
+  keyGenerator: rateLimitKey,
 });
 
 // Apply rate limiting to all country routes

@@ -36,20 +36,21 @@ export interface PaymentIntent {
   metadata?: Record<string, string>;
 }
 
+/**
+ * The booking is what is being paid for, so the booking has to exist first.
+ * The amount and currency are read from it on the server — sending them from
+ * here has no effect, which is why they are no longer part of this type.
+ */
 export interface CreatePaymentIntentData {
-  amount: number;
-  currency: string;
+  bookingId: string;
   paymentMethod: PaymentMethodType;
   provider?: PaymentProvider;
-  rideId?: string;
-  packageId?: string;
   metadata?: Record<string, string>;
 }
 
 export interface ConfirmPaymentData {
   paymentIntentId: string;
   paymentMethodId?: string;
-  cardToken?: string;
   mobileMoneyPhone?: string;
   mobileMoneyProvider?: PaymentProvider;
 }

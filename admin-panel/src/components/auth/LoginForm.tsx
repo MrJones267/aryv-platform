@@ -10,9 +10,13 @@ interface LoginFormProps {
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
+  // Blank, deliberately. This shipped pre-filled with a real administrator
+  // address and the password `admin123`, so the production admin panel
+  // displayed working-looking credentials to anyone who opened it — and
+  // one careless click was a login attempt with them.
   const [formData, setFormData] = useState({
-    email: 'admin@aryv-app.com',
-    password: 'admin123'
+    email: '',
+    password: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -164,18 +168,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           </button>
         </form>
 
-        <div style={{
-          marginTop: '1.5rem',
-          padding: '1rem',
-          background: '#d1ecf1',
-          color: '#0c5460',
-          borderRadius: '6px',
-          fontSize: '0.9rem'
-        }}>
-          <strong>Test Credentials:</strong><br />
-          Email: admin@aryv-app.com<br />
-          Password: admin123
-        </div>
       </div>
     </div>
   );

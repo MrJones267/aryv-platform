@@ -10,6 +10,7 @@ import { Router, Request, Response } from 'express';
 import { body, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import CommissionController from '../controllers/CommissionController';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
@@ -25,6 +26,7 @@ const settlementRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('commission-settle'),
+  keyGenerator: rateLimitKey,
 });
 
 router.use(authenticateToken);

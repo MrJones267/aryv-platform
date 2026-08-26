@@ -183,7 +183,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           driver: {
             id: ride.driver.id,
             firstName: ride.driver.firstName,
-            lastName: ride.driver.lastName,
+            lastName: ride.driver.lastName ?? '',
             rating: ride.driver.rating ?? 0,
             totalRides: ride.driver.totalRides ?? 0,
             profileImage: ride.driver.profilePicture,
@@ -193,7 +193,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             model: ride.vehicle.model,
             year: ride.vehicle.year,
             color: ride.vehicle.color,
-            licensePlate: ride.vehicle.licensePlate,
+            // Withheld until the booking exists — the public ride view does
+            // not carry a plate. It arrives once this passenger is on the ride.
+            licensePlate: ride.vehicle.licensePlate ?? '',
           },
           origin: {
             address: ride.origin.address,
@@ -317,24 +319,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           onPress: async () => {
             setIsBooking(true);
             try {
-              // Step 1: Create payment intent
               const paymentMethodMap: Record<PaymentMethodType, string> = {
                 cash: 'cash',
                 stripe: 'card',
                 mobile_money: 'mobile_money',
                 wallet: 'wallet',
               };
-              const paymentResponse = await paymentApi.createPaymentIntent({
-                amount: bookingDetails.totalAmount,
-                currency,
-                paymentMethod: paymentMethodMap[selectedPaymentMethod] as 'card' | 'mobile_money' | 'cash' | 'wallet',
-                rideId,
-                metadata: {
-                  seats: selectedSeats.toString(),
-                },
-              });
 
-              // Step 2: Book the ride
+              // Step 1: Book the ride. This has to come first — the fare is
+              // calculated by the server from the ride and the seats taken, and
+              // the payment is raised against that booking. Creating the
+              // payment first meant paying an amount this screen had worked out
+              // for itself, against nothing in particular.
               const response = await ridesApi.bookRide(
                 rideId,
                 selectedSeats,
@@ -345,11 +341,54 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               );
 
               if (response.success) {
-                // Step 3: Confirm payment (for non-cash methods)
-                if (selectedPaymentMethod !== 'cash' && paymentResponse.data?.id) {
-                  await paymentApi.confirmPayment({
+                const bookingId = response.data?.id;
+                let paymentSettled = false;
+
+                // Step 2 & 3: Raise and settle the payment for that booking.
+                if (selectedPaymentMethod !== 'cash' && bookingId) {
+                  const paymentResponse = await paymentApi.createPaymentIntent({
+                    bookingId,
+                    paymentMethod: paymentMethodMap[selectedPaymentMethod] as 'card' | 'mobile_money' | 'cash' | 'wallet',
+                    metadata: { seats: selectedSeats.toString() },
+                  });
+
+                  if (!paymentResponse.success || !paymentResponse.data?.id) {
+                    Alert.alert(
+                      'Seat held — payment not taken',
+                      `${paymentResponse.error || 'The payment could not be started.'}\n\nYour seat is reserved. Open the booking to pay, or cancel it for a full refund.`,
+                    );
+                    typedNavigation.navigate('Rides');
+                    return;
+                  }
+
+                  if (selectedPaymentMethod === 'mobile_money') {
+                    // Mobile money settles when the provider reports it over a
+                    // signed webhook, never from here. The seat is held as a
+                    // pending booking until that arrives.
+                    Alert.alert(
+                      'Seat held — approve the payment',
+                      'Your seat is reserved. Approve the payment prompt on your phone to confirm it, or cancel the booking for a full refund.',
+                    );
+                    typedNavigation.navigate('Rides');
+                    return;
+                  }
+
+                  const confirmation = await paymentApi.confirmPayment({
                     paymentIntentId: paymentResponse.data.id,
                   });
+                  paymentSettled = confirmation.success;
+
+                  if (!paymentSettled) {
+                    // The server refuses to call a payment settled unless the
+                    // processor says so, so this is a real "not paid yet" —
+                    // never tell the passenger it went through.
+                    Alert.alert(
+                      'Seat held — payment pending',
+                      `${confirmation.error || 'Your payment has not completed yet.'}\n\nYour seat is reserved. Open the booking to finish paying, or cancel it for a full refund.`,
+                    );
+                    typedNavigation.navigate('Rides');
+                    return;
+                  }
                 }
 
                 Alert.alert(
@@ -377,10 +416,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   ]
                 );
               } else {
-                // Cancel payment intent if booking fails
-                if (paymentResponse.data?.id) {
-                  await paymentApi.cancelPayment(paymentResponse.data.id).catch(() => {});
-                }
+                // Nothing to unwind: no payment is raised until the booking
+                // exists, so a failed booking has taken no money.
                 Alert.alert('Booking Failed', response.error || 'Unable to complete booking');
               }
             } catch (error: unknown) {

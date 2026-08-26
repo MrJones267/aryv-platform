@@ -5,16 +5,14 @@
  * @lastModified 2026-03-28
  */
 
-import crypto from 'crypto';
 import logger from '../utils/logger';
 import { toE164 } from '../utils/phone';
+import otpService, { OtpPurpose, OtpVerifyResult } from './OtpService';
 
 const TWILIO_ACCOUNT_SID = process.env['TWILIO_ACCOUNT_SID'] || '';
 const TWILIO_AUTH_TOKEN = process.env['TWILIO_AUTH_TOKEN'] || '';
 const TWILIO_PHONE_NUMBER = process.env['TWILIO_PHONE_NUMBER'] || '';
 
-const OTP_TTL_SECONDS = 10 * 60; // 10 minutes
-const OTP_KEY_PREFIX = 'otp:';
 
 class SMSService {
   private client: any = null;
@@ -72,85 +70,76 @@ class SMSService {
 
   /**
    * Send a verification code to a phone number.
-   * Stores the code in Redis (or in-memory fallback) with a TTL.
-   * Returns the code in development so callers can include it in API responses.
+   *
+   * The code itself is minted and held by OtpService, which owns the attempt
+   * limit, the purpose binding and the single-use rule. This method is only
+   * the delivery leg. It used to generate and store its own code with none of
+   * those protections, in parallel with a second, separate implementation for
+   * email — the two drifted, and both were guessable without limit.
    */
   async sendVerificationCode(
     phoneNumber: string,
+    purpose: OtpPurpose = 'phone_verification',
     countryCode?: string,
-  ): Promise<{ code: string; sent: boolean }> {
-    const code = (100000 + crypto.randomInt(0, 900000)).toString();
-
-    // Keyed on the normalised number so that verifyCode, which normalises the
-    // same way, looks in the same place. Storing under whatever the user typed
-    // meant a code sent to +26771234567 could not be verified by someone who
-    // then typed 071234567.
+  ): Promise<{ sent: boolean; throttled?: boolean; expiresAt?: Date; code?: string }> {
     const key = toE164(phoneNumber, countryCode);
     if (!key) {
       logger.warn('Verification code not sent: number could not be normalised', { phoneNumber });
-      return { code, sent: false };
+      return { sent: false };
     }
 
-    // Store in Redis for later verification
-    try {
-      const { redisClient } = await import('../config/redis');
-      await redisClient.set(`${OTP_KEY_PREFIX}${key}`, code, OTP_TTL_SECONDS);
-    } catch {
-      // Redis unavailable — store in memory (not for production use)
-      this.memoryStore.set(key, { code, expiresAt: Date.now() + OTP_TTL_SECONDS * 1000 });
+    const issued = await otpService.issue('sms', key, purpose);
+    if (!issued.ok || !issued.code) {
+      return { sent: false, ...(issued.throttled ? { throttled: true } : {}) };
+    }
+
+    const result: { sent: boolean; expiresAt?: Date; code?: string } = {
+      sent: false,
+      ...(issued.expiresAt ? { expiresAt: issued.expiresAt } : {}),
+    };
+
+    // Only ever handed back outside production, so a developer without a
+    // Twilio account can complete the flow. Never in a deployed environment.
+    if (process.env['NODE_ENV'] !== 'production') {
+      result.code = issued.code;
     }
 
     if (!this.initialized || !TWILIO_PHONE_NUMBER) {
-      logger.info('SMS verification code (Twilio not configured)', { to: key, code });
-      return { code, sent: false };
+      logger.info('SMS verification code (Twilio not configured)', { to: key });
+      return result;
     }
 
     try {
       await this.client.messages.create({
-        body: `Your ARYV verification code is: ${code}. Valid for 10 minutes.`,
+        body: `Your ARYV verification code is: ${issued.code}. Valid for 10 minutes.`,
         from: TWILIO_PHONE_NUMBER,
         to: key,
       });
       logger.info('SMS verification code sent', { to: key });
-      return { code, sent: true };
+      return { ...result, sent: true };
     } catch (error: any) {
-      logger.error('Twilio send error', { error: error.message, phoneNumber });
-      return { code, sent: false };
+      logger.error('Twilio send error', { error: error.message });
+      return result;
     }
   }
 
   /**
    * Verify a code submitted by the user.
-   * Deletes the code on successful verification.
+   *
+   * Delegates to OtpService so the attempt limit applies here too. The previous
+   * implementation compared strings and returned false on a mismatch, counting
+   * nothing — a six-digit code could be guessed until it was found.
    */
   async verifyCode(
     phoneNumber: string,
     submittedCode: string,
+    purpose: OtpPurpose = 'phone_verification',
     countryCode?: string,
-  ): Promise<boolean> {
+  ): Promise<OtpVerifyResult> {
     const key = toE164(phoneNumber, countryCode);
-    if (!key) return false;
-
-    try {
-      const { redisClient } = await import('../config/redis');
-      const storedCode = await redisClient.get(`${OTP_KEY_PREFIX}${key}`);
-      if (storedCode && storedCode === submittedCode) {
-        await redisClient.del(`${OTP_KEY_PREFIX}${key}`);
-        return true;
-      }
-    } catch {
-      // Redis unavailable — fall back to memory store
-      const entry = this.memoryStore.get(key);
-      if (entry && entry.expiresAt > Date.now() && entry.code === submittedCode) {
-        this.memoryStore.delete(key);
-        return true;
-      }
-    }
-    return false;
+    if (!key) return { ok: false, reason: 'not_found' };
+    return otpService.verify('sms', key, purpose, submittedCode);
   }
-
-  // In-memory fallback (single-instance dev only)
-  private memoryStore = new Map<string, { code: string; expiresAt: number }>();
 }
 
 export const smsService = new SMSService();

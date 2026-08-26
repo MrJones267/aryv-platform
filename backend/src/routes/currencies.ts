@@ -8,6 +8,7 @@
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { body, param, query } from 'express-validator';
 import { CurrencyController } from '../controllers/CurrencyController';
 import { authenticateToken, authenticateAdminToken } from '../middleware/auth';
@@ -27,6 +28,7 @@ const currencyRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('currencies'),
+  keyGenerator: rateLimitKey,
 });
 
 // Apply rate limiting to all currency routes
@@ -143,6 +145,7 @@ const conversionRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('currency-convert'),
+  keyGenerator: rateLimitKey,
 });
 
 /**

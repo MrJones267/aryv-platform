@@ -89,7 +89,13 @@ jspm_packages/
 
 # Gatsby files
 .cache/
-public
+# Root-scoped deliberately. A bare `public` matches a directory of that name at
+# any depth, which silently excluded admin-panel/public — a Vite *source*
+# directory whose contents are copied into the build. That took the admin
+# panel's favicons and its _headers file (CSP, HSTS, frame protection) out of
+# version control, so they could never reach a deploy built from a clean
+# checkout.
+/public
 
 # Storybook build outputs
 .out

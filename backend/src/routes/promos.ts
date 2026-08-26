@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken, authenticateAdminToken } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
@@ -24,6 +25,7 @@ const promoRateLimit = rateLimit({
   max: 30,
   message: { success: false, error: 'Too many promo requests', code: 'RATE_LIMIT_EXCEEDED' },
   store: makeStore('promos'),
+  keyGenerator: rateLimitKey,
 });
 
 // ─── Seed built-in promos on startup ─────────────────────────────────────────

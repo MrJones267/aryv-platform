@@ -10,6 +10,7 @@ import { Op } from 'sequelize';
 import { sequelize } from '../config/database';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { AdminController } from '../controllers/AdminController';
 import AdminRideController from '../controllers/AdminRideController';
 import AdminUserController from '../controllers/AdminUserController';
@@ -66,6 +67,7 @@ const adminAuthLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('admin-auth'),
+  keyGenerator: rateLimitKey,
 });
 
 // General admin API rate limiting
@@ -80,6 +82,7 @@ const adminApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('admin-api'),
+  keyGenerator: rateLimitKey,
 });
 
 // Apply general rate limiting to all admin routes

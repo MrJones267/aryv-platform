@@ -10,6 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from './config/rateLimitStore';
+import { resolveTrustProxyHops, rateLimitKey } from './config/rateLimitKey';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
@@ -72,6 +73,19 @@ const NODE_ENV = process.env['NODE_ENV'] || 'development';
 // Create Express app
 const app = express();
 
+/**
+ * Trust exactly as many proxies as are actually in front of this process.
+ *
+ * Without this, `req.ip` is the address of Railway's edge rather than the
+ * caller, so every rate limiter in the app keys on a single value and all
+ * users share one bucket — five failed logins from anyone would lock out
+ * everyone. Setting it to `true` instead would be worse: the whole
+ * X-Forwarded-For chain becomes trusted, including the portion the client
+ * wrote, and any caller could mint a fresh bucket per request.
+ */
+const trustProxyHops = resolveTrustProxyHops();
+app.set('trust proxy', trustProxyHops);
+
 // Create HTTP server
 const server = createServer(app);
 
@@ -124,6 +138,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('global'),
+  keyGenerator: rateLimitKey,
 });
 
 app.use(limiter);
@@ -287,10 +302,27 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+/**
+ * An unhandled rejection is logged loudly, not fatal.
+ *
+ * Exiting on it turned any missed `.catch()` — in a scheduled task, a
+ * fire-and-forget notification, a Socket.io handler — into a full restart of
+ * the API. `wrapRouterAsync` covers the route layer, which is why this was
+ * survivable, but everything outside the router was uncovered: one
+ * request-triggered rejection would have been a one-request denial of service.
+ *
+ * `uncaughtException` above still exits, which is correct — after one the
+ * process state is genuinely unknown. A rejection is a missing catch, and the
+ * health check plus Railway's restart policy handle a process that is really
+ * unwell.
+ */
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  logError('Unhandled Rejection', reason as Error);
-  process.exit(1);
+  logError(
+    'Unhandled Rejection',
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { promise: String(promise) },
+  );
 });
 
 // Initialize database and start server
@@ -322,6 +354,25 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
   ];
 
+  // Indexes that carry a correctness guarantee rather than just performance.
+  // Without this one a replayed payment webhook credits a wallet twice, and
+  // nothing else in the running system would notice — so a deploy that has not
+  // had the migration applied must not start.
+  //
+  // `onTable` is load-bearing. Environments baselined by `db:migrate baseline`
+  // have migrations 001-012 recorded as applied without ever having run them,
+  // so they have no cash wallet tables at all — production is one of those.
+  // Demanding an index on a table that does not exist would refuse to boot
+  // over a guarantee for a feature that environment does not have. The
+  // requirement applies only where the table is present.
+  const REQUIRED_INDEXES: Array<{ index: string; onTable: string; migration: string }> = [
+    {
+      index: 'cash_wallet_transactions_load_reference_unique',
+      onTable: 'cash_wallet_transactions',
+      migration: '025_wallet_load_idempotency.sql',
+    },
+  ];
+
   const missing: string[] = [];
 
   for (const { table, column, migration } of REQUIRED_COLUMNS) {
@@ -343,6 +394,26 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     );
     if ((rows as unknown[]).length === 0) {
       missing.push(`table ${table} (${migration})`);
+    }
+  }
+
+  for (const { index, onTable, migration } of REQUIRED_INDEXES) {
+    const [tableRows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = $onTable LIMIT 1`,
+      { bind: { onTable } },
+    );
+    if ((tableRows as unknown[]).length === 0) {
+      logInfo('Skipping an index requirement because its table is absent', { index, onTable });
+      continue;
+    }
+
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = $index LIMIT 1`,
+      { bind: { index } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`index ${index} (${migration})`);
     }
   }
 
@@ -430,6 +501,7 @@ const startServer = async (): Promise<void> => {
       logInfo(`${signal} received, shutting down gracefully`);
 
       groupCleanupService.stopScheduler();
+      socketService.stopSessionRevalidation();
 
       httpServer.close(async () => {
         try {

@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import CashPaymentController from '../controllers/CashPaymentController';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
@@ -24,6 +25,7 @@ const cashPaymentRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('cash-payment'),
+  keyGenerator: rateLimitKey,
 });
 
 const confirmationRateLimit = rateLimit({
@@ -31,6 +33,7 @@ const confirmationRateLimit = rateLimit({
   max: 3, // Limit confirmation attempts to prevent brute force
   message: 'Too many confirmation attempts, please try again later',
   store: makeStore('cash-confirm'),
+  keyGenerator: rateLimitKey,
 });
 
 // Apply authentication to all routes

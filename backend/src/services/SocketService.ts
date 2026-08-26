@@ -71,6 +71,13 @@ interface CallNotification {
   action: 'initiate' | 'accept' | 'reject' | 'end';
 }
 
+/**
+ * How often every open socket's session is re-checked. Five minutes bounds how
+ * long a revoked session can keep receiving live events without making the
+ * sweep itself a load problem.
+ */
+const SESSION_REVALIDATION_MS = 5 * 60 * 1000;
+
 export type SocketAuthResult =
   | { ok: true; user: any }
   | { ok: false; error: string };
@@ -113,6 +120,21 @@ export const authenticateSocketToken = async (
       return { ok: false, error: 'Invalid user' };
     }
 
+    // Refuse a token minted before the password last changed, matching what
+    // authenticateToken does for HTTP. Without it, a password reset prompted
+    // by a compromise left the attacker's socket connected and still receiving
+    // live location, chat and call events — the one moment a reset exists to
+    // prevent.
+    const passwordChangedAt = (user as unknown as { passwordChangedAt?: Date | null })
+      .passwordChangedAt;
+
+    if (passwordChangedAt && decoded.iat && decoded.iat * 1000 < passwordChangedAt.getTime()) {
+      logWarn('Socket connection attempted with a token predating a password change', {
+        userId: user.id,
+      });
+      return { ok: false, error: 'Session ended because the password was changed' };
+    }
+
     if (user.status === 'suspended' || user.status === 'deactivated') {
       logWarn('Socket connection attempted by inactive account', {
         userId: user.id,
@@ -138,6 +160,7 @@ export class SocketService {
   private activeCalls: Map<string, Set<string>> = new Map(); // callId -> Set of userIds
   private groupChatService: GroupChatService;
   private groupChatRooms: Map<string, Set<string>> = new Map(); // groupChatId -> Set of userIds
+  private revalidationTimer: NodeJS.Timeout | null = null;
 
   constructor(server: HTTPServer) {
     const nodeEnv = process.env['NODE_ENV'] || 'development';
@@ -166,6 +189,7 @@ export class SocketService {
     this.groupChatService = new GroupChatService();
     this.setupMiddleware();
     this.setupEventHandlers();
+    this.startSessionRevalidation();
 
     logInfo('Socket.io service initialized with WebRTC support');
   }
@@ -184,9 +208,72 @@ export class SocketService {
 
       socket.userId = result.user.id;
       socket.user = result.user;
+      // Mirrored into `socket.data` because that is the only place the
+      // adapter's fetchSockets() view carries through, and the revalidation
+      // sweep below reads it from there.
+      //
+      // Kept at all so the session can be re-checked while the socket is open.
+      // A socket used to be authenticated once and then trusted for as long as
+      // it stayed connected — days, potentially — so a logout, a suspension,
+      // or a password reset had no effect on a connection already established.
+      socket.data = socket.data || {};
+      socket.data.authToken = token;
+      socket.data.userId = result.user.id;
       logInfo('Socket authenticated', { userId: result.user.id, socketId: socket.id });
       return next();
     });
+  }
+
+  /**
+   * Re-check every open socket's session, and disconnect the ones that no
+   * longer hold up.
+   *
+   * A live socket carries location, chat and call events, so it is exactly as
+   * sensitive as an HTTP request and needs the same checks — but it only ever
+   * passed them once, at connect time.
+   */
+  private startSessionRevalidation(): void {
+    this.revalidationTimer = setInterval(() => {
+      void this.revalidateSessions();
+    }, SESSION_REVALIDATION_MS);
+
+    // Never hold the process open on this alone.
+    this.revalidationTimer.unref?.();
+  }
+
+  private async revalidateSessions(): Promise<void> {
+    let sockets: any[];
+    try {
+      sockets = await this.io.fetchSockets() as unknown as any[];
+    } catch (error) {
+      logError('Could not enumerate sockets for revalidation', error as Error);
+      return;
+    }
+
+    for (const socket of sockets) {
+      try {
+        const result = await authenticateSocketToken(socket.data?.authToken, socket.id);
+        if (result.ok) continue;
+
+        logWarn('Disconnecting a socket whose session is no longer valid', {
+          socketId: socket.id,
+          userId: socket.data?.userId,
+          reason: result.error,
+        });
+        socket.emit('session_ended', { reason: result.error });
+        socket.disconnect(true);
+      } catch (error) {
+        logError('Socket revalidation failed', error as Error, { socketId: socket.id });
+      }
+    }
+  }
+
+  /** Stop the revalidation timer during graceful shutdown. */
+  public stopSessionRevalidation(): void {
+    if (this.revalidationTimer) {
+      clearInterval(this.revalidationTimer);
+      this.revalidationTimer = null;
+    }
   }
 
   private setupEventHandlers(): void {

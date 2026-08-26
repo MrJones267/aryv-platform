@@ -1,20 +1,67 @@
 name: Deploy Admin Panel to Cloudflare Pages
 
+# The previous version checked out the repo and handed `admin-panel/dist`
+# straight to the Pages action, with no build step — and `admin-panel/dist` is
+# not tracked in git, so a fresh checkout does not contain it. This workflow
+# therefore cannot have produced what is currently live: that was pushed by
+# hand, from a working tree of unknown state, with no relationship to any
+# commit. A fix landing in admin-panel/src would never have reached production,
+# and there was no way to audit what was running.
+#
+# Building here is what makes the deployed bundle traceable to a commit.
+
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'admin-panel/**'
+      - '.github/workflows/deploy-admin.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two deploys race; a later commit should win, not whichever
+  # upload finishes last.
+  group: deploy-admin
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The repo is an npm workspace, so the lockfile lives at the root and
+      # `npm ci` there installs the exact tree it records. `npm install` would
+      # re-resolve and could ship a different dependency set than was reviewed.
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type check
+        run: npm run type-check --workspace admin-panel
+
+      - name: Build
+        run: npm run build --workspace admin-panel
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.aryv-app.com' }}
+
+      # A build that silently produced nothing would otherwise deploy an empty
+      # site over a working one.
+      - name: Verify the build produced a bundle
+        run: |
+          test -f admin-panel/dist/index.html || { echo "::error::admin-panel/dist/index.html missing after build"; exit 1; }
+          test -f admin-panel/dist/_headers   || { echo "::error::_headers missing — security headers would not be served"; exit 1; }
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: aryv-admin-full
-          directory: admin-panel/dist
+          command: pages deploy admin-panel/dist --project-name=aryv-admin-full --branch=main

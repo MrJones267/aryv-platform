@@ -29,6 +29,7 @@ import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
 import { notificationService } from '../services/NotificationService';
 import GroupChatService from '../services/GroupChatService';
+import toRideView from '../utils/rideView';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 
 /**
@@ -452,7 +453,11 @@ export class RideController {
       res.json({
         success: true,
         data: {
-          rides: bookable,
+          // Search is public and returns rides in bulk, so it is the wholesale
+          // version of the same exposure: never the plate, never a precise
+          // pin, never the driver's full name. Someone who books gets the
+          // detail they need from GET /rides/:id afterwards.
+          rides: bookable.map((ride) => toRideView(ride, { isParticipant: false })),
           pagination: {
             page: Number(page),
             limit: Number(limit),
@@ -668,6 +673,32 @@ export class RideController {
     }
   }
 
+  /**
+   * Is this caller the ride's driver, or a passenger with a live booking on it?
+   *
+   * That relationship is what earns the full view — the licence plate to find
+   * the car, the precise pin to meet at the right corner. A cancelled booking
+   * does not count: someone must not be able to book, read the details, cancel,
+   * and keep them.
+   */
+  private async isRideParticipant(rideId: string, userId?: string): Promise<boolean> {
+    if (!userId) return false;
+
+    const ride = await Ride.findByPk(rideId, { attributes: ['id', 'driverId'] });
+    if (!ride) return false;
+    if (ride.driverId === userId) return true;
+
+    const booking = await Booking.count({
+      where: {
+        rideId,
+        passengerId: userId,
+        status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.COMPLETED] },
+      },
+    });
+
+    return booking > 0;
+  }
+
   async getRideById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -720,23 +751,32 @@ export class RideController {
         whole.alightingSequence,
       );
 
+      // This endpoint is public, so what comes back depends on who is asking.
+      // It used to spread the whole row for everyone: driver id, exact
+      // coordinates, departure time and the vehicle's licence plate, to anyone
+      // with a ride id — and the equally public search hands those out.
+      const isParticipant = await this.isRideParticipant(id!, (req as AuthenticatedRequest).user?.id);
+
       res.json({
         success: true,
-        data: {
-          ...ride.toJSON(),
-          bookedSeats: bookingCount,
-          stops: stops.map((stop) => ({
-            ...stop,
-            // What someone boarding here and riding to the end would pay.
-            fareToDestination: stop.sequence === whole.alightingSequence
-              ? 0
-              : rideSegmentService.fareForSegment(stops, stop.sequence, whole.alightingSequence),
-          })),
-          legs: occupancy.legs.map((leg) => ({
-            ...leg,
-            seatsAvailable: Math.max(0, ride.availableSeats - leg.occupied),
-          })),
-        },
+        data: toRideView(
+          {
+            ...ride.toJSON(),
+            bookedSeats: bookingCount,
+            stops: stops.map((stop) => ({
+              ...stop,
+              // What someone boarding here and riding to the end would pay.
+              fareToDestination: stop.sequence === whole.alightingSequence
+                ? 0
+                : rideSegmentService.fareForSegment(stops, stop.sequence, whole.alightingSequence),
+            })),
+            legs: occupancy.legs.map((leg) => ({
+              ...leg,
+              seatsAvailable: Math.max(0, ride.availableSeats - leg.occupied),
+            })),
+          },
+          { userId: (req as AuthenticatedRequest).user?.id, isParticipant },
+        ),
         timestamp: new Date().toISOString(),
       });
     } catch (error) {

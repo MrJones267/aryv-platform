@@ -18,6 +18,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { EmergencyController } from '../controllers/EmergencyController';
@@ -34,6 +35,7 @@ const raiseAlertRateLimit = rateLimit({
   max: 20,
   message: 'Too many emergency alerts from this device. If this is a real emergency, call 999.',
   store: makeStore('emergency-raise'),
+  keyGenerator: rateLimitKey,
 });
 
 /** Location pings while an alert is open — one every few seconds is normal. */
@@ -42,6 +44,7 @@ const locationRateLimit = rateLimit({
   max: 120,
   message: 'Too many location updates',
   store: makeStore('emergency-location'),
+  keyGenerator: rateLimitKey,
 });
 
 const contactsRateLimit = rateLimit({
@@ -49,6 +52,7 @@ const contactsRateLimit = rateLimit({
   max: 100,
   message: 'Too many requests, please try again later',
   store: makeStore('emergency-contacts'),
+  keyGenerator: rateLimitKey,
 });
 
 const coordinateValidation = [

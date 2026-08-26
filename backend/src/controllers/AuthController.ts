@@ -9,11 +9,21 @@ import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import nodemailer from 'nodemailer';
+import { Op } from 'sequelize';
 import { AuthService } from '../services/AuthService';
 import { redisClient } from '../config/redis';
 import User from '../models/User';
 import { AuthenticatedRequest, AppError, UserStatus } from '../types';
 import logger from '../utils/logger';
+import { toE164 } from '../utils/phone';
+import { validatePasswordStrength } from '../utils/password';
+import otpService, {
+  OTP_PURPOSES,
+  isOtpPurpose,
+  type OtpPurpose,
+  type OtpFailureReason,
+  type OtpVerifyResult,
+} from '../services/OtpService';
 
 // Verifies Google ID tokens against Google's rotating public keys. Constructed
 // once at module load: the client caches those keys between requests.
@@ -21,6 +31,34 @@ const googleOAuthClient = new OAuth2Client();
 
 const PW_RESET_PREFIX = 'pw_reset:';
 const PW_RESET_TTL = 3600; // 1 hour
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * The one line of explanation that goes into a verification email, chosen from
+ * a fixed set. `purpose` used to be taken from the request and interpolated
+ * straight into the message body, so anyone could put arbitrary text into mail
+ * sent from our domain to an address of their choosing.
+ */
+const EMAIL_PURPOSE_TEXT: Record<OtpPurpose, string> = {
+  login: 'Use it to sign in to your ARYV account.',
+  registration: 'Use it to finish creating your ARYV account.',
+  password_reset: 'Use it to set a new password on your ARYV account.',
+  phone_verification: 'Use it to confirm your phone number.',
+  email_verification: 'Use it to confirm your email address.',
+};
+
+/**
+ * Deliberately uniform. A caller must not be able to tell an unknown recipient
+ * from a wrong code from an expired one — that distinction only helps someone
+ * working out which addresses and numbers have accounts.
+ */
+const OTP_FAILURE_MESSAGE: Record<OtpFailureReason, string> = {
+  not_found: 'That code is not valid or has expired. Request a new one.',
+  mismatch: 'That code is not valid or has expired. Request a new one.',
+  unavailable: 'That code is not valid or has expired. Request a new one.',
+  too_many_attempts: 'Too many incorrect attempts. Request a new code.',
+};
 
 export class AuthController {
   /**
@@ -770,23 +808,72 @@ export class AuthController {
   }
 
   /* ────────────── OTP endpoints ────────────── */
+  /*
+   * Every endpoint below names the purpose its code is for, and OtpService
+   * binds the code to it. A code minted to verify an email address is not
+   * accepted at password reset — which it was, and that made
+   * POST /api/auth/password-reset/otp an account-takeover endpoint for anyone
+   * who could get a verification code issued.
+   *
+   * Wrong guesses are counted and the code is destroyed after five, so a
+   * six-digit secret is no longer brute-forceable within its ten-minute life.
+   *
+   * Failures are also deliberately uniform: a caller cannot tell "no such
+   * account" from "wrong code" from "code expired", because that difference is
+   * only useful for enumerating accounts.
+   */
+
+  /** Resolve and validate the purpose a caller asked for. */
+  private static resolvePurpose(
+    value: unknown,
+    allowed: OtpPurpose[],
+    fallback: OtpPurpose,
+  ): OtpPurpose | null {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (!isOtpPurpose(value) || !allowed.includes(value)) return null;
+    return value;
+  }
 
   /** Send SMS OTP */
   static async sendSMSOTP(req: Request, res: Response): Promise<void> {
     try {
-      const { phone, purpose } = req.body as { phone: string; purpose: string };
+      const { phone } = req.body as { phone: string };
       if (!phone) {
         res.status(400).json({ success: false, error: 'phone is required', code: 'PHONE_REQUIRED', timestamp: new Date().toISOString() });
         return;
       }
 
-      const { smsService } = await import('../services/SMSService');
-      const { sent } = await smsService.sendVerificationCode(phone);
+      const purpose = AuthController.resolvePurpose(
+        req.body.purpose,
+        ['login', 'registration', 'password_reset', 'phone_verification'],
+        'phone_verification',
+      );
+      if (!purpose) {
+        res.status(400).json({ success: false, error: 'Unrecognised purpose', code: 'INVALID_PURPOSE', timestamp: new Date().toISOString() });
+        return;
+      }
 
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { smsService } = await import('../services/SMSService');
+      const result = await smsService.sendVerificationCode(phone, purpose);
+
+      if (result.throttled) {
+        res.status(429).json({
+          success: false,
+          error: 'Too many codes requested for this number. Please wait before trying again.',
+          code: 'OTP_REQUEST_THROTTLED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       res.status(200).json({
         success: true,
-        data: { message: sent ? 'OTP sent via SMS' : 'OTP generated (SMS not configured)', expiresAt, purpose },
+        data: {
+          message: result.sent ? 'OTP sent via SMS' : 'OTP generated (SMS not configured)',
+          expiresAt: result.expiresAt?.toISOString(),
+          purpose,
+          ...(result.code ? { devCode: result.code } : {}),
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -798,14 +885,39 @@ export class AuthController {
   /** Send Email OTP */
   static async sendEmailOTP(req: Request, res: Response): Promise<void> {
     try {
-      const { email, purpose } = req.body as { email: string; purpose: string };
-      if (!email) {
-        res.status(400).json({ success: false, error: 'email is required', code: 'EMAIL_REQUIRED', timestamp: new Date().toISOString() });
+      const { email } = req.body as { email: string };
+      if (!email || typeof email !== 'string' || !EMAIL_PATTERN.test(email.trim())) {
+        res.status(400).json({ success: false, error: 'A valid email address is required', code: 'EMAIL_REQUIRED', timestamp: new Date().toISOString() });
         return;
       }
 
-      const otp = (100000 + crypto.randomInt(0, 900000)).toString();
-      await redisClient.set(`email_otp:${email.toLowerCase()}`, otp, 600);
+      const purpose = AuthController.resolvePurpose(
+        req.body.purpose,
+        ['login', 'registration', 'password_reset', 'email_verification'],
+        'email_verification',
+      );
+      if (!purpose) {
+        res.status(400).json({ success: false, error: 'Unrecognised purpose', code: 'INVALID_PURPOSE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const recipient = email.trim().toLowerCase();
+      const issued = await otpService.issue('email', recipient, purpose);
+
+      if (issued.throttled) {
+        res.status(429).json({
+          success: false,
+          error: 'Too many codes requested for this address. Please wait before trying again.',
+          code: 'OTP_REQUEST_THROTTLED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (!issued.ok || !issued.code) {
+        res.status(503).json({ success: false, error: 'Verification codes are temporarily unavailable', code: 'OTP_UNAVAILABLE', timestamp: new Date().toISOString() });
+        return;
+      }
 
       if (process.env['SMTP_HOST']) {
         const transporter = nodemailer.createTransport({
@@ -815,19 +927,29 @@ export class AuthController {
           auth: { user: process.env['SMTP_USER'], pass: process.env['SMTP_PASS'] },
         });
         await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@hitch.app',
-          to: email,
-          subject: 'Your verification code',
-          text: `Your Hitch code is: ${otp}. Valid for 10 minutes. Purpose: ${purpose}.`,
+          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
+          to: recipient,
+          subject: 'Your ARYV verification code',
+          // The body is built only from our own strings and the generated code.
+          // `purpose` used to be interpolated here straight from the request,
+          // which let anyone put arbitrary text into an email sent from our
+          // domain, to an address of their choosing.
+          text: `Your ARYV code is: ${issued.code}. It is valid for 10 minutes and can be used once.\n\n${EMAIL_PURPOSE_TEXT[purpose]}\n\nIf you did not request this, you can ignore this email.`,
         });
       } else {
-        logger.info('Email OTP (dev mode)', { email, otp, purpose });
+        logger.info('Email OTP generated (SMTP not configured)', { purpose });
       }
 
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       res.status(200).json({
         success: true,
-        data: { message: 'OTP sent via email', expiresAt, purpose },
+        data: {
+          message: 'OTP sent via email',
+          expiresAt: issued.expiresAt?.toISOString(),
+          purpose,
+          // Development convenience only, so the flow is completable without
+          // an SMTP server. Never returned from a production build.
+          ...(process.env['NODE_ENV'] !== 'production' ? { devCode: issued.code } : {}),
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -836,14 +958,16 @@ export class AuthController {
     }
   }
 
-  /** Verify OTP (SMS or email) */
+  /**
+   * Redeem a code for one of the verification purposes.
+   *
+   * Login, registration and password reset each have their own endpoint and
+   * their own purpose; this one deliberately cannot be used to reach them.
+   */
   static async verifyOTP(req: Request, res: Response): Promise<void> {
     try {
-      const { type, recipient, code, purpose } = req.body as {
-        type: 'sms' | 'email';
-        recipient: string;
-        code: string;
-        purpose: string;
+      const { type, recipient, code } = req.body as {
+        type: 'sms' | 'email'; recipient: string; code: string;
       };
 
       if (!type || !recipient || !code) {
@@ -851,21 +975,25 @@ export class AuthController {
         return;
       }
 
-      let verified = false;
-
-      if (type === 'sms') {
-        const { smsService } = await import('../services/SMSService');
-        verified = await smsService.verifyCode(recipient, code);
-      } else {
-        const stored = await redisClient.get(`email_otp:${recipient.toLowerCase()}`);
-        if (stored && stored === code) {
-          await redisClient.del(`email_otp:${recipient.toLowerCase()}`);
-          verified = true;
-        }
+      const purpose = AuthController.resolvePurpose(
+        req.body.purpose,
+        type === 'sms' ? ['phone_verification'] : ['email_verification'],
+        type === 'sms' ? 'phone_verification' : 'email_verification',
+      );
+      if (!purpose) {
+        res.status(400).json({ success: false, error: 'Unrecognised purpose', code: 'INVALID_PURPOSE', timestamp: new Date().toISOString() });
+        return;
       }
 
-      if (!verified) {
-        res.status(400).json({ success: false, data: { verified: false, message: 'Invalid or expired OTP' }, timestamp: new Date().toISOString() });
+      const result = await AuthController.redeemOTP(type, recipient, purpose, code);
+
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 400).json({
+          success: false,
+          data: { verified: false, message: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'] },
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
@@ -880,24 +1008,53 @@ export class AuthController {
     }
   }
 
-  /** Get OTP status (can send? cooldown?) */
+  /** Shared redemption path so every caller gets the same limits. */
+  private static async redeemOTP(
+    type: 'sms' | 'email',
+    recipient: string,
+    purpose: OtpPurpose,
+    code: string,
+  ): Promise<OtpVerifyResult> {
+    if (type === 'sms') {
+      const { smsService } = await import('../services/SMSService');
+      return smsService.verifyCode(recipient, code, purpose);
+    }
+    return otpService.verify('email', recipient.trim().toLowerCase(), purpose, code);
+  }
+
+  /** How many attempts are left on a live code. */
   static async getOTPStatus(req: Request, res: Response): Promise<void> {
     try {
-      const { recipient, type } = req.query as { recipient: string; type: string };
-      if (!recipient || !type) {
-        res.status(400).json({ success: false, error: 'recipient and type are required', code: 'MISSING_FIELDS', timestamp: new Date().toISOString() });
+      const type = req.query['type'] === 'sms' ? 'sms' : 'email';
+      const recipient = String(req.query['recipient'] ?? '');
+
+      if (!recipient) {
+        res.status(400).json({ success: false, error: 'recipient is required', code: 'RECIPIENT_REQUIRED', timestamp: new Date().toISOString() });
         return;
       }
 
-      const key = type === 'sms' ? `otp:${recipient}` : `email_otp:${recipient.toLowerCase()}`;
-      const exists = await redisClient.get(key);
+      const purpose = AuthController.resolvePurpose(
+        req.query['purpose'],
+        [...OTP_PURPOSES],
+        type === 'sms' ? 'phone_verification' : 'email_verification',
+      );
+      if (!purpose) {
+        res.status(400).json({ success: false, error: 'Unrecognised purpose', code: 'INVALID_PURPOSE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const identifier = type === 'sms'
+        ? toE164(recipient) ?? recipient
+        : recipient.trim().toLowerCase();
+
+      const attemptsRemaining = await otpService.attemptsRemaining(type, identifier, purpose);
 
       res.status(200).json({
         success: true,
         data: {
-          canSend: !exists,
-          cooldownRemaining: exists ? 60 : 0, // simplified — can't read TTL without extending Redis client
-          attemptsRemaining: 3,
+          hasActiveCode: attemptsRemaining !== null,
+          attemptsRemaining: attemptsRemaining ?? 0,
+          purpose,
         },
         timestamp: new Date().toISOString(),
       });
@@ -917,31 +1074,24 @@ export class AuthController {
         return;
       }
 
-      let verified = false;
-      if (type === 'sms') {
-        const { smsService } = await import('../services/SMSService');
-        verified = await smsService.verifyCode(recipient, code);
-      } else {
-        const stored = await redisClient.get(`email_otp:${recipient.toLowerCase()}`);
-        if (stored && stored === code) {
-          await redisClient.del(`email_otp:${recipient.toLowerCase()}`);
-          verified = true;
-        }
-      }
+      const result = await AuthController.redeemOTP(type, recipient, 'login', code);
 
-      if (!verified) {
-        res.status(401).json({ success: false, error: 'Invalid or expired OTP', code: 'INVALID_OTP', timestamp: new Date().toISOString() });
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 401).json({
+          success: false,
+          error: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'],
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
-      // Find user
-      const whereClause = type === 'sms'
-        ? { phone: recipient }
-        : { email: recipient.toLowerCase() };
-      const user = await User.findOne({ where: whereClause as any });
+      const user = await AuthController.findUserByRecipient(type, recipient);
 
+      // Same answer as a bad code. Telling the caller the code was right but
+      // no account exists confirms which numbers and addresses are registered.
       if (!user) {
-        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+        res.status(401).json({ success: false, error: OTP_FAILURE_MESSAGE.not_found, code: 'INVALID_OTP', timestamp: new Date().toISOString() });
         return;
       }
 
@@ -950,20 +1100,12 @@ export class AuthController {
         return;
       }
 
-      const accessToken = AuthService.generateAccessToken({ userId: user.id, email: user.email, role: user.role });
-      const refreshToken = AuthService.generateRefreshToken();
-
-      await user.update({ refreshToken, lastLoginAt: new Date() });
+      const session = await AuthService.issueSession(user);
 
       res.status(200).json({
         success: true,
         message: 'Login successful',
-        data: {
-          user: user.toSafeObject(),
-          accessToken,
-          refreshToken,
-          expiresIn: 86400,
-        },
+        data: { user: user.toSafeObject(), ...session },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -972,7 +1114,21 @@ export class AuthController {
     }
   }
 
-  /** Register and immediately verify OTP as part of sign-up */
+  /** Look up the account an OTP recipient belongs to. */
+  private static async findUserByRecipient(type: 'sms' | 'email', recipient: string) {
+    if (type === 'email') {
+      return User.findOne({ where: { email: recipient.trim().toLowerCase() } });
+    }
+    // Match on the normalised number, falling back to the raw value so
+    // accounts stored before normalisation are still reachable.
+    const normalised = toE164(recipient);
+    return User.findOne({
+      where: normalised
+        ? ({ [Op.or]: [{ phone: normalised }, { phone: recipient }] } as any)
+        : ({ phone: recipient } as any),
+    });
+  }
+
   static async registerWithOTP(req: Request, res: Response): Promise<void> {
     try {
       const { otpCode, otpType, ...userData } = req.body as {
@@ -992,40 +1148,37 @@ export class AuthController {
       }
 
       const recipient = otpType === 'sms' ? userData.phone : userData.email;
-      let verified = false;
-
-      if (otpType === 'sms') {
-        const { smsService } = await import('../services/SMSService');
-        verified = await smsService.verifyCode(recipient, otpCode);
-      } else {
-        const stored = await redisClient.get(`email_otp:${recipient.toLowerCase()}`);
-        if (stored && stored === otpCode) {
-          await redisClient.del(`email_otp:${recipient.toLowerCase()}`);
-          verified = true;
-        }
-      }
-
-      if (!verified) {
-        res.status(400).json({ success: false, error: 'Invalid or expired OTP', code: 'INVALID_OTP', timestamp: new Date().toISOString() });
+      if (!recipient) {
+        res.status(400).json({ success: false, error: 'A phone or email matching the code is required', code: 'MISSING_FIELDS', timestamp: new Date().toISOString() });
         return;
       }
 
-      const result = await AuthService.register(userData as any);
+      const result = await AuthController.redeemOTP(otpType, recipient, 'registration', otpCode);
 
-      // Mark the relevant field as verified
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 400).json({
+          success: false,
+          error: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'],
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const registration = await AuthService.register(userData as any);
+
+      // Mark the channel the code proved as verified — and only that channel.
       const newUser = await User.findOne({ where: { email: userData.email } });
       if (newUser) {
-        if (otpType === 'email') {
-          await newUser.update({ isEmailVerified: true });
-        } else {
-          await newUser.update({ isPhoneVerified: true });
-        }
+        await newUser.update(
+          otpType === 'email' ? { isEmailVerified: true } : { isPhoneVerified: true },
+        );
       }
 
       res.status(201).json({
         success: true,
         message: 'Registration successful',
-        data: result,
+        data: registration,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -1053,35 +1206,32 @@ export class AuthController {
         return;
       }
 
-      if (newPassword.length < 8) {
-        res.status(400).json({ success: false, error: 'Password must be at least 8 characters', code: 'PASSWORD_TOO_SHORT', timestamp: new Date().toISOString() });
+      const strength = validatePasswordStrength(newPassword);
+      if (!strength.ok) {
+        res.status(400).json({ success: false, error: strength.message, code: 'WEAK_PASSWORD', timestamp: new Date().toISOString() });
         return;
       }
 
-      let verified = false;
-      if (type === 'sms') {
-        const { smsService } = await import('../services/SMSService');
-        verified = await smsService.verifyCode(recipient, code);
-      } else {
-        const stored = await redisClient.get(`email_otp:${recipient.toLowerCase()}`);
-        if (stored && stored === code) {
-          await redisClient.del(`email_otp:${recipient.toLowerCase()}`);
-          verified = true;
-        }
-      }
+      // Bound to 'password_reset' specifically. A code issued for email or
+      // phone verification is rejected here, which is the whole point: this
+      // endpoint sets a password with no other proof of identity.
+      const result = await AuthController.redeemOTP(type, recipient, 'password_reset', code);
 
-      if (!verified) {
-        res.status(400).json({ success: false, error: 'Invalid or expired OTP', code: 'INVALID_OTP', timestamp: new Date().toISOString() });
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 400).json({
+          success: false,
+          error: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'],
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
-      const whereClause = type === 'sms'
-        ? { phone: recipient }
-        : { email: recipient.toLowerCase() };
-      const user = await User.findOne({ where: whereClause as any });
+      const user = await AuthController.findUserByRecipient(type, recipient);
 
       if (!user) {
-        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+        // Uniform with a bad code, for the same reason as login.
+        res.status(400).json({ success: false, error: OTP_FAILURE_MESSAGE.not_found, code: 'INVALID_OTP', timestamp: new Date().toISOString() });
         return;
       }
 
@@ -1090,6 +1240,8 @@ export class AuthController {
         passwordChangedAt: new Date(),
         refreshToken: null,
       });
+
+      logger.info('Password reset via OTP', { userId: user.id, channel: type });
 
       res.status(200).json({ success: true, message: 'Password reset successfully', timestamp: new Date().toISOString() });
     } catch (error) {
@@ -1397,23 +1549,19 @@ export class AuthController {
         logger.info('Created user from Google sign-in', { userId: user.id, email });
       }
 
-      const accessToken = AuthService.generateAccessToken({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
-      const refreshToken = AuthService.generateRefreshToken();
-
-      await user.update({ refreshToken, lastLoginAt: new Date() });
+      // Through the shared path, so the refresh token is stored hashed like
+      // every other sign-in. This wrote the raw token, which both exposed a
+      // directly replayable credential in the database and — because refresh
+      // looks the token up by hash — meant Google users could never refresh a
+      // session and were signed out after 24 hours.
+      const session = await AuthService.issueSession(user);
 
       res.status(200).json({
         success: true,
         message: 'Google sign-in successful',
         data: {
           user: user.toSafeObject(),
-          accessToken,
-          refreshToken,
-          expiresIn: 86400,
+          ...session,
         },
         timestamp: new Date().toISOString(),
       });

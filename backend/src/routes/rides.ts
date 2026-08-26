@@ -9,9 +9,10 @@ import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { RideController } from '../controllers/RideController';
 import { validateInput } from '../middleware/validation';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, optionalAuth } from '../middleware/auth';
 
 const router = Router();
 const rideController = new RideController();
@@ -22,6 +23,7 @@ const rideRateLimit = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many ride requests from this IP, please try again later',
   store: makeStore('rides'),
+  keyGenerator: rateLimitKey,
 });
 
 const createRideRateLimit = rateLimit({
@@ -29,6 +31,7 @@ const createRideRateLimit = rateLimit({
   max: 10, // Limit ride creation to 10 per hour per IP
   message: 'Too many ride creation attempts, please try again later',
   store: makeStore('ride-create'),
+  keyGenerator: rateLimitKey,
 });
 
 // Validation schemas
@@ -354,6 +357,11 @@ router.get(
 router.get(
   '/:id',
   rideRateLimit,
+  // Optional, not required: the endpoint stays public, but knowing who is
+  // asking is what lets it return the licence plate and precise pickup point
+  // to the driver and to passengers holding a booking, and withhold both from
+  // everyone else.
+  optionalAuth,
   rideIdValidation,
   validateInput,
   rideController.getRideById.bind(rideController),

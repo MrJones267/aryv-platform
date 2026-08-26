@@ -11,6 +11,7 @@ import { body, query, param } from 'express-validator';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { UserController } from '../controllers/UserController';
 import { AuthController } from '../controllers/AuthController';
 import { validateInput } from '../middleware/validation';
@@ -30,6 +31,7 @@ const userRateLimit = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many user requests from this IP, please try again later',
   store: makeStore('users'),
+  keyGenerator: rateLimitKey,
 });
 
 const profileUpdateRateLimit = rateLimit({
@@ -37,6 +39,7 @@ const profileUpdateRateLimit = rateLimit({
   max: 5, // Limit profile updates to 5 per hour per IP
   message: 'Too many profile update attempts, please try again later',
   store: makeStore('profile-update'),
+  keyGenerator: rateLimitKey,
 });
 
 // Validation schemas

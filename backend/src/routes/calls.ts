@@ -18,6 +18,7 @@ import { Router, Response } from 'express';
 import { query, param, body } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import { iceServerService } from '../services/IceServerService';
@@ -33,6 +34,7 @@ const callRateLimit = rateLimit({
   max: 200,
   message: 'Too many call requests, please try again later',
   store: makeStore('calls'),
+  keyGenerator: rateLimitKey,
 });
 
 /**

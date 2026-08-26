@@ -126,14 +126,13 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
           [
             {
               text: 'Continue',
-              onPress: () => {
-                if (purpose === 'login') {
-                  // Handle login flow
-                  navigation.navigate('Main' as never);
-                } else {
-                  navigation.navigate('Login' as never);
-                }
-              },
+              // Always back to sign-in. This screen confirms an email address
+              // or phone number and nothing more — it never receives session
+              // tokens. Sending the user to Main after a successful check
+              // walked an unauthenticated account into the app; signing in
+              // with a code is a separate flow (/auth/login/otp) that actually
+              // returns tokens.
+              onPress: () => navigation.navigate('Login' as never),
             },
           ]
         );

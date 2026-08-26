@@ -8,21 +8,51 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
-import { redisClient } from '../config/redis';
 import { logInfo, logError, logWarn } from '../utils/logger';
 import { AdminUser } from '../models/AdminUser';
+import { AuthService } from '../services/AuthService';
 import User from '../models/User';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import Package from '../models/Package';
 import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
 import { DeliveryDispute } from '../models/DeliveryDispute';
+
+/**
+ * How long an admin session lasts.
+ *
+ * "Remember me" used to mint a **seven day** bearer token for full platform
+ * administration — user records, ride history, commission settings, manual
+ * payment release — held in localStorage where any script on the origin can
+ * read it. A day is still a full working session and cuts the window an
+ * exposed token is useful for by 85%.
+ */
+const ADMIN_TOKEN_TTL = '24h';
+const ADMIN_REMEMBER_ME_TTL = '24h';
+const ADMIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 import { UserStatus, RideStatus, BookingStatus } from '../types';
 
 // Configuration constants — fail fast if secrets are missing
 if (!process.env['JWT_SECRET']) throw new Error('JWT_SECRET environment variable is required');
 if (!process.env['JWT_REFRESH_SECRET']) throw new Error('JWT_REFRESH_SECRET environment variable is required');
-const JWT_SECRET = process.env['JWT_SECRET'] as string;
+if (!process.env['ADMIN_JWT_SECRET']) throw new Error('ADMIN_JWT_SECRET environment variable is required');
+
+/**
+ * Admin tokens are signed with their own secret.
+ *
+ * Startup already refused to run without `ADMIN_JWT_SECRET`, which read as if
+ * admin sessions were cryptographically separate from user sessions. They were
+ * not — this signed with `JWT_SECRET`, the same key as every passenger's
+ * token, and `ADMIN_JWT_SECRET` was never referenced anywhere. Cross-use was
+ * blocked by other means (the `type: 'admin'` claim, and user verification
+ * requiring an issuer and audience that admin tokens do not set), so it was
+ * not exploitable — but the required variable promised a separation that did
+ * not exist, and the next person to touch this would have believed it.
+ *
+ * Real separation is worth having: admin sessions can now be revoked wholesale
+ * by rotating this one secret, without signing every passenger out.
+ */
+const ADMIN_JWT_SECRET = process.env['ADMIN_JWT_SECRET'] as string;
 const JWT_REFRESH_SECRET = process.env['JWT_REFRESH_SECRET'] as string;
 
 export class AdminController {
@@ -93,8 +123,8 @@ export class AdminController {
 
       const accessToken = jwt.sign(
         tokenPayload,
-        JWT_SECRET,
-        { expiresIn: rememberMe ? '7d' : '24h' },
+        ADMIN_JWT_SECRET,
+        { expiresIn: rememberMe ? ADMIN_REMEMBER_ME_TTL : ADMIN_TOKEN_TTL },
       );
 
       const refreshToken = jwt.sign(
@@ -119,7 +149,7 @@ export class AdminController {
           tokens: {
             accessToken,
             refreshToken,
-            expiresIn: rememberMe ? '7d' : '24h',
+            expiresIn: rememberMe ? ADMIN_REMEMBER_ME_TTL : ADMIN_TOKEN_TTL,
           },
         },
       });
@@ -149,7 +179,7 @@ export class AdminController {
       }
 
       const token = authHeader.substring(7);
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, ADMIN_JWT_SECRET) as any;
 
       if (decoded.type !== 'admin') {
         res.status(403).json({
@@ -199,9 +229,13 @@ export class AdminController {
       // the admin signed out.
       const token = req.headers.authorization?.split(' ')[1];
       if (token) {
+        // Through AuthService so the revocation also lands in this process's
+        // local mirror. Writing the Redis key directly meant a logout during a
+        // Redis outage revoked nothing at all, silently.
+        //
         // Held for the longest admin token lifetime, after which expiry takes
         // over and the entry is dead weight.
-        await redisClient.set(`bl:${token}`, '1', 7 * 24 * 60 * 60);
+        await AuthService.revokeToken(token, ADMIN_TOKEN_TTL_SECONDS);
       }
 
       logInfo('Admin logout', { adminId: req.user?.id, ip: req.ip });

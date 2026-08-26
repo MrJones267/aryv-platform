@@ -6,6 +6,7 @@
  */
 
 import Stripe from 'stripe';
+import { Transaction } from 'sequelize';
 import Booking from '../models/Booking';
 import Ride from '../models/Ride';
 import User from '../models/User';
@@ -188,9 +189,29 @@ export class PaymentService {
   }
 
   /**
-   * Process refund for a booking
+   * Process refund for a booking.
+   *
+   * The caller never decides how much money leaves the platform. `amount` is a
+   * *request* for a partial refund and is clamped to what the booking is
+   * actually worth; omitting it refunds the booking in full. Anything above
+   * `booking.totalAmount` is refused outright rather than silently clamped, so
+   * a caller asking for more than exists gets an error instead of a surprise.
+   *
+   * Eligibility is decided here, not at the route, because this is the only
+   * function that moves money and every caller has to pass through it:
+   *
+   *  - An already-cancelled booking is refused. Without this, replaying the
+   *    same request issued a second Stripe refund against the same intent.
+   *  - A departed ride is refused unless the caller sets `allowAfterDeparture`,
+   *    which only the admin path does. Self-service refunds after the trip has
+   *    run are the refund-fraud case: ride, then claim the money back.
    */
-  async processRefund(bookingId: string, amount?: number, reason?: string): Promise<PaymentResult> {
+  async processRefund(
+    bookingId: string,
+    amount?: number,
+    reason?: string,
+    options: { allowAfterDeparture?: boolean; requestedBy?: string } = {},
+  ): Promise<PaymentResult> {
     const transaction = await sequelize.transaction();
 
     try {
@@ -202,6 +223,11 @@ export class PaymentService {
           },
         ],
         transaction,
+        // Scoped to `bookings` deliberately: the Ride include makes this a LEFT
+        // OUTER JOIN, and Postgres refuses FOR UPDATE on the nullable side of
+        // one. Locking the booking row is all that is needed — it is what two
+        // concurrent refunds would race over.
+        lock: { level: Transaction.LOCK.UPDATE, of: Booking },
       });
 
       if (!booking || !booking.paymentIntentId) {
@@ -211,6 +237,45 @@ export class PaymentService {
           error: 'Booking or payment intent not found',
         };
       }
+
+      if (booking.status === BookingStatus.CANCELLED) {
+        await transaction.rollback();
+        return {
+          success: false,
+          error: 'This booking has already been cancelled and refunded',
+        };
+      }
+
+      if (!options.allowAfterDeparture) {
+        const departure = booking.ride?.departureTime;
+        if (departure && new Date(departure).getTime() <= Date.now()) {
+          await transaction.rollback();
+          return {
+            success: false,
+            error: 'This ride has already departed. Contact support to request a refund.',
+          };
+        }
+      }
+
+      const bookingTotal = Number(booking.totalAmount);
+
+      if (amount !== undefined) {
+        if (!Number.isFinite(amount) || amount <= 0) {
+          await transaction.rollback();
+          return { success: false, error: 'Refund amount must be greater than zero' };
+        }
+        // Compared in cents so a value like 40.005 cannot creep past the total
+        // through float representation and reach Stripe rounded up.
+        if (Math.round(amount * 100) > Math.round(bookingTotal * 100)) {
+          await transaction.rollback();
+          return {
+            success: false,
+            error: `Refund amount exceeds the booking total of ${bookingTotal}`,
+          };
+        }
+      }
+
+      const refundCents = Math.round((amount ?? bookingTotal) * 100);
 
       if (!this.stripe) {
         await transaction.rollback();
@@ -222,24 +287,34 @@ export class PaymentService {
           success: true,
           data: {
             id: `re_mock_${Date.now()}`,
-            amount: Math.round((amount || booking.totalAmount) * 100),
+            amount: refundCents,
             status: 'succeeded',
           },
         };
       }
 
-      const refund = await this.stripe.refunds.create({
-        payment_intent: booking.paymentIntentId,
-        ...(amount && { amount: Math.round(amount * 100) }), // Full refund if no amount specified
-        // Stripe's `reason` only accepts a fixed enum; the human-readable reason
-        // is preserved in metadata.refundReason below.
-        reason: 'requested_by_customer',
-        metadata: {
-          bookingId: booking.id,
-          rideId: booking.rideId,
-          refundReason: reason || 'Booking cancellation',
+      // The Stripe call sits inside the transaction, so a commit failure after
+      // a successful refund would leave the booking open and refundable again.
+      // The idempotency key makes the retry safe: Stripe returns the refund it
+      // already created rather than issuing a second one. Keyed on the booking
+      // and the exact amount, so a later *different* partial refund by an admin
+      // is still allowed through as its own operation.
+      const refund = await this.stripe.refunds.create(
+        {
+          payment_intent: booking.paymentIntentId,
+          ...(amount !== undefined && { amount: refundCents }), // Full refund if no amount specified
+          // Stripe's `reason` only accepts a fixed enum; the human-readable reason
+          // is preserved in metadata.refundReason below.
+          reason: 'requested_by_customer',
+          metadata: {
+            bookingId: booking.id,
+            rideId: booking.rideId,
+            refundReason: reason || 'Booking cancellation',
+            requestedBy: options.requestedBy ?? 'system',
+          },
         },
-      });
+        { idempotencyKey: `refund:${booking.id}:${refundCents}` },
+      );
 
       // Update booking status
       await booking.update({
@@ -254,6 +329,8 @@ export class PaymentService {
         bookingId,
         amount: refund.amount,
         status: refund.status,
+        requestedBy: options.requestedBy ?? 'system',
+        afterDeparture: Boolean(options.allowAfterDeparture),
       });
 
       return {

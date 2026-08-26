@@ -67,6 +67,15 @@ describe('AuthController.verifyGoogleToken', () => {
     process.env = { ...ORIGINAL_ENV, GOOGLE_WEB_CLIENT_ID: 'web-client-id.apps.googleusercontent.com' };
     (AuthService.generateAccessToken as jest.Mock).mockReturnValue('access-token');
     (AuthService.generateRefreshToken as jest.Mock).mockReturnValue('refresh-token');
+    // Google sign-in now mints its session through the shared path, which is
+    // what makes it store the refresh token hashed like every other sign-in.
+    (AuthService.issueSession as jest.Mock).mockImplementation(async (user: any) => {
+      await user.update({
+        refreshToken: 'sha256-of-refresh-token',
+        lastLoginAt: expect.any(Date),
+      });
+      return { accessToken: 'access-token', refreshToken: 'refresh-token', expiresIn: 86400 };
+    });
     findOneSpy = jest.spyOn(User, 'findOne').mockResolvedValue(null);
     createSpy = jest.spyOn(User, 'create').mockResolvedValue({} as any);
   });
@@ -245,11 +254,18 @@ describe('AuthController.verifyGoogleToken', () => {
     await AuthController.verifyGoogleToken(mockReq({ idToken: 'good' }), res);
 
     expect(createSpy).not.toHaveBeenCalled();
+    // The stored value must never be the token handed to the client. Google
+    // sign-in used to write the raw token, which both left a directly
+    // replayable credential in the database and broke refresh entirely,
+    // because the refresh lookup searches by hash.
     expect(existing.update).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshToken: 'sha256-of-refresh-token' }),
+    );
+    expect(existing.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ refreshToken: 'refresh-token' }),
     );
-    expect(AuthService.generateAccessToken).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'u-existing', role: 'driver' }),
+    expect(AuthService.issueSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u-existing', role: 'driver' }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });

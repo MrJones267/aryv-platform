@@ -193,18 +193,6 @@ const LoginPage: React.FC = () => {
         </Typography>
       </Box>
 
-      {/* Demo Credentials (remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <Box mt={2} p={2} bgcolor="info.light" borderRadius={1}>
-          <Typography variant="caption" color="info.contrastText">
-            <strong>Demo Credentials:</strong>
-            <br />
-            Email: admin@aryv-app.com
-            <br />
-            Password: admin123
-          </Typography>
-        </Box>
-      )}
     </Box>
   );
 };

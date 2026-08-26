@@ -260,8 +260,12 @@ export const authenticateAdminToken = async (
 
     const token = authHeader.substring(7);
 
-    const jwtSecret = process.env['JWT_SECRET'];
-    if (!jwtSecret) throw new Error('JWT_SECRET not configured');
+    // The admin secret, not the user one. Admin tokens are signed with
+    // ADMIN_JWT_SECRET so the two session populations can be revoked
+    // independently — rotating it signs out the admin panel without signing
+    // out every passenger.
+    const jwtSecret = process.env['ADMIN_JWT_SECRET'];
+    if (!jwtSecret) throw new Error('ADMIN_JWT_SECRET not configured');
 
     // Verify token
     const decoded = jwt.verify(token, jwtSecret) as any;

@@ -171,33 +171,18 @@ describe('mobile client / backend path contract', () => {
 
     // Emergency / SOS. No router is mounted for any of this. Note the
     // singular /user/ prefix, which does not match the /users router either.
-    'DELETE /api/user/emergency-contacts/:param  (EmergencyService.ts)',
-    'GET /api/user/emergency-contacts  (EmergencyService.ts)',
-    'POST /api/emergency/alerts  (EmergencyService.ts)',
     'POST /api/emergency/contacts/find  (CallIntegrationService.ts)',
-    'POST /api/user/emergency-contacts  (EmergencyService.ts)',
-    'PUT /api/emergency/alerts/:param  (EmergencyService.ts)',
-    'PUT /api/emergency/alerts/:param/location  (EmergencyService.ts)',
 
     // Voice and video calling. Call models and a CallService exist on the
     // server, but no HTTP routes are mounted for them.
-    'GET /api/calls/history  (CallService.ts)',
     'GET /api/calls/history/:param/:param  (CallIntegrationService.ts)',
     'POST /api/calls/workflows/create  (CallIntegrationService.ts)',
     'POST /api/calls/workflows/emergency  (CallIntegrationService.ts)',
-    'PUT /api/calls/:param/quality  (CallService.ts)',
     'PUT /api/calls/workflows/:param/status  (CallIntegrationService.ts)',
 
     // AI matching, pricing and recommendations. No routes; the mobile
     // services call an API that was never built.
-    'GET /api/pricing/history:param  (AIPricingService.ts)',
-    'GET /api/pricing/surge-zones  (AIPricingService.ts)',
     'POST /api/ai/matching/find  (AIMatchingService.ts)',
-    'POST /api/ai/pricing/calculate  (AIPricingService.ts)',
-    'POST /api/ai/recommendations/generate  (AIRecommendationsService.ts)',
-    'POST /api/ai/recommendations/profile  (AIRecommendationsService.ts)',
-    'POST /api/drivers/available  (AIMatchingService.ts)',
-    'POST /api/pricing/feedback  (AIPricingService.ts)',
 
     // Notification preferences and token registration.
     'GET /api/notifications/preferences  (NotificationService.ts)',
@@ -206,7 +191,6 @@ describe('mobile client / backend path contract', () => {
 
     // Assorted single endpoints.
     'GET /api/currencies/country/:param  (CurrencyService.ts)',
-    'POST /api/locations/emergency  (EmergencyServiceSimple.ts)',
     'POST /api/users/currency  (CurrencyService.ts)',
     'PUT /api/countries/user  (CountryService.ts)',
   ];

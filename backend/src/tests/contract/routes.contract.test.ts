@@ -239,3 +239,37 @@ describe('route contract', () => {
     });
   });
 });
+
+/**
+ * The harness must mount exactly what index.ts mounts.
+ *
+ * It did not: `/api/emergency` and `/api/calls` were live in production but
+ * absent here, so every SOS and calling endpoint looked missing to the
+ * path-contract test, and those false negatives were absorbed into its
+ * KNOWN_GAPS list as though the features had never been built. A test that
+ * silently stops covering a subsystem is worse than no test, so the drift
+ * itself is now what fails.
+ */
+describe('harness mounts match the application', () => {
+  it('mounts every router index.ts mounts, and no others', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require('path') as typeof import('path');
+
+    const indexSource = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'index.ts'),
+      'utf8',
+    );
+
+    const mountedInIndex = [
+      ...indexSource.matchAll(/app\.use\('(\/api\/[a-z-]+(?:\/[a-z-]+)?)'/g),
+    ]
+      .map((match) => match[1] as string)
+      .sort();
+
+    const mountedInHarness = MOUNTS.map((mount) => mount.path).sort();
+
+    expect(mountedInHarness).toEqual(mountedInIndex);
+  });
+});
