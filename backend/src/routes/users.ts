@@ -11,10 +11,13 @@ import { body, query, param } from 'express-validator';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { UserController } from '../controllers/UserController';
+import { AuthController } from '../controllers/AuthController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
-import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError } from '../middleware/upload';
+import path from 'path';
+import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError, UPLOADS_DIR } from '../middleware/upload';
 import User from '../models/User';
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
@@ -28,6 +31,7 @@ const userRateLimit = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many user requests from this IP, please try again later',
   store: makeStore('users'),
+  keyGenerator: rateLimitKey,
 });
 
 const profileUpdateRateLimit = rateLimit({
@@ -35,6 +39,7 @@ const profileUpdateRateLimit = rateLimit({
   max: 5, // Limit profile updates to 5 per hour per IP
   message: 'Too many profile update attempts, please try again later',
   store: makeStore('profile-update'),
+  keyGenerator: rateLimitKey,
 });
 
 // Validation schemas
@@ -648,7 +653,9 @@ router.post(
 );
 
 /** DELETE /account */
-router.delete('/account', userRateLimit, authenticateToken, [body('password').notEmpty()], validateInput, userController.deleteAccount.bind(userController));
+// Delegates to the single deletion implementation in AuthController so that
+// /users/account and /auth/account cannot drift apart on what "delete" means.
+router.delete('/account', userRateLimit, authenticateToken, [body('password').optional().notEmpty(), body('googleIdToken').optional().notEmpty()], validateInput, AuthController.deleteAccount);
 
 /** GET /stats */
 router.get('/stats', userRateLimit, authenticateToken, userController.getUserStats.bind(userController));
@@ -695,7 +702,7 @@ router.post(
 /** POST /driver-verification — upload docs for driver verification */
 const ALLOWED_DV_FIELDS = new Set(['driverLicense', 'vehicleRegistration', 'insurance']);
 const driverVerificationUpload = multer({ storage: multer.diskStorage({
-  destination: './uploads/documents',
+  destination: path.join(UPLOADS_DIR, 'documents'),
   filename: (req: any, _file, cb) => {
     const uid = (req.user?.id || 'unknown').replace(/[^a-zA-Z0-9-]/g, '');
     cb(null, `${uid}-dv-${crypto.randomBytes(8).toString('hex')}.jpg`);

@@ -10,8 +10,35 @@ import path from 'path';
 import fs from 'fs';
 import { Request } from 'express';
 
-// Ensure uploads directory exists
-const UPLOADS_DIR = process.env['UPLOADS_DIR'] || './uploads';
+/**
+ * Where uploaded files live.
+ *
+ * This defaulted to './uploads' inside the container, which on Railway is
+ * ephemeral: every deploy replaced the filesystem and destroyed every file in
+ * it, while the database row still said the driver's licence was on record and
+ * approved. Nothing surfaced the loss.
+ *
+ * A mounted volume survives deploys, and Railway exposes its mount point as
+ * RAILWAY_VOLUME_MOUNT_PATH, so honouring that is the fix. UPLOADS_DIR still
+ * wins when it is set explicitly, for local work and for other hosts.
+ */
+const VOLUME_MOUNT_PATH = process.env['RAILWAY_VOLUME_MOUNT_PATH'];
+
+export const uploadsAreEphemeral = !process.env['UPLOADS_DIR'] && !VOLUME_MOUNT_PATH;
+
+export const UPLOADS_DIR = process.env['UPLOADS_DIR']
+  || (VOLUME_MOUNT_PATH ? path.join(VOLUME_MOUNT_PATH, 'uploads') : './uploads');
+
+if (uploadsAreEphemeral && process.env['NODE_ENV'] === 'production') {
+  // Loud, because the failure is silent otherwise: uploads appear to work and
+  // the files are gone by the next deploy.
+  // eslint-disable-next-line no-console
+  console.error(
+    '[uploads] No persistent storage configured. Files written to ./uploads will be '
+    + 'DESTROYED on the next deploy, including driver verification documents. '
+    + 'Mount a Railway volume, or set UPLOADS_DIR to a persistent path.',
+  );
+}
 const AVATAR_DIR = path.join(UPLOADS_DIR, 'avatars');
 const DOCS_DIR = path.join(UPLOADS_DIR, 'documents');
 const VEHICLES_DIR = path.join(UPLOADS_DIR, 'vehicles');

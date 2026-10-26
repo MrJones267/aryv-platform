@@ -11,6 +11,11 @@ import Call, { CallType, CallStatus, CallPurpose } from '../models/Call';
 import { User } from '../models';
 import { NotificationService } from './NotificationService';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import { emergencyService } from './EmergencyService';
+import { EmergencyAlertType } from '../models/EmergencyAlert';
+
+/** Botswana's emergency number. */
+const EMERGENCY_NUMBER = '999';
 
 export interface CallInitiationRequest {
   callerId: string;
@@ -458,42 +463,68 @@ export class CallService {
   /**
    * Emergency call handling
    */
-  async initiateEmergencyCall(userId: string, location?: any): Promise<CallResult> {
+  /**
+   * Handle a user asking for emergency help from the call UI.
+   *
+   * This used to place an in-app WebRTC call to "the first admin user", which
+   * could not work: an admin is not the user's emergency contact, nobody is
+   * sitting in the app waiting to answer, and with no admin row it failed with
+   * "No emergency contact available" — leaving someone in an emergency with an
+   * error message.
+   *
+   * An emergency contact is a person with a phone, usually not an ARYV user at
+   * all, so there is no in-app peer to ring. What actually helps is raising a
+   * real alert — which texts every contact with the user's location — and
+   * putting the emergency number in front of the user, since dialling is the
+   * one thing that works with no data and no account.
+   */
+  async initiateEmergencyCall(
+    userId: string,
+    location?: { latitude: number; longitude: number },
+  ): Promise<{
+    success: boolean;
+    alertId?: string;
+    contactsNotified?: number;
+    emergencyNumber: string;
+    primaryContactPhone?: string | null;
+    error?: string;
+  }> {
     try {
-      // For emergency calls, we might connect to emergency services or designated contacts
-      // This is a simplified implementation - real emergency systems require special handling
-
-      logInfo('Emergency call initiated', {
-        userId,
-        location,
-        timestamp: new Date().toISOString(),
-      });
-
-      // Get user's emergency contacts or connect to emergency services
-      const emergencyContact = await this.getEmergencyContact(userId);
-
-      if (!emergencyContact) {
-        throw new Error('No emergency contact available');
+      if (!location || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+        // Without a position there is nothing to send responders. Still hand
+        // back the number rather than only an error.
+        return {
+          success: false,
+          error: 'A location is required to raise an emergency alert',
+          emergencyNumber: EMERGENCY_NUMBER,
+        };
       }
 
-      return await this.initiateCall({
-        callerId: userId,
-        calleeId: emergencyContact.id,
-        callType: CallType.VOICE, // Emergency calls start as voice
-        callPurpose: CallPurpose.EMERGENCY_CALL,
-        isEmergency: true,
-        metadata: {
-          location,
-          emergencyType: 'user_initiated',
-          autoRecord: true,
-        },
+      const alert = await emergencyService.raiseAlert({
+        userId,
+        alertType: EmergencyAlertType.PANIC,
+        coordinates: location,
       });
 
+      const contacts = await emergencyService.getContacts(userId);
+      const primary = contacts.find((contact) => contact.isPrimary) ?? contacts[0];
+
+      return {
+        success: true,
+        alertId: alert.id,
+        contactsNotified: alert.contactsNotified,
+        emergencyNumber: EMERGENCY_NUMBER,
+        // So the client can offer "call your contact" without a second round
+        // trip at the moment it matters.
+        primaryContactPhone: primary?.phone ?? null,
+      };
     } catch (error) {
-      logError('Error initiating emergency call', error as Error, { userId });
+      logError('Error handling emergency call request', error as Error, { userId });
+
       return {
         success: false,
         error: (error as Error).message,
+        emergencyNumber: EMERGENCY_NUMBER,
       };
     }
   }
@@ -576,30 +607,33 @@ export class CallService {
     logInfo('Call event', { callId, eventType, eventData });
   }
 
-  private async getEmergencyContact(userId: string): Promise<any | null> {
-    try {
-      // This would typically get emergency contacts from user preferences
-      // For now, return the first admin user as emergency contact
-      return await User.findOne({
-        where: { role: 'admin' },
-      });
-    } catch (error) {
-      logError('Error getting emergency contact', error as Error, { userId });
-      return null;
-    }
-  }
 
-  private async notifyEmergencyContacts(userId: string, call: Call): Promise<void> {
+  /**
+   * Alert the caller's emergency contacts about an emergency call.
+   *
+   * This was a log line reading "alerting emergency contacts" that alerted
+   * nobody. It now goes through the emergency service, which texts every
+   * contact with a location.
+   */
+  private async notifyEmergencyContacts(
+    userId: string,
+    call: Call,
+    location?: { latitude: number; longitude: number },
+  ): Promise<void> {
     try {
-      // Notify emergency services or designated emergency contacts
-      logWarning('Emergency call initiated - alerting emergency contacts', {
+      if (!location) {
+        logWarning('Emergency call has no location; contacts cannot be told where to go', {
+          userId,
+          callId: call.id,
+        });
+        return;
+      }
+
+      await emergencyService.raiseAlert({
         userId,
-        callId: call.id,
-        timestamp: new Date().toISOString(),
+        alertType: EmergencyAlertType.PANIC,
+        coordinates: location,
       });
-
-      // Implementation would notify relevant emergency services or contacts
-
     } catch (error) {
       logError('Error notifying emergency contacts', error as Error);
     }

@@ -8,9 +8,15 @@ import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.aryv-app.com';
 
-// Create axios instance for admin API
+// Create axios instance for admin API.
+//
+// The admin router is mounted at /api/admin, and every path below is written
+// relative to it. This said /api, so `/users` reached the passenger-facing
+// user router instead of AdminUserController, `/settings` reached nothing, and
+// the panel's requests either 401'd or returned the wrong shape. The paths
+// were right all along; the prefix was not.
 export const adminApi: AxiosInstance = axios.create({
-  baseURL: `${API_BASE_URL}/api`,
+  baseURL: `${API_BASE_URL}/api/admin`,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -127,6 +133,8 @@ export const courierService = {
   getPackages: (params: { page?: number; limit?: number; status?: string; senderId?: string; courierId?: string }) =>
     adminApi.get<PaginatedResponse<any>>('/courier/packages', { params }),
 
+  // NOT IMPLEMENTED on the server: there is no GET /api/admin/courier/agreements,
+  // only the release-payment action below. This call 404s.
   getDeliveryAgreements: (params: { page?: number; limit?: number; status?: string }) =>
     adminApi.get<PaginatedResponse<any>>('/courier/agreements', { params }),
 
@@ -163,7 +171,9 @@ export const analyticsService = {
   getRevenueReport: (params: { dateFrom: string; dateTo: string; granularity: 'day' | 'week' | 'month' }) =>
     adminApi.get<ApiResponse<any[]>>('/analytics/revenue', { params }),
 
-  getTopRoutes: (limit: number = 10) => adminApi.get<ApiResponse<any[]>>(`/analytics/top-routes/${limit}`),
+  // The server takes no path parameter here — a trailing /10 was a 404.
+  getTopRoutes: (limit: number = 10) =>
+    adminApi.get<ApiResponse<any[]>>('/analytics/top-routes', { params: { limit } }),
 
   getUsageStats: () =>
     adminApi.get<
@@ -192,6 +202,8 @@ export const settingsService = {
 
   updateCommissionSettings: (settings: any) => adminApi.put<ApiResponse<any>>('/settings/commission', settings),
 
+  // NOT IMPLEMENTED on the server: there is no /api/admin/settings/content.
+  // These two calls 404.
   getContentSettings: () =>
     adminApi.get<
       ApiResponse<{

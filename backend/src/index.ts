@@ -10,9 +10,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from './config/rateLimitStore';
+import { resolveTrustProxyHops, rateLimitKey } from './config/rateLimitKey';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
+import { UPLOADS_DIR } from './middleware/upload';
+import { fileStorageService } from './services/FileStorageService';
 
 // Import custom modules
 import { testConnection, sequelize } from './models';
@@ -33,11 +36,16 @@ import groupChatRoutes from './routes/groupChat';
 import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
+import verificationRoutes from './routes/verification';
+import emergencyRoutes from './routes/emergency';
+import callRoutes from './routes/calls';
 import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
+import { wrapRouterAsync } from './middleware/asyncSafety';
 import { notificationService } from './services/NotificationService';
 import { groupCleanupService } from './services/GroupCleanupService';
+import { scheduledTasks } from './services/ScheduledTasks';
 import { redisClient } from './config/redis';
 
 // Load environment variables
@@ -50,9 +58,6 @@ const REQUIRED_ENV_VARS = [
   'ADMIN_JWT_SECRET',
   'SESSION_SECRET',
   'DATABASE_URL',
-  // Consumed at import time by QRCodeService (delivery QR signing); missing it
-  // otherwise throws an opaque uncaught exception during module load.
-  'QR_CODE_SECRET',
 ];
 const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
@@ -67,6 +72,19 @@ const NODE_ENV = process.env['NODE_ENV'] || 'development';
 
 // Create Express app
 const app = express();
+
+/**
+ * Trust exactly as many proxies as are actually in front of this process.
+ *
+ * Without this, `req.ip` is the address of Railway's edge rather than the
+ * caller, so every rate limiter in the app keys on a single value and all
+ * users share one bucket — five failed logins from anyone would lock out
+ * everyone. Setting it to `true` instead would be worse: the whole
+ * X-Forwarded-For chain becomes trusted, including the portion the client
+ * wrote, and any caller could mint a fresh bucket per request.
+ */
+const trustProxyHops = resolveTrustProxyHops();
+app.set('trust proxy', trustProxyHops);
 
 // Create HTTP server
 const server = createServer(app);
@@ -120,6 +138,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('global'),
+  keyGenerator: rateLimitKey,
 });
 
 app.use(limiter);
@@ -149,7 +168,7 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
     return res.status(403).json({ success: false, error: 'Access denied', code: 'FORBIDDEN' });
   }
 
-  const filePath = path.resolve('./uploads', type, safe);
+  const filePath = path.resolve(UPLOADS_DIR, type, safe);
   return res.sendFile(filePath, (err) => {
     if (err) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
   });
@@ -159,6 +178,15 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
 app.use(express.json({
   limit: '10mb',
   type: 'application/json',
+  // Stripe signature verification needs the exact bytes that were signed, and
+  // this is the only chance to keep them: once the body parser has consumed
+  // the stream, re-reading it yields nothing. Captured only for the webhook
+  // path so the rest of the API does not carry a second copy of every body.
+  verify: (req, _res, buf) => {
+    if ((req as any).originalUrl?.includes('/stripe-webhook')) {
+      (req as any).rawBody = buf.toString('utf8');
+    }
+  },
 }));
 app.use(express.urlencoded({ 
   extended: true,
@@ -229,22 +257,25 @@ app.get('/', (_req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rides', rideRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/courier', courierRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/locations', locationRoutes);
-app.use('/api/payments/cash', cashPaymentRoutes);
-app.use('/api/payments/commission', commissionRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/currencies', currencyRoutes);
-app.use('/api/countries', countryRoutes);
-app.use('/api/group-chats', groupChatRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/ride-requests', rideRequestRoutes);
-app.use('/api/promos', promoRoutes);
+app.use('/api/auth', wrapRouterAsync(authRoutes));
+app.use('/api/rides', wrapRouterAsync(rideRoutes));
+app.use('/api/bookings', wrapRouterAsync(bookingRoutes));
+app.use('/api/courier', wrapRouterAsync(courierRoutes));
+app.use('/api/admin', wrapRouterAsync(adminRoutes));
+app.use('/api/users', wrapRouterAsync(userRoutes));
+app.use('/api/locations', wrapRouterAsync(locationRoutes));
+app.use('/api/payments/cash', wrapRouterAsync(cashPaymentRoutes));
+app.use('/api/payments/commission', wrapRouterAsync(commissionRoutes));
+app.use('/api/payments', wrapRouterAsync(paymentRoutes));
+app.use('/api/currencies', wrapRouterAsync(currencyRoutes));
+app.use('/api/countries', wrapRouterAsync(countryRoutes));
+app.use('/api/group-chats', wrapRouterAsync(groupChatRoutes));
+app.use('/api/notifications', wrapRouterAsync(notificationRoutes));
+app.use('/api/ride-requests', wrapRouterAsync(rideRequestRoutes));
+app.use('/api/promos', wrapRouterAsync(promoRoutes));
+app.use('/api/verification', wrapRouterAsync(verificationRoutes));
+app.use('/api/emergency', wrapRouterAsync(emergencyRoutes));
+app.use('/api/calls', wrapRouterAsync(callRoutes));
 
 // API Documentation
 if (NODE_ENV !== 'production' || process.env['ENABLE_DOCS'] === 'true') {
@@ -271,13 +302,133 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+/**
+ * An unhandled rejection is logged loudly, not fatal.
+ *
+ * Exiting on it turned any missed `.catch()` — in a scheduled task, a
+ * fire-and-forget notification, a Socket.io handler — into a full restart of
+ * the API. `wrapRouterAsync` covers the route layer, which is why this was
+ * survivable, but everything outside the router was uncovered: one
+ * request-triggered rejection would have been a one-request denial of service.
+ *
+ * `uncaughtException` above still exits, which is correct — after one the
+ * process state is genuinely unknown. A rejection is a missing catch, and the
+ * health check plus Railway's restart policy handle a process that is really
+ * unwell.
+ */
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  logError('Unhandled Rejection', reason as Error);
-  process.exit(1);
+  logError(
+    'Unhandled Rejection',
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { promise: String(promise) },
+  );
 });
 
 // Initialize database and start server
+/**
+ * Fail fast if the database is missing columns the models declare.
+ *
+ * Sequelize includes every declared attribute in its SELECT list, so a model
+ * that is ahead of the schema does not degrade — it breaks every query against
+ * that table. Without this check that surfaces as blanket 500s on unrelated
+ * endpoints, with the real cause buried in a driver error. Checking at boot
+ * turns it into one clear message naming the migration to run.
+ */
+const assertSchemaIsCurrent = async (): Promise<void> => {
+  const REQUIRED_COLUMNS: Array<{ table: string; column: string; migration: string }> = [
+    { table: 'users', column: 'driver_verification_status', migration: '013_driver_document_verification.sql' },
+    { table: 'users', column: 'driver_verified_at', migration: '013_driver_document_verification.sql' },
+    { table: 'delivery_qr_codes', column: 'failed_attempts', migration: '014_delivery_handover_codes.sql' },
+    { table: 'delivery_qr_codes', column: 'delivery_channel', migration: '014_delivery_handover_codes.sql' },
+    { table: 'packages', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
+    { table: 'users', column: 'password_changed_at', migration: '018_password_changed_at.sql' },
+    { table: 'bookings', column: 'discount_amount', migration: '019_promo_redemption_at_booking.sql' },
+    { table: 'bookings', column: 'currency', migration: '020_money_currency.sql' },
+    { table: 'rides', column: 'currency', migration: '020_money_currency.sql' },
+    { table: 'delivery_agreements', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
+  ];
+
+  const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
+    { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
+    { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
+  ];
+
+  // Indexes that carry a correctness guarantee rather than just performance.
+  // Without this one a replayed payment webhook credits a wallet twice, and
+  // nothing else in the running system would notice — so a deploy that has not
+  // had the migration applied must not start.
+  //
+  // `onTable` is load-bearing. Environments baselined by `db:migrate baseline`
+  // have migrations 001-012 recorded as applied without ever having run them,
+  // so they have no cash wallet tables at all — production is one of those.
+  // Demanding an index on a table that does not exist would refuse to boot
+  // over a guarantee for a feature that environment does not have. The
+  // requirement applies only where the table is present.
+  const REQUIRED_INDEXES: Array<{ index: string; onTable: string; migration: string }> = [
+    {
+      index: 'cash_wallet_transactions_load_reference_unique',
+      onTable: 'cash_wallet_transactions',
+      migration: '025_wallet_load_idempotency.sql',
+    },
+  ];
+
+  const missing: string[] = [];
+
+  for (const { table, column, migration } of REQUIRED_COLUMNS) {
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = $table AND column_name = $column LIMIT 1`,
+      { bind: { table, column } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`${table}.${column} (${migration})`);
+    }
+  }
+
+  for (const { table, migration } of REQUIRED_TABLES) {
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_name = $table LIMIT 1`,
+      { bind: { table } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`table ${table} (${migration})`);
+    }
+  }
+
+  for (const { index, onTable, migration } of REQUIRED_INDEXES) {
+    const [tableRows] = await sequelize.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = $onTable LIMIT 1`,
+      { bind: { onTable } },
+    );
+    if ((tableRows as unknown[]).length === 0) {
+      logInfo('Skipping an index requirement because its table is absent', { index, onTable });
+      continue;
+    }
+
+    const [rows] = await sequelize.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = $index LIMIT 1`,
+      { bind: { index } },
+    );
+    if ((rows as unknown[]).length === 0) {
+      missing.push(`index ${index} (${migration})`);
+    }
+  }
+
+  if (missing.length > 0) {
+    logError('Database schema is behind the application', new Error('SCHEMA_OUT_OF_DATE'), {
+      missing,
+    });
+    console.error(
+      `[STARTUP] The database is missing: ${missing.join(', ')}.\n` +
+        '[STARTUP] Run `npm run db:migrate` before starting this build.',
+    );
+    process.exit(1);
+  }
+};
+
 const startServer = async (): Promise<void> => {
   try {
     // Test database connection (skip in dev if DB not available)
@@ -286,8 +437,9 @@ const startServer = async (): Promise<void> => {
     } else {
       logInfo('Testing database connection...');
       await testConnection();
+      await assertSchemaIsCurrent();
     }
-    
+
     // Skip database sync since tables already exist
     logInfo('Database tables already exist, skipping sync...');
 
@@ -309,6 +461,12 @@ const startServer = async (): Promise<void> => {
 
     // Start group cleanup scheduler
     groupCleanupService.startScheduler();
+
+    // Exchange rate refresh and the expiry sweeps for driver documents and
+    // handover codes. Nothing started a scheduler for these before, so seeded
+    // placeholder rates would have stayed in place indefinitely and an expired
+    // licence would have left its driver marked verified.
+    scheduledTasks.start();
     logInfo('Group cleanup scheduler started');
     
     // Make services available globally
@@ -316,6 +474,10 @@ const startServer = async (): Promise<void> => {
     app.set('notificationService', notificationService);
     app.set('groupCleanupService', groupCleanupService);
     
+    // Say where uploads are going. Left silent, an ephemeral filesystem
+    // destroys verification documents on every deploy without complaint.
+    fileStorageService.reportConfiguration();
+
     // Start server
     const httpServer = server.listen(PORT, () => {
       logInfo(`🚀 ARYV Backend API server started`);
@@ -339,6 +501,7 @@ const startServer = async (): Promise<void> => {
       logInfo(`${signal} received, shutting down gracefully`);
 
       groupCleanupService.stopScheduler();
+      socketService.stopSessionRevalidation();
 
       httpServer.close(async () => {
         try {

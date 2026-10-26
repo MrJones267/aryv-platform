@@ -9,9 +9,10 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { BookingController } from '../controllers/BookingController';
 import { validateInput } from '../middleware/validation';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authenticateAdminToken, authorizeAdminRoles } from '../middleware/auth';
 import { paymentService } from '../services/PaymentService';
 import Booking from '../models/Booking';
 import { Request, Response } from 'express';
@@ -26,6 +27,7 @@ const bookingRateLimit = rateLimit({
   max: 50, // Limit each IP to 50 requests per windowMs
   message: 'Too many booking requests from this IP, please try again later',
   store: makeStore('booking'),
+  keyGenerator: rateLimitKey,
 });
 
 const cancelBookingRateLimit = rateLimit({
@@ -33,6 +35,7 @@ const cancelBookingRateLimit = rateLimit({
   max: 5, // Limit cancellations to 5 per hour per IP
   message: 'Too many booking cancellation attempts, please try again later',
   store: makeStore('booking-cancel'),
+  keyGenerator: rateLimitKey,
 });
 
 // Validation schemas
@@ -259,23 +262,12 @@ router.post(
  */
 router.post(
   '/stripe-webhook',
-  // Raw body parser for webhook signature verification
-  (req: Request, _res: Response, next): void => {
-    if (req.headers['content-type'] === 'application/json') {
-      // Store raw body for webhook verification
-      let data = '';
-      req.setEncoding('utf8');
-      req.on('data', chunk => {
-        data += chunk;
-      });
-      req.on('end', () => {
-        (req as any).rawBody = data;
-        next();
-      });
-    } else {
-      next();
-    }
-  },
+  // The raw body is captured by the express.json() verify hook in index.ts.
+  //
+  // This previously attached its own 'data'/'end' listeners here, but
+  // express.json() has already consumed the stream by this point: those events
+  // never fire again, next() was never called, and the request hung forever —
+  // on exactly the content type Stripe sends.
   async (req: Request, res: Response): Promise<void> => {
     try {
       const signature = req.headers['stripe-signature'] as string;
@@ -326,13 +318,20 @@ router.post(
 
 /**
  * @route   POST /api/bookings/:id/refund
- * @desc    Process refund for a booking
- * @access  Private (Admin or booking owner)
+ * @desc    Process a refund for a booking. Staff only.
+ * @access  Private (admin / super_admin)
+ *
+ * This was previously callable by the booking's own passenger with an amount
+ * of their choosing and no check on whether the ride had happened — book, ride,
+ * then claim the money back. Passengers now get their money back by cancelling
+ * before departure, which refunds automatically; anything after that is a
+ * support decision, which is what this endpoint is for.
  */
 router.post(
   '/:id/refund',
   bookingRateLimit,
-  authenticateToken,
+  authenticateAdminToken,
+  authorizeAdminRoles('admin'),
   [
     param('id').isUUID().withMessage('Booking ID must be a valid UUID'),
     body('amount')
@@ -348,30 +347,21 @@ router.post(
     try {
       const { id } = req.params;
       const { amount, reason } = req.body;
-      const userId = (req as any).user?.id;
+      const adminId = (req as any).user?.id;
 
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          error: 'User not authenticated',
-          code: 'UNAUTHORIZED',
-        });
-        return;
-      }
-
-      // Verify requester owns the booking or is an admin
-      const booking = await Booking.findByPk(id, { attributes: ['id', 'passengerId'] });
+      const booking = await Booking.findByPk(id, { attributes: ['id'] });
       if (!booking) {
         res.status(404).json({ success: false, error: 'Booking not found', code: 'NOT_FOUND' });
         return;
       }
-      const isAdmin = (req as any).user?.role === 'admin';
-      if (!isAdmin && booking.passengerId !== userId) {
-        res.status(403).json({ success: false, error: 'Not authorized to refund this booking', code: 'FORBIDDEN' });
-        return;
-      }
 
-      const result = await paymentService.processRefund(id, amount, reason);
+      // Staff are trusted to refund after departure — that is the entire point
+      // of an escalation path. The amount is still capped at the booking total
+      // inside processRefund.
+      const result = await paymentService.processRefund(id, amount, reason, {
+        allowAfterDeparture: true,
+        requestedBy: `admin:${adminId}`,
+      });
 
       if (!result.success) {
         res.status(400).json({

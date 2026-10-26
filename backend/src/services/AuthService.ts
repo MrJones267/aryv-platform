@@ -19,10 +19,26 @@ import {
 } from '../types';
 import { redisClient } from '../config/redis';
 import logger from '../utils/logger';
+import MemoryTtlCache from '../utils/memoryTtlCache';
 
 const BLACKLIST_PREFIX = 'bl:';
 const USED_REFRESH_PREFIX = 'ur:';
 const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days in seconds
+
+/**
+ * This process's own record of the tokens it has revoked, so a logout handled
+ * here still holds if Redis becomes unreachable a moment later. Per-process
+ * and lost on restart — a supplement to Redis, never a substitute.
+ */
+const localBlacklist = new MemoryTtlCache();
+
+/**
+ * Refuse requests outright when the revocation list cannot be reached, rather
+ * than falling back to this instance's own view. Trades availability for
+ * certainty; off by default because a Redis blip would otherwise take the
+ * whole API down.
+ */
+const FAIL_CLOSED = process.env['REDIS_FAIL_CLOSED'] === 'true';
 
 const hashRefreshToken = (token: string): string =>
   crypto.createHash('sha256').update(token).digest('hex');
@@ -66,6 +82,40 @@ export class AuthService {
       });
       throw new AppError('Refresh token generation failed', 500, 'REFRESH_TOKEN_ERROR');
     }
+  }
+
+  /**
+   * Mint a session for a user: an access token, a rotated refresh token, and
+   * the stored hash of that refresh token.
+   *
+   * Every sign-in path must go through here. Two of them did not — Google
+   * sign-in and OTP login each wrote `refreshToken` to the user row *raw*,
+   * while login, register and refresh all wrote `hashRefreshToken(...)`. That
+   * had two consequences: a database read handed over a directly replayable
+   * refresh token for those users, defeating the point of hashing it; and
+   * because the refresh lookup searches by hash, their tokens never matched,
+   * so those sessions could not be refreshed at all and died after 24 hours.
+   */
+  static async issueSession(user: {
+    id: string;
+    email: string;
+    role: UserRole;
+    update: (values: Record<string, unknown>) => Promise<unknown>;
+  }): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    const accessToken = this.generateAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    const refreshToken = this.generateRefreshToken();
+
+    await user.update({
+      refreshToken: hashRefreshToken(refreshToken),
+      lastLoginAt: new Date(),
+    });
+
+    return { accessToken, refreshToken, expiresIn: this.getTokenExpiryTime() };
   }
 
   /**
@@ -318,14 +368,15 @@ export class AuthService {
         { where: { id: userId } },
       );
 
-      // Blacklist the access token so it can't be reused before it expires
+      // Blacklist the access token so it can't be reused before it expires.
+      // Written to both Redis and this process's own mirror: `redisClient.set`
+      // swallows its own errors, so without the mirror a logout during a Redis
+      // blip revoked nothing at all and said so nowhere.
       if (accessToken) {
         try {
           const decoded = jwt.decode(accessToken) as { exp?: number } | null;
           const ttl = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 86400;
-          if (ttl > 0) {
-            await redisClient.set(`${BLACKLIST_PREFIX}${accessToken}`, '1', ttl);
-          }
+          await this.revokeToken(accessToken, ttl);
         } catch {
           // Decode failure is non-fatal — token may already be invalid
         }
@@ -340,11 +391,67 @@ export class AuthService {
   }
 
   /**
-   * Check if an access token has been blacklisted (post-logout)
+   * Revoke a single token until it would have expired anyway.
+   *
+   * The one place a revocation is recorded, so every caller gets the local
+   * mirror as well as the Redis entry. The admin logout used to write the
+   * Redis key itself and so missed the mirror entirely — during a Redis blip
+   * an admin could sign out and keep a working session, which is the failure
+   * mode the mirror exists to prevent.
+   */
+  static async revokeToken(token: string, ttlSeconds: number): Promise<void> {
+    if (!token || ttlSeconds <= 0) return;
+    const key = `${BLACKLIST_PREFIX}${token}`;
+    localBlacklist.set(key, ttlSeconds);
+    await redisClient.set(key, '1', ttlSeconds);
+  }
+
+  /**
+   * Check if an access token has been blacklisted (post-logout).
+   *
+   * `redisClient.get` answers `null` both for "not blacklisted" and for "Redis
+   * is unreachable", and this used to treat the two identically — so a Redis
+   * outage silently re-enabled every token anyone had logged out. Nothing in
+   * the logs distinguished the two states either.
+   *
+   * The three-way behaviour now:
+   *
+   *   Redis up          authoritative answer.
+   *   Redis down        fall back to this process's own record of what it
+   *                     revoked. A revocation made on another instance can be
+   *                     missed for the duration of the outage, which is the
+   *                     residual risk, but a logout handled here still holds.
+   *   REDIS_FAIL_CLOSED an operator who would rather refuse traffic than take
+   *                     that residual risk sets this, and an unreachable Redis
+   *                     rejects the token instead.
+   *
+   * The compromise case — a password reset — does not depend on any of this:
+   * `passwordChangedAt` is enforced from the database in authenticateToken.
    */
   static async isTokenBlacklisted(token: string): Promise<boolean> {
-    const result = await redisClient.get(`${BLACKLIST_PREFIX}${token}`);
-    return result !== null;
+    const key = `${BLACKLIST_PREFIX}${token}`;
+
+    if (redisClient.isConnected()) {
+      const result = await redisClient.get(key);
+      if (result !== null) return true;
+      // Redis may have been up for the read but missed the write during an
+      // earlier blip, so the local mirror is still consulted.
+      return localBlacklist.has(key);
+    }
+
+    if (localBlacklist.has(key)) return true;
+
+    if (FAIL_CLOSED) {
+      logger.error('Refusing a token because the revocation list is unreachable', {
+        reason: 'REDIS_UNAVAILABLE',
+      });
+      return true;
+    }
+
+    logger.warn('Token revocation list unreachable — falling back to this instance only', {
+      locallyTracked: localBlacklist.size,
+    });
+    return false;
   }
 
   /**
@@ -376,7 +483,7 @@ export class AuthService {
   /**
    * Get token expiry time in seconds
    */
-  private static getTokenExpiryTime(): number {
+  static getTokenExpiryTime(): number {
     const expiresIn = JWT_EXPIRES_IN;
 
     if (expiresIn.endsWith('h')) {

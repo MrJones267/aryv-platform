@@ -131,11 +131,18 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
       disabledReason: cashEligibility.reason,
     },
     {
+      // Offered but not deliverable: there is no card-entry step in this app —
+      // no Stripe SDK is installed — so nothing can ever capture the card. It
+      // only looked like it worked because the server used to mark a card
+      // payment "completed" without charging anything. Shown, disabled, and
+      // honest about why until card capture is actually built.
       id: 'stripe',
       title: 'Credit/Debit Card',
-      subtitle: 'Pay securely with Visa, Mastercard',
+      subtitle: 'Coming soon',
       icon: 'credit-card',
       available: true,
+      disabled: true,
+      disabledReason: 'Card payments are not available yet. Please use cash, mobile money or your ARYV wallet.',
     },
     {
       id: 'mobile_money',

@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { RideRequestController } from '../controllers/RideRequestController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
@@ -21,6 +22,7 @@ const rideRequestRateLimit = rateLimit({
   max: 60,
   message: { success: false, error: 'Too many requests, please try again later', code: 'RATE_LIMIT_EXCEEDED' },
   store: makeStore('ride-requests'),
+  keyGenerator: rateLimitKey,
 });
 
 router.use(authenticateToken);

@@ -32,6 +32,10 @@ export interface DeliveryAgreementAttributes {
   packageId: string;
   courierId: string;
   agreedPrice: number;
+  currency: string;
+  paymentMethod: 'cash_on_delivery' | 'escrow';
+  cashCollectedAt?: Date | null;
+  cashAmountCollected?: number | null;
   platformFee: number;
   status: DeliveryStatus;
   escrowPaymentId?: string;
@@ -58,6 +62,7 @@ export interface DeliveryAgreementAttributes {
 export interface DeliveryAgreementCreationAttributes extends Optional<DeliveryAgreementAttributes,
   'id' | 'escrowPaymentId' | 'escrowHeldAt' | 'pickupConfirmedAt' | 'pickupLocation' |
   'deliveryConfirmedAt' | 'deliveryLocation' | 'paymentReleasedAt' | 'qrCodeToken' |
+  'paymentMethod' | 'cashCollectedAt' | 'cashAmountCollected' |
   'qrCodeExpiresAt' | 'chatChannelId' | 'courierRating' | 'courierReview' |
   'senderRating' | 'senderReview' | 'createdAt' | 'updatedAt'
 > {}
@@ -69,6 +74,10 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
   public packageId!: string;
   public courierId!: string;
   public agreedPrice!: number;
+  public currency!: string;
+  public paymentMethod!: 'cash_on_delivery' | 'escrow';
+  public cashCollectedAt?: Date | null;
+  public cashAmountCollected?: number | null;
   public platformFee!: number;
   public status!: DeliveryStatus;
   public escrowPaymentId?: string;
@@ -214,6 +223,28 @@ DeliveryAgreement.init({
       key: 'id',
     },
     field: 'courier_id',
+  },
+  paymentMethod: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'cash_on_delivery',
+    field: 'payment_method',
+    validate: { isIn: [['cash_on_delivery', 'escrow']] },
+  },
+  cashCollectedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'cash_collected_at',
+  },
+  cashAmountCollected: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    field: 'cash_amount_collected',
+  },
+  currency: {
+    type: DataTypes.CHAR(3),
+    allowNull: false,
+    defaultValue: 'BWP',
   },
   agreedPrice: {
     type: DataTypes.DECIMAL(8, 2),

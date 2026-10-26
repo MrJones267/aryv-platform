@@ -12,12 +12,49 @@ import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import User from '../models/User';
 import Vehicle from '../models/Vehicle';
-import { RideStatus, BookingStatus, GeoPoint } from '../types';
+import { DriverVerificationStatus } from '../models/DriverDocument';
+import PromoCode from '../models/PromoCode';
+import PromoRedemption from '../models/PromoRedemption';
+import RideStop from '../models/RideStop';
+import rideSegmentService from '../services/RideSegmentService';
+import priceSuggestionService from '../services/PriceSuggestionService';
+import rideRecommendationService from '../services/RideRecommendationService';
+import demandService from '../services/DemandService';
+import surgeService from '../services/SurgeService';
+import trafficService from '../services/TrafficService';
+import weatherService from '../services/WeatherService';
+import { CurrencyService } from '../services/CurrencyService';
+import { RideStatus, BookingStatus, RideTier, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
 import { notificationService } from '../services/NotificationService';
 import GroupChatService from '../services/GroupChatService';
+import toRideView from '../utils/rideView';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
+
+/**
+ * The platform's cut of a booking. A promo is discounted from this, and only
+ * this — see PROMO_FUNDING.
+ */
+const PLATFORM_FEE_RATE = 0.05;
+
+/**
+ * PROMO_FUNDING
+ *
+ * A promo reduces what the passenger pays. On a cash ride the passenger hands
+ * that money directly to the driver, so a discount off the total is money out
+ * of the driver's pocket, not the platform's — a driver would earn less
+ * because the platform ran a promotion, without agreeing to it or being told.
+ *
+ * So a discount is capped at the platform's own fee on that booking. That is
+ * the portion the platform can give away on its own authority.
+ *
+ * The consequence is real and worth knowing: the seeded codes offer BWP 20 and
+ * BWP 50 off, while the fee on a BWP 200 fare is BWP 10 — so those codes will
+ * grant BWP 10 and log the shortfall. Honouring them in full needs a way to
+ * reimburse drivers for the difference, which does not exist. Building that is
+ * a product decision, not a code change.
+ */
 
 export class RideController {
   private groupChatService: GroupChatService;
@@ -26,6 +63,40 @@ export class RideController {
     this.groupChatService = new GroupChatService();
   }
   async createRide(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const driverId = req.user?.id;
+
+    if (!driverId) {
+      res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+        code: 'UNAUTHORIZED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Driver verification gates offering rides. The verification system
+    // computed this state but nothing consumed it, so an unverified account
+    // with a vehicle row could still carry passengers — the exact thing the
+    // documents exist to prevent.
+    //
+    // Checked before the transaction opens: neither this nor the auth check
+    // writes anything, and refusing should not need a transaction held open.
+    const driver = await User.findByPk(driverId);
+    const verificationStatus = (driver as unknown as { driverVerificationStatus?: string })
+      ?.driverVerificationStatus;
+
+    if (verificationStatus !== DriverVerificationStatus.VERIFIED) {
+      res.status(403).json({
+        success: false,
+        error: 'Your driver documents must be approved before you can offer rides',
+        code: 'DRIVER_NOT_VERIFIED',
+        data: { verificationStatus: verificationStatus ?? 'unverified' },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     const transaction = await sequelize.transaction();
 
     try {
@@ -41,20 +112,9 @@ export class RideController {
         description,
         estimatedDuration,
         distance,
+        stops,
+        tier,
       } = req.body;
-
-      const driverId = req.user?.id;
-
-      if (!driverId) {
-        res.status(401).json({
-          success: false,
-          error: 'User not authenticated',
-          code: 'UNAUTHORIZED',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
-      }
 
       // Verify vehicle ownership
       const vehicle = await Vehicle.findOne({
@@ -74,9 +134,15 @@ export class RideController {
       }
 
       // Create ride
+      // The driver sets the price, so a ride is denominated in the driver's
+      // currency. Everything downstream — bookings, cash transactions,
+      // commission — inherits it rather than assuming the platform default.
+      const rideCurrency = await CurrencyService.getUserCurrencyCode(driverId);
+
       const ride = await Ride.create(
         {
           driverId,
+          currency: rideCurrency,
           vehicleId,
           originAddress,
           originCoordinates: {
@@ -91,6 +157,9 @@ export class RideController {
           departureTime: new Date(departureTime),
           availableSeats,
           pricePerSeat,
+          // The driver's own vehicle decides this; 'standard' is an ordinary
+          // car and the sensible default when they say nothing.
+          tier: tier ?? 'standard',
           description,
           estimatedDuration,
           distance,
@@ -98,6 +167,50 @@ export class RideController {
         },
         { transaction },
       );
+
+      // Intermediate stops, if the driver listed any. A ride without them is
+      // an ordinary two-stop journey and needs no rows: getStops synthesises
+      // origin and destination, so intra-city trips are unaffected.
+      if (Array.isArray(stops) && stops.length > 0) {
+        // Stops are stored as PostGIS points, same as the ride's own
+        // coordinates, so a stop can be searched against geographically.
+        const toPoint = (c: { latitude: number; longitude: number }): GeoPoint => ({
+          type: 'Point',
+          coordinates: [c.longitude, c.latitude],
+        });
+
+        const originStop = {
+          rideId: ride.id,
+          sequence: 0,
+          address: originAddress,
+          coordinates: toPoint(originCoordinates),
+          fareFromOrigin: 0,
+        };
+
+        // Cumulative fares, so a segment's price is one subtraction. The final
+        // stop is the full pricePerSeat, which keeps an end-to-end booking
+        // costing exactly what it costs today.
+        const intermediate = stops.map((stop: any, index: number) => ({
+          rideId: ride.id,
+          sequence: index + 1,
+          address: stop.address,
+          coordinates: toPoint(stop.coordinates),
+          fareFromOrigin: Number(stop.fareFromOrigin ?? 0),
+        }));
+
+        const destinationStop = {
+          rideId: ride.id,
+          sequence: stops.length + 1,
+          address: destinationAddress,
+          coordinates: toPoint(destinationCoordinates),
+          fareFromOrigin: Number(pricePerSeat),
+        };
+
+        await RideStop.bulkCreate(
+          [originStop, ...intermediate, destinationStop],
+          { transaction },
+        );
+      }
 
       await transaction.commit();
 
@@ -107,7 +220,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -178,6 +291,11 @@ export class RideController {
         };
       }
 
+      // Filtering by tier, not choosing one: the tier belongs to the ride.
+      if (req.query['tier']) {
+        whereClause.tier = String(req.query['tier']);
+      }
+
       const parsedOriginLng = Number(originLng);
       const parsedOriginLat = Number(originLat);
       const parsedDestLng = Number(destinationLng);
@@ -195,36 +313,71 @@ export class RideController {
         return;
       }
 
-      // Use PostGIS for geospatial search — ST_SetSRID(ST_MakePoint()) avoids string interpolation
+      // A ride matches in one of two ways.
+      //
+      // Its own endpoints match, which is every intra-city trip and every ride
+      // without stops. Or a stop along its route matches the passenger's origin
+      // and a *later* stop matches their destination — someone in Palapye
+      // wanting Gaborone should find the Francistown-to-Gaborone ride, and
+      // before this they could not, because search only ever looked at
+      // endpoints. That made the stops invisible to everyone but the driver.
+      //
+      // The sequence comparison is what keeps direction: a stop pair only
+      // counts when the destination comes after the boarding point, so the
+      // same ride does not match someone travelling the other way.
+      //
+      // Coordinates are interpolated rather than bound because Sequelize will
+      // not carry replacements into a subquery here. They are safe to inline:
+      // every one is a finite number inside its valid range, checked above.
+      const stopMatch = sequelize.literal(`EXISTS (
+        SELECT 1 FROM ride_stops boarding
+        JOIN ride_stops alighting
+          ON alighting.ride_id = boarding.ride_id
+         AND alighting.sequence > boarding.sequence
+        WHERE boarding.ride_id = "rides"."id"
+          AND ST_DWithin(
+                boarding.coordinates,
+                ST_SetSRID(ST_MakePoint(${parsedOriginLng}, ${parsedOriginLat}), 4326),
+                ${searchRadius})
+          AND ST_DWithin(
+                alighting.coordinates,
+                ST_SetSRID(ST_MakePoint(${parsedDestLng}, ${parsedDestLat}), 4326),
+                ${searchRadius})
+      )`);
+
+      const endpointMatch = {
+        [Op.and]: [
+          sequelize.where(
+            sequelize.fn(
+              'ST_DWithin',
+              sequelize.col('originCoordinates'),
+              sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedOriginLng, parsedOriginLat), 4326),
+              searchRadius,
+            ),
+            true,
+          ),
+          sequelize.where(
+            sequelize.fn(
+              'ST_DWithin',
+              sequelize.col('destinationCoordinates'),
+              sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedDestLng, parsedDestLat), 4326),
+              searchRadius,
+            ),
+            true,
+          ),
+        ],
+      };
+
       const rides = await Ride.findAndCountAll({
         where: {
           ...whereClause,
-          [Op.and]: [
-            sequelize.where(
-              sequelize.fn(
-                'ST_DWithin',
-                sequelize.col('originCoordinates'),
-                sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedOriginLng, parsedOriginLat), 4326),
-                searchRadius,
-              ),
-              true,
-            ),
-            sequelize.where(
-              sequelize.fn(
-                'ST_DWithin',
-                sequelize.col('destinationCoordinates'),
-                sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedDestLng, parsedDestLat), 4326),
-                searchRadius,
-              ),
-              true,
-            ),
-          ],
+          [Op.or]: [endpointMatch, stopMatch],
         },
         include: [
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -237,36 +390,74 @@ export class RideController {
         offset,
       });
 
-      // Calculate distances for sorting
-      const ridesWithDistance = rides.rows.map((ride) => {
-        const originDistance = this.calculateDistance(
-          Number(originLat),
-          Number(originLng),
-          ride.originCoordinates.coordinates[1],
-          ride.originCoordinates.coordinates[0],
-        );
-        const destinationDistance = this.calculateDistance(
-          Number(destinationLat),
-          Number(destinationLng),
-          ride.destinationCoordinates.coordinates[1],
-          ride.destinationCoordinates.coordinates[0],
+      // Work out which part of each ride the passenger would actually be
+      // taking, and price and count seats for that part rather than the whole
+      // journey. Without this a Palapye-to-Gaborone passenger sees the fare and
+      // the seat count for Francistown-to-Gaborone, both of them wrong.
+      const ridesWithDistance = await Promise.all(rides.rows.map(async (ride) => {
+        const stops = await rideSegmentService.getStops(ride as any);
+
+        // The stop nearest each end of what the passenger asked for.
+        const nearest = (lat: number, lng: number) => stops.reduce((best, stop) => {
+          const coords = (stop.coordinates as GeoPoint).coordinates;
+          const distance = this.calculateDistance(lat, lng, coords[1]!, coords[0]!);
+          return !best || distance < best.distance ? { stop, distance } : best;
+        }, null as { stop: typeof stops[number]; distance: number } | null)!;
+
+        const boarding = nearest(Number(originLat), Number(originLng));
+        const alighting = nearest(Number(destinationLat), Number(destinationLng));
+
+        // If the nearest stops come out in the wrong order the ride matched on
+        // its endpoints, so fall back to the whole journey.
+        const inOrder = alighting.stop.sequence > boarding.stop.sequence;
+        const segment = inOrder
+          ? { boardingSequence: boarding.stop.sequence, alightingSequence: alighting.stop.sequence }
+          : rideSegmentService.wholeJourney(stops);
+
+        const availability = await rideSegmentService.getSegmentAvailability(
+          ride.id,
+          ride.availableSeats,
+          segment.boardingSequence,
+          segment.alightingSequence,
         );
 
         return {
           ...ride.toJSON(),
-          originDistance,
-          destinationDistance,
-          totalDistance: originDistance + destinationDistance,
+          stops,
+          segment: {
+            ...segment,
+            boardingAddress: stops.find((s) => s.sequence === segment.boardingSequence)?.address,
+            alightingAddress: stops.find((s) => s.sequence === segment.alightingSequence)?.address,
+            pricePerSeat: rideSegmentService.fareForSegment(
+              stops,
+              segment.boardingSequence,
+              segment.alightingSequence,
+            ),
+            seatsAvailable: availability.available,
+          },
+          originDistance: boarding.distance,
+          destinationDistance: alighting.distance,
+          totalDistance: boarding.distance + alighting.distance,
         };
-      });
+      }));
+
+      // A ride with no seats left for the part the passenger is travelling is
+      // not a result, however close its stops are.
+      const bookable = ridesWithDistance.filter(
+        (ride) => ride.segment.seatsAvailable >= Number(seats),
+      );
 
       // Sort by total distance
-      ridesWithDistance.sort((a, b) => a.totalDistance - b.totalDistance);
+      bookable.sort((a, b) => a.totalDistance - b.totalDistance);
 
       res.json({
         success: true,
         data: {
-          rides: ridesWithDistance,
+          // Search is public and returns rides in bulk, so it is the wholesale
+          // version of the same exposure: never the plate, never a precise
+          // pin, never the driver's full name. Someone who books gets the
+          // detail they need from GET /rides/:id afterwards.
+          rides: bookable.map((ride) => toRideView(ride, { isParticipant: false })),
           pagination: {
             page: Number(page),
             limit: Number(limit),
@@ -292,6 +483,222 @@ export class RideController {
     }
   }
 
+  /**
+   * Dated demand periods coming up.
+   *
+   * Shown to drivers so a public holiday is something they can plan around
+   * rather than discover. The multiplier is advisory — it raises the suggested
+   * price and is labelled as the reason; it never alters what a passenger is
+   * charged, since the driver's fare is charged as set.
+   */
+  async getSurgeCalendar(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const days = Number(req.query['days'] ?? 30);
+      const windows = await surgeService.getUpcoming(days);
+
+      res.json({
+        success: true,
+        data: windows.map((window) => ({
+          id: window.id,
+          name: window.name,
+          multiplier: window.multiplier,
+          startsAt: window.startsAt,
+          endsAt: window.endsAt,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error reading the surge calendar', { error: getErrorMessage(error) });
+
+      res.status(500).json({
+        success: false, error: 'Could not load the surge calendar', code: 'SURGE_CALENDAR_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * How busy an area is.
+   *
+   * Counted from upcoming rides and the bookings against them, rather than
+   * proxied to a model service that was never deployed and whose fallback
+   * returned the constant 10 with a confidence of 0.3.
+   */
+  async getDemand(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { latitude, longitude, radiusKm, destinationLat, destinationLng } = req.query;
+      const origin = { latitude: Number(latitude), longitude: Number(longitude) };
+
+      const snapshot = await demandService.getSnapshot(
+        origin,
+        radiusKm ? { radiusMetres: Number(radiusKm) * 1000 } : {},
+      );
+
+      // Live traffic for a specific route, when one was named. Null when no
+      // Maps key is configured — the client renders nothing rather than a
+      // fabricated congestion level, which is what the old panel did.
+      const traffic = destinationLat && destinationLng
+        ? await trafficService.forRoute(origin, {
+            latitude: Number(destinationLat),
+            longitude: Number(destinationLng),
+          })
+        : null;
+
+      // Weather is a v2 feature and always null here; see WeatherService.
+      const weather = await weatherService.forLocation(origin);
+
+      // Whether the surge calendar has anything in force right now, so a
+      // driver sees the reason next to the demand reading.
+      const surge = await surgeService.getSurge(new Date(), origin);
+
+      res.json({
+        success: true,
+        data: {
+          ...snapshot,
+          traffic,
+          weather,
+          surge: surge.reason
+            ? { multiplier: surge.multiplier, reason: surge.reason }
+            : null,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building a demand snapshot', {
+        error: getErrorMessage(error), query: req.query,
+      });
+
+      res.status(500).json({
+        success: false, error: 'Could not read demand', code: 'DEMAND_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * Upcoming rides on the routes this passenger travels often.
+   *
+   * Built from their actual completed bookings. The app previously generated
+   * this from a fabricated history — ten to thirty invented past rides around
+   * San Francisco — and derived recommendations, and a random "expected
+   * savings" figure, from that.
+   *
+   * An empty list is the correct answer for someone who has not travelled with
+   * us yet, and the screen says so rather than filling itself with invention.
+   */
+  async getRecommendations(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false, error: 'User not authenticated', code: 'UNAUTHORIZED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    try {
+      const recommendations = await rideRecommendationService.getRecommendations(userId);
+
+      res.json({
+        success: true,
+        data: recommendations,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building ride recommendations', {
+        error: getErrorMessage(error), userId,
+      });
+
+      res.status(500).json({
+        success: false, error: 'Could not load recommendations', code: 'RECOMMENDATIONS_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * What comparable rides charged on this route.
+   *
+   * This is advice for a driver about to set their own price, not a fare
+   * anyone is charged. It replaces a client-side model that derived a "final
+   * price" partly from Math.random() and showed it to passengers, while the
+   * server went on charging the driver's actual price — so the app displayed
+   * one number and billed another.
+   *
+   * Returns nulls rather than a fabricated figure when there is not enough
+   * history. A driver who is told nothing prices from experience; one who is
+   * told a made-up number prices from a made-up number.
+   */
+  async getPriceSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const {
+        originLat, originLng, destinationLat, destinationLng, distanceKm, tier, departureTime,
+      } = req.query;
+
+      const currency = req.user?.id
+        ? await CurrencyService.getUserCurrencyCode(req.user.id)
+        : undefined;
+
+      const suggestion = await priceSuggestionService.suggestForRoute(
+        { latitude: Number(originLat), longitude: Number(originLng) },
+        { latitude: Number(destinationLat), longitude: Number(destinationLng) },
+        {
+          ...(distanceKm ? { distanceKm: Number(distanceKm) } : {}),
+          ...(currency ? { currency } : {}),
+          ...(tier ? { tier: tier as RideTier } : {}),
+          // Surge is dated, so the suggestion depends on when the ride runs,
+          // not on when the driver happens to be filling in the form.
+          ...(departureTime ? { departureTime: new Date(String(departureTime)) } : {}),
+        },
+      );
+
+      res.json({
+        success: true,
+        data: suggestion,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error building a price suggestion', {
+        error: getErrorMessage(error),
+        query: req.query,
+      });
+
+      res.status(500).json({
+        success: false,
+        error: 'Could not work out a suggested price',
+        code: 'PRICE_SUGGESTION_FAILED',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * Is this caller the ride's driver, or a passenger with a live booking on it?
+   *
+   * That relationship is what earns the full view — the licence plate to find
+   * the car, the precise pin to meet at the right corner. A cancelled booking
+   * does not count: someone must not be able to book, read the details, cancel,
+   * and keep them.
+   */
+  private async isRideParticipant(rideId: string, userId?: string): Promise<boolean> {
+    if (!userId) return false;
+
+    const ride = await Ride.findByPk(rideId, { attributes: ['id', 'driverId'] });
+    if (!ride) return false;
+    if (ride.driverId === userId) return true;
+
+    const booking = await Booking.count({
+      where: {
+        rideId,
+        passengerId: userId,
+        status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.COMPLETED] },
+      },
+    });
+
+    return booking > 0;
+  }
+
   async getRideById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -301,7 +708,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -331,12 +738,45 @@ export class RideController {
         },
       });
 
+      // The route, and how full each leg of it is. A passenger picks their
+      // boarding and drop-off points from this, and a driver reads it to see
+      // where their ride still has room. Rides without stops come back as the
+      // two-stop journey they are, so this shape is the same everywhere.
+      const stops = await rideSegmentService.getStops(ride as any);
+      const whole = rideSegmentService.wholeJourney(stops);
+      const occupancy = await rideSegmentService.getSegmentAvailability(
+        id!,
+        ride.availableSeats,
+        whole.boardingSequence,
+        whole.alightingSequence,
+      );
+
+      // This endpoint is public, so what comes back depends on who is asking.
+      // It used to spread the whole row for everyone: driver id, exact
+      // coordinates, departure time and the vehicle's licence plate, to anyone
+      // with a ride id — and the equally public search hands those out.
+      const isParticipant = await this.isRideParticipant(id!, (req as AuthenticatedRequest).user?.id);
+
       res.json({
         success: true,
-        data: {
-          ...ride.toJSON(),
-          bookedSeats: bookingCount,
-        },
+        data: toRideView(
+          {
+            ...ride.toJSON(),
+            bookedSeats: bookingCount,
+            stops: stops.map((stop) => ({
+              ...stop,
+              // What someone boarding here and riding to the end would pay.
+              fareToDestination: stop.sequence === whole.alightingSequence
+                ? 0
+                : rideSegmentService.fareForSegment(stops, stop.sequence, whole.alightingSequence),
+            })),
+            legs: occupancy.legs.map((leg) => ({
+              ...leg,
+              seatsAvailable: Math.max(0, ride.availableSeats - leg.occupied),
+            })),
+          },
+          { userId: (req as AuthenticatedRequest).user?.id, isParticipant },
+        ),
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -395,7 +835,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -578,7 +1018,7 @@ export class RideController {
           {
             model: User,
             as: 'driver',
-            attributes: ['id', 'firstName', 'lastName', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'profilePicture'],
           },
           {
             model: Vehicle,
@@ -717,7 +1157,10 @@ export class RideController {
 
     try {
       const { id: rideId } = req.params;
-      const { seatsRequested, pickupAddress, dropoffAddress, specialRequests } = req.body;
+      const {
+        seatsRequested, pickupAddress, dropoffAddress, specialRequests, promoCode,
+        boardingStop, alightingStop,
+      } = req.body;
       const passengerId = req.user?.id;
 
       if (!passengerId) {
@@ -769,25 +1212,50 @@ export class RideController {
         return;
       }
 
-      // Check available seats
-      const existingBookings = await Booking.sum('seatsBooked', {
-        where: {
-          rideId,
-          status: {
-            [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
-          },
-        },
-        transaction,
-      });
+      // Which part of the journey the passenger wants. Defaults to the whole
+      // thing, which is every intra-city trip and every ride without stops.
+      const stops = await rideSegmentService.getStops(ride as any, transaction);
+      const whole = rideSegmentService.wholeJourney(stops);
 
-      const bookedSeats = existingBookings || 0;
-      const availableSeats = ride.availableSeats - bookedSeats;
+      const boardingSequence = boardingStop ?? whole.boardingSequence;
+      const alightingSequence = alightingStop ?? whole.alightingSequence;
 
-      if (seatsRequested > availableSeats) {
+      const segment = rideSegmentService.validateSegment(
+        stops,
+        boardingSequence,
+        alightingSequence,
+      );
+
+      if (!segment.valid) {
         res.status(400).json({
           success: false,
-          error: `Only ${availableSeats} seats available`,
+          error: segment.reason ?? 'Invalid journey segment',
+          code: 'INVALID_SEGMENT',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
+
+      // Seats are counted per leg, not per ride. A passenger alighting early
+      // frees their seat for the rest of the journey, so counting bookings
+      // against the ride would refuse a booking the vehicle can carry.
+      const availability = await rideSegmentService.getSegmentAvailability(
+        rideId,
+        ride.availableSeats,
+        boardingSequence,
+        alightingSequence,
+        transaction,
+      );
+
+      if (seatsRequested > availability.available) {
+        res.status(400).json({
+          success: false,
+          error: availability.available === 0
+            ? 'This ride is full for that part of the journey'
+            : `Only ${availability.available} seat(s) available for that part of the journey`,
           code: 'INSUFFICIENT_SEATS',
+          data: { available: availability.available, legs: availability.legs },
           timestamp: new Date().toISOString(),
         });
         await transaction.rollback();
@@ -815,8 +1283,71 @@ export class RideController {
       }
 
       // Calculate total amount (simple calculation, can be enhanced)
-      const totalAmount = ride.pricePerSeat * seatsRequested;
-      const platformFee = totalAmount * 0.05; // 5% platform fee
+      const farePerSeat = rideSegmentService.fareForSegment(
+        stops,
+        boardingSequence,
+        alightingSequence,
+      );
+      const fare = farePerSeat * seatsRequested;
+      const platformFee = fare * PLATFORM_FEE_RATE;
+      const grossTotal = fare + platformFee;
+
+      // Apply a promo code, if one was given and it holds up.
+      //
+      // This is done here, inside the booking transaction, rather than through
+      // the separate /promos/redeem call: a code could otherwise be redeemed
+      // without booking, or a booking made without the redemption recorded.
+      let discountAmount = 0;
+      let appliedPromoCode: string | null = null;
+      let promoRecord: any = null;
+
+      if (promoCode) {
+        const normalised = String(promoCode).toUpperCase().trim();
+
+        // Locked, because used_count and the usage limit are read then written.
+        const promo = await PromoCode.findOne({
+          where: { code: normalised },
+          transaction,
+          lock: Transaction.LOCK.UPDATE,
+        });
+
+        if (!promo) {
+          res.status(400).json({ success: false, error: 'That promo code is not valid', code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        const validity = promo.isValid(grossTotal);
+        if (!validity.valid) {
+          res.status(400).json({ success: false, error: validity.reason ?? 'That promo code is not valid', code: 'PROMO_INVALID', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        const alreadyRedeemed = await PromoRedemption.findOne({
+          where: { promoCodeId: promo.id, userId: passengerId },
+          transaction,
+        });
+
+        if (alreadyRedeemed) {
+          res.status(409).json({ success: false, error: 'You have already used this promo code', code: 'PROMO_ALREADY_USED', timestamp: new Date().toISOString() });
+          await transaction.rollback();
+          return;
+        }
+
+        // Capped at what the platform earns on this booking. See PROMO_FUNDING.
+        const faceValue = promo.calculateDiscount(grossTotal);
+        discountAmount = Math.min(faceValue, platformFee);
+        discountAmount = Math.round(discountAmount * 100) / 100;
+        appliedPromoCode = normalised;
+        promoRecord = promo;
+
+        if (faceValue > discountAmount) {
+          logger.warn('Promo capped at the platform fee; the rest cannot be funded', {
+            code: normalised, faceValue, granted: discountAmount, platformFee,
+          });
+        }
+      }
 
       // Create booking
       const booking = await Booking.create(
@@ -824,8 +1355,15 @@ export class RideController {
           rideId,
           passengerId,
           seatsBooked: seatsRequested,
-          totalAmount: totalAmount + platformFee,
+          // Inherited from the ride: the passenger pays the price the driver
+          // set, in the currency the driver set it in.
+          currency: ride.currency,
+          boardingSequence,
+          alightingSequence,
+          totalAmount: Math.round((grossTotal - discountAmount) * 100) / 100,
           platformFee,
+          promoCode: appliedPromoCode,
+          discountAmount,
           pickupAddress,
           dropoffAddress,
           specialRequests,
@@ -833,6 +1371,23 @@ export class RideController {
         },
         { transaction },
       );
+
+      if (promoRecord && discountAmount > 0) {
+        // The unique index on (promo_code_id, user_id) is what actually
+        // enforces one-per-user; the check above only produces a better error.
+        await PromoRedemption.create(
+          {
+            promoCodeId: promoRecord.id,
+            userId: passengerId,
+            bookingId: booking.id,
+            discountAmount,
+            orderAmount: grossTotal,
+          },
+          { transaction },
+        );
+
+        await promoRecord.increment('usedCount', { transaction });
+      }
 
       await transaction.commit();
 
@@ -849,14 +1404,14 @@ export class RideController {
               {
                 model: User,
                 as: 'driver',
-                attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
               },
             ],
           },
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
       });
@@ -927,7 +1482,7 @@ export class RideController {
           {
             model: User,
             as: 'passenger',
-            attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'profileImage'],
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
           },
         ],
         order: [['createdAt', 'ASC']],

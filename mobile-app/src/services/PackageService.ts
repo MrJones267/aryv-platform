@@ -152,7 +152,7 @@ class PackageService {
         throw new Error('Invalid or expired authentication token');
       }
 
-      const response = await this.apiClient.get('/api/courier/delivery-tiers', {
+      const response = await this.apiClient.get('/courier/delivery-tiers', {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
@@ -207,7 +207,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.post('/api/courier/pricing/suggestions', params, {
+      const response = await this.apiClient.post('/courier/pricing/suggestions', params, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
@@ -240,7 +240,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.post('/api/courier/packages', packageData, {
+      const response = await this.apiClient.post('/courier/packages', packageData, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
@@ -277,7 +277,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/courier/user/packages', {
+      const response = await this.apiClient.get('/courier/user/packages', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -332,7 +332,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.get(
-        `/api/courier/available/packages?${queryParams.toString()}`,
+        `/courier/available/packages?${queryParams.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`
@@ -373,7 +373,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.get(
-        `/api/courier/packages/${packageId}`,
+        `/courier/packages/${packageId}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`
@@ -422,7 +422,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.post(
-        `/api/courier/packages/${packageId}/accept`,
+        `/courier/packages/${packageId}/accept`,
         {},
         {
           headers: {
@@ -480,7 +480,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.post(
-        `/api/courier/agreements/${agreementId}/pickup`,
+        `/courier/agreements/${agreementId}/pickup`,
         { location },
         {
           headers: {
@@ -517,7 +517,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.post(
-        `/api/courier/verify-qr/${qrToken}`,
+        `/courier/verify-qr/${qrToken}`,
         { location },
         {
           headers: {
@@ -559,7 +559,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.post(
-        `/api/courier/agreements/${agreementId}/location`,
+        `/courier/agreements/${agreementId}/location`,
         { location, accuracy, speed, heading },
         {
           headers: {
@@ -595,7 +595,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/courier/deliveries', {
+      const response = await this.apiClient.get('/courier/deliveries', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -627,7 +627,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get(`/api/courier/packages/${packageId}/tracking`, {
+      const response = await this.apiClient.get(`/courier/packages/${packageId}/tracking`, {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }

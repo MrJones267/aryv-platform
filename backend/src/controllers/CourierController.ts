@@ -21,6 +21,8 @@ import { sequelize } from '../config/database';
 import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
 import logger from '../utils/logger';
+import deliveryHandoverService from '../services/DeliveryHandoverService';
+import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
 
 export class CourierController {
   /**
@@ -210,7 +212,11 @@ export class CourierController {
         ? pricingSuggestions[0].demandMultiplier
         : 1.0;
 
+      const packageCurrency = await CurrencyService.getUserCurrencyCode(userId);
+
       const packageData = await Package.create({
+        // The sender names the price, so the package is in their currency.
+        currency: packageCurrency,
         senderId: userId,
         title,
         description,
@@ -506,6 +512,8 @@ export class CourierController {
         agreedPrice,
         platformFee,
         escrowAmount,
+        // The sender set the price, so it is in the sender's currency.
+        currency: packageData.currency ?? PLATFORM_DEFAULT_CURRENCY,
         status: DeliveryStatus.PENDING_PICKUP,
         eventLog: [{
           timestamp: new Date().toISOString(),
@@ -617,11 +625,32 @@ export class CourierController {
         }, { transaction });
       }
 
+      // Issue the handover code and send it to the recipient. Deliberately
+      // inside the pickup transaction: a delivery in transit with no code
+      // cannot be completed by the courier at all, so the two belong together.
+      const issued = await deliveryHandoverService.issueCode(agreementId, transaction);
+
       await transaction.commit();
 
       res.status(200).json({
         success: true,
-        data: agreement,
+        data: {
+          agreement,
+          // How the recipient was reached, so the courier knows whether to
+          // expect a code at the door. The code itself is never included:
+          // the courier knowing it in advance would defeat the point.
+          handover: {
+            codeIssued: issued.success,
+            sentVia: issued.channel ?? 'none',
+            // What to collect at the door. The courier needs the figure and
+            // has no other reliable source for it — but never the code, which
+            // is the recipient's to give.
+            paymentMethod: agreement.paymentMethod,
+            collectOnDelivery: agreement.paymentMethod === 'cash_on_delivery'
+              ? agreement.agreedPrice
+              : null,
+          },
+        },
         timestamp: new Date().toISOString(),
       });
 
@@ -661,9 +690,39 @@ export class CourierController {
         return;
       }
 
-      // Process QR code verification and payment release through service
-      const paymentResult = await paymentReleaseService.processQRCodePaymentRelease(
-        qrToken,
+      // Verify the handover code first. This establishes that the caller is
+      // the assigned courier and that they hold a code only the recipient was
+      // given — everything the payment release depends on.
+      const verification = await deliveryHandoverService.verifyCode(
+        qrToken as string,
+        userId,
+        location,
+      );
+
+      if (!verification.ok || !verification.agreement) {
+        // Count the miss so repeated guessing runs into the cap. Recorded
+        // outside the verification call so it survives that call's rollback.
+        if (verification.code === 'CODE_NOT_FOUND') {
+          const inTransit = await DeliveryAgreement.findOne({
+            where: { courierId: userId, status: DeliveryStatus.IN_TRANSIT },
+          });
+          if (inTransit) {
+            await deliveryHandoverService.recordFailedAttempt(inTransit.id);
+          }
+        }
+
+        res.status(400).json({
+          success: false,
+          error: verification.error || 'Failed to verify delivery code',
+          code: verification.code || 'CODE_VERIFICATION_FAILED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Release the escrow now the handover is proven.
+      const paymentResult = await paymentReleaseService.processConfirmedDeliveryRelease(
+        verification.agreement.id,
         userId,
         location,
       );
@@ -671,8 +730,8 @@ export class CourierController {
       if (!paymentResult.success) {
         res.status(400).json({
           success: false,
-          error: paymentResult.error || 'Failed to verify QR code',
-          code: 'QR_VERIFICATION_FAILED',
+          error: paymentResult.error || 'Delivery confirmed but payment release failed',
+          code: 'PAYMENT_RELEASE_FAILED',
           timestamp: new Date().toISOString(),
         });
         return;

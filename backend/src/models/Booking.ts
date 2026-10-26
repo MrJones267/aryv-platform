@@ -30,7 +30,13 @@ export interface BookingModel extends Model<
   passengerId: ForeignKey<string>;
   seatsBooked: number;
   totalAmount: number;
+  currency: CreationOptional<string>;
   platformFee: number;
+  promoCode: CreationOptional<string | null>;
+  /** Which part of the journey this booking occupies. Null means all of it. */
+  boardingSequence: CreationOptional<number | null>;
+  alightingSequence: CreationOptional<number | null>;
+  discountAmount: CreationOptional<number>;
   status: CreationOptional<BookingStatus>;
   pickupAddress: CreationOptional<string | null>;
   dropoffAddress: CreationOptional<string | null>;
@@ -99,6 +105,11 @@ const Booking = sequelize.define<BookingModel>(
         },
       },
     },
+    currency: {
+      type: DataTypes.CHAR(3),
+      allowNull: false,
+      defaultValue: 'BWP',
+    },
     totalAmount: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
@@ -109,6 +120,27 @@ const Booking = sequelize.define<BookingModel>(
           msg: 'Total amount must be greater than 0',
         },
       },
+    },
+    boardingSequence: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'boarding_sequence',
+    },
+    alightingSequence: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'alighting_sequence',
+    },
+    promoCode: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      field: 'promo_code',
+    },
+    discountAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      field: 'discount_amount',
     },
     platformFee: {
       type: DataTypes.DECIMAL(10, 2),

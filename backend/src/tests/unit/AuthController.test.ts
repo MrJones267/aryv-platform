@@ -21,6 +21,20 @@ jest.mock('../../config/redis', () => ({
 }));
 
 import { AuthService } from '../../services/AuthService';
+import User from '../../models/User';
+
+// User is not module-mocked: automocking AuthService still loads models/index,
+// and a stubbed User class breaks the association wiring that runs on import.
+// Spying on the real model keeps that intact.
+const MockedUser = {
+  findByPk: jest.fn(),
+};
+// restoreMocks: true tears spies down after every test, so this is re-applied
+// per test rather than once in beforeAll.
+beforeEach(() => {
+  jest.spyOn(User, 'findByPk').mockImplementation(((...args: any[]) =>
+    MockedUser.findByPk(...args)) as any);
+});
 
 const mockRes = () => {
   const res = {} as Response;
@@ -171,6 +185,124 @@ describe('AuthController', () => {
       await AuthController.logout(req, res);
 
       expect(res.status).toHaveBeenCalledWith(401);
+    });
+  });
+
+  // ── deleteAccount ───────────────────────────────────────────────────────────
+  describe('deleteAccount', () => {
+    const makeUser = (overrides: any = {}) => ({
+      id: 'u1',
+      email: 'rider@example.com',
+      comparePassword: jest.fn().mockResolvedValue(true),
+      update: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+
+    it('rejects when no re-authentication is supplied', async () => {
+      const req = mockReq({}, { id: 'u1' });
+      const res = mockRes();
+
+      await AuthController.deleteAccount(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'REAUTH_REQUIRED' }),
+      );
+    });
+
+    it('rejects an incorrect password', async () => {
+      MockedUser.findByPk.mockResolvedValue(
+        makeUser({ comparePassword: jest.fn().mockResolvedValue(false) }),
+      );
+
+      const req = mockReq({ password: 'wrong' }, { id: 'u1' });
+      const res = mockRes();
+
+      await AuthController.deleteAccount(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'INVALID_PASSWORD' }),
+      );
+    });
+
+    it('erases personal data on success', async () => {
+      const user = makeUser();
+      MockedUser.findByPk.mockResolvedValue(user);
+
+      const req = mockReq({ password: 'correct' }, { id: 'u1' }, { authorization: 'Bearer tok' });
+      const res = mockRes();
+
+      await AuthController.deleteAccount(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+
+      const written = user.update.mock.calls[0][0];
+      expect(written.email).toBe('deleted-u1@deleted.aryv-app.com');
+      expect(written.phone).toBeNull();
+      expect(written.firstName).toBe('Deleted');
+      expect(written.profilePicture).toBeNull();
+      expect(written.emergencyContactPhone).toBeNull();
+      expect(written.dateOfBirth).toBeNull();
+      expect(written.refreshToken).toBeNull();
+      expect(written.deactivationReason).toBe('account_deleted_by_user');
+      // The password is replaced, not left as the caller supplied it.
+      expect(written.password).not.toBe('correct');
+      expect(written.password).toHaveLength(128);
+    });
+
+    it('accepts a Google token as re-authentication for federated accounts', async () => {
+      const user = makeUser({
+        comparePassword: jest.fn().mockResolvedValue(false),
+      });
+      MockedUser.findByPk.mockResolvedValue(user);
+      process.env['GOOGLE_WEB_CLIENT_ID'] = 'web-client-id';
+
+      const verifyIdToken = jest.fn().mockResolvedValue({
+        getPayload: () => ({ email: 'rider@example.com', email_verified: true }),
+      });
+      // The controller holds a private module-scoped OAuth client, so patch
+      // the library prototype rather than reaching into the module.
+      const { OAuth2Client } = require('google-auth-library');
+      const original = OAuth2Client.prototype.verifyIdToken;
+      OAuth2Client.prototype.verifyIdToken = verifyIdToken;
+
+      try {
+        const req = mockReq({ googleIdToken: 'google-token' }, { id: 'u1' }, { authorization: 'Bearer tok' });
+        const res = mockRes();
+
+        await AuthController.deleteAccount(req, res);
+
+        expect(verifyIdToken).toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(user.update).toHaveBeenCalled();
+      } finally {
+        OAuth2Client.prototype.verifyIdToken = original;
+      }
+    });
+
+    it('refuses a Google token belonging to a different account', async () => {
+      const user = makeUser();
+      MockedUser.findByPk.mockResolvedValue(user);
+      process.env['GOOGLE_WEB_CLIENT_ID'] = 'web-client-id';
+
+      const { OAuth2Client } = require('google-auth-library');
+      const original = OAuth2Client.prototype.verifyIdToken;
+      OAuth2Client.prototype.verifyIdToken = jest.fn().mockResolvedValue({
+        getPayload: () => ({ email: 'someone.else@example.com', email_verified: true }),
+      });
+
+      try {
+        const req = mockReq({ googleIdToken: 'google-token' }, { id: 'u1' });
+        const res = mockRes();
+
+        await AuthController.deleteAccount(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(user.update).not.toHaveBeenCalled();
+      } finally {
+        OAuth2Client.prototype.verifyIdToken = original;
+      }
     });
   });
 });

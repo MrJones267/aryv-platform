@@ -7,6 +7,8 @@
 
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
+import { validatePasswordStrength } from '../utils/password';
+import { validationResult } from 'express-validator';
 import { ValidationError } from '../types';
 
 /**
@@ -104,10 +106,13 @@ export const commonSchemas = {
 export const authSchemas = {
   register: Joi.object({
     email: Joi.string().email().required(),
-    password: Joi.string().min(8).max(128).pattern(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-    ).required().messages({
-      'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character',
+    // Delegated so registration, OTP password reset and change-password all
+    // enforce one policy. They did not: reset only checked `length >= 8`, so
+    // an account could be moved to a password weaker than it could have been
+    // created with.
+    password: Joi.string().required().custom((value, helpers) => {
+      const check = validatePasswordStrength(value);
+      return check.ok ? value : helpers.message({ custom: check.message as string });
     }),
     phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
     firstName: Joi.string().min(1).max(50).required(),
@@ -140,10 +145,9 @@ export const userSchemas = {
 
   changePassword: Joi.object({
     currentPassword: Joi.string().required(),
-    newPassword: Joi.string().min(8).max(128).pattern(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-    ).required().messages({
-      'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character',
+    newPassword: Joi.string().required().custom((value, helpers) => {
+      const check = validatePasswordStrength(value);
+      return check.ok ? value : helpers.message({ custom: check.message as string });
     }),
   }),
 };
@@ -216,5 +220,43 @@ export const rideSchemas = {
   }),
 };
 
-// Alias for compatibility with existing route imports
-export const validateInput = validateRequest;
+/**
+ * Terminal middleware for routes that declare their rules with
+ * express-validator chains. It reports whatever those chains recorded on the
+ * request and otherwise passes control on.
+ *
+ * This was previously an alias for `validateRequest`, which is a *factory*
+ * taking a Joi schema. Used bare in a route — as all ~130 call sites do —
+ * Express invoked it as `validateRequest(req, res, next)`, so it treated the
+ * request as a schema, returned a middleware function nobody called, and never
+ * invoked `next()`. Every route carrying it hung until the client timed out.
+ * Verified against production before the fix: GET /api/countries answered in
+ * 0.7s while GET /api/countries/search never responded.
+ *
+ * `validateRequest` keeps its factory signature for the Joi-schema call sites
+ * in routes/auth.ts, which use it correctly.
+ */
+export const validateInput = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const result = validationResult(req);
+
+  if (!result.isEmpty()) {
+    res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      code: 'VALIDATION_FAILED',
+      details: result.array().map((e) => ({
+        field: (e as { path?: string; param?: string }).path
+          ?? (e as { param?: string }).param,
+        message: e.msg,
+      })),
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  next();
+};

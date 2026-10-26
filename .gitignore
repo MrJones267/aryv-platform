@@ -89,7 +89,13 @@ jspm_packages/
 
 # Gatsby files
 .cache/
-public
+# Root-scoped deliberately. A bare `public` matches a directory of that name at
+# any depth, which silently excluded admin-panel/public — a Vite *source*
+# directory whose contents are copied into the build. That took the admin
+# panel's favicons and its _headers file (CSP, HSTS, frame protection) out of
+# version control, so they could never reach a deploy built from a clean
+# checkout.
+/public
 
 # Storybook build outputs
 .out
@@ -210,3 +216,30 @@ keystore.properties
 hs_err_pid*.log
 replay_pid*.log
 
+# Machine-specific Android SDK path. The file's own header says it must not be
+# committed, and a checked-in Windows path breaks builds on any other machine.
+mobile-app/android/local.properties
+android/local.properties
+local.properties
+
+# ---------------------------------------------------------------------------
+# Environment files with real values.
+#
+# These were tracked in a public repository from 2025-12-22 and carried live
+# credentials — JWT and admin JWT secrets, a Stripe secret key, Cloudflare R2
+# keys, database and Redis passwords. Untracking them does not remove them
+# from git history, so every value they held is treated as burned and rotated;
+# see docs/SECRET-ROTATION.md.
+#
+# Only .example files, which hold no values, belong in version control.
+# ---------------------------------------------------------------------------
+.env.production
+.env.production.secure
+*/.env.production
+*/.env.production.secure
+*.secure
+
+# Database dumps: these contain real user data (names, phones, locations).
+*.sql.gz
+railway_backup_*.sql
+*_backup_*.sql

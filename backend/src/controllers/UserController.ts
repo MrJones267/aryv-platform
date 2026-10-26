@@ -14,7 +14,7 @@ import Vehicle from '../models/Vehicle';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import { AuthenticatedRequest } from '../types';
-import { UserStatus, VehicleStatus, RideStatus } from '../types';
+import { UserStatus, VehicleStatus, RideStatus, BookingStatus } from '../types';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 import smsService from '../services/SMSService';
 
@@ -967,7 +967,7 @@ export class UserController {
             {
               model: User,
               as: 'driver',
-              attributes: ['firstName', 'lastName', 'profileImage'],
+              attributes: ['firstName', 'lastName', 'profilePicture'],
             },
             {
               model: Booking,
@@ -1492,6 +1492,42 @@ export class UserController {
         return;
       }
 
+      // The two must actually have shared this ride, and it must be over.
+      //
+      // Without this the endpoint took the target and the ride straight from
+      // the request body and checked neither, so any authenticated user could
+      // rate any other user — repeatedly, since the duplicate guard keys on the
+      // caller-supplied rideId. That is enough to sink a driver's rating or
+      // inflate your own, and the rating is what riders choose on.
+      const ride = await Ride.findByPk(rideId, {
+        attributes: ['id', 'driverId', 'status'],
+      });
+
+      if (!ride || ride.status !== RideStatus.COMPLETED) {
+        res.status(400).json({ success: false, error: 'You can only review a completed ride', code: 'RIDE_NOT_REVIEWABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // One party must be the driver and the other a passenger who booked it.
+      const passengerId = ride.driverId === reviewerId ? toUserId
+        : ride.driverId === toUserId ? reviewerId
+          : null;
+
+      if (!passengerId) {
+        res.status(403).json({ success: false, error: 'You were not on this ride', code: 'NOT_A_PARTICIPANT', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const booking = await Booking.findOne({
+        where: { rideId, passengerId, status: BookingStatus.COMPLETED },
+        attributes: ['id'],
+      });
+
+      if (!booking) {
+        res.status(403).json({ success: false, error: 'You were not on this ride', code: 'NOT_A_PARTICIPANT', timestamp: new Date().toISOString() });
+        return;
+      }
+
       const [targetUser, reviewer] = await Promise.all([
         User.findByPk(toUserId, { attributes: ['id', 'preferences', 'rating', 'totalRides', 'firstName', 'lastName'] }),
         User.findByPk(reviewerId, { attributes: ['id', 'firstName', 'lastName', 'profilePicture'] }),
@@ -1801,38 +1837,4 @@ export class UserController {
   }
 
   /** Delete account (alias — same behavior as deactivateAccount but simpler) */
-  async deleteAccount(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const { password } = req.body as { password: string };
-      if (!password) {
-        res.status(400).json({ success: false, error: 'Password is required', code: 'PASSWORD_REQUIRED', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const user = await User.findByPk(userId);
-      if (!user) {
-        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const isValid = await user.comparePassword(password);
-      if (!isValid) {
-        res.status(400).json({ success: false, error: 'Incorrect password', code: 'INVALID_PASSWORD', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      await user.update({ status: UserStatus.DEACTIVATED, deactivatedAt: new Date(), refreshToken: null });
-
-      res.json({ success: true, message: 'Account deleted successfully', timestamp: new Date().toISOString() });
-    } catch (error) {
-      logger.error('Error in deleteAccount', { error: getErrorMessage(error), userId: req.user?.id });
-      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
-    }
-  }
 }

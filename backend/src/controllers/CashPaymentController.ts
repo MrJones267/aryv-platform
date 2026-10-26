@@ -37,7 +37,10 @@ export class CashPaymentController {
         return;
       }
 
-      const { bookingId, driverId, amount } = req.body;
+      // Only the booking is taken from the caller. The driver and the fare are
+      // resolved from the booking server-side — a rider must not be able to
+      // name their own counterparty or their own price.
+      const { bookingId } = req.body;
       const riderId = req.user?.id;
 
       if (!riderId) {
@@ -51,8 +54,6 @@ export class CashPaymentController {
       const result = await this.cashPaymentService.createCashPayment(
         bookingId,
         riderId,
-        driverId,
-        parseFloat(amount),
       );
 
       if (result.success) {

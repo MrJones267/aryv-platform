@@ -98,7 +98,7 @@ class CourierService {
         throw new Error('Authentication token not available. Please log in again.');
       }
 
-      const response = await this.apiClient.post('/api/deliveries/accept', {
+      const response = await this.apiClient.post('/courier/deliveries/accept', {
         deliveryId: deliveryId,
         driverId: await this.authService.getCurrentUser(),
         timestamp: new Date().toISOString()
@@ -134,7 +134,7 @@ class CourierService {
 
       log.error('Error in acceptDelivery', error, {
         deliveryId: deliveryId,
-        endpoint: '/api/deliveries/accept'
+        endpoint: '/courier/deliveries/accept'
       });
 
       return {
@@ -158,7 +158,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/deliveries/available', {
+      const response = await this.apiClient.get('/courier/deliveries/available', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -186,7 +186,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/courier/profile', {
+      const response = await this.apiClient.get('/courier/profile', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -217,7 +217,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.post('/api/courier/availability', {
+      const response = await this.apiClient.post('/courier/availability', {
         isOnline,
         location,
         timestamp: new Date().toISOString()
@@ -249,7 +249,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.post('/api/courier/location', {
+      const response = await this.apiClient.post('/courier/location', {
         ...location,
         timestamp: new Date().toISOString()
       }, {
@@ -281,7 +281,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/courier/stats', {
+      const response = await this.apiClient.get('/courier/stats', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -313,7 +313,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/api/courier/notifications', {
+      const response = await this.apiClient.get('/courier/notifications', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -344,7 +344,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.put(`/api/courier/notifications/${notificationId}`, {
+      const response = await this.apiClient.put(`/courier/notifications/${notificationId}`, {
         read: true
       }, {
         headers: {
@@ -374,7 +374,7 @@ class CourierService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.put(`/api/deliveries/${deliveryId}/status`, {
+      const response = await this.apiClient.put(`/courier/deliveries/${deliveryId}/status`, {
         status: status,
         timestamp: new Date().toISOString()
       }, {

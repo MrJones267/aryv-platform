@@ -303,7 +303,7 @@ class ImageOptimizer {
   private updateMetrics(): void {
     let totalOriginal = 0;
     let totalOptimized = 0;
-    let totalImages = this.cache.size;
+    const totalImages = this.cache.size;
 
     for (const cached of this.cache.values()) {
       totalOriginal += cached.originalSize;

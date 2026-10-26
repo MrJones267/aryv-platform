@@ -118,11 +118,23 @@ export const Input = forwardRef<TextInput, InputProps>(({
   const renderLabel = () => {
     if (!label) return null;
 
+    // The asterisk is a sibling, not a nested child: nesting it split the
+    // label's text node so the visible label no longer matched as one string.
+    // It is also hidden from screen readers — the field itself carries the
+    // accessible name, so announcing a stray "*" adds nothing.
     return (
-      <Text style={labelStyles}>
-        {label}
-        {required && <Text style={styles.asterisk}> *</Text>}
-      </Text>
+      <View style={styles.labelRow}>
+        <Text style={labelStyles}>{label}</Text>
+        {required && (
+          <Text
+            style={[labelStyles, styles.asterisk]}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {' *'}
+          </Text>
+        )}
+      </View>
     );
   };
 
@@ -166,6 +178,10 @@ export const Input = forwardRef<TextInput, InputProps>(({
           secureTextEntry={password && !showPassword}
           editable={!disabled}
           testID={testID}
+          accessible
+          accessibilityLabel={label ?? placeholder}
+          accessibilityState={{ disabled }}
+          {...(error ? { accessibilityHint: error } : {})}
           {...textInputProps}
         />
         
@@ -201,6 +217,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
     marginBottom: 8,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   requiredLabel: {
     // Additional styling for required fields

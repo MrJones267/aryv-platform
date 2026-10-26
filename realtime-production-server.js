@@ -21,7 +21,14 @@ const server = createServer(app);
 // Environment variables
 const PORT = process.env.PORT || 3002;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+// No fallback. A published default secret is not a secret: anyone reading
+// this file could mint tokens this service would accept. Refusing to start is
+// the only safe response to it being unset.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[STARTUP] JWT_SECRET is required. Refusing to start without it.');
+  process.exit(1);
+}
 const REDIS_URL = process.env.REDIS_URL;
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -165,16 +172,30 @@ io.on('connection', (socket) => {
     try {
       const { userId, token, deviceId, platform } = data;
       
-      // Verify JWT token (if provided) - relaxed for development
-      let verified = true;
-      if (token && token !== 'mock-token-123' && !token.startsWith('prod-jwt-') && NODE_ENV === 'production') {
-        const decoded = verifyToken(token);
-        if (!decoded || decoded.userId !== userId) {
-          verified = false;
-        }
+      // Every connection must present a token that verifies, and the identity
+      // it claims must be the one inside that token.
+      //
+      // The previous condition — `token && token !== 'mock-token-123' &&
+      // !token.startsWith('prod-jwt-') && NODE_ENV === 'production'` — was a
+      // complete bypass in every environment including production. Sending no
+      // token at all made it false, so `verified` stayed true and the client's
+      // own `userId` was accepted: anyone could connect as anyone and receive
+      // that person's live location, ride events and messages. Two literal
+      // strings were waved through as well.
+      const decoded = token ? verifyToken(token) : null;
+      const verified = Boolean(decoded) && decoded.userId === userId;
+
+      if (!verified) {
+        console.warn(`Rejected socket authentication for ${socket.id}`);
+        socket.emit('authentication_error', {
+          success: false,
+          message: 'Authentication failed',
+        });
+        socket.disconnect(true);
+        return;
       }
 
-      if (verified) {
+      {
         // Store user connection
         connectedUsers.set(userId, {
           socketId: socket.id,
@@ -199,12 +220,6 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('user_connected', {
           userId,
           timestamp: new Date().toISOString()
-        });
-      } else {
-        socket.emit('authenticated', {
-          success: false,
-          error: 'Invalid token or user ID',
-          message: 'Authentication failed'
         });
       }
     } catch (error) {

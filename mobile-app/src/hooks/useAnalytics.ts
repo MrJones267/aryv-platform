@@ -23,10 +23,12 @@ export interface AnalyticsEvent {
 
 export interface RevenueMetrics {
   totalRevenue: number;
-  commissionRevenue: number;
-  subscriptionRevenue: number;
-  serviceFeesRevenue: number;
-  growthRate: number;
+  /** Null where the server reports no figure for the category. */
+  commissionRevenue: number | null;
+  subscriptionRevenue: number | null;
+  serviceFeesRevenue: number | null;
+  /** Null until growth is actually computed. */
+  growthRate: number | null;
 }
 
 export interface MetricsData {
@@ -86,7 +88,9 @@ export const useAnalytics = (config?: AnalyticsConfig): UseAnalyticsReturn => {
         commissionRevenue: revenueBreakdown.commissions,
         subscriptionRevenue: revenueBreakdown.subscriptions,
         serviceFeesRevenue: revenueBreakdown.serviceFees,
-        growthRate: 18.5,
+        // Nothing computes growth yet. This was a hardcoded 18.5, shown to
+        // drivers as their own month-on-month growth.
+        growthRate: null,
       };
 
       setMetrics({

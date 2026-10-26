@@ -15,8 +15,9 @@ export interface DocumentUploadRequest {
   userId: string;
   documentType: DocumentType;
   imageUri: string;
-  imageData?: string; // base64 encoded
   metadata?: DocumentMetadata;
+  /** ISO 8601. Required by the API for licences, insurance and passports. */
+  documentExpiresAt?: string;
 }
 
 export interface DocumentMetadata {
@@ -311,12 +312,10 @@ class DocumentVerificationService {
         };
       }
 
-      if (!__DEV__) {
-        return await this.callDocumentUploadAPI(request);
-      }
-
-      // Development: Simulate document processing
-      return await this.simulateDocumentProcessing(request);
+      // Always the real endpoint. The simulated path this replaced invented
+      // OCR text and decided pass/fail with Math.random(), which looked like
+      // driver vetting without being any.
+      return await this.callDocumentUploadAPI(request);
     } catch (error: unknown) {
       log.error('Document upload error', error);
       return {
@@ -334,12 +333,7 @@ class DocumentVerificationService {
    */
   async getUserVerificationStatus(userId: string): Promise<UserVerificationStatus> {
     try {
-      if (!__DEV__) {
-        return await this.callVerificationStatusAPI(userId);
-      }
-
-      // Development: Generate mock verification status
-      return this.generateMockVerificationStatus(userId);
+      return await this.callVerificationStatusAPI(userId);
     } catch (error: unknown) {
       log.error('Error fetching verification status', error);
       throw new Error('Failed to fetch verification status');
@@ -371,12 +365,7 @@ class DocumentVerificationService {
    */
   async getVerificationProgress(userId: string): Promise<VerificationProgressResponse> {
     try {
-      if (!__DEV__) {
-        return await this.callVerificationProgressAPI(userId);
-      }
-
-      // Development: Generate mock progress
-      return this.generateMockVerificationProgress(userId);
+      return await this.callVerificationProgressAPI(userId);
     } catch (error: unknown) {
       log.error('Error fetching verification progress', error);
       throw new Error('Failed to fetch verification progress');
@@ -386,25 +375,27 @@ class DocumentVerificationService {
   /**
    * Resubmit rejected document
    */
-  async resubmitDocument(documentId: string, imageUri: string, notes?: string): Promise<DocumentUploadResponse> {
+  async resubmitDocument(
+    userId: string,
+    documentType: DocumentType,
+    imageUri: string,
+    documentExpiresAt?: string,
+  ): Promise<DocumentUploadResponse> {
     try {
-      // Get original document record
-      const originalDoc = await this.getDocumentRecord(documentId);
-      if (!originalDoc) {
-        throw new Error('Original document not found');
-      }
-
-      // Create resubmission request
+      // The caller supplies the type. This previously read it from a helper
+      // that returned a hardcoded record — every resubmission was filed as a
+      // driver's licence for a fictional user regardless of the real document.
       const resubmitRequest: DocumentUploadRequest = {
-        userId: originalDoc.userId,
-        documentType: originalDoc.documentType,
+        userId,
+        documentType,
         imageUri,
+        ...(documentExpiresAt ? { documentExpiresAt } : {}),
         metadata: {
           captureTimestamp: new Date().toISOString(),
           deviceInfo: 'resubmission',
           imageQuality: 'high',
           fileSize: 0,
-          fileName: `resubmit_${originalDoc.documentType}_${Date.now()}`,
+          fileName: `resubmit_${documentType}_${Date.now()}`,
         },
       };
 
@@ -458,228 +449,25 @@ class DocumentVerificationService {
     return null;
   }
 
-  private async simulateDocumentProcessing(request: DocumentUploadRequest): Promise<DocumentUploadResponse> {
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const documentId = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Simulate OCR processing
-    const ocrResults = this.simulateOCR(request.documentType);
-    const validationResults = this.simulateValidation(request.documentType, ocrResults);
-    
-    // Determine status based on validation
-    let status: VerificationStatus = 'processing';
-    let message = 'Document uploaded successfully and is being processed';
-    
-    if (validationResults.score > 0.8) {
-      status = ocrResults.confidence > this.OCR_THRESHOLDS.HIGH_CONFIDENCE ? 'approved' : 'under_review';
-      message = status === 'approved' ? 'Document automatically approved' : 'Document under manual review';
-    } else if (validationResults.score > 0.5) {
-      status = 'under_review';
-      message = 'Document requires manual review';
-    } else {
-      status = 'rejected';
-      message = 'Document validation failed. Please resubmit.';
-    }
-
-    return {
-      success: true,
-      documentId,
-      status,
-      message,
-      processingTime: 2000,
-      nextSteps: this.getNextSteps(status, request.documentType),
-    };
-  }
-
-  private simulateOCR(documentType: DocumentType): OCRResults {
-    const mockText = this.getMockOCRText(documentType);
-    const confidence = 0.7 + Math.random() * 0.3; // 70-100%
-    
-    return {
-      extractedText: mockText,
-      fields: this.extractFieldsFromText(documentType, mockText),
-      confidence,
-      processingTime: 1200,
-      errors: [],
-    };
-  }
-
-  private simulateValidation(documentType: DocumentType, ocrResults: OCRResults): ValidationResults {
-    const checks: ValidationCheck[] = [
-      {
-        type: 'format',
-        name: 'Document Format',
-        passed: Math.random() > 0.1,
-        confidence: 0.9,
-        details: 'Document format appears valid',
-      },
-      {
-        type: 'security_features',
-        name: 'Security Features',
-        passed: Math.random() > 0.2,
-        confidence: 0.8,
-        details: 'Security features detected',
-      },
-      {
-        type: 'consistency',
-        name: 'Data Consistency',
-        passed: Math.random() > 0.15,
-        confidence: 0.85,
-      },
-      {
-        type: 'expiration',
-        name: 'Expiration Check',
-        passed: Math.random() > 0.1,
-        confidence: 0.95,
-      },
-    ];
-
-    const passedChecks = checks.filter(check => check.passed).length;
-    const score = passedChecks / checks.length;
-    
-    return {
-      isValid: score > 0.7,
-      score,
-      checks,
-      anomalies: score < 0.8 ? ['Minor inconsistencies detected'] : [],
-      recommendations: score < 0.6 ? ['Consider retaking photo with better lighting'] : [],
-    };
-  }
-
-  private getMockOCRText(documentType: DocumentType): string {
-    const mockTexts = {
-      drivers_license: "DRIVER LICENSE\nJOHN DOE\n123 MAIN ST\nANYTOWN ST 12345\nDOB: 01/01/1990\nEXP: 01/01/2025\nCLASS: C\nLIC: D1234567890",
-      passport: "PASSPORT\nUNITED STATES OF AMERICA\nGIVEN NAMES: JOHN\nSURNAME: DOE\nPASSPORT NO: 123456789\nDATE OF BIRTH: 01/01/1990\nDATE OF ISSUE: 01/01/2020\nDATE OF EXPIRY: 01/01/2030",
-      national_id: "NATIONAL ID\nJOHN DOE\nID NO: 123456789\nDOB: 01/01/1990\nISSUED: 01/01/2020\nEXPIRES: 01/01/2030",
-      vehicle_registration: "VEHICLE REGISTRATION\nOWNER: JOHN DOE\nVIN: 1234567890ABCDEF\nMAKE: TOYOTA\nMODEL: CAMRY\nYEAR: 2020\nREG EXP: 12/31/2024",
-      insurance_card: "AUTO INSURANCE\nPOLICY HOLDER: JOHN DOE\nPOLICY NO: INS123456789\nEFFECTIVE: 01/01/2024\nEXPIRES: 01/01/2025\nVEHICLE: 2020 TOYOTA CAMRY",
-      background_check: "BACKGROUND CHECK REPORT\nSUBJECT: JOHN DOE\nREPORT DATE: 01/01/2024\nCRIMINAL HISTORY: CLEAR\nDRIVING RECORD: CLEAR\nSTATUS: APPROVED",
-      bank_statement: "BANK STATEMENT\nACCOUNT HOLDER: JOHN DOE\nSTATEMENT DATE: 01/01/2024\nACCOUNT STATUS: ACTIVE",
-      utility_bill: "UTILITY BILL\nSERVICE ADDRESS: 123 MAIN ST\nACCOUNT HOLDER: JOHN DOE\nBILL DATE: 01/01/2024\nAMOUNT DUE: $125.00",
-    };
-
-    return mockTexts[documentType] || "DOCUMENT TEXT NOT AVAILABLE";
-  }
-
-  private extractFieldsFromText(documentType: DocumentType, text: string): ExtractedField[] {
-    const fields: ExtractedField[] = [];
-    
-    // Simple field extraction simulation
-    const lines = text.split('\n');
-    lines.forEach((line, index) => {
-      if (line.includes(':')) {
-        const [key, value] = line.split(':');
-        fields.push({
-          fieldType: key.trim().toLowerCase().replace(' ', '_'),
-          value: value?.trim() || '',
-          confidence: 0.8 + Math.random() * 0.2,
-          boundingBox: {
-            x: 10,
-            y: index * 20,
-            width: 200,
-            height: 18,
-          },
-        });
-      }
-    });
-
-    return fields;
-  }
-
-  private getNextSteps(status: VerificationStatus, documentType: DocumentType): string[] {
-    switch (status) {
-      case 'approved':
-        return ['Document approved! You can now proceed with verification.'];
-      case 'under_review':
-        return [
-          'Your document is under manual review',
-          'You will be notified within 2-3 business days',
-          'Please ensure your contact information is up to date',
-        ];
-      case 'rejected':
-        return [
-          'Please retake the photo following our guidelines',
-          'Ensure good lighting and all text is visible',
-          'Upload a high-quality image of your document',
-        ];
-      case 'processing':
-        return [
-          'Your document is being processed',
-          'This usually takes 2-5 minutes',
-          'You will be notified when processing is complete',
-        ];
-      default:
-        return [];
-    }
-  }
-
-  private async getDocumentRecord(documentId: string): Promise<DocumentRecord | null> {
-    // Mock implementation - in production would fetch from API
-    return {
-      id: documentId,
-      userId: 'user-1',
-      documentType: 'drivers_license',
-      status: 'rejected',
-      uploadedAt: new Date().toISOString(),
-      confidenceScore: 0.5,
-      requiresManualReview: true,
-      attemptNumber: 1,
-      maxAttempts: 3,
-    };
-  }
-
-  private generateMockVerificationStatus(userId: string): UserVerificationStatus {
-    const requiredDocs = this.getDocumentRequirements('driver');
-    const submittedDocs: DocumentRecord[] = requiredDocs.slice(0, 2).map((req, index) => ({
-      id: `doc_${index + 1}`,
-      userId,
-      documentType: req.documentType,
-      status: index === 0 ? 'approved' : 'under_review',
-      uploadedAt: new Date(Date.now() - (index + 1) * 24 * 60 * 60 * 1000).toISOString(),
-      confidenceScore: 0.8 + Math.random() * 0.2,
-      requiresManualReview: index > 0,
-      attemptNumber: 1,
-      maxAttempts: 3,
-    }));
-
-    const completionPercentage = (submittedDocs.length / requiredDocs.length) * 100;
-    
-    return {
-      userId,
-      overallStatus: completionPercentage < 100 ? 'pending' : 'verified',
-      completionPercentage,
-      requiredDocuments: requiredDocs,
-      submittedDocuments: submittedDocs,
-      nextSteps: completionPercentage < 100 ? ['Upload remaining required documents'] : [],
-      canStartDriving: completionPercentage >= 100,
-      canBookRides: completionPercentage >= 25,
-      verificationLevel: completionPercentage >= 100 ? 'standard' : 'basic',
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
-  private generateMockVerificationProgress(userId: string): VerificationProgressResponse {
-    const documents = this.generateMockVerificationStatus(userId).submittedDocuments;
-    
-    return {
-      userId,
-      documents,
-      overallProgress: (documents.length / 4) * 100, // Assuming 4 required docs for drivers
-      estimatedCompletionTime: '2-3 business days',
-      blockers: documents.some(doc => doc.status === 'rejected') ? ['Rejected document needs resubmission'] : [],
-      recommendations: [
-        'Ensure all photos are taken in good lighting',
-        'Double-check that all text is clearly visible',
-        'Upload documents as soon as possible for faster review',
-      ],
-    };
-  }
-
   private async callDocumentUploadAPI(request: DocumentUploadRequest): Promise<DocumentUploadResponse> {
     const authToken = await this.authService.getValidToken();
-    const response = await this.apiClient.post('/verification/documents/upload', request, {
+
+    // Sent as multipart, not base64 in JSON. A 10 MB photo base64-encodes to
+    // roughly 13.3 MB, which the API's 10 MB body limit rejects outright.
+    const form = new FormData();
+    form.append('document', {
+      uri: request.imageUri,
+      type: request.metadata?.fileName?.toLowerCase().endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg',
+      name: request.metadata?.fileName || `${request.documentType}.jpg`,
+    } as unknown as Blob);
+    form.append('documentType', request.documentType);
+    if (request.documentExpiresAt) {
+      form.append('documentExpiresAt', request.documentExpiresAt);
+    }
+
+    const response = await this.apiClient.post('/verification/documents/upload', form, {
       headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
     });
 
@@ -687,7 +475,12 @@ class DocumentVerificationService {
       throw new Error(response.error || 'Document upload API failed');
     }
 
-    return response.data;
+    return {
+      success: true,
+      documentId: response.data?.documentId,
+      status: response.data?.status ?? 'uploaded',
+      message: (response.data?.message as string) ?? 'Document submitted for review',
+    };
   }
 
   private async callVerificationStatusAPI(userId: string): Promise<UserVerificationStatus> {

@@ -8,6 +8,7 @@
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import PredictiveAIController from '../controllers/PredictiveAIController';
 import { authenticateToken } from '../middleware/auth';
 
@@ -38,6 +39,7 @@ const aiRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: makeStore('ai'),
+  keyGenerator: rateLimitKey,
 });
 
 const heavyAIRateLimit = rateLimit({
@@ -48,6 +50,7 @@ const heavyAIRateLimit = rateLimit({
     message: 'Too many heavy AI requests, please try again later',
   },
   store: makeStore('ai-heavy'),
+  keyGenerator: rateLimitKey,
 });
 
 // Apply rate limiting to all AI routes

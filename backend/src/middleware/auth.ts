@@ -62,6 +62,23 @@ export const authenticateToken = async (
       return;
     }
 
+    // Refuse tokens minted before the password last changed. Clearing the
+    // refresh token stops new access tokens being issued, but the one in hand
+    // stays valid for its full life without this — so a reset prompted by a
+    // compromise would leave the attacker signed in for up to 24 hours.
+    const passwordChangedAt = (user as unknown as { passwordChangedAt?: Date | null })
+      .passwordChangedAt;
+
+    if (passwordChangedAt && decoded.iat && decoded.iat * 1000 < passwordChangedAt.getTime()) {
+      res.status(401).json({
+        success: false,
+        error: 'Session ended because the password was changed',
+        code: 'PASSWORD_CHANGED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     // Check if user account is active
     if (user.status === 'suspended' || user.status === 'deactivated') {
       res.status(403).json({
@@ -243,8 +260,12 @@ export const authenticateAdminToken = async (
 
     const token = authHeader.substring(7);
 
-    const jwtSecret = process.env['JWT_SECRET'];
-    if (!jwtSecret) throw new Error('JWT_SECRET not configured');
+    // The admin secret, not the user one. Admin tokens are signed with
+    // ADMIN_JWT_SECRET so the two session populations can be revoked
+    // independently — rotating it signs out the admin panel without signing
+    // out every passenger.
+    const jwtSecret = process.env['ADMIN_JWT_SECRET'];
+    if (!jwtSecret) throw new Error('ADMIN_JWT_SECRET not configured');
 
     // Verify token
     const decoded = jwt.verify(token, jwtSecret) as any;
@@ -255,6 +276,19 @@ export const authenticateAdminToken = async (
         success: false,
         error: 'Admin access required',
         code: 'ADMIN_ACCESS_REQUIRED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // A token invalidated at logout must stop working. Admin sessions last 24
+    // hours (7 days with "remember me"), so without this a signed-out or
+    // revoked admin keeps full access for the rest of that window.
+    if (await AuthService.isTokenBlacklisted(token)) {
+      res.status(401).json({
+        success: false,
+        error: 'Token has been invalidated',
+        code: 'TOKEN_INVALIDATED',
         timestamp: new Date().toISOString(),
       });
       return;
@@ -289,4 +323,58 @@ export const authenticateAdminToken = async (
       timestamp: new Date().toISOString(),
     });
   }
+};
+
+/**
+ * Restrict an admin route to particular admin roles.
+ *
+ * AdminUser carries `role` ('super_admin' | 'admin' | 'moderator') and a
+ * `permissions` array. Both were stored, embedded in the issued token, and
+ * never checked anywhere — so every authenticated admin had the full surface,
+ * including resolving disputes, releasing escrow payments, changing the
+ * platform commission, and granting another account the admin role. A
+ * moderator was a super-admin in practice.
+ *
+ * Roles are hierarchical: super_admin implies admin implies moderator.
+ */
+export type AdminRole = 'super_admin' | 'admin' | 'moderator';
+
+const ADMIN_ROLE_RANK: Record<AdminRole, number> = {
+  moderator: 1,
+  admin: 2,
+  super_admin: 3,
+};
+
+export const authorizeAdminRoles = (minimum: AdminRole) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    const role = (req.user as unknown as { role?: AdminRole })?.role;
+
+    if (!role || !(role in ADMIN_ROLE_RANK)) {
+      res.status(403).json({
+        success: false,
+        error: 'Admin access required',
+        code: 'ADMIN_ACCESS_REQUIRED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (ADMIN_ROLE_RANK[role] < ADMIN_ROLE_RANK[minimum]) {
+      logError('Admin privilege check failed', new Error('INSUFFICIENT_ADMIN_ROLE'), {
+        adminId: (req.user as unknown as { id?: string })?.id,
+        role,
+        required: minimum,
+        url: req.url,
+      });
+      res.status(403).json({
+        success: false,
+        error: 'This action requires a higher admin role',
+        code: 'INSUFFICIENT_ADMIN_ROLE',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    next();
+  };
 };

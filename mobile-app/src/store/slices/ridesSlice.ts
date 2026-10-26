@@ -48,6 +48,33 @@ export interface Ride {
   description?: string;
   createdAt: Date;
   updatedAt: Date;
+
+  /** Service level, set by the driver from their vehicle. */
+  tier?: 'shared' | 'standard' | 'comfort' | 'premium';
+
+  /** The route in order, origin first and destination last. */
+  stops?: Array<{
+    id: string | null;
+    sequence: number;
+    address: string;
+    fareFromOrigin: number;
+    fareToDestination?: number;
+  }>;
+
+  /**
+   * On a search result: the part of this ride that matches what the passenger
+   * searched for, priced and counted for that part rather than the whole
+   * journey. Absent on a direct trip.
+   */
+  segment?: {
+    boardingSequence: number;
+    alightingSequence: number;
+    boardingAddress?: string;
+    alightingAddress?: string;
+    pricePerSeat: number;
+    seatsAvailable: number;
+  };
+
   driver?: {
     id: string;
     firstName: string;

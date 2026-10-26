@@ -27,6 +27,19 @@ import { getCurrentLocation } from '../../store/slices/locationSlice';
 import { locationService } from '../../services/LocationService';
 import { ridesApi } from '../../services/api/ridesApi';
 import type { Location } from '../../services/api/ridesApi';
+import type { Ride } from '../../store/slices/ridesSlice';
+
+/** The part of a ride that matched the search, as the server reports it. */
+type RideSegment = NonNullable<Ride['segment']>;
+
+type RideTier = NonNullable<Ride['tier']>;
+
+const TIER_LABELS: Record<RideTier, string> = {
+  shared: 'Shared',
+  standard: 'Standard',
+  comfort: 'Comfort',
+  premium: 'Premium',
+};
 import logger from '../../services/LoggingService';
 
 const log = logger.createLogger('SearchScreen');
@@ -202,8 +215,19 @@ const SearchScreen: React.FC = () => {
     navigation.navigate('RideDetails', { rideId });
   };
 
-  const handleBookPress = (rideId: string): void => {
-    navigation.navigate('Booking', { rideId });
+  const handleBookPress = (rideId: string, segment?: RideSegment): void => {
+    // A search result already knows which part of the ride matched. Passing it
+    // through means the booking screen opens on the passenger's own journey
+    // rather than on the driver's whole route.
+    navigation.navigate('Booking', {
+      rideId,
+      ...(segment
+        ? {
+            boardingStop: segment.boardingSequence,
+            alightingStop: segment.alightingSequence,
+          }
+        : {}),
+    });
   };
 
   const formatPrice = (amount: number): string => {
@@ -426,8 +450,17 @@ const SearchScreen: React.FC = () => {
                 </View>
               </View>
               <View style={styles.priceContainer}>
-                <Text style={styles.price}>{formatPrice(ride.pricePerSeat)}</Text>
+                <Text style={styles.price}>
+                  {formatPrice(ride.segment?.pricePerSeat ?? ride.pricePerSeat)}
+                </Text>
                 <Text style={styles.priceLabel}>per seat</Text>
+                {/* What kind of vehicle it is. Shown, not chosen — the
+                    passenger is booking this specific car. */}
+                {ride.tier && ride.tier !== 'standard' && (
+                  <View style={styles.tierBadge}>
+                    <Text style={styles.tierBadgeText}>{TIER_LABELS[ride.tier]}</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -448,17 +481,19 @@ const SearchScreen: React.FC = () => {
               </View>
 
               <View style={styles.routeInfo}>
+                {/* Where this passenger gets on and off, which on a
+                    multi-stop ride is not where the driver starts and ends. */}
                 <View style={styles.routePoint}>
                   <Icon name="radio-button-checked" size={12} color="#10B981" />
                   <Text style={styles.routeText} numberOfLines={1}>
-                    {ride.origin?.address || 'Origin'}
+                    {ride.segment?.boardingAddress || ride.origin?.address || 'Origin'}
                   </Text>
                 </View>
                 <View style={styles.routeLine} />
                 <View style={styles.routePoint}>
                   <Icon name="location-on" size={12} color="#EF4444" />
                   <Text style={styles.routeText} numberOfLines={1}>
-                    {ride.destination?.address || 'Destination'}
+                    {ride.segment?.alightingAddress || ride.destination?.address || 'Destination'}
                   </Text>
                 </View>
               </View>
@@ -468,7 +503,9 @@ const SearchScreen: React.FC = () => {
               <View style={styles.rideDetails}>
                 <View style={styles.detailItem}>
                   <Icon name="event-seat" size={14} color="#666666" />
-                  <Text style={styles.detailText}>{ride.availableSeats} left</Text>
+                  <Text style={styles.detailText}>
+                    {ride.segment?.seatsAvailable ?? ride.availableSeats} left
+                  </Text>
                 </View>
                 {ride.distance && (
                   <View style={styles.detailItem}>
@@ -498,7 +535,7 @@ const SearchScreen: React.FC = () => {
 
               <TouchableOpacity
                 style={styles.bookButton}
-                onPress={() => handleBookPress(ride.id)}
+                onPress={() => handleBookPress(ride.id, ride.segment)}
               >
                 <Text style={styles.bookButtonText}>Book</Text>
               </TouchableOpacity>
@@ -1012,6 +1049,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#3B82F6',
+  },
+  tierBadge: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#E3F2FD',
+  },
+  tierBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1565C0',
+    letterSpacing: 0.3,
   },
   priceLabel: {
     fontSize: 12,

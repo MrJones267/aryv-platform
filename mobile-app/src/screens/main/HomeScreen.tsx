@@ -30,7 +30,7 @@ import { HomeScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import { haptic } from '../../services/HapticService';
 import { FadeIn, ScaleIn } from '../../components/ui/AnimatedComponents';
-import EmergencyService, { EmergencyAlert } from '../../services/EmergencyServiceSimple';
+import EmergencyService, { EmergencyAlert } from '../../services/EmergencyService';
 import EmergencyAlertModal from '../../components/emergency/EmergencyAlertModal';
 import OfflineBanner from '../../components/common/OfflineBanner';
 import logger from '../../services/LoggingService';
@@ -189,7 +189,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       if (currentEmergency) {
         Alert.alert(
           'Active Emergency',
-          `You have an active ${currentEmergency.type} emergency alert.`,
+          `You have an active ${currentEmergency.alertType} emergency alert.`,
           [
             { text: 'View Details', onPress: () => showActiveEmergencyDetails(currentEmergency) },
             { text: "I'm Safe Now", onPress: () => resolveCurrentEmergency() },
@@ -205,7 +205,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const showActiveEmergencyDetails = (emergency: EmergencyAlert): void => {
     Alert.alert(
       'Emergency Details',
-      `Type: ${emergency.type.toUpperCase()}\nTime: ${new Date(emergency.timestamp).toLocaleString()}`,
+      `Type: ${emergency.alertType.toUpperCase()}\nTime: ${new Date(emergency.createdAt).toLocaleString()}`,
       [
         { text: 'Call 999', onPress: () => EmergencyService.callEmergencyServices() },
         { text: 'Call Emergency Contact', onPress: () => EmergencyService.callPrimaryContact() },

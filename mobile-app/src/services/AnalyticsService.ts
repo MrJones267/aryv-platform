@@ -19,17 +19,25 @@ export interface BusinessMetrics {
   conversionRate: number;
   averageRating: number;
   cancellationRate: number;
-  onTimeRate: number;
+  /** Null when the platform does not measure this, as opposed to zero. */
+  onTimeRate: number | null;
   period: string;
   startDate: Date;
   endDate: Date;
 }
 
+/**
+ * Revenue split by category.
+ *
+ * Each category is null when the server does not report it — which is all of
+ * them today. Anything rendering these must show the gap rather than a zero,
+ * because a zero claims the category was measured and came to nothing.
+ */
 export interface RevenueBreakdown {
-  commissions: number;
-  subscriptions: number;
-  serviceFees: number;
-  advertising: number;
+  commissions: number | null;
+  subscriptions: number | null;
+  serviceFees: number | null;
+  advertising: number | null;
   total: number;
   currency: string;
 }
@@ -103,7 +111,9 @@ class AnalyticsService {
         conversionRate: stats.completionRate || 0,
         averageRating: stats.averageRating || 0,
         cancellationRate: stats.cancellationRate || 0,
-        onTimeRate: 0.94,
+        // Not measured anywhere yet. This was 0.94, which rendered as a
+        // confident "94% on time" that nothing had computed.
+        onTimeRate: null,
         period,
         startDate,
         endDate: now,
@@ -122,17 +132,21 @@ class AnalyticsService {
       const data = response.data?.data || {};
       const total = data.totalRevenue || 0;
 
+      // The server reports a total, not a split by category. This used to
+      // manufacture one — 60% commissions, 20% subscriptions, 12% service
+      // fees, 8% advertising — from ratios nothing had measured, for revenue
+      // streams the platform does not have. Report only what came back.
       return {
-        commissions: Math.round(total * 0.6),
-        subscriptions: Math.round(total * 0.2),
-        serviceFees: Math.round(total * 0.12),
-        advertising: Math.round(total * 0.08),
+        commissions: data.commissions ?? null,
+        subscriptions: data.subscriptions ?? null,
+        serviceFees: data.serviceFees ?? null,
+        advertising: data.advertising ?? null,
         total,
         currency: data.currency || 'BWP',
       };
     } catch (error) {
       log.warn('Failed to fetch revenue breakdown from API', { error: String(error) });
-      return { commissions: 0, subscriptions: 0, serviceFees: 0, advertising: 0, total: 0, currency: 'BWP' };
+      return { commissions: null, subscriptions: null, serviceFees: null, advertising: null, total: 0, currency: 'BWP' };
     }
   }
 

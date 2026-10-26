@@ -265,16 +265,20 @@ describe('PaymentService', () => {
       expect(result.data.amount).toBe(5000);
       expect(result.data.status).toBe('succeeded');
 
-      expect(mockStripe.refunds.create).toHaveBeenCalledWith({
-        payment_intent: 'pi_1234567890',
-        amount: 5000,
-        reason: 'requested_by_customer',
-        metadata: {
-          bookingId: 'booking-123',
-          rideId: 'ride-123',
-          refundReason: 'Customer request',
+      expect(mockStripe.refunds.create).toHaveBeenCalledWith(
+        {
+          payment_intent: 'pi_1234567890',
+          amount: 5000,
+          reason: 'requested_by_customer',
+          metadata: {
+            bookingId: 'booking-123',
+            rideId: 'ride-123',
+            refundReason: 'Customer request',
+            requestedBy: 'system',
+          },
         },
-      });
+        { idempotencyKey: 'refund:booking-123:5000' },
+      );
 
       expect(mockBooking.update).toHaveBeenCalledWith({
         status: BookingStatus.CANCELLED,
@@ -304,16 +308,23 @@ describe('PaymentService', () => {
       const result = await paymentService.processRefund('booking-123', undefined, 'Full refund');
 
       expect(result.success).toBe(true);
-      expect(mockStripe.refunds.create).toHaveBeenCalledWith({
-        payment_intent: 'pi_1234567890',
-        amount: undefined, // Full refund
-        reason: 'requested_by_customer',
-        metadata: {
-          bookingId: 'booking-123',
-          rideId: 'ride-123',
-          refundReason: 'Full refund',
+      expect(mockStripe.refunds.create).toHaveBeenCalledWith(
+        {
+          payment_intent: 'pi_1234567890',
+          // Key absent entirely, not `undefined` — Stripe treats a present
+          // `amount` key as an explicit partial refund request.
+          reason: 'requested_by_customer',
+          metadata: {
+            bookingId: 'booking-123',
+            rideId: 'ride-123',
+            refundReason: 'Full refund',
+            requestedBy: 'system',
+          },
         },
-      });
+        // Idempotency key still carries the full booking total, so a retry
+        // after a failed commit returns the same refund instead of a second one.
+        { idempotencyKey: 'refund:booking-123:5000' },
+      );
     });
 
     it('should return mock refund when Stripe API key is not available (development)', async () => {
@@ -360,6 +371,102 @@ describe('PaymentService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Booking or payment intent not found');
+    });
+
+    // ── Refund-fraud guards ──────────────────────────────────────────────────
+    // The refund endpoint used to be callable by the booking's own passenger
+    // with an amount of their choosing, at any point in the booking's life.
+    // These cover the three ways that was abusable.
+
+    const departedBooking = (overrides: Record<string, unknown> = {}) => ({
+      id: 'booking-123',
+      paymentIntentId: 'pi_1234567890',
+      totalAmount: 50.00,
+      rideId: 'ride-123',
+      status: BookingStatus.CONFIRMED,
+      ride: { departureTime: new Date(Date.now() - 60 * 60 * 1000) },
+      update: jest.fn(),
+      ...overrides,
+    });
+
+    it('refuses a refund once the ride has departed', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(departedBooking());
+
+      const result = await paymentService.processRefund('booking-123', undefined, 'Took the ride');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/already departed/i);
+      expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a departed-ride refund when staff explicitly permit it', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(departedBooking());
+      mockStripe.refunds.create.mockResolvedValue({
+        id: 're_1234567890', amount: 5000, status: 'succeeded', currency: 'usd',
+      });
+
+      const result = await paymentService.processRefund(
+        'booking-123', undefined, 'Driver no-show',
+        { allowAfterDeparture: true, requestedBy: 'admin:admin-1' },
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockStripe.refunds.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ requestedBy: 'admin:admin-1' }),
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('refuses to refund a booking that was already cancelled', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(
+        departedBooking({ status: BookingStatus.CANCELLED, ride: { departureTime: null } }),
+      );
+
+      const result = await paymentService.processRefund('booking-123', undefined, 'Replay');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/already been cancelled/i);
+      expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a refund larger than the booking total', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(
+        departedBooking({ ride: { departureTime: new Date(Date.now() + 3600_000) } }),
+      );
+
+      const result = await paymentService.processRefund('booking-123', 5000, 'Nice try');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/exceeds the booking total/i);
+      expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a zero or negative refund amount', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(
+        departedBooking({ ride: { departureTime: new Date(Date.now() + 3600_000) } }),
+      );
+
+      for (const bad of [0, -10, Number.NaN]) {
+        const result = await paymentService.processRefund('booking-123', bad, 'Bad amount');
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(/greater than zero/i);
+      }
+      expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('does not let a fractional cent creep past the booking total', async () => {
+      (Booking.findByPk as jest.Mock).mockResolvedValue(
+        departedBooking({ ride: { departureTime: new Date(Date.now() + 3600_000) } }),
+      );
+
+      // 50.005 rounds to 5001 cents against a 5000-cent booking.
+      const result = await paymentService.processRefund('booking-123', 50.005, 'Rounding');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/exceeds the booking total/i);
+      expect(mockStripe.refunds.create).not.toHaveBeenCalled();
     });
   });
 

@@ -69,10 +69,15 @@ export class ApiClient {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       try {
+        // FormData must not be JSON-encoded, and its Content-Type has to be
+        // set by fetch so the multipart boundary is generated. Forcing
+        // application/json here made file uploads impossible.
+        const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+
         const config: RequestInit = {
           method,
           headers: {
-            'Content-Type': 'application/json',
+            ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
             ...authHeaders,
             ...options.headers,
           },
@@ -80,7 +85,7 @@ export class ApiClient {
         };
 
         if (data && ['POST', 'PUT'].includes(method)) {
-          config.body = JSON.stringify(data);
+          config.body = isFormData ? (data as FormData) : JSON.stringify(data);
         }
 
         const response = await fetch(url, config);

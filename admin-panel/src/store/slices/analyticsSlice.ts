@@ -55,18 +55,28 @@ export interface TopRoute {
   totalRevenue: number;
 }
 
+/**
+ * Platform usage.
+ *
+ * Null means the platform does not measure this yet, as opposed to zero, which
+ * means it measured and found none. Anything rendering these must show the
+ * difference rather than coercing a null to 0.
+ */
 export interface UsageStats {
   platform: {
     activeUsers: number;
-    sessionsToday: number;
+    sessionsToday: number | null;
   };
   rides: {
     todayRides: number;
-    avgRideTime: number;
+    avgRideTime: number | null;
+    completionRate?: number;
+    avgRating?: number | null;
   };
   courier: {
     activeDeliveries: number;
-    avgDeliveryTime: number;
+    avgDeliveryTime: number | null;
+    successRate?: number;
   };
 }
 
@@ -152,16 +162,16 @@ export const fetchUserGrowth = createAsyncThunk(
   'analytics/fetchUserGrowth',
   async (period: '7d' | '30d' | '90d' | '1y', { rejectWithValue }) => {
     try {
-      // For now, return mock data. This would be replaced with actual analytics endpoint
-      const mockData = [
-        { date: '2024-12-01', totalUsers: 100, newUsers: 15, activeUsers: 85 },
-        { date: '2024-12-02', totalUsers: 115, newUsers: 12, activeUsers: 98 },
-        { date: '2024-12-03', totalUsers: 127, newUsers: 18, activeUsers: 110 },
-        { date: '2024-12-04', totalUsers: 145, newUsers: 22, activeUsers: 125 },
-      ];
-      return mockData;
+      // This returned four hardcoded December 2024 rows regardless of the
+      // period asked for, so the growth chart showed invented numbers that an
+      // admin could not distinguish from real ones. The endpoint behind it
+      // exists and buckets real signups by day.
+      const response = await analyticsService.getUserGrowth(period);
+      return response.data.data ?? [];
     } catch (error: any) {
-      return rejectWithValue('Failed to fetch user growth data');
+      return rejectWithValue(
+        error.response?.data?.message || 'Failed to fetch user growth data'
+      );
     }
   }
 );
@@ -199,24 +209,34 @@ export const fetchTopRoutes = createAsyncThunk(
 
 export const fetchUsageStats = createAsyncThunk('analytics/fetchUsageStats', async (_, { rejectWithValue }) => {
   try {
-    // For now, return mock data. This would be replaced with actual usage stats endpoint
-    const mockStats = {
+    // Also hardcoded until now. The server reports real counts, but it does not
+    // track sessions or average durations, so those are left null rather than
+    // filled with a plausible-looking number — a blank reads as "not measured",
+    // an invented 289 reads as fact.
+    const response = await analyticsService.getUsageStats();
+    const data = response.data.data as any;
+
+    return {
       platform: {
-        activeUsers: 142,
-        sessionsToday: 289,
+        activeUsers: data?.rides?.total ?? 0,
+        sessionsToday: null,
       },
       rides: {
-        todayRides: 23,
-        avgRideTime: 42,
+        todayRides: data?.rides?.todayRides ?? 0,
+        avgRideTime: null,
+        completionRate: data?.rides?.completionRate ?? 0,
+        avgRating: data?.rides?.avgRating ?? null,
       },
       courier: {
-        activeDeliveries: 8,
-        avgDeliveryTime: 35,
+        activeDeliveries: data?.courier?.activeDeliveries ?? 0,
+        avgDeliveryTime: null,
+        successRate: data?.courier?.successRate ?? 0,
       },
     };
-    return mockStats;
   } catch (error: any) {
-    return rejectWithValue('Failed to fetch usage stats');
+    return rejectWithValue(
+      error.response?.data?.message || 'Failed to fetch usage stats'
+    );
   }
 });
 

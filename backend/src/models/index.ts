@@ -26,6 +26,13 @@ import CashTransaction from './CashTransaction';
 import UserWallet from './UserWallet';
 import CommissionLedger from './CommissionLedger';
 
+// Driver verification models
+import DriverDocument from './DriverDocument';
+import PromoRedemption from './PromoRedemption';
+import RideStop from './RideStop';
+import EmergencyContact from './EmergencyContact';
+import EmergencyAlert from './EmergencyAlert';
+
 // Currency models
 import Currency from './Currency';
 import UserCurrency from './UserCurrency';
@@ -414,6 +421,72 @@ const defineAssociations = (): void => {
     onDelete: 'SET NULL',
     onUpdate: 'CASCADE',
   });
+
+  // Multi-stop rides
+  Ride.hasMany(RideStop, {
+    foreignKey: 'rideId',
+    as: 'stops',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  // Emergency contacts and alerts belong to the user who owns them; both
+  // cascade on delete so removing an account leaves nothing behind.
+  User.hasMany(EmergencyContact, {
+    foreignKey: 'userId',
+    as: 'emergencyContacts',
+    onDelete: 'CASCADE',
+  });
+
+  EmergencyContact.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+  });
+
+  User.hasMany(EmergencyAlert, {
+    foreignKey: 'userId',
+    as: 'emergencyAlerts',
+    onDelete: 'CASCADE',
+  });
+
+  EmergencyAlert.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+  });
+
+  EmergencyAlert.belongsTo(Ride, {
+    foreignKey: 'rideId',
+    as: 'ride',
+  });
+
+  RideStop.belongsTo(Ride, {
+    foreignKey: 'rideId',
+    as: 'ride',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  // Driver verification associations
+  User.hasMany(DriverDocument, {
+    foreignKey: 'userId',
+    as: 'driverDocuments',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  DriverDocument.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+  });
+
+  DriverDocument.belongsTo(User, {
+    foreignKey: 'reviewedBy',
+    as: 'reviewer',
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  });
 };
 
 // Initialize associations
@@ -457,6 +530,12 @@ export {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  // Driver verification models
+  DriverDocument,
+  PromoRedemption,
+  RideStop,
+  EmergencyContact,
+  EmergencyAlert,
   // Currency models
   Currency,
   UserCurrency,
@@ -494,6 +573,12 @@ export default {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  // Driver verification models
+  DriverDocument,
+  PromoRedemption,
+  RideStop,
+  EmergencyContact,
+  EmergencyAlert,
   // Currency models
   Currency,
   UserCurrency,

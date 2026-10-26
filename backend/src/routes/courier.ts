@@ -10,7 +10,9 @@ import { body, param, query } from 'express-validator';
 import courierController from '../controllers/CourierController';
 import { authenticateToken } from '../middleware/auth';
 import { validateInput } from '../middleware/validation';
+import { Op } from 'sequelize';
 import { CourierProfile, User, Package, DeliveryAgreement } from '../models';
+import DriverDocument, { DocumentStatus, DocumentType } from '../models/DriverDocument';
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
 
@@ -570,7 +572,54 @@ router.put('/profile',
   async (req: any, res: any): Promise<void> => {
     try {
       const userId = req.user?.id;
-      const updateData = req.body;
+
+      // Explicit whitelist. Spreading req.body let a courier write any column
+      // on their own profile — including courierRating, totalDeliveries,
+      // successfulDeliveries and totalCourierEarnings — because
+      // express-validator does not strip unvalidated fields and Sequelize
+      // happily assigns any known attribute.
+      const EDITABLE_FIELDS = [
+        'preferredPackageSizes',
+        'maxPackageWeight',
+        'deliveryRadius',
+        'isAvailableForDeliveries',
+      ] as const;
+
+      const updateData: Record<string, unknown> = {};
+      for (const field of EDITABLE_FIELDS) {
+        if (req.body[field] !== undefined) updateData[field] = req.body[field];
+      }
+
+      // isCourierActive is a trust decision, not a preference. Taking custody
+      // of a stranger's package requires an approved identity document.
+      if (req.body.isCourierActive !== undefined) {
+        if (req.body.isCourierActive === true) {
+          const identityApproved = await DriverDocument.findOne({
+            where: {
+              userId,
+              status: DocumentStatus.APPROVED,
+              documentType: {
+                [Op.in]: [
+                  DocumentType.DRIVERS_LICENSE,
+                  DocumentType.PASSPORT,
+                  DocumentType.NATIONAL_ID,
+                ],
+              },
+            },
+          });
+
+          if (!identityApproved) {
+            res.status(403).json({
+              success: false,
+              error: 'Verify your identity before activating courier deliveries',
+              code: 'IDENTITY_VERIFICATION_REQUIRED',
+              timestamp: new Date().toISOString(),
+            });
+            return;
+          }
+        }
+        updateData['isCourierActive'] = req.body.isCourierActive;
+      }
 
       let profile = await CourierProfile.findOne({ where: { userId } });
 
@@ -579,7 +628,7 @@ router.put('/profile',
         profile = await CourierProfile.create({
           userId,
           ...updateData,
-        });
+        } as any);
       } else {
         // Update existing profile
         await profile.update(updateData);

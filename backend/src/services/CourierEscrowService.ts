@@ -15,7 +15,28 @@ import {
 } from '../models';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
-import { logInfo, logError } from '../utils/logger';
+import { CommissionService } from './CommissionService';
+import { PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
+import { logInfo, logError, logWarning } from '../utils/logger';
+
+/**
+ * ESCROW IS SHELVED.
+ *
+ * Deliveries are paid in cash to the courier on arrival, and the platform
+ * earns through the commission ledger — the same mechanism as cash rides. That
+ * needs no payment provider, which is what made the courier service launchable
+ * at all: the provider below is a mock that moves no money.
+ *
+ * The escrow path is kept rather than deleted because the payment method is
+ * recorded per agreement, so any agreement struck under it must still settle
+ * correctly. Nothing creates one: package creation does not accept a payment
+ * method, so every new package is cash on delivery.
+ *
+ * If escrow is revived, the work is a real provider behind PaymentProvider —
+ * not re-enabling MockPaymentProvider, which reports success while nothing
+ * happens, and holds its state in a per-process Map that does not survive a
+ * restart.
+ */
 
 // Mock payment provider interface - in production this would integrate with Stripe Connect, PayPal, etc.
 interface PaymentProvider {
@@ -102,12 +123,54 @@ class MockPaymentProvider implements PaymentProvider {
   }
 }
 
+/**
+ * Refuses every operation. Used in production until a real provider is wired
+ * up, so that couriers and senders get an honest error instead of the mock's
+ * cheerful success — the API reported `paymentReleased: true` and an earnings
+ * figure while no money had moved and none ever would.
+ */
+class UnconfiguredPaymentProvider implements PaymentProvider {
+  private static readonly MESSAGE =
+    'Courier payments are not available yet: no escrow payment provider is configured.';
+
+  async createEscrowPayment(): Promise<string> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async releaseEscrowPayment(): Promise<boolean> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async refundEscrowPayment(): Promise<boolean> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+
+  async getPaymentStatus(): Promise<'pending' | 'held' | 'released' | 'refunded' | 'failed'> {
+    throw new Error(UnconfiguredPaymentProvider.MESSAGE);
+  }
+}
+
 export class CourierEscrowService {
   private paymentProvider: PaymentProvider;
+  private commissionService = new CommissionService();
 
   constructor() {
-    // In production, this would be initialized with the actual payment provider
-    this.paymentProvider = new MockPaymentProvider();
+    // MockPaymentProvider keeps escrow state in a per-process Map. Beyond
+    // moving no money, that state does not survive a restart or exist on a
+    // second instance: after any redeploy every in-flight delivery becomes
+    // permanently uncompletable, because getPaymentStatus no longer reports
+    // 'held' and completeDelivery refuses to release. It must never run in
+    // production.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+
+    if (isProduction) {
+      logWarning(
+        'No escrow payment provider configured; courier payment operations will fail',
+      );
+      this.paymentProvider = new UnconfiguredPaymentProvider();
+    } else {
+      this.paymentProvider = new MockPaymentProvider();
+    }
   }
 
   /**
@@ -166,16 +229,35 @@ export class CourierEscrowService {
       const platformFee = this.calculatePlatformFee(agreedPrice);
       const escrowAmount = agreedPrice;
 
-      // Create escrow payment
-      const escrowPaymentId = await this.paymentProvider.createEscrowPayment(
-        escrowAmount,
-        packageData.senderId,
-        {
-          packageId,
-          courierId,
-          packageTitle: packageData.title,
-        },
-      );
+      const paymentMethod = packageData.paymentMethod ?? 'cash_on_delivery';
+
+      // A courier who is too far behind on commission cannot take more cash
+      // work, exactly as a driver cannot take more cash rides. Without this the
+      // platform's only revenue on cash deliveries is uncollectable.
+      if (paymentMethod === 'cash_on_delivery') {
+        const owed = await this.commissionService.isBlockedForUnpaidCommission(courierId, t);
+        if (owed.blocked) {
+          throw new Error(
+            `Settle your outstanding commission (${owed.owed.toFixed(2)}) before accepting `
+            + `more cash deliveries. Limit: ${owed.threshold.toFixed(2)}.`,
+          );
+        }
+      }
+
+      // Cash never passes through the platform, so there is nothing to hold.
+      // Calling the provider here would fail in production by design — it
+      // refuses every operation until a real one is configured.
+      const escrowPaymentId = paymentMethod === 'escrow'
+        ? await this.paymentProvider.createEscrowPayment(
+          escrowAmount,
+          packageData.senderId,
+          {
+            packageId,
+            courierId,
+            packageTitle: packageData.title,
+          },
+        )
+        : null;
 
       // Create delivery agreement
       const deliveryAgreement = await DeliveryAgreement.create({
@@ -183,9 +265,13 @@ export class CourierEscrowService {
         courierId,
         agreedPrice,
         platformFee,
+        paymentMethod,
+        // Inherited from the package: the sender set the price, so the price
+        // is in their currency.
+        currency: packageData.currency ?? PLATFORM_DEFAULT_CURRENCY,
         escrowAmount,
-        escrowPaymentId,
-        escrowHeldAt: new Date(),
+        ...(escrowPaymentId ? { escrowPaymentId } : {}),
+        ...(paymentMethod === 'escrow' ? { escrowHeldAt: new Date() } : {}),
         status: DeliveryStatus.PENDING_PICKUP,
         eventLog: [{
           timestamp: new Date().toISOString(),
@@ -200,8 +286,16 @@ export class CourierEscrowService {
         }],
       }, { transaction: t });
 
-      // Generate QR code for delivery verification
-      await deliveryAgreement.createQRCode();
+      // Deliberately no longer generates a code here.
+      //
+      // createQRCode() wrote a token onto the agreement row, and the agreement
+      // is returned to the courier — so the courier received a delivery token
+      // at the moment they accepted the job, which is the one thing the
+      // handover protocol depends on not happening. It also issued the code at
+      // acceptance rather than at pickup.
+      //
+      // Codes are now issued by DeliveryHandoverService when pickup is
+      // confirmed, stored on delivery_qr_codes, and sent to the recipient.
       await deliveryAgreement.save({ transaction: t });
 
       // Mark package as no longer active
@@ -281,35 +375,64 @@ export class CourierEscrowService {
         throw new Error('Agreement must be in IN_TRANSIT status to complete');
       }
 
-      // Verify payment is still held in escrow
-      if (!agreement.escrowPaymentId) {
-        throw new Error('No escrow payment found for this agreement');
+      const isCash = (agreement.paymentMethod ?? 'cash_on_delivery') === 'cash_on_delivery';
+
+      if (isCash) {
+        // The recipient paid the courier at the door, exactly as a passenger
+        // pays a driver. Nothing to release: the courier already holds the
+        // money, and the platform's share becomes a debt they settle later
+        // through the same ledger that collects on cash rides.
+        await this.commissionService.accrueCommission(
+          agreement.courierId,
+          agreement.platformFee,
+          null,
+          t,
+          {
+            description: 'Platform commission on cash delivery',
+            metadata: { deliveryAgreementId: agreement.id },
+          },
+        );
+
+        await agreement.transitionTo(DeliveryStatus.COMPLETED, agreement.courierId, {
+          payment_method: 'cash_on_delivery',
+          cash_collected: true,
+          verification_data: verificationData,
+          completion_time: new Date().toISOString(),
+        });
+
+        agreement.cashCollectedAt = new Date();
+        agreement.cashAmountCollected = agreement.agreedPrice;
+        await agreement.save({ transaction: t });
+      } else {
+        // Verify payment is still held in escrow
+        if (!agreement.escrowPaymentId) {
+          throw new Error('No escrow payment found for this agreement');
+        }
+
+        const paymentStatus = await this.paymentProvider.getPaymentStatus(agreement.escrowPaymentId);
+        if (paymentStatus !== 'held') {
+          throw new Error('Escrow payment is not in held status');
+        }
+
+        // Release payment to courier
+        const releaseSuccess = await this.paymentProvider.releaseEscrowPayment(
+          agreement.escrowPaymentId,
+          agreement.courierId,
+        );
+
+        if (!releaseSuccess) {
+          throw new Error('Failed to release escrow payment');
+        }
+
+        await agreement.transitionTo(DeliveryStatus.COMPLETED, agreement.courierId, {
+          payment_released: true,
+          verification_data: verificationData,
+          completion_time: new Date().toISOString(),
+        });
+
+        agreement.paymentReleasedAt = new Date();
+        await agreement.save({ transaction: t });
       }
-
-      const paymentStatus = await this.paymentProvider.getPaymentStatus(agreement.escrowPaymentId);
-      if (paymentStatus !== 'held') {
-        throw new Error('Escrow payment is not in held status');
-      }
-
-      // Release payment to courier
-      const releaseSuccess = await this.paymentProvider.releaseEscrowPayment(
-        agreement.escrowPaymentId,
-        agreement.courierId,
-      );
-
-      if (!releaseSuccess) {
-        throw new Error('Failed to release escrow payment');
-      }
-
-      // Update agreement status
-      await agreement.transitionTo(DeliveryStatus.COMPLETED, agreement.courierId, {
-        payment_released: true,
-        verification_data: verificationData,
-        completion_time: new Date().toISOString(),
-      });
-
-      agreement.paymentReleasedAt = new Date();
-      await agreement.save({ transaction: t });
 
       // Update courier profile stats
       const courierProfile = await CourierProfile.findOne({
@@ -322,9 +445,9 @@ export class CourierEscrowService {
         await courierProfile.recordSuccessfulDelivery(courierEarnings);
       }
 
-      // Log payment release
-      await agreement.logEvent('payment_released', {
-        escrow_payment_id: agreement.escrowPaymentId,
+      await agreement.logEvent(isCash ? 'cash_collected' : 'payment_released', {
+        payment_method: agreement.paymentMethod,
+        ...(isCash ? {} : { escrow_payment_id: agreement.escrowPaymentId }),
         courier_earnings: agreement.agreedPrice - agreement.platformFee,
         platform_fee: agreement.platformFee,
       }, agreement.courierId);

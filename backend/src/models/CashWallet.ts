@@ -329,6 +329,19 @@ const CashWalletTransaction = sequelize.define<CashWalletTransactionModel>(
         fields: ['sourceReference'],
       },
       {
+        // One credit per provider reference. See migration 025 — this is what
+        // stops a replayed payment webhook crediting a wallet twice, and it
+        // has to live in the database because the Redis key that used to guard
+        // it could be evicted, expire, or fail to write.
+        //
+        // Partial, because only a load brings money in from outside. Debits
+        // and transfers legitimately reuse a reference.
+        name: 'cash_wallet_transactions_load_reference_unique',
+        unique: true,
+        fields: ['source', 'sourceReference'],
+        where: { type: 'load' },
+      },
+      {
         fields: ['createdAt'],
       },
       {

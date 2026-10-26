@@ -41,6 +41,7 @@ export interface CommissionLedgerModel extends Model<
 
   entryType: CommissionEntryType;
   amount: number;
+  currency: CreationOptional<string>;
   balanceAfter: number;
 
   settlementMethod: CreationOptional<SettlementMethod | null>;
@@ -75,6 +76,11 @@ const CommissionLedger = sequelize.define<CommissionLedgerModel>(
       type: DataTypes.ENUM(...Object.values(CommissionEntryType)),
       allowNull: false,
       field: 'entry_type',
+    },
+    currency: {
+      type: DataTypes.CHAR(3),
+      allowNull: false,
+      defaultValue: 'BWP',
     },
     amount: {
       type: DataTypes.DECIMAL(12, 2),

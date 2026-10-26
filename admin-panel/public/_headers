@@ -1,0 +1,41 @@
+# Security headers for the ARYV admin panel on Cloudflare Pages.
+#
+# The panel holds an administrator session token in localStorage, which any
+# script running on this origin can read, and that session lasts 24 hours (7
+# days with "remember me"). It was served with no Content-Security-Policy, no
+# framing protection and no HSTS, so a single injected script anywhere on the
+# origin — now, or after a future dependency bump — would hand over a working
+# admin session, and the whole panel could be framed for clickjacking.
+#
+# Cloudflare Pages serves this file's rules; it is not part of the bundle.
+
+/*
+  # Only our own scripts run. 'unsafe-inline' is present for styles because the
+  # panel uses inline style attributes throughout; script-src has no such
+  # exemption, which is the part that matters for token theft.
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://api.aryv-app.com wss://api.aryv-app.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+
+  # Defence in depth alongside frame-ancestors, for older browsers.
+  X-Frame-Options: DENY
+
+  # Stop the browser guessing a content type and executing something as script.
+  X-Content-Type-Options: nosniff
+
+  # Two years, subdomains included, so the panel is never reachable over http.
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+
+  # Do not leak admin panel paths to third parties in the Referer header.
+  Referrer-Policy: strict-origin-when-cross-origin
+
+  # The panel needs none of these.
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()
+
+  # Isolate the origin from cross-origin popups.
+  Cross-Origin-Opener-Policy: same-origin
+
+# Hashed asset filenames are immutable; the HTML entry point must not be.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: no-cache

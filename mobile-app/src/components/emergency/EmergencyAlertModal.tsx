@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
-import EmergencyService, { EmergencyAlert } from '../../services/EmergencyServiceSimple';
+import EmergencyService, { EmergencyAlert } from '../../services/EmergencyService';
 import logger from '../../services/LoggingService';
 
 const log = logger.createLogger('EmergencyAlertModal');
@@ -36,7 +36,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
   onClose,
   onEmergencyTriggered,
 }) => {
-  const [selectedType, setSelectedType] = useState<EmergencyAlert['type']>('panic');
+  const [selectedType, setSelectedType] = useState<EmergencyAlert['alertType']>('panic');
   const [isTriggering, setIsTriggering] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [pulseAnimation] = useState(new Animated.Value(1));
@@ -130,19 +130,33 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
         setCountdown(null);
       }
 
-      await EmergencyService.triggerEmergency(selectedType);
-      
-      if (onEmergencyTriggered) {
-        const currentEmergency = EmergencyService.getCurrentEmergency();
-        if (currentEmergency) {
-          onEmergencyTriggered(currentEmergency);
-        }
+      // The service reports the outcome and owns the messaging — including
+      // offering the dialler on every failure path — so nothing is announced
+      // twice or contradicted here.
+      const result = await EmergencyService.triggerEmergency(selectedType);
+
+      if (!result.ok) {
+        // The user has already been shown what went wrong and offered 999.
+        // Keep the modal open so they can try again or pick another type.
+        setIsTriggering(false);
+        return;
+      }
+
+      if (onEmergencyTriggered && result.alert) {
+        onEmergencyTriggered(result.alert);
       }
 
       onClose();
     } catch (error) {
       log.error('Emergency trigger failed:', error);
-      Alert.alert('Emergency Failed', 'Unable to trigger emergency alert. Please call emergency services directly.');
+      Alert.alert(
+        'Emergency alert failed',
+        'Call 999 now if you are in danger.',
+        [
+          { text: 'Call 999', onPress: () => EmergencyService.callEmergencyServices() },
+          { text: 'Close', style: 'cancel' },
+        ],
+      );
       setIsTriggering(false);
     }
   };

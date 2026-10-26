@@ -99,7 +99,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
-                {driver.firstName[0]}{driver.lastName[0]}
+                {driver.firstName?.[0] ?? ''}{driver.lastName?.[0] ?? ''}
               </Text>
             </View>
           )}
@@ -112,7 +112,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
         
         <View style={styles.driverDetails}>
           <Text style={styles.driverName}>
-            {driver.firstName} {driver.lastName}
+            {[driver.firstName, driver.lastName].filter(Boolean).join(' ')}
           </Text>
           <View style={styles.driverRating}>
             <Icon name="star" size={16} color="#FF9800" />

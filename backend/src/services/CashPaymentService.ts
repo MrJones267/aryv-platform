@@ -10,10 +10,13 @@ import { Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
 import UserWallet, { VerificationLevel } from '../models/UserWallet';
-import { Booking } from '../models';
+import { Booking, Ride } from '../models';
+import { BookingStatus } from '../types';
 import { NotificationService } from './NotificationService';
 import { CommissionService } from './CommissionService';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import { formatMoneyInCurrency } from '../utils/money';
+import { CASH_COMMISSION_RATE, round2 } from '../utils/fees';
 
 export interface CashPaymentResult {
   success: boolean;
@@ -62,21 +65,82 @@ export class CashPaymentService {
   async createCashPayment(
     bookingId: string,
     riderId: string,
-    driverId: string,
-    amount: number,
   ): Promise<CashPaymentResult> {
     const transaction = await sequelize.transaction();
 
     try {
-      // Verify booking exists and is valid
-      const booking = await Booking.findByPk(bookingId, { transaction });
+      // Verify booking exists and is valid. The ride carries the driver, so
+      // both counterparty and fare are read from server state — never from the
+      // request body, which the rider controls.
+      const booking = await Booking.findByPk(bookingId, {
+        include: [{ model: Ride, as: 'ride' }],
+        transaction,
+      });
       if (!booking) {
         throw new Error('Booking not found');
+      }
+
+      // The caller must own the booking. Without this, any authenticated user
+      // could open a cash transaction against a stranger's ride.
+      if (booking.passengerId !== riderId) {
+        await transaction.rollback();
+        await this.logSuspiciousActivity(riderId, 'cash_payment_booking_ownership_mismatch', {
+          bookingId,
+          actualPassengerId: booking.passengerId,
+        });
+        return { success: false, error: 'Booking not found' };
+      }
+
+      if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status)) {
+        await transaction.rollback();
+        return {
+          success: false,
+          error: `Cannot take cash payment for a ${booking.status} booking`,
+        };
+      }
+
+      const ride = (booking as unknown as { ride?: { driverId: string } }).ride;
+      if (!ride?.driverId) {
+        await transaction.rollback();
+        return { success: false, error: 'Booking has no assigned driver' };
+      }
+      const driverId = ride.driverId;
+
+      // The fare is whatever the booking says it is. Accepting a client-supplied
+      // figure let a rider and driver under-report the fare and pay platform
+      // commission on the smaller number.
+      const amount = Number(booking.totalAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await transaction.rollback();
+        return { success: false, error: 'Booking has no payable amount' };
+      }
+
+      // One live cash transaction per booking.
+      const existing = await CashTransaction.findOne({
+        where: {
+          bookingId,
+          status: [
+            CashPaymentStatus.PENDING_VERIFICATION,
+            CashPaymentStatus.DRIVER_CONFIRMED,
+            CashPaymentStatus.RIDER_CONFIRMED,
+            CashPaymentStatus.BOTH_CONFIRMED,
+            CashPaymentStatus.DISPUTED,
+          ],
+        },
+        transaction,
+      });
+      if (existing) {
+        await transaction.rollback();
+        return {
+          success: false,
+          error: 'A cash payment is already in progress for this booking',
+        };
       }
 
       // Check if user can make cash payments
       const canPay = await this.checkCashPaymentEligibility(riderId, amount, transaction);
       if (!canPay.eligible) {
+        await transaction.rollback();
         return {
           success: false,
           error: canPay.reason || 'Payment not eligible',
@@ -92,6 +156,7 @@ export class CashPaymentService {
         transaction,
       );
       if (driverCommission.blocked) {
+        await transaction.rollback();
         return {
           success: false,
           error: `Driver must settle outstanding commission (${driverCommission.owed.toFixed(2)}) `
@@ -112,6 +177,8 @@ export class CashPaymentService {
         riderId,
         driverId,
         amount,
+        // Inherited from the booking, which inherited it from the ride.
+        currency: booking.currency,
         platformFee,
         expectedAmount: amount,
         riderConfirmationCode: riderCode,
@@ -123,11 +190,11 @@ export class CashPaymentService {
         } as any,
       }, { transaction });
 
-      // Update booking with cash transaction reference
-      await (booking as any).update({
-        cashTransactionId: cashTransaction.id,
-        paymentMethod: 'cash',
-      }, { transaction });
+      // NOTE: this previously wrote `cashTransactionId` and `paymentMethod` back
+      // onto the booking. Neither column exists on the Booking model, so the
+      // cast-to-any update silently did nothing. The link is held on the
+      // CashTransaction side (its `bookingId`) and the duplicate guard above
+      // reads it from there; adding the reverse column needs a migration.
 
       // Create trust hold
       await this.createTrustHold(riderId, amount, cashTransaction.id, transaction);
@@ -135,7 +202,7 @@ export class CashPaymentService {
       await transaction.commit();
 
       // Send notifications
-      await this.sendCashPaymentNotifications(riderId, driverId, amount, riderCode);
+      await this.sendCashPaymentNotifications(riderId, driverId, amount, riderCode, booking.currency);
 
       logInfo('Cash payment created successfully', {
         transactionId: cashTransaction.id,
@@ -150,7 +217,7 @@ export class CashPaymentService {
         transactionId: cashTransaction.id,
         riderCode,
         driverCode: null, // Don't expose driver code to rider
-        instructions: this.getCashPaymentInstructions(amount),
+        instructions: await this.getCashPaymentInstructions(amount, booking.currency),
         trustScore: canPay.trustScore || 0,
       };
 
@@ -160,8 +227,6 @@ export class CashPaymentService {
       logError('Error creating cash payment', error as Error, {
         bookingId,
         riderId,
-        driverId,
-        amount,
       });
 
       return {
@@ -460,7 +525,7 @@ export class CashPaymentService {
     if (wallet.dailyCashUsed + amount > wallet.dailyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Daily limit exceeded. Used: $${wallet.dailyCashUsed}, Limit: $${wallet.dailyCashLimit}` as string,
+        reason: `Daily cash limit exceeded. Used: ${wallet.dailyCashUsed}, limit: ${wallet.dailyCashLimit}` as string,
       };
     }
 
@@ -468,7 +533,7 @@ export class CashPaymentService {
     if (wallet.weeklyCashUsed + amount > wallet.weeklyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Weekly limit exceeded. Used: $${wallet.weeklyCashUsed}, Limit: $${wallet.weeklyCashLimit}` as string,
+        reason: `Weekly cash limit exceeded. Used: ${wallet.weeklyCashUsed}, limit: ${wallet.weeklyCashLimit}` as string,
       };
     }
 
@@ -476,7 +541,7 @@ export class CashPaymentService {
     if (wallet.monthlyCashUsed + amount > wallet.monthlyCashLimit) {
       return {
         withinLimits: false,
-        reason: `Monthly limit exceeded. Used: $${wallet.monthlyCashUsed}, Limit: $${wallet.monthlyCashLimit}` as string,
+        reason: `Monthly cash limit exceeded. Used: ${wallet.monthlyCashUsed}, limit: ${wallet.monthlyCashLimit}` as string,
       };
     }
 
@@ -493,10 +558,17 @@ export class CashPaymentService {
   /**
    * Calculate platform fee
    */
+  /**
+   * The platform's cut of a cash ride: a flat share of what was collected.
+   *
+   * Deliberately uncapped. The cap was a bare `10.00` — ten Pula in Botswana
+   * and ten dollars elsewhere — and converting it at the point of use made the
+   * fee depend on a live exchange rate, so the same fare could attract a
+   * different commission from one day to the next. A percentage needs no rate
+   * and is what a driver can be told plainly.
+   */
   private calculatePlatformFee(amount: number): number {
-    const feePercentage = 0.10; // 10%
-    const maxFee = 10.00;
-    return Math.min(amount * feePercentage, maxFee);
+    return round2(amount * CASH_COMMISSION_RATE);
   }
 
   /**
@@ -651,8 +723,13 @@ export class CashPaymentService {
   /**
    * Get cash payment instructions for user
    */
-  private getCashPaymentInstructions(amount: number): string {
-    return `Please pay exactly $${amount.toFixed(2)} in cash to your driver. After payment, the driver will confirm receipt and you'll need to enter your confirmation code to complete the transaction.`;
+  private async getCashPaymentInstructions(amount: number, currency: string): Promise<string> {
+    // Rendered in the *booking's* currency. This read `$${amount}`, quoting a
+    // Gaborone rider in US dollars on the one screen where the number has to
+    // be right — and rendering it in the reader's preferred currency would
+    // simply relabel a fare that is denominated in the driver's.
+    const rendered = await formatMoneyInCurrency(amount, currency);
+    return `Please pay exactly ${rendered} in cash to your driver. After payment, the driver will confirm receipt and you'll need to enter your confirmation code to complete the transaction.`;
   }
 
   /**
@@ -663,12 +740,20 @@ export class CashPaymentService {
     driverId: string,
     amount: number,
     riderCode: string,
+    currency: string,
   ): Promise<void> {
     try {
+      // Each party is quoted in their own currency: a cross-border ride can
+      // have a rider and driver who do not share one.
+      // One rendering, in the currency the fare is actually in. Quoting each
+      // party in their own preferred currency would show two different symbols
+      // for the same banknotes changing hands.
+      const rendered = await formatMoneyInCurrency(amount, currency);
+
       // Notify rider
       await (this.notificationService as any).sendNotification(riderId, {
         title: 'Cash Payment Created',
-        body: `Pay $${amount.toFixed(2)} in cash. Your confirmation code: ${riderCode}`,
+        body: `Pay ${rendered} in cash. Your confirmation code: ${riderCode}`,
         type: 'cash_payment_created',
         data: { amount, riderCode },
       });
@@ -676,7 +761,7 @@ export class CashPaymentService {
       // Notify driver
       await (this.notificationService as any).sendNotification(driverId, {
         title: 'Cash Payment Expected',
-        body: `Passenger will pay $${amount.toFixed(2)} in cash`,
+        body: `Passenger will pay ${rendered} in cash`,
         type: 'cash_payment_expected',
         data: { amount },
       });

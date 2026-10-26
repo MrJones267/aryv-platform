@@ -137,26 +137,33 @@ class RedisClient {
     this.client = null;
   }
 
-  // Used by rate-limit-redis; degrades gracefully when Redis is unavailable.
-  // Must satisfy rate-limit-redis v4, which uses SCRIPT LOAD (expects a SHA
-  // string) then EVALSHA/EVAL (expects [hits, ttl]). Returning the wrong shape
-  // here throws "unexpected reply from redis client" and crashes startup, so
-  // the offline fallbacks below mirror those reply shapes and allow requests.
-  private offlineReply(cmd: string): unknown {
-    if (cmd === 'SCRIPT') return '0'.repeat(40); // fake SHA so RedisStore.init() survives
-    if (cmd === 'EVAL' || cmd === 'EVALSHA') return [1, 60000]; // first-hit: allow through
-    return null;
-  }
-
+  /**
+   * Used by rate-limit-redis.
+   *
+   * This used to answer `[1, 60000]` — "first hit, allow" — for every EVAL
+   * while Redis was unreachable, which silently switched off every rate
+   * limiter in the application for the duration of an outage. It no longer
+   * invents an answer: an unreachable Redis rejects, and ResilientStore in
+   * config/rateLimitStore.ts catches that and counts locally instead.
+   *
+   * SCRIPT LOAD is the one exception. rate-limit-redis calls it while
+   * initialising and only wants a SHA-shaped string back; letting that reject
+   * produced an unhandled rejection at startup. A placeholder SHA is safe
+   * because the EVALSHA that would use it rejects anyway.
+   */
   async sendCommand(args: string[]): Promise<unknown> {
     const cmd = (args[0] || '').toUpperCase();
+
     if (!this.isReady()) {
-      return this.offlineReply(cmd);
+      if (cmd === 'SCRIPT') return '0'.repeat(40);
+      throw new Error('Redis is unavailable');
     }
+
     try {
       return await this.client!.sendCommand(args);
-    } catch {
-      return this.offlineReply(cmd);
+    } catch (error) {
+      if (cmd === 'SCRIPT') return '0'.repeat(40);
+      throw error;
     }
   }
 

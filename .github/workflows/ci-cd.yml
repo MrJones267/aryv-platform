@@ -27,7 +27,7 @@ env:
 jobs:
   # ── Backend: the required gate (verified green, no infrastructure) ──────────
   backend:
-    name: Backend (type-check, build, unit tests)
+    name: Backend (type-check, build, unit + contract tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +47,14 @@ jobs:
       - name: Build
         run: npm run build --workspace backend
 
-      - name: Unit tests
+      # `npm test` runs the unit and contract projects. Contract tests mount
+      # the real routers and a real socket server with only Redis and the auth
+      # lookup stubbed, so they need no infrastructure and can gate merges —
+      # unlike the integration job below. They cover the seams that let three
+      # whole subsystems ship dead: a middleware that never called next(), a
+      # socket handshake reading the wrong token field, and client paths the
+      # server never served.
+      - name: Unit and contract tests
         run: npm test --workspace backend
         env:
           NODE_ENV: test

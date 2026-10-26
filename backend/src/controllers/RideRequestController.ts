@@ -8,11 +8,19 @@
 import crypto from 'crypto';
 import { Response } from 'express';
 import { Op } from 'sequelize';
+import { sequelize } from '../config/database';
 import { AuthenticatedRequest } from '../types';
 import { redisClient } from '../config/redis';
 import Ride from '../models/Ride';
 import { RideStatus } from '../types';
 import logger from '../utils/logger';
+
+/**
+ * How far either end of a ride may be from what the passenger asked for and
+ * still count as a match. Twenty kilometres covers a city and its approaches
+ * without pulling in a different journey.
+ */
+const MATCH_RADIUS_METRES = 20000;
 
 const REQUEST_TTL = 86400; // 24 hours
 const REQUEST_PREFIX = 'ride_req:';
@@ -204,38 +212,91 @@ export class RideRequestController {
       const windowStart = new Date(departure.getTime() - 60 * 60 * 1000); // 1h before
       const windowEnd = new Date(departure.getTime() + 60 * 60 * 1000);   // 1h after
 
-      // Find rides with matching departure window and enough seats
+      const reqOriginLat = Number(rideRequest['origin']?.latitude);
+      const reqOriginLng = Number(rideRequest['origin']?.longitude);
+      const reqDestLat = Number(rideRequest['destination']?.latitude);
+      const reqDestLng = Number(rideRequest['destination']?.longitude);
+
+      const hasCoordinates = [reqOriginLat, reqOriginLng, reqDestLat, reqDestLng]
+        .every((value) => Number.isFinite(value));
+
+      // Distance in metres from the request's endpoints, computed by PostGIS.
+      //
+      // The scoring here used to read r.originLat and r.originLng, which the
+      // Ride model does not have — coordinates live in originCoordinates as a
+      // geometry. Every score therefore came out 0, the sort did nothing, and
+      // rides were returned in whatever order the database gave them, with no
+      // geographic filtering at all: a Maun-to-Kasane ride matched a Gaborone
+      // request so long as the departure times lined up.
+      const distanceTo = (column: string, lng: number, lat: number) =>
+        sequelize.fn(
+          'ST_Distance',
+          sequelize.col(column),
+          sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', lng, lat), 4326),
+        );
+
       const matches = await Ride.findAll({
+        // Spread rather than set to undefined: exactOptionalPropertyTypes
+        // treats an explicit undefined as a value, not an absent key.
+        ...(hasCoordinates
+          ? {
+              attributes: {
+                include: [
+                  [distanceTo('originCoordinates', reqOriginLng, reqOriginLat), 'originDistance'],
+                  [distanceTo('destinationCoordinates', reqDestLng, reqDestLat), 'destinationDistance'],
+                ] as any,
+              },
+            }
+          : {}),
         where: {
           status: { [Op.in]: [RideStatus.PENDING, RideStatus.CONFIRMED] },
           departureTime: { [Op.between]: [windowStart, windowEnd] },
           availableSeats: { [Op.gte]: rideRequest['passengers'] },
           ...(rideRequest['maxPrice'] ? { pricePerSeat: { [Op.lte]: rideRequest['maxPrice'] } } : {}),
+          // Both ends must actually be near what was asked for.
+          ...(hasCoordinates
+            ? {
+                [Op.and]: [
+                  sequelize.where(
+                    sequelize.fn(
+                      'ST_DWithin',
+                      sequelize.col('originCoordinates'),
+                      sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', reqOriginLng, reqOriginLat), 4326),
+                      MATCH_RADIUS_METRES,
+                    ),
+                    true,
+                  ),
+                  sequelize.where(
+                    sequelize.fn(
+                      'ST_DWithin',
+                      sequelize.col('destinationCoordinates'),
+                      sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', reqDestLng, reqDestLat), 4326),
+                      MATCH_RADIUS_METRES,
+                    ),
+                    true,
+                  ),
+                ],
+              }
+            : {}),
         },
         order: [['departureTime', 'ASC']],
         limit: 20,
       });
 
-      // Filter by rough geo proximity if coordinates are present
-      const reqOriginLat = rideRequest['origin']?.latitude;
-      const reqOriginLng = rideRequest['origin']?.longitude;
-      const reqDestLat = rideRequest['destination']?.latitude;
-      const reqDestLng = rideRequest['destination']?.longitude;
-
       const scored = matches
         .map((ride) => {
           const r = ride.toJSON() as any;
-          let score = 0;
 
-          if (reqOriginLat && r.originLat) {
-            const originDist = Math.hypot(r.originLat - reqOriginLat, r.originLng - reqOriginLng);
-            const destDist = Math.hypot(r.destinationLat - reqDestLat, r.destinationLng - reqDestLng);
-            score = 1 / (1 + originDist + destDist); // higher = better match
-          }
+          // 100 when both ends coincide, falling away with distance. Kept as a
+          // plain reading of how far off the ride is, not a confidence score.
+          const totalMetres = Number(r.originDistance ?? 0) + Number(r.destinationDistance ?? 0);
+          const matchScore = hasCoordinates
+            ? Math.max(0, Math.round(100 * (1 - totalMetres / (2 * MATCH_RADIUS_METRES))))
+            : null;
 
-          return { ...r, matchScore: Math.round(score * 100) };
+          return { ...r, matchScore };
         })
-        .sort((a, b) => b.matchScore - a.matchScore);
+        .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
 
       res.json({ success: true, data: scored, timestamp: new Date().toISOString() });
     } catch (error) {

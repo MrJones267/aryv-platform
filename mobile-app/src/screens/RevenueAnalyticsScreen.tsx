@@ -30,21 +30,28 @@ const log = logger.createLogger('RevenueAnalyticsScreen');
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - (spacing.md * 2);
 
+/**
+ * Null means the platform does not report this figure, as distinct from zero,
+ * which means it does and the answer is nothing. The screen shows the two
+ * differently — several of these were hardcoded numbers before, which read as
+ * measured fact.
+ */
 interface RevenueData {
   totalRevenue: number;
-  commissionRevenue: number;
-  subscriptionRevenue: number;
-  serviceFeesRevenue: number;
-  financialServicesRevenue: number;
-  advertisingRevenue: number;
-  growthRate: number;
+  commissionRevenue: number | null;
+  subscriptionRevenue: number | null;
+  serviceFeesRevenue: number | null;
+  financialServicesRevenue: number | null;
+  advertisingRevenue: number | null;
+  growthRate: number | null;
   period: string;
 }
 
 interface MetricCard {
   title: string;
   value: string;
-  change: number;
+  /** Null where no change has been computed. */
+  change: number | null;
   icon: string;
   color: string;
 }
@@ -91,8 +98,8 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         commissionRevenue: metrics.revenueMetrics.commissionRevenue,
         subscriptionRevenue: metrics.revenueMetrics.subscriptionRevenue,
         serviceFeesRevenue: metrics.revenueMetrics.serviceFeesRevenue,
-        financialServicesRevenue: 0,
-        advertisingRevenue: 0,
+        financialServicesRevenue: null,
+        advertisingRevenue: null,
         growthRate: metrics.revenueMetrics.growthRate,
         period: selectedPeriod,
       };
@@ -160,7 +167,11 @@ export const RevenueAnalyticsScreen: React.FC = () => {
     await loadRevenueData();
   };
 
-  const formatCurrency = (amount: number): string => {
+  const formatCurrency = (amount: number | null): string => {
+    if (amount === null) {
+      return 'Not tracked';
+    }
+
     return `P${new Intl.NumberFormat('en-BW', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
@@ -185,21 +196,24 @@ export const RevenueAnalyticsScreen: React.FC = () => {
       {
         title: 'Commission Revenue',
         value: formatCurrency(revenueData.commissionRevenue),
-        change: 22.3,
+        // No per-category growth is computed; this was a fixed number.
+        change: null,
         icon: 'car',
         color: colors.primary
       },
       {
         title: 'Subscriptions',
         value: formatCurrency(revenueData.subscriptionRevenue),
-        change: 31.7,
+        // No per-category growth is computed; this was a fixed number.
+        change: null,
         icon: 'card',
         color: colors.warning
       },
       {
         title: 'Service Fees',
         value: formatCurrency(revenueData.serviceFeesRevenue),
-        change: 15.8,
+        // No per-category growth is computed; this was a fixed number.
+        change: null,
         icon: 'receipt',
         color: colors.info
       }
@@ -209,6 +223,8 @@ export const RevenueAnalyticsScreen: React.FC = () => {
   const getRevenueBreakdownData = () => {
     if (!revenueData) return [];
 
+    // Categories the server does not report are left out entirely rather than
+    // charted as a zero slice — an absent measurement is not a measured zero.
     return [
       {
         name: 'Commissions',
@@ -245,7 +261,8 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         legendFontColor: colors.text.primary,
         legendFontSize: 12,
       },
-    ];
+    ].filter((slice): slice is typeof slice & { population: number } =>
+      slice.population !== null);
   };
 
   const getGrowthTrendData = () => {
@@ -289,9 +306,11 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         <View key={index} style={styles.metricCard}>
           <View style={styles.metricHeader}>
             <Ionicons name={metric.icon as string} size={24} color={metric.color} />
-            <View style={[styles.changeIndicator, { backgroundColor: metric.change >= 0 ? colors.success : colors.error }]}>
-              <Text style={styles.changeText}>{formatPercentage(metric.change)}</Text>
-            </View>
+            {metric.change !== null && (
+              <View style={[styles.changeIndicator, { backgroundColor: metric.change >= 0 ? colors.success : colors.error }]}>
+                <Text style={styles.changeText}>{formatPercentage(metric.change)}</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.metricValue}>{metric.value}</Text>
           <Text style={styles.metricTitle}>{metric.title}</Text>

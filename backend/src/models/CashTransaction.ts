@@ -37,6 +37,7 @@ export interface CashTransactionModel extends Model<
 
   // Amount details
   amount: number;
+  currency: CreationOptional<string>;
   platformFee: number;
   expectedAmount: number;
   actualAmountClaimed: CreationOptional<number | null>;
@@ -105,6 +106,11 @@ const CashTransaction = sequelize.define<CashTransactionModel>(
         model: 'users',
         key: 'id',
       },
+    },
+    currency: {
+      type: DataTypes.CHAR(3),
+      allowNull: false,
+      defaultValue: 'BWP',
     },
     amount: {
       type: DataTypes.DECIMAL(8, 2),

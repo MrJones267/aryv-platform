@@ -128,10 +128,10 @@ class UserApiService extends BaseApiService {
   /**
    * Delete account
    */
-  async deleteAccount(password: string): Promise<ApiResponse<void>> {
-    return this.delete<void>('/users/account', {
-      data: { password },
-    });
+  async deleteAccount(
+    reauth: { password: string } | { googleIdToken: string },
+  ): Promise<ApiResponse<void>> {
+    return this.delete<void>('/users/account', { data: reauth });
   }
 
   /**

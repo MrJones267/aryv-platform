@@ -157,10 +157,13 @@ export const changePassword = createAsyncThunk(
 
 export const deleteAccount = createAsyncThunk(
   'user/deleteAccount',
-  async (password: string, { rejectWithValue }) => {
+  async (
+    reauth: { password: string } | { googleIdToken: string },
+    { rejectWithValue },
+  ) => {
     try {
-      const response = await authApi.deleteAccount(password);
-      
+      const response = await authApi.deleteAccount(reauth);
+
       if (response.success) {
         return true;
       } else {

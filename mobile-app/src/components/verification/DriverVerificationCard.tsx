@@ -117,7 +117,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
         </View>
         <View style={styles.compactInfo}>
           <Text style={styles.compactName} numberOfLines={1}>
-            {driver.firstName} {driver.lastName.charAt(0)}.
+            {driver.firstName}{driver.lastName ? ` ${driver.lastName.charAt(0)}.` : ''}
           </Text>
           <View style={styles.compactRating}>
             <Icon name="star" size={12} color="#F59E0B" />
@@ -160,7 +160,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
         <View style={styles.driverDetails}>
           <View style={styles.nameRow}>
             <Text style={styles.driverName}>
-              {driver.firstName} {driver.lastName}
+              {[driver.firstName, driver.lastName].filter(Boolean).join(' ')}
             </Text>
             {getVerificationBadge()}
           </View>

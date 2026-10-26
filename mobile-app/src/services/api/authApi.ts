@@ -257,9 +257,11 @@ class AuthApiService extends BaseApiService {
   /**
    * Delete account
    */
-  async deleteAccount(password: string): Promise<ApiResponse<{ message: string }>> {
+  async deleteAccount(
+    reauth: { password: string } | { googleIdToken: string },
+  ): Promise<ApiResponse<{ message: string }>> {
     return this.delete<{ message: string }>('/auth/account', {
-      data: { password },
+      data: reauth,
     });
   }
 

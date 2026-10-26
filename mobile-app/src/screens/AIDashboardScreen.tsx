@@ -1,676 +1,301 @@
 /**
- * @fileoverview AI Dashboard Screen for monitoring predictions and insights
+ * @fileoverview How busy the area is, for a driver deciding when to travel.
  * @author Oabona-Majoko
- * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @created 2025-01-27
+ * @lastModified 2026-08-23
+ *
+ * This screen previously showed a demand forecast, a wait-time estimate, an
+ * optimal-price figure, a weather panel and a traffic-delay panel, all sourced
+ * from a service that proxied to a Python model at localhost:5001. Nothing is
+ * deployed there and the router exposing those endpoints was never mounted, so
+ * every call fell through to a fallback returning fixed constants — which the
+ * screen rendered as measured readings, complete with confidence percentages.
+ *
+ * The weather and traffic panels are gone: the platform has no weather or
+ * traffic data source, and inventing one to fill a card is how the previous
+ * version went wrong.
+ *
+ * What remains is what the database can actually answer — seats offered
+ * against seats taken nearby, and when people on these routes travel — which
+ * is the question a driver came here to ask anyway.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  ScrollView,
-  RefreshControl,
-  TouchableOpacity,
-  Alert,
   StyleSheet,
-  Dimensions,
+  ScrollView,
+  SafeAreaView,
+  RefreshControl,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-
-import { LineChart, BarChart } from 'react-native-chart-kit';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import PredictiveAIService, { PredictiveInsights, MarketConditions } from '../services/PredictiveAIService';
-import { PredictiveInsightsCard } from '../components/PredictiveInsightsCard';
-import { useAppSelector } from '../store/hooks';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import DemandService, { DemandSnapshot } from '../services/DemandService';
 import locationService from '../services/LocationService';
-import { colors, spacing, typography } from '../theme';
-import logger from '../services/LoggingService';
 
-const log = logger.createLogger('AIDashboardScreen');
-
-const { width: screenWidth } = Dimensions.get('window');
-const chartWidth = screenWidth - (spacing.md * 2);
-
-interface HistoricalData {
-  demand: number[];
-  pricing: number[];
-  waitTime: number[];
-  timestamps: string[];
+interface AIDashboardScreenProps {
+  navigation?: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
+  };
 }
 
-export const AIDashboardScreen: React.FC = () => {
-  const user = useAppSelector((state) => state.user.profile);
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+/** How each demand level reads, and what it means for a driver. */
+const LEVELS: Record<
+  DemandSnapshot['level'],
+  { label: string; colour: string; advice: string }
+> = {
+  very_busy: {
+    label: 'Very busy',
+    colour: '#C62828',
+    advice: 'Most seats near you are already taken. A ride listed now is likely to fill.',
+  },
+  busy: {
+    label: 'Busy',
+    colour: '#EF6C00',
+    advice: 'Seats are filling faster than usual nearby.',
+  },
+  steady: {
+    label: 'Steady',
+    colour: '#2E7D32',
+    advice: 'A normal amount of travel near you.',
+  },
+  quiet: {
+    label: 'Quiet',
+    colour: '#546E7A',
+    advice: 'Plenty of seats are going unbooked nearby.',
+  },
+  unknown: {
+    label: 'Not enough data',
+    colour: '#757575',
+    // Said plainly rather than defaulting to "quiet", which would send a
+    // driver home on the strength of two rides.
+    advice: 'There are too few rides near you right now to say how busy it is.',
+  },
+};
 
-  const [insights, setInsights] = useState<PredictiveInsights | null>(null);
-  const [marketConditions, setMarketConditions] = useState<MarketConditions | null>(null);
-  const [historicalData, setHistoricalData] = useState<HistoricalData | null>(null);
+const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => {
+  const [snapshot, setSnapshot] = useState<DemandSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedMetric, setSelectedMetric] = useState<'demand' | 'pricing' | 'waitTime'>('demand');
+  const [locationError, setLocationError] = useState(false);
 
-  useEffect(() => {
-    locationService.getCurrentLocation()
-      .then((pos) => {
-        if (pos) setLocation({ latitude: pos.latitude, longitude: pos.longitude });
-      })
-      .catch(() => {});
+  const load = useCallback(async () => {
+    setLocationError(false);
+
+    const position = await locationService
+      .getCurrentLocation({ timeout: 8000 })
+      .catch(() => null);
+
+    if (!position) {
+      setLocationError(true);
+      setSnapshot(null);
+      setLoading(false);
+      return;
+    }
+
+    setSnapshot(await DemandService.forLocation(position.latitude, position.longitude));
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (location) {
-      loadDashboardData();
-    }
-  }, [location]);
-
-  const loadDashboardData = async () => {
-    if (!location) return;
-
-    try {
-      setLoading(true);
-
-      // Load current insights
-      const insightsResponse = await PredictiveAIService.getPredictiveInsights(
-        location.latitude,
-        location.longitude,
-        25 // Base price for pricing insights
-      );
-
-      if (insightsResponse.success && insightsResponse.data) {
-        setInsights(insightsResponse.data);
-        setMarketConditions(insightsResponse.data.market_conditions);
-      }
-
-      // Build 24-hour trend chart seeded from real market conditions
-      if (insightsResponse.success && insightsResponse.data) {
-        buildHistoricalChart(insightsResponse.data.market_conditions);
-      } else {
-        buildHistoricalChart(null);
-      }
-
-    } catch (error) {
-      log.error('Error loading dashboard data:', error);
-      Alert.alert(
-        'Error',
-        'Failed to load AI dashboard data. Some features may be unavailable.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const buildHistoricalChart = (market: MarketConditions | null) => {
-    // Build 24-hour trend seeded from real market conditions when available
-    const baseDemand = market ? market.composite_scores.demand_multiplier * 12 : 12;
-    const basePrice = 25;
-    const baseSurge = market ? market.composite_scores.price_impact : 1;
-
-    const timestamps: string[] = [];
-    const demand: number[] = [];
-    const pricing: number[] = [];
-    const waitTime: number[] = [];
-
-    for (let i = 0; i < 24; i++) {
-      const hour = new Date();
-      hour.setHours(hour.getHours() - (23 - i));
-      timestamps.push(hour.toLocaleTimeString('en-US', { hour: '2-digit' }));
-
-      const isRushHour = (i >= 7 && i <= 9) || (i >= 17 && i <= 19);
-      const demandValue = baseDemand * (isRushHour ? 1.8 : 0.9) * (0.9 + Math.random() * 0.2);
-      demand.push(Math.round(demandValue));
-
-      const surgeMultiplier = baseSurge * (isRushHour ? 1.3 : 1.0);
-      pricing.push(Math.round(basePrice * surgeMultiplier * 100) / 100);
-
-      const waitTimeValue = 3 + (demandValue / baseDemand) * 3;
-      waitTime.push(Math.round(waitTimeValue * 10) / 10);
-    }
-
-    setHistoricalData({ demand, pricing, waitTime, timestamps });
-  };
+    load();
+  }, [load]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadDashboardData();
+    await load();
+    setRefreshing(false);
   };
 
-  const renderMetricSelector = () => (
-    <View style={styles.metricSelector}>
-      <TouchableOpacity
-        style={[styles.metricButton, selectedMetric === 'demand' && styles.metricButtonActive]}
-        onPress={() => setSelectedMetric('demand')}
-      >
-        <Ionicons 
-          name="trending-up" 
-          size={20} 
-          color={selectedMetric === 'demand' ? colors.white : colors.primary} 
-        />
-        <Text style={[
-          styles.metricButtonText,
-          selectedMetric === 'demand' && styles.metricButtonTextActive
-        ]}>
-          Demand
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.metricButton, selectedMetric === 'pricing' && styles.metricButtonActive]}
-        onPress={() => setSelectedMetric('pricing')}
-      >
-        <MaterialIcons 
-          name="attach-money" 
-          size={20} 
-          color={selectedMetric === 'pricing' ? colors.white : colors.primary} 
-        />
-        <Text style={[
-          styles.metricButtonText,
-          selectedMetric === 'pricing' && styles.metricButtonTextActive
-        ]}>
-          Pricing
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.metricButton, selectedMetric === 'waitTime' && styles.metricButtonActive]}
-        onPress={() => setSelectedMetric('waitTime')}
-      >
-        <Ionicons 
-          name="time" 
-          size={20} 
-          color={selectedMetric === 'waitTime' ? colors.white : colors.primary} 
-        />
-        <Text style={[
-          styles.metricButtonText,
-          selectedMetric === 'waitTime' && styles.metricButtonTextActive
-        ]}>
-          Wait Time
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderChart = () => {
-    if (!historicalData) return null;
-
-    const chartData = {
-      labels: historicalData.timestamps.filter((_, index) => index % 4 === 0), // Show every 4th hour
-      datasets: [{
-        data: selectedMetric === 'demand' ? historicalData.demand :
-              selectedMetric === 'pricing' ? historicalData.pricing :
-              historicalData.waitTime,
-        color: (opacity = 1) => colors.primary + Math.round(opacity * 255).toString(16),
-        strokeWidth: 2,
-      }]
-    };
-
-    const chartConfig = {
-      backgroundColor: colors.surface,
-      backgroundGradientFrom: colors.surface,
-      backgroundGradientTo: colors.surface,
-      decimalPlaces: selectedMetric === 'demand' ? 0 : 1,
-      color: (opacity = 1) => colors.primary + Math.round(opacity * 255).toString(16),
-      labelColor: (opacity = 1) => colors.text.secondary + Math.round(opacity * 255).toString(16),
-      style: {
-        borderRadius: 12,
-      },
-      propsForDots: {
-        r: "4",
-        strokeWidth: "2",
-        stroke: colors.primary
-      }
-    };
-
-    const getYAxisSuffix = () => {
-      switch (selectedMetric) {
-        case 'demand': return ' rides';
-        case 'pricing': return '$';
-        case 'waitTime': return 'm';
-        default: return '';
-      }
-    };
+  /**
+   * A bar per hour of the day.
+   *
+   * Drawn with plain views rather than a chart library: it is one series of
+   * twenty-four values, and the shape is the whole message.
+   */
+  const renderHourlyPattern = (hourly: number[]) => {
+    const peak = Math.max(...hourly, 1);
+    const busiestHour = hourly.indexOf(Math.max(...hourly));
+    const hasAny = hourly.some((count) => count > 0);
 
     return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>
-          24-Hour {selectedMetric === 'demand' ? 'Demand' : 
-                    selectedMetric === 'pricing' ? 'Pricing' : 'Wait Time'} Trend
-        </Text>
-        <LineChart
-          data={chartData}
-          width={chartWidth}
-          height={220}
-          chartConfig={chartConfig}
-          bezier
-          style={styles.chart}
-          yAxisSuffix={getYAxisSuffix()}
-          withDots={true}
-          withShadow={true}
-          withScrollableDot={true}
-          withInnerLines={false}
-          withOuterLines={false}
-        />
-      </View>
-    );
-  };
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>When people travel</Text>
 
-  const renderQuickStats = () => {
-    if (!insights) return null;
+        {hasAny ? (
+          <>
+            <Text style={styles.cardSubtitle}>
+              Seats booked by departure hour, over the last two months
+            </Text>
 
-    const stats = [
-      {
-        title: 'Current Demand',
-        value: Math.round(insights.demand_forecast.prediction),
-        unit: 'rides',
-        icon: 'trending-up',
-        color: PredictiveAIService.getDemandColor(insights.demand_forecast.prediction),
-        confidence: insights.demand_forecast.confidence
-      },
-      {
-        title: 'Avg Wait Time',
-        value: Math.round(insights.wait_time_estimate.prediction),
-        unit: 'min',
-        icon: 'time',
-        color: insights.wait_time_estimate.prediction > 10 ? colors.error : colors.success,
-        confidence: insights.wait_time_estimate.confidence
-      },
-      {
-        title: 'Price Impact',
-        value: `${Math.round(((insights.optimal_pricing.prediction / 25) - 1) * 100)}%`,
-        unit: '',
-        icon: 'attach-money',
-        color: insights.optimal_pricing.prediction > 30 ? colors.error : colors.success,
-        confidence: insights.optimal_pricing.confidence
-      }
-    ];
-
-    return (
-      <View style={styles.quickStatsContainer}>
-        <Text style={styles.sectionTitle}>Current Predictions</Text>
-        <View style={styles.statsGrid}>
-          {stats.map((stat, index) => (
-            <View key={index} style={styles.statCard}>
-              <View style={styles.statHeader}>
-                <MaterialIcons name={stat.icon as string} size={24} color={stat.color} />
-                <View style={styles.confidenceIndicator}>
-                  <View 
+            <View style={styles.chart}>
+              {hourly.map((count, hour) => (
+                <View key={hour} style={styles.barColumn}>
+                  <View
                     style={[
-                      styles.confidenceDot,
-                      { backgroundColor: PredictiveAIService.getConfidenceColor(stat.confidence) }
-                    ]} 
+                      styles.bar,
+                      {
+                        height: Math.max(2, (count / peak) * 90),
+                        backgroundColor: hour === busiestHour ? '#2196F3' : '#BBDEFB',
+                      },
+                    ]}
                   />
                 </View>
-              </View>
-              <Text style={[styles.statValue, { color: stat.color }]}>
-                {stat.value}{stat.unit}
-              </Text>
-              <Text style={styles.statTitle}>{stat.title}</Text>
-              <Text style={styles.confidenceText}>
-                {PredictiveAIService.formatConfidence(stat.confidence)} confidence
-              </Text>
+              ))}
             </View>
-          ))}
-        </View>
-      </View>
-    );
-  };
 
-  const renderMarketSummary = () => {
-    if (!marketConditions) return null;
+            <View style={styles.axis}>
+              <Text style={styles.axisLabel}>00:00</Text>
+              <Text style={styles.axisLabel}>12:00</Text>
+              <Text style={styles.axisLabel}>23:00</Text>
+            </View>
 
-    return (
-      <View style={styles.marketSummaryContainer}>
-        <Text style={styles.sectionTitle}>Market Summary</Text>
-        <View style={styles.marketGrid}>
-          <View style={styles.marketItem}>
-            <Ionicons 
-              name={PredictiveAIService.getWeatherIcon(marketConditions.weather.condition)} 
-              size={32} 
-              color={colors.primary} 
-            />
-            <Text style={styles.marketItemTitle}>Weather</Text>
-            <Text style={styles.marketItemValue}>
-              {Math.round(marketConditions.weather.temperature)}°C
+            <Text style={styles.insight}>
+              Busiest around {String(busiestHour).padStart(2, '0')}:00.
             </Text>
-            <Text style={styles.marketItemSubtext}>
-              {marketConditions.weather.condition}
-            </Text>
-          </View>
-
-          <View style={styles.marketItem}>
-            <MaterialIcons 
-              name={PredictiveAIService.getTrafficIcon(marketConditions.traffic.congestion_level)} 
-              size={32} 
-              color={colors.primary} 
-            />
-            <Text style={styles.marketItemTitle}>Traffic</Text>
-            <Text style={styles.marketItemValue}>
-              {marketConditions.traffic.congestion_level}
-            </Text>
-            <Text style={styles.marketItemSubtext}>
-              +{Math.round(marketConditions.traffic.estimated_delay)}m delay
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.compositeScores}>
-          <Text style={styles.compositeTitle}>Market Multipliers</Text>
-          <View style={styles.scoreRow}>
-            <Text style={styles.scoreLabel}>Demand:</Text>
-            <Text style={[
-              styles.scoreValue,
-              { color: marketConditions.composite_scores.demand_multiplier > 1.5 ? colors.error : colors.success }
-            ]}>
-              {marketConditions.composite_scores.demand_multiplier.toFixed(2)}x
-            </Text>
-          </View>
-          <View style={styles.scoreRow}>
-            <Text style={styles.scoreLabel}>Price Impact:</Text>
-            <Text style={[
-              styles.scoreValue,
-              { color: marketConditions.composite_scores.price_impact > 1.3 ? colors.error : colors.success }
-            ]}>
-              {marketConditions.composite_scores.price_impact.toFixed(2)}x
-            </Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderAIRecommendations = () => {
-    if (!insights || !insights.recommendations.length) return null;
-
-    return (
-      <View style={styles.recommendationsContainer}>
-        <Text style={styles.sectionTitle}>AI Recommendations</Text>
-        {insights.recommendations.map((recommendation, index) => (
-          <View key={index} style={styles.recommendationCard}>
-            <MaterialIcons name="lightbulb" size={20} color={colors.warning} />
-            <Text style={styles.recommendationText}>{recommendation}</Text>
-          </View>
-        ))}
-      </View>
-    );
-  };
-
-  if (!location) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="location-off" size={64} color={colors.text.secondary} />
-          <Text style={styles.errorTitle}>Location Required</Text>
-          <Text style={styles.errorText}>
-            Please enable location services to view AI insights
+          </>
+        ) : (
+          <Text style={styles.emptyBody}>
+            No completed bookings near here yet, so there is no pattern to show.
           </Text>
-        </View>
-      </SafeAreaView>
+        )}
+      </View>
     );
-  }
+  };
+
+  const renderDemand = (data: DemandSnapshot) => {
+    const level = LEVELS[data.level];
+
+    return (
+      <>
+        <View style={styles.card}>
+          <View style={styles.levelRow}>
+            <View style={[styles.levelDot, { backgroundColor: level.colour }]} />
+            <Text style={[styles.levelLabel, { color: level.colour }]}>{level.label}</Text>
+          </View>
+
+          <Text style={styles.cardSubtitle}>
+            Within {data.radiusKm} km, next 24 hours
+          </Text>
+
+          <Text style={styles.advice}>{level.advice}</Text>
+
+          {/* The raw counts are shown alongside the verdict so a driver can
+              judge it rather than take it on faith. */}
+          <View style={styles.figures}>
+            <View style={styles.figure}>
+              <Text style={styles.figureValue}>{data.seatsTaken}</Text>
+              <Text style={styles.figureLabel}>seats booked</Text>
+            </View>
+            <View style={styles.figure}>
+              <Text style={styles.figureValue}>{data.seatsOffered}</Text>
+              <Text style={styles.figureLabel}>seats offered</Text>
+            </View>
+            <View style={styles.figure}>
+              <Text style={styles.figureValue}>{data.ridesConsidered}</Text>
+              <Text style={styles.figureLabel}>rides</Text>
+            </View>
+          </View>
+        </View>
+
+        {renderHourlyPattern(data.hourlyBookings)}
+      </>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI Dashboard</Text>
-        <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={24} color={colors.primary} />
+        <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backButton}>
+          <Icon name="arrow-back" size={24} color="#333333" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Demand Near You</Text>
       </View>
 
       <ScrollView
-        style={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Main Insights Card */}
-        <PredictiveInsightsCard
-          latitude={location.latitude}
-          longitude={location.longitude}
-          basePrice={25}
-          onInsightsLoaded={setInsights}
-          minimized={false}
-        />
-
-        {/* Quick Stats */}
-        {renderQuickStats()}
-
-        {/* Chart Section */}
-        {renderMetricSelector()}
-        {renderChart()}
-
-        {/* Market Summary */}
-        {renderMarketSummary()}
-
-        {/* AI Recommendations */}
-        {renderAIRecommendations()}
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Data updated {new Date().toLocaleTimeString()}
-          </Text>
-        </View>
+        {loading ? (
+          <View style={styles.centred}>
+            <ActivityIndicator size="large" color="#2196F3" />
+          </View>
+        ) : locationError ? (
+          <View style={styles.centred}>
+            <Icon name="location-off" size={48} color="#CCCCCC" />
+            <Text style={styles.emptyTitle}>Location unavailable</Text>
+            <Text style={styles.emptyBody}>
+              Demand is worked out from where you are. Turn on location access
+              and pull down to try again.
+            </Text>
+          </View>
+        ) : !snapshot ? (
+          <View style={styles.centred}>
+            <Icon name="insights" size={48} color="#CCCCCC" />
+            <Text style={styles.emptyTitle}>Could not load demand</Text>
+            <Text style={styles.emptyBody}>Pull down to try again.</Text>
+          </View>
+        ) : (
+          renderDemand(snapshot)
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background.primary,
-  },
+  container: { flex: 1, backgroundColor: '#F5F5F5' },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
-    backgroundColor: colors.surface,
+    borderBottomColor: '#EEEEEE',
   },
-  headerTitle: {
-    fontSize: typography.fontSize.title,
-    color: colors.text.primary,
-  },
-  refreshButton: {
-    padding: spacing.xs,
-  },
-  content: {
-    flex: 1,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  errorTitle: {
-    fontSize: typography.fontSize.title,
-    color: colors.text.primary,
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  errorText: {
-    fontSize: typography.fontSize.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-  },
-  quickStatsContainer: {
-    padding: spacing.md,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.h3,
-    color: colors.text.primary,
-    marginBottom: spacing.md,
-  },
-  statsGrid: {
+  backButton: { padding: 4 },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#333333' },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 16, gap: 16 },
+  centred: { alignItems: 'center', paddingHorizontal: 32, paddingVertical: 64, gap: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', color: '#333333' },
+  emptyBody: { fontSize: 14, lineHeight: 20, color: '#777777', textAlign: 'center' },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, gap: 6 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: '#333333' },
+  cardSubtitle: { fontSize: 12, color: '#888888' },
+  levelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  levelDot: { width: 10, height: 10, borderRadius: 5 },
+  levelLabel: { fontSize: 20, fontWeight: '700' },
+  advice: { fontSize: 14, lineHeight: 20, color: '#444444', marginTop: 4 },
+  figures: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginHorizontal: spacing.xs,
-    alignItems: 'center',
-  },
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: spacing.sm,
-  },
-  confidenceIndicator: {
-    width: 8,
-    height: 8,
-  },
-  confidenceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statValue: {
-    fontSize: typography.fontSize.title,
-    fontWeight: 'bold',
-    marginBottom: spacing.xs,
-  },
-  statTitle: {
-    fontSize: typography.fontSize.caption,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  confidenceText: {
-    fontSize: 10,
-    color: colors.text.secondary,
-  },
-  metricSelector: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  metricButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    marginHorizontal: spacing.xs,
-  },
-  metricButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  metricButtonText: {
-    fontSize: typography.fontSize.caption,
-    color: colors.primary,
-    marginLeft: spacing.xs,
-    fontWeight: '600',
-  },
-  metricButtonTextActive: {
-    color: colors.white,
-  },
-  chartContainer: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  chartTitle: {
-    fontSize: typography.fontSize.body,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
+  figure: { alignItems: 'center', flex: 1 },
+  figureValue: { fontSize: 20, fontWeight: '700', color: '#333333' },
+  figureLabel: { fontSize: 11, color: '#888888', marginTop: 2 },
   chart: {
-    borderRadius: 12,
-  },
-  marketSummaryContainer: {
-    padding: spacing.md,
-  },
-  marketGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: spacing.md,
+    alignItems: 'flex-end',
+    height: 100,
+    gap: 2,
+    marginTop: 12,
   },
-  marketItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  marketItemTitle: {
-    fontSize: typography.fontSize.caption,
-    color: colors.text.secondary,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  marketItemValue: {
-    fontSize: typography.fontSize.body,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-  },
-  marketItemSubtext: {
-    fontSize: typography.fontSize.caption,
-    color: colors.text.secondary,
-  },
-  compositeScores: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-  },
-  compositeTitle: {
-    fontSize: typography.fontSize.body,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  scoreLabel: {
-    fontSize: typography.fontSize.caption,
-    color: colors.text.secondary,
-  },
-  scoreValue: {
-    fontSize: typography.fontSize.body,
-    fontWeight: 'bold',
-  },
-  recommendationsContainer: {
-    padding: spacing.md,
-  },
-  recommendationCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  recommendationText: {
-    fontSize: typography.fontSize.body,
-    color: colors.text.primary,
-    marginLeft: spacing.sm,
-    flex: 1,
-    lineHeight: 20,
-  },
-  footer: {
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: typography.fontSize.caption,
-    color: colors.text.secondary,
-  },
+  barColumn: { flex: 1, justifyContent: 'flex-end' },
+  bar: { borderRadius: 2, width: '100%' },
+  axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  axisLabel: { fontSize: 10, color: '#AAAAAA' },
+  insight: { fontSize: 13, color: '#444444', marginTop: 8 },
 });
 
 export default AIDashboardScreen;

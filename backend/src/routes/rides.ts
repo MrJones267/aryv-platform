@@ -9,9 +9,10 @@ import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 import { RideController } from '../controllers/RideController';
 import { validateInput } from '../middleware/validation';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, optionalAuth } from '../middleware/auth';
 
 const router = Router();
 const rideController = new RideController();
@@ -22,6 +23,7 @@ const rideRateLimit = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many ride requests from this IP, please try again later',
   store: makeStore('rides'),
+  keyGenerator: rateLimitKey,
 });
 
 const createRideRateLimit = rateLimit({
@@ -29,6 +31,7 @@ const createRideRateLimit = rateLimit({
   max: 10, // Limit ride creation to 10 per hour per IP
   message: 'Too many ride creation attempts, please try again later',
   store: makeStore('ride-create'),
+  keyGenerator: rateLimitKey,
 });
 
 // Validation schemas
@@ -68,6 +71,11 @@ const createRideValidation = [
   body('vehicleId')
     .isUUID()
     .withMessage('Vehicle ID must be a valid UUID'),
+  // The driver's vehicle decides this. Optional, defaulting to an ordinary car.
+  body('tier')
+    .optional()
+    .isIn(['shared', 'standard', 'comfort', 'premium'])
+    .withMessage('Tier must be shared, standard, comfort or premium'),
   body('description')
     .optional()
     .isLength({ max: 1000 })
@@ -80,6 +88,55 @@ const createRideValidation = [
     .optional()
     .isFloat({ min: 0.1, max: 2000 })
     .withMessage('Distance must be between 0.1 and 2000 km'),
+
+  // Intermediate stops, origin and destination excluded — those come from the
+  // ride itself. Absent for an intra-city trip, which is a single leg.
+  body('stops')
+    .optional()
+    .isArray({ max: 10 })
+    .withMessage('A ride can have at most 10 intermediate stops'),
+  body('stops.*.address')
+    .isLength({ min: 3, max: 500 })
+    .withMessage('Each stop needs an address of 3 to 500 characters'),
+  body('stops.*.coordinates.latitude')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Stop latitude must be between -90 and 90'),
+  body('stops.*.coordinates.longitude')
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Stop longitude must be between -180 and 180'),
+  // Cumulative fare from the origin to this stop. Must rise along the route and
+  // stay under the full fare, so a segment never costs more than the whole ride.
+  body('stops.*.fareFromOrigin')
+    .isFloat({ min: 0, max: 10000 })
+    .withMessage('Stop fare must be between 0 and 10,000'),
+  body('stops').optional().custom((stops, { req }) => {
+    if (!Array.isArray(stops)) {
+      return true;
+    }
+
+    const fullFare = Number(req.body.pricePerSeat);
+    let previous = 0;
+
+    for (const [index, stop] of stops.entries()) {
+      const fare = Number(stop?.fareFromOrigin);
+
+      if (!Number.isFinite(fare) || fare <= previous) {
+        throw new Error(
+          `Fare at stop ${index + 1} must be higher than the fare at the stop before it`,
+        );
+      }
+
+      if (Number.isFinite(fullFare) && fare >= fullFare) {
+        throw new Error(
+          `Fare at stop ${index + 1} must be below the full price of the ride`,
+        );
+      }
+
+      previous = fare;
+    }
+
+    return true;
+  }),
 ];
 
 const updateRideValidation = [
@@ -213,6 +270,86 @@ router.get(
 );
 
 /**
+ * @route   GET /api/rides/surge
+ * @desc    Dated demand periods coming up, so a driver can plan around them
+ * @access  Private
+ *
+ * Before /:id so 'surge' is not read as a ride ID.
+ */
+router.get(
+  '/surge',
+  rideRateLimit,
+  authenticateToken,
+  [query('days').optional().isInt({ min: 1, max: 365 }).withMessage('Days must be 1 to 365').toInt()],
+  validateInput,
+  rideController.getSurgeCalendar.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/demand
+ * @desc    How busy this area is, from real rides and bookings
+ * @access  Private
+ *
+ * Before /:id so 'demand' is not read as a ride ID.
+ */
+router.get(
+  '/demand',
+  rideRateLimit,
+  authenticateToken,
+  [
+    query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+    query('radiusKm').optional().isFloat({ min: 1, max: 200 }).withMessage('Radius must be 1 to 200 km'),
+    // When a destination is given, live traffic for that route is included.
+    query('destinationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('Invalid destination latitude'),
+    query('destinationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('Invalid destination longitude'),
+  ],
+  validateInput,
+  rideController.getDemand.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/recommendations
+ * @desc    Upcoming rides on the routes this passenger travels often
+ * @access  Private
+ *
+ * Before /:id so 'recommendations' is not read as a ride ID.
+ */
+router.get(
+  '/recommendations',
+  rideRateLimit,
+  authenticateToken,
+  rideController.getRecommendations.bind(rideController),
+);
+
+/**
+ * @route   GET /api/rides/price-suggestion
+ * @desc    What comparable rides charged on this route
+ * @access  Private
+ *
+ * Advice for a driver listing a ride, not a price anyone is charged. Declared
+ * before /:id so 'price-suggestion' is not read as a ride ID.
+ */
+router.get(
+  '/price-suggestion',
+  rideRateLimit,
+  authenticateToken,
+  [
+    query('originLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid origin latitude'),
+    query('originLng').isFloat({ min: -180, max: 180 }).withMessage('Invalid origin longitude'),
+    query('destinationLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid destination latitude'),
+    query('destinationLng').isFloat({ min: -180, max: 180 }).withMessage('Invalid destination longitude'),
+    query('distanceKm').optional().isFloat({ min: 0.1, max: 5000 }).withMessage('Invalid distance'),
+    query('tier').optional().isIn(['shared', 'standard', 'comfort', 'premium'])
+      .withMessage('Unknown tier'),
+    query('departureTime').optional().isISO8601()
+      .withMessage('Departure time must be an ISO 8601 date'),
+  ],
+  validateInput,
+  rideController.getPriceSuggestion.bind(rideController),
+);
+
+/**
  * @route   GET /api/rides/:id
  * @desc    Get ride by ID
  * @access  Public
@@ -220,6 +357,11 @@ router.get(
 router.get(
   '/:id',
   rideRateLimit,
+  // Optional, not required: the endpoint stays public, but knowing who is
+  // asking is what lets it return the licence plate and precise pickup point
+  // to the driver and to passengers holding a booking, and withhold both from
+  // everyone else.
+  optionalAuth,
   rideIdValidation,
   validateInput,
   rideController.getRideById.bind(rideController),
@@ -277,6 +419,12 @@ router.post(
     body('seatsRequested')
       .isInt({ min: 1, max: 7 })
       .withMessage('Seats requested must be between 1 and 7'),
+    body('promoCode')
+      .optional()
+      .isLength({ min: 3, max: 20 })
+      .withMessage('Promo code must be between 3 and 20 characters')
+      .matches(/^[A-Za-z0-9]+$/)
+      .withMessage('Promo code must be letters and numbers only'),
     body('pickupAddress')
       .optional()
       .isLength({ max: 500 })
@@ -289,6 +437,30 @@ router.post(
       .optional()
       .isLength({ max: 1000 })
       .withMessage('Special requests cannot exceed 1000 characters'),
+
+    // Which part of the journey the passenger is taking. Omitted means the
+    // whole ride, which is every intra-city trip.
+    body('boardingStop')
+      .optional()
+      .isInt({ min: 0, max: 11 })
+      .withMessage('Boarding stop must be a stop on this ride')
+      .toInt(),
+    body('alightingStop')
+      .optional()
+      .isInt({ min: 1, max: 11 })
+      .withMessage('Drop-off stop must be a stop on this ride')
+      .toInt(),
+    // Both or neither: a segment with one end open is not a journey. Which
+    // stops actually exist is checked against the ride in the controller.
+    body('alightingStop').custom((alighting, { req }) => {
+      const boarding = req.body.boardingStop;
+
+      if ((boarding === undefined) !== (alighting === undefined)) {
+        throw new Error('Give both a boarding stop and a drop-off stop, or neither');
+      }
+
+      return true;
+    }),
   ],
   validateInput,
   rideController.bookRide.bind(rideController),

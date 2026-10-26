@@ -30,6 +30,7 @@ import { haptic } from '../../services/HapticService';
 import AnonymizedCallService from '../../services/AnonymizedCallService';
 import PromoCodeInput from '../../components/payment/PromoCodeInput';
 import logger from '../../services/LoggingService';
+import { driverDisplayName } from '../../utils/driverName';
 
 const log = logger.createLogger('RideDetailsScreen');
 
@@ -168,7 +169,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
     typedNavigation.navigate('Chat', {
       chatId: `ride-${ride.id}`,
-      recipientName: `${ride.driver.firstName} ${ride.driver.lastName}`,
+      recipientName: driverDisplayName(ride.driver),
       rideId: ride.id,
     });
   };
@@ -182,7 +183,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       ride.id,
       user?.id || '',
       ride.driver.id,
-      `${ride.driver.firstName} ${ride.driver.lastName}`,
+      driverDisplayName(ride.driver),
       ride.driver.phone,
     );
   };
@@ -315,7 +316,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
           driver={{
             id: ride.driver.id,
             firstName: ride.driver.firstName,
-            lastName: ride.driver.lastName,
+            lastName: ride.driver.lastName ?? '',
             rating: ride.driver.rating,
             totalRides: ride.driver.totalRides,
             profilePicture: ride.driver.profileImage,
@@ -526,7 +527,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const buildTripShareData = (): TripShareData => ({
     rideId: ride?.id || rideId,
-    driverName: ride ? `${ride.driver.firstName} ${ride.driver.lastName}` : 'Driver',
+    driverName: ride ? driverDisplayName(ride.driver) : 'Driver',
     vehicleInfo: ride?.vehicle
       ? `${ride.vehicle.color} ${ride.vehicle.make} ${ride.vehicle.model} (${ride.vehicle.licensePlate})`
       : undefined,
@@ -636,7 +637,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             onPress={() => typedNavigation.navigate('RideRating', {
               rideId: ride.id,
               driverId: ride.driver.id,
-              driverName: `${ride.driver.firstName} ${ride.driver.lastName}`,
+              driverName: driverDisplayName(ride.driver),
               origin: ride.origin.address,
               destination: ride.destination.address,
               rideFare: ride.pricePerSeat,

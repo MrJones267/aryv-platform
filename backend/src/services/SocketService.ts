@@ -7,8 +7,8 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import jwt from 'jsonwebtoken';
 import { logInfo, logError, logWarn } from '../utils/logger';
+import { AuthService } from './AuthService';
 import User from '../models/User';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
@@ -71,6 +71,85 @@ interface CallNotification {
   action: 'initiate' | 'accept' | 'reject' | 'end';
 }
 
+/**
+ * How often every open socket's session is re-checked. Five minutes bounds how
+ * long a revoked session can keep receiving live events without making the
+ * sweep itself a load problem.
+ */
+const SESSION_REVALIDATION_MS = 5 * 60 * 1000;
+
+export type SocketAuthResult =
+  | { ok: true; user: any }
+  | { ok: false; error: string };
+
+/**
+ * Authenticate a socket handshake token.
+ *
+ * Extracted from the connection middleware so it can be tested without
+ * standing up a server, and so it stays aligned with the HTTP middleware:
+ * both verify through AuthService, both reject blacklisted tokens, and both
+ * refuse suspended or deactivated accounts.
+ *
+ * The bug this replaced read `decoded.id`. Access tokens carry `userId` —
+ * `id` belongs to the separate admin token shape — so the lookup was always
+ * User.findByPk(undefined), which Sequelize short-circuits to null. Every
+ * socket connection was rejected as 'Invalid user', which took live tracking,
+ * chat, typing indicators and calls down with it.
+ */
+export const authenticateSocketToken = async (
+  token: string | undefined,
+  socketId?: string,
+): Promise<SocketAuthResult> => {
+  if (!token) {
+    logWarn('Socket connection attempted without token', { socketId });
+    return { ok: false, error: 'Authentication token required' };
+  }
+
+  try {
+    const decoded = AuthService.verifyToken(token);
+
+    if (await AuthService.isTokenBlacklisted(token)) {
+      logWarn('Socket connection attempted with invalidated token', { socketId });
+      return { ok: false, error: 'Token has been invalidated' };
+    }
+
+    const user = await User.findByPk(decoded.userId);
+
+    if (!user) {
+      logWarn('Socket connection attempted with invalid user', { userId: decoded.userId });
+      return { ok: false, error: 'Invalid user' };
+    }
+
+    // Refuse a token minted before the password last changed, matching what
+    // authenticateToken does for HTTP. Without it, a password reset prompted
+    // by a compromise left the attacker's socket connected and still receiving
+    // live location, chat and call events — the one moment a reset exists to
+    // prevent.
+    const passwordChangedAt = (user as unknown as { passwordChangedAt?: Date | null })
+      .passwordChangedAt;
+
+    if (passwordChangedAt && decoded.iat && decoded.iat * 1000 < passwordChangedAt.getTime()) {
+      logWarn('Socket connection attempted with a token predating a password change', {
+        userId: user.id,
+      });
+      return { ok: false, error: 'Session ended because the password was changed' };
+    }
+
+    if (user.status === 'suspended' || user.status === 'deactivated') {
+      logWarn('Socket connection attempted by inactive account', {
+        userId: user.id,
+        status: user.status,
+      });
+      return { ok: false, error: 'Account is suspended or deactivated' };
+    }
+
+    return { ok: true, user };
+  } catch (error) {
+    logError('Socket authentication failed', error as Error, { socketId });
+    return { ok: false, error: 'Authentication failed' };
+  }
+};
+
 export class SocketService {
   private io: SocketIOServer;
   private connectedUsers: Map<string, string> = new Map(); // userId -> socketId
@@ -81,6 +160,7 @@ export class SocketService {
   private activeCalls: Map<string, Set<string>> = new Map(); // callId -> Set of userIds
   private groupChatService: GroupChatService;
   private groupChatRooms: Map<string, Set<string>> = new Map(); // groupChatId -> Set of userIds
+  private revalidationTimer: NodeJS.Timeout | null = null;
 
   constructor(server: HTTPServer) {
     const nodeEnv = process.env['NODE_ENV'] || 'development';
@@ -109,39 +189,91 @@ export class SocketService {
     this.groupChatService = new GroupChatService();
     this.setupMiddleware();
     this.setupEventHandlers();
+    this.startSessionRevalidation();
 
     logInfo('Socket.io service initialized with WebRTC support');
   }
 
   private setupMiddleware(): void {
-    // Authentication middleware
     this.io.use(async (socket: any, next) => {
-      try {
-        const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+      const token =
+        socket.handshake.auth?.token
+        || socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
-        if (!token) {
-          logWarn('Socket connection attempted without token', { socketId: socket.id });
-          return next(new Error('Authentication token required'));
-        }
+      const result = await authenticateSocketToken(token, socket.id);
 
-        const decoded = jwt.verify(token, process.env['JWT_SECRET']!) as any;
-        const user = await User.findByPk(decoded.id);
-
-        if (!user) {
-          logWarn('Socket connection attempted with invalid user', { userId: decoded.id });
-          return next(new Error('Invalid user'));
-        }
-
-        socket.userId = user.id;
-        socket.user = user;
-
-        logInfo('Socket authenticated', { userId: user.id, socketId: socket.id });
-        next();
-      } catch (error) {
-        logError('Socket authentication failed', error as Error, { socketId: socket.id });
-        next(new Error('Authentication failed'));
+      if (!result.ok) {
+        return next(new Error(result.error));
       }
+
+      socket.userId = result.user.id;
+      socket.user = result.user;
+      // Mirrored into `socket.data` because that is the only place the
+      // adapter's fetchSockets() view carries through, and the revalidation
+      // sweep below reads it from there.
+      //
+      // Kept at all so the session can be re-checked while the socket is open.
+      // A socket used to be authenticated once and then trusted for as long as
+      // it stayed connected — days, potentially — so a logout, a suspension,
+      // or a password reset had no effect on a connection already established.
+      socket.data = socket.data || {};
+      socket.data.authToken = token;
+      socket.data.userId = result.user.id;
+      logInfo('Socket authenticated', { userId: result.user.id, socketId: socket.id });
+      return next();
     });
+  }
+
+  /**
+   * Re-check every open socket's session, and disconnect the ones that no
+   * longer hold up.
+   *
+   * A live socket carries location, chat and call events, so it is exactly as
+   * sensitive as an HTTP request and needs the same checks — but it only ever
+   * passed them once, at connect time.
+   */
+  private startSessionRevalidation(): void {
+    this.revalidationTimer = setInterval(() => {
+      void this.revalidateSessions();
+    }, SESSION_REVALIDATION_MS);
+
+    // Never hold the process open on this alone.
+    this.revalidationTimer.unref?.();
+  }
+
+  private async revalidateSessions(): Promise<void> {
+    let sockets: any[];
+    try {
+      sockets = await this.io.fetchSockets() as unknown as any[];
+    } catch (error) {
+      logError('Could not enumerate sockets for revalidation', error as Error);
+      return;
+    }
+
+    for (const socket of sockets) {
+      try {
+        const result = await authenticateSocketToken(socket.data?.authToken, socket.id);
+        if (result.ok) continue;
+
+        logWarn('Disconnecting a socket whose session is no longer valid', {
+          socketId: socket.id,
+          userId: socket.data?.userId,
+          reason: result.error,
+        });
+        socket.emit('session_ended', { reason: result.error });
+        socket.disconnect(true);
+      } catch (error) {
+        logError('Socket revalidation failed', error as Error, { socketId: socket.id });
+      }
+    }
+  }
+
+  /** Stop the revalidation timer during graceful shutdown. */
+  public stopSessionRevalidation(): void {
+    if (this.revalidationTimer) {
+      clearInterval(this.revalidationTimer);
+      this.revalidationTimer = null;
+    }
   }
 
   private setupEventHandlers(): void {
