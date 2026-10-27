@@ -2,9 +2,12 @@
  * @fileoverview Integration tests for authenticated file serving
  * @author Oabona-Majoko
  * @created 2026-04-17
- * @lastModified 2026-04-17
+ * @lastModified 2026-10-27
  *
- * Uses a minimal Express app — no DB or Redis required.
+ * Uses a minimal Express app against the integration test database. The
+ * database used to be replaced with a plain object, which crashed model
+ * initialisation on import; authenticateToken also looks the user up, so the
+ * two users these tests sign tokens for now exist. Redis is still mocked.
  */
 
 import express from 'express';
@@ -14,6 +17,7 @@ import fs from 'fs';
 import { AuthService } from '../../services/AuthService';
 import { UserRole } from '../../types';
 import { authenticateToken } from '../../middleware/auth';
+import { User as UserModel } from '../../models';
 
 jest.mock('../../config/redis', () => ({
   redisClient: {
@@ -26,20 +30,6 @@ jest.mock('../../config/redis', () => ({
   },
 }));
 
-jest.mock('../../config/database', () => ({
-  sequelize: {
-    authenticate: jest.fn().mockResolvedValue(undefined),
-    query: jest.fn().mockResolvedValue([]),
-    close: jest.fn().mockResolvedValue(undefined),
-    define: jest.fn(),
-    fn: jest.fn(),
-    col: jest.fn(),
-    literal: jest.fn(),
-  },
-  testConnection: jest.fn().mockResolvedValue(undefined),
-  Op: {},
-  QueryTypes: {},
-}));
 
 const TEST_DIR = './uploads/avatars';
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -90,6 +80,21 @@ beforeAll(() => {
 
 afterAll(() => {
   try { fs.unlinkSync(FILE_PATH); } catch { /* already gone */ }
+});
+
+// The setup file empties every table before each test, and authenticateToken
+// rejects a token whose user does not exist, so both users are recreated here.
+beforeEach(async () => {
+  for (const id of [USER_ID, OTHER_USER_ID]) {
+    await UserModel.create({
+      id,
+      email: `${id}@test.com`,
+      password: 'Integration-Test-Password-1!',
+      firstName: 'File',
+      lastName: 'Owner',
+      role: UserRole.PASSENGER,
+    });
+  }
 });
 
 describe('GET /uploads/:type/:filename', () => {

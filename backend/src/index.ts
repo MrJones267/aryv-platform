@@ -530,7 +530,12 @@ const startServer = async (): Promise<void> => {
   }
 };
 
-// Start the server
-startServer();
+// Start the server, except when a test imports the app. Jest sets NODE_ENV to
+// 'test'; starting here then refused to run against a schema without the
+// migrations table and called process.exit(1) inside the test runner, and
+// otherwise left a listening port and schedulers holding Jest open.
+if (process.env['NODE_ENV'] !== 'test') {
+  startServer();
+}
 
 export default app;

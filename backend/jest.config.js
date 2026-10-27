@@ -50,6 +50,9 @@ module.exports = {
   forceExit: true,
   detectOpenHandles: true,
 
+  // Per-test timeouts are set with jest.setTimeout() in each project's setup
+  // file. `testTimeout` is not a valid project option in Jest 29: it was
+  // ignored with a validation warning, so it is not repeated here.
   projects: [
     {
       ...sharedConfig,
@@ -57,7 +60,6 @@ module.exports = {
       displayName: 'unit',
       testMatch: ['**/src/tests/unit/**/*.test.ts', '**/src/tests/unit/**/*.spec.ts'],
       setupFilesAfterEnv: ['<rootDir>/src/tests/setup-unit.ts'],
-      testTimeout: 10000,
     },
     {
       ...sharedConfig,
@@ -69,7 +71,6 @@ module.exports = {
       displayName: 'contract',
       testMatch: ['**/src/tests/contract/**/*.test.ts'],
       setupFilesAfterEnv: ['<rootDir>/src/tests/setup-contract.ts'],
-      testTimeout: 180000,
     },
     {
       ...sharedConfig,
@@ -81,7 +82,6 @@ module.exports = {
         '**/src/tests/demand-pricing.test.ts',
       ],
       setupFilesAfterEnv: ['<rootDir>/src/tests/setup.ts'],
-      testTimeout: 30000,
     },
   ],
 };

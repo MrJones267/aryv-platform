@@ -167,6 +167,15 @@ DeliveryTier.init({
   sequelize,
   modelName: 'DeliveryTier',
   tableName: 'delivery_tiers',
+  validate: {
+    // A tier promising 10-5 hours makes isWithinSLA() and the delivery window
+    // text meaningless. The column validators checked each bound alone.
+    deliveryWindowIsOrdered(this: DeliveryTier) {
+      if (this.minDeliveryHours > this.maxDeliveryHours) {
+        throw new Error('minDeliveryHours cannot be greater than maxDeliveryHours');
+      }
+    },
+  },
   timestamps: true,
   indexes: [
     { fields: ['tier_type'], unique: true },

@@ -8,7 +8,7 @@
 import request from 'supertest';
 import app from '../../index';
 import { User } from '../../models';
-import { UserRole } from '../../types';
+import { UserRole, UserStatus } from '../../types';
 
 describe('Authentication Endpoints', () => {
   describe('POST /api/auth/register', () => {
@@ -123,7 +123,7 @@ describe('Authentication Endpoints', () => {
         firstName: 'John',
         lastName: 'Doe',
         role: UserRole.PASSENGER,
-        status: 'active',
+        status: UserStatus.ACTIVE,
       });
     });
 

@@ -12,8 +12,8 @@ import User from '../../models/User';
 import Ride from '../../models/Ride';
 import Booking from '../../models/Booking';
 import Vehicle from '../../models/Vehicle';
-import { BookingStatus, RideStatus } from '../../types';
-import jwt from 'jsonwebtoken';
+import { AuthService } from '../../services/AuthService';
+import { BookingStatus, RideStatus, UserRole, VehicleType } from '../../types';
 
 describe('Booking System Integration Tests', () => {
   let driverUser: any;
@@ -41,8 +41,9 @@ describe('Booking System Integration Tests', () => {
       firstName: 'John',
       lastName: 'Driver',
       email: 'driver@test.com',
-      phoneNumber: '+1234567890',
-      passwordHash: 'hashedpassword',
+      phone: '+26771234567',
+      password: 'Integration-Test-Password-1!',
+      role: UserRole.DRIVER,
       isEmailVerified: true,
       isPhoneVerified: true,
     });
@@ -51,15 +52,17 @@ describe('Booking System Integration Tests', () => {
       firstName: 'Jane',
       lastName: 'Passenger',
       email: 'passenger@test.com',
-      phoneNumber: '+1234567891',
-      passwordHash: 'hashedpassword',
+      phone: '+26771234568',
+      password: 'Integration-Test-Password-1!',
+      role: UserRole.PASSENGER,
       isEmailVerified: true,
       isPhoneVerified: true,
     });
 
-    // Create JWT tokens
-    driverToken = jwt.sign({ id: driverUser.id }, process.env['JWT_SECRET']!);
-    passengerToken = jwt.sign({ id: passengerUser.id }, process.env['JWT_SECRET']!);
+    // Signed the way the API signs them: authenticateToken reads `userId`, so
+    // a hand-rolled { id } token was rejected as invalid.
+    driverToken = AuthService.generateAccessToken({ userId: driverUser.id, email: driverUser.email, role: UserRole.DRIVER });
+    passengerToken = AuthService.generateAccessToken({ userId: passengerUser.id, email: passengerUser.email, role: UserRole.PASSENGER });
 
     // Create vehicle for driver
     vehicle = await Vehicle.create({
@@ -70,8 +73,8 @@ describe('Booking System Integration Tests', () => {
       color: 'Blue',
       licensePlate: 'ABC123',
       capacity: 4,
+      type: VehicleType.SEDAN,
       isVerified: true,
-      isActive: true,
     });
 
     // Create a ride
@@ -119,7 +122,8 @@ describe('Booking System Integration Tests', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.seatsBooked).toBe(2);
       expect(response.body.data.status).toBe(BookingStatus.PENDING);
-      expect(response.body.data.totalAmount).toBe(52.5); // 2 seats * $25 + 5% platform fee
+      // DECIMAL columns come back from Postgres, and so from the API, as strings.
+      expect(Number(response.body.data.totalAmount)).toBe(52.5); // 2 seats * 25 + 5% platform fee
       expect(response.body.data.passengerId).toBe(passengerUser.id);
       expect(response.body.data.rideId).toBe(ride.id);
 
@@ -231,9 +235,25 @@ describe('Booking System Integration Tests', () => {
     });
 
     it('should filter bookings by status', async () => {
-      // Create another booking with different status
+      // Create another booking with a different status. It needs its own
+      // ride: unique_passenger_per_ride allows one booking per passenger per
+      // ride, so a second booking on `ride` was rejected by the database.
+      const otherRide = await Ride.create({
+        driverId: driverUser.id,
+        vehicleId: vehicle.id,
+        originAddress: '789 Other St, City',
+        originCoordinates: { type: 'Point', coordinates: [-74.006, 40.7128] },
+        destinationAddress: '456 End Ave, City',
+        destinationCoordinates: { type: 'Point', coordinates: [-73.9857, 40.7484] },
+        departureTime: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        availableSeats: 3,
+        pricePerSeat: 25.0,
+        estimatedDuration: 30,
+        distance: 15.5,
+        status: RideStatus.PENDING,
+      });
       await Booking.create({
-        rideId: ride.id,
+        rideId: otherRide.id,
         passengerId: passengerUser.id,
         seatsBooked: 1,
         totalAmount: 26.25,
@@ -401,7 +421,7 @@ describe('Booking System Integration Tests', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.seatsBooked).toBe(1);
-      expect(response.body.data.totalAmount).toBe(26.25); // Recalculated amount
+      expect(Number(response.body.data.totalAmount)).toBe(26.25); // Recalculated amount
     });
 
     it('should prevent updating seat count beyond availability', async () => {
@@ -496,6 +516,11 @@ describe('Booking System Integration Tests', () => {
     });
   });
 
+  // These create and confirm a real Stripe PaymentIntent, so they need a
+  // Stripe test key. Without one the API has no Stripe client and answers 500,
+  // which says nothing about the booking code; skip them visibly instead.
+  const itWithStripe = process.env['STRIPE_SECRET_KEY'] ? it : it.skip;
+
   describe('Payment Integration', () => {
     beforeEach(async () => {
       booking = await Booking.create({
@@ -508,7 +533,7 @@ describe('Booking System Integration Tests', () => {
       });
     });
 
-    it('should create payment intent for confirmed booking', async () => {
+    itWithStripe('should create payment intent for confirmed booking', async () => {
       const response = await request(app)
         .get(`/api/bookings/${booking.id}/payment-intent`)
         .set('Authorization', `Bearer ${passengerToken}`)
@@ -533,7 +558,7 @@ describe('Booking System Integration Tests', () => {
       expect(response.body.code).toBe('BOOKING_NOT_CONFIRMED');
     });
 
-    it('should confirm payment successfully', async () => {
+    itWithStripe('should confirm payment successfully', async () => {
       // First create payment intent
       const paymentResponse = await request(app)
         .get(`/api/bookings/${booking.id}/payment-intent`)
@@ -573,7 +598,7 @@ describe('Booking System Integration Tests', () => {
         .expect(401);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.code).toBe('UNAUTHORIZED');
+      expect(response.body.code).toBe('ACCESS_TOKEN_REQUIRED');
     });
 
     it('should validate booking ID format', async () => {
