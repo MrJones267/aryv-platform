@@ -7,7 +7,7 @@
 
 import { Router } from 'express';
 import { Op } from 'sequelize';
-import { sequelize } from '../config/database';
+import { sequelize, QueryTypes } from '../config/database';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
@@ -20,7 +20,6 @@ import Ride from '../models/Ride';
 import User from '../models/User';
 import { DeliveryDispute } from '../models/DeliveryDispute';
 import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
-import Package from '../models/Package';
 import { Currency } from '../models/Currency';
 import { BookingStatus, RideStatus } from '../types';
 import { redisClient } from '../config/redis';
@@ -369,34 +368,122 @@ router.post('/courier/disputes/:id/resolve', authenticateAdminToken, requireAdmi
  * @desc    Get courier packages
  * @access  Private (Admin)
  */
+// A package has no status of its own. Its state is its latest delivery
+// agreement's status, or, before any courier has accepted it, whether it is
+// still listed. This filtered Package on a `status` attribute it does not
+// have, and the admin panel's Courier page showed invented packages instead.
+const PACKAGE_STATE_SQL = `
+  CASE
+    WHEN a.status IS NOT NULL THEN a.status
+    WHEN p.is_active AND (p.expires_at IS NULL OR p.expires_at > NOW()) THEN 'open'
+    ELSE 'expired'
+  END`;
+const PACKAGE_STATES = ['open', 'expired', 'pending_pickup', 'in_transit', 'completed', 'disputed', 'cancelled'] as const;
+const PACKAGES_FROM_SQL = `
+  FROM packages p
+  LEFT JOIN users s ON s.id = p.sender_id
+  LEFT JOIN LATERAL (
+    SELECT da.* FROM delivery_agreements da
+     WHERE da.package_id = p.id
+     ORDER BY da.created_at DESC
+     LIMIT 1
+  ) a ON true
+  LEFT JOIN users c ON c.id = a.courier_id`;
+
+/**
+ * @route   GET /api/admin/courier/packages
+ * @desc    Packages with their current state and courier, newest first
+ * @access  Private (Admin)
+ */
 router.get('/courier/packages', authenticateAdminToken, async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query['page'] || 1));
     const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 20)));
-    const offset = (page - 1) * limit;
-    const { status, senderId } = req.query;
+    const state = req.query['status'] ? String(req.query['status']) : null;
+    if (state && !(PACKAGE_STATES as readonly string[]).includes(state)) {
+      return res.status(400).json({ success: false, error: `status must be one of ${PACKAGE_STATES.join(', ')}`, code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    const filter = state ? `WHERE ${PACKAGE_STATE_SQL} = :state` : '';
+    const replacements = { state, limit, offset: (page - 1) * limit };
 
-    const where: Record<string, any> = {};
-    if (status) where['status'] = status;
-    if (senderId) where['senderId'] = senderId;
+    const [packages, [{ total }]] = await Promise.all([
+      sequelize.query(
+        `SELECT p.id, p.title, p.pickup_address AS "pickupAddress", p.dropoff_address AS "dropoffAddress",
+                p.package_size AS "packageSize", p.fragile, p.valuable, p.urgency_level AS "urgencyLevel",
+                p.sender_price_offer AS "senderPriceOffer", p.currency, p.payment_method AS "paymentMethod",
+                p.requested_delivery_time AS "requestedDeliveryTime", p.created_at AS "createdAt",
+                ${PACKAGE_STATE_SQL} AS status,
+                TRIM(CONCAT(s.first_name, ' ', s.last_name)) AS "senderName",
+                NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), '') AS "courierName",
+                a.id AS "agreementId", a.agreed_price AS "agreedPrice", a.platform_fee AS "platformFee",
+                a.currency AS "agreementCurrency"
+           ${PACKAGES_FROM_SQL}
+           ${filter}
+          ORDER BY p.created_at DESC
+          LIMIT :limit OFFSET :offset`,
+        { type: QueryTypes.SELECT, replacements },
+      ),
+      sequelize.query(
+        `SELECT COUNT(*)::int AS total ${PACKAGES_FROM_SQL} ${filter}`,
+        { type: QueryTypes.SELECT, replacements },
+      ) as Promise<Array<{ total: number }>>,
+    ]);
 
-    const result = await Package.findAndCountAll({
-      where,
-      include: [
-        { model: User, as: 'sender', attributes: ['id', 'firstName', 'lastName', 'email'], required: false },
-      ],
-      order: [['createdAt', 'DESC']],
-      limit,
-      offset,
-    });
-
-    res.json({
+    return res.json({
       success: true,
-      data: { packages: result.rows, pagination: { page, limit, total: result.count, totalPages: Math.ceil(result.count / limit) } },
+      data: { packages, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch packages', code: 'FETCH_PACKAGES_FAILED', timestamp: new Date().toISOString() });
+    return res.status(500).json({ success: false, error: 'Failed to fetch packages', code: 'FETCH_PACKAGES_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/courier/stats
+ * @desc    Package counts by state, and courier money per currency
+ * @access  Private (Admin)
+ *
+ * Money is the agreed price and platform fee of completed deliveries, kept
+ * per currency and never added across them.
+ */
+router.get('/courier/stats', authenticateAdminToken, async (_req, res) => {
+  try {
+    const [counts, money] = await Promise.all([
+      sequelize.query<{ status: string; count: number }>(
+        `SELECT ${PACKAGE_STATE_SQL} AS status, COUNT(*)::int AS count ${PACKAGES_FROM_SQL} GROUP BY 1`,
+        { type: QueryTypes.SELECT },
+      ),
+      sequelize.query<{ currency: string; deliveries: number; value: string; platformFees: string }>(
+        `SELECT currency, COUNT(*)::int AS deliveries,
+                SUM(agreed_price) AS value, SUM(platform_fee) AS "platformFees"
+           FROM delivery_agreements
+          WHERE status = 'completed'
+          GROUP BY currency
+          ORDER BY SUM(agreed_price) DESC`,
+        { type: QueryTypes.SELECT },
+      ),
+    ]);
+
+    const byState = Object.fromEntries(PACKAGE_STATES.map((st) => [st, 0])) as Record<string, number>;
+    for (const row of counts) byState[row.status] = row.count;
+
+    return res.json({
+      success: true,
+      data: {
+        total: counts.reduce((sum, row) => sum + row.count, 0),
+        byState,
+        completedByCurrency: money.map((m) => ({
+          currency: m.currency,
+          deliveries: m.deliveries,
+          value: Number(m.value) || 0,
+          platformFees: Number(m.platformFees) || 0,
+        })),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to fetch courier stats', code: 'COURIER_STATS_FAILED', timestamp: new Date().toISOString() });
   }
 });
 
@@ -562,31 +649,40 @@ router.get('/analytics/usage', authenticateAdminToken, async (_req, res) => {
  * @desc    Get top routes analytics
  * @access  Private (Admin)
  */
-router.get('/analytics/top-routes', authenticateAdminToken, async (_req, res) => {
+router.get('/analytics/top-routes', authenticateAdminToken, async (req, res) => {
   try {
-    const routes = await Ride.findAll({
-      where: { status: RideStatus.COMPLETED },
-      attributes: [
-        'originAddress',
-        'destinationAddress',
-        [sequelize.fn('COUNT', sequelize.col('Ride.id')), 'tripCount'],
-        [sequelize.fn('AVG', sequelize.col('price_per_seat')), 'avgPrice'],
-        [sequelize.fn('SUM', sequelize.col('available_seats')), 'totalSeats'],
-      ],
-      group: ['originAddress', 'destinationAddress'],
-      order: [[sequelize.literal('tripCount'), 'DESC']],
-      limit: 10,
-    });
+    // This used Ride.findAll with group: ['originAddress', ...] and ORDER BY
+    // an unquoted tripCount. Both reach Postgres as identifiers that do not
+    // exist (the columns are origin_address and destination_address, and an
+    // unquoted alias is folded to lower case), so the query failed. It also
+    // averaged seat prices across currencies. Routes are now grouped per
+    // currency, with the price in the currency it was charged in.
+    const requested = parseInt(String(req.query['limit'] ?? '10'), 10);
+    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 50) : 10;
+
+    const routes = await sequelize.query<{
+      origin: string;
+      destination: string;
+      currency: string;
+      tripCount: number;
+      avgPricePerSeat: string;
+    }>(
+      `SELECT origin_address AS origin,
+              destination_address AS destination,
+              currency,
+              COUNT(*)::int AS "tripCount",
+              ROUND(AVG(price_per_seat)::numeric, 2) AS "avgPricePerSeat"
+         FROM rides
+        WHERE status = :completed
+        GROUP BY origin_address, destination_address, currency
+        ORDER BY "tripCount" DESC, origin_address
+        LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { completed: RideStatus.COMPLETED, limit } },
+    );
 
     res.json({
       success: true,
-      data: routes.map((r: any) => ({
-        origin: r.originAddress,
-        destination: r.destinationAddress,
-        tripCount: parseInt(r.getDataValue('tripCount'), 10),
-        avgPrice: parseFloat(parseFloat(r.getDataValue('avgPrice') || '0').toFixed(2)),
-        totalSeats: parseInt(r.getDataValue('totalSeats') || '0', 10),
-      })),
+      data: routes.map((r) => ({ ...r, avgPricePerSeat: Number(r.avgPricePerSeat) })),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

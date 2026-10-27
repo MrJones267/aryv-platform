@@ -36,7 +36,8 @@ export interface UserGrowthData {
   date: string;
   totalUsers: number;
   newUsers: number;
-  activeUsers: number;
+  /** Not reported by the server: it does not track activity per day. */
+  activeUsers?: number;
 }
 
 export interface CurrencyRevenue {
@@ -56,13 +57,13 @@ export interface RevenueData {
   total: number;
 }
 
+/** A completed route in one currency, as /analytics/top-routes reports it. */
 export interface TopRoute {
-  id: string;
   origin: string;
   destination: string;
-  count: number;
-  avgPrice: number;
-  totalRevenue: number;
+  currency: string;
+  tripCount: number;
+  avgPricePerSeat: number;
 }
 
 /**
