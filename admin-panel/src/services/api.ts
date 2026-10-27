@@ -43,7 +43,9 @@ adminApi.interceptors.response.use(
     return response;
   },
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    // A 401 from the login request itself is a wrong password, not an expired
+    // session; redirecting would reload the page and swallow the error message.
+    if (error.response?.status === 401 && !error.config?.url?.endsWith('/auth/login')) {
       // Token expired or invalid
       localStorage.removeItem('admin_token');
       window.location.href = '/login';
