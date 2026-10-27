@@ -26,6 +26,11 @@ import { BookingStatus, RideStatus } from '../types';
 import { redisClient } from '../config/redis';
 import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getMonthlyRevenue, getRevenueByCurrency } from '../services/RevenueReportService';
+import { DeliveryTier } from '../models/DeliveryTier';
+import { ADMIN_TOKEN_TTL_SECONDS } from '../controllers/AdminController';
+import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
+import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
+import logger from '../utils/logger';
 
 const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
@@ -58,10 +63,14 @@ const DEFAULT_COMMISSION = {
 
 const router = Router();
 
-// Rate limiting for admin authentication endpoints
+// Rate limiting for admin authentication endpoints. Named so the settings
+// page can report the limit actually in force.
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_MAX_ATTEMPTS = 5;
+
 const adminAuthLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
+  windowMs: ADMIN_LOGIN_WINDOW_MS,
+  max: ADMIN_LOGIN_MAX_ATTEMPTS, // per IP per window
   message: {
     success: false,
     error: 'Too many admin authentication attempts, please try again later',
@@ -686,6 +695,101 @@ router.put('/settings/commission', authenticateAdminToken, requireSuperAdmin, as
     return res.json({ success: true, message: 'Commission settings updated', data: updated, timestamp: new Date().toISOString() });
   } catch {
     return res.status(500).json({ success: false, error: 'Failed to update commission settings', code: 'UPDATE_COMMISSION_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/settings/platform
+ * @desc    The fee, session and sign-in values the platform actually runs on
+ * @access  Private (Admin)
+ *
+ * Read-only, and read from the constants the code itself uses, so the admin
+ * panel can show them without being able to drift from them. The settings
+ * page used to show invented rates (rides 15%, courier 20%) and security
+ * options the backend does not have.
+ */
+router.get('/settings/platform', authenticateAdminToken, (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      platformCurrency: PLATFORM_DEFAULT_CURRENCY,
+      fees: {
+        bookingPlatformFeePercent: BOOKING_PLATFORM_FEE_RATE * 100,
+        cashCommissionPercent: CASH_COMMISSION_RATE * 100,
+        defaultCourierFeePercent: DEFAULT_COURIER_FEE_RATE * 100,
+      },
+      adminSecurity: {
+        sessionHours: ADMIN_TOKEN_TTL_SECONDS / 3600,
+        loginAttemptsPerWindow: ADMIN_LOGIN_MAX_ATTEMPTS,
+        loginWindowMinutes: ADMIN_LOGIN_WINDOW_MS / 60000,
+        passwordMinLength: PASSWORD_MIN_LENGTH,
+        twoFactorAvailable: false,
+      },
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
+ * @route   GET /api/admin/delivery-tiers
+ * @desc    Every courier delivery tier, active or not
+ * @access  Private (Admin)
+ */
+router.get('/delivery-tiers', authenticateAdminToken, async (_req, res) => {
+  try {
+    const tiers = await DeliveryTier.findAll({ order: [['minDeliveryHours', 'ASC']] });
+    res.json({ success: true, data: tiers, timestamp: new Date().toISOString() });
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to load delivery tiers', code: 'DELIVERY_TIERS_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   PUT /api/admin/delivery-tiers/:id
+ * @desc    Change a tier's platform fee, delivery window or availability
+ * @access  Private (Super admin)
+ *
+ * These are real controls: courier pricing reads the tiers from the
+ * database on every quote and package. Only these four fields can change;
+ * the model's validators bound each one and keep the window ordered.
+ */
+router.put('/delivery-tiers/:id', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
+  const EDITABLE = ['platformFeePercentage', 'minDeliveryHours', 'maxDeliveryHours', 'isActive'] as const;
+  try {
+    const tier = await DeliveryTier.findByPk(req.params['id']);
+    if (!tier) {
+      return res.status(404).json({ success: false, error: 'Delivery tier not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+
+    const changes: Record<string, unknown> = {};
+    for (const field of EDITABLE) {
+      if (req.body?.[field] === undefined) continue;
+      const value = req.body[field];
+      if (field === 'isActive' ? typeof value !== 'boolean' : typeof value !== 'number' || !Number.isFinite(value)) {
+        return res.status(400).json({ success: false, error: `${field} has the wrong type`, code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+      }
+      changes[field] = value;
+    }
+    if (Object.keys(changes).length === 0) {
+      return res.status(400).json({ success: false, error: `Nothing to change. Editable fields: ${EDITABLE.join(', ')}`, code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+
+    const before = {
+      platformFeePercentage: Number(tier.platformFeePercentage),
+      minDeliveryHours: tier.minDeliveryHours,
+      maxDeliveryHours: tier.maxDeliveryHours,
+      isActive: tier.isActive,
+    };
+    await tier.update(changes);
+    logger.info('Delivery tier changed', { tierType: tier.tierType, adminId: (req as any).user?.id, before, after: changes });
+
+    return res.json({ success: true, data: tier, timestamp: new Date().toISOString() });
+  } catch (error) {
+    if ((error as Error).name === 'SequelizeValidationError') {
+      const details = ((error as any).errors ?? []).map((e: { message: string }) => e.message);
+      return res.status(400).json({ success: false, error: details.join('; ') || 'Invalid value', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    return res.status(500).json({ success: false, error: 'Failed to update delivery tier', code: 'DELIVERY_TIERS_ERROR', timestamp: new Date().toISOString() });
   }
 });
 

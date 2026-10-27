@@ -24,4 +24,10 @@ export const CASH_COMMISSION_RATE = 0.10;
 /** Platform fee added to a booking. */
 export const BOOKING_PLATFORM_FEE_RATE = 0.05;
 
+/**
+ * Platform share of a courier delivery when the package has no delivery tier.
+ * A package with a tier uses that tier's platform_fee_percentage instead.
+ */
+export const DEFAULT_COURIER_FEE_RATE = 0.25;
+
 export const round2 = (value: number): number => Math.round(value * 100) / 100;
