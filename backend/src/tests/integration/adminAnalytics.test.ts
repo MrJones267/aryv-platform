@@ -74,11 +74,11 @@ describe('Admin analytics', () => {
         status,
       } as any);
 
-    await ride('Gaborone', 'Mogoditshane', 20, 'BWP');
-    await ride('Gaborone', 'Mogoditshane', 30, 'BWP');
-    await ride('Gaborone', 'Mogoditshane', 40, 'ZAR');
-    await ride('Gaborone', 'Tlokweng', 15, 'BWP');
-    await ride('Gaborone', 'Tlokweng', 99, 'BWP', RideStatus.CANCELLED);
+    await ride('Main Mall, Gaborone', 'Mogoditshane Mall', 20, 'BWP');
+    await ride('Main Mall, Gaborone', 'Mogoditshane Mall', 30, 'BWP');
+    await ride('Main Mall, Gaborone', 'Mogoditshane Mall', 40, 'ZAR');
+    await ride('Main Mall, Gaborone', 'Tlokweng Border Post', 15, 'BWP');
+    await ride('Main Mall, Gaborone', 'Tlokweng Border Post', 99, 'BWP', RideStatus.CANCELLED);
   });
 
   const get = (path: string) => request(app).get(path).set('Authorization', `Bearer ${token}`);
@@ -87,9 +87,9 @@ describe('Admin analytics', () => {
     const response = await get('/api/admin/analytics/top-routes').expect(200);
 
     expect(response.body.data).toEqual([
-      { origin: 'Gaborone', destination: 'Mogoditshane', currency: 'BWP', tripCount: 2, avgPricePerSeat: 25 },
-      { origin: 'Gaborone', destination: 'Mogoditshane', currency: 'ZAR', tripCount: 1, avgPricePerSeat: 40 },
-      { origin: 'Gaborone', destination: 'Tlokweng', currency: 'BWP', tripCount: 1, avgPricePerSeat: 15 },
+      { origin: 'Main Mall, Gaborone', destination: 'Mogoditshane Mall', currency: 'BWP', tripCount: 2, avgPricePerSeat: 25 },
+      { origin: 'Main Mall, Gaborone', destination: 'Mogoditshane Mall', currency: 'ZAR', tripCount: 1, avgPricePerSeat: 40 },
+      { origin: 'Main Mall, Gaborone', destination: 'Tlokweng Border Post', currency: 'BWP', tripCount: 1, avgPricePerSeat: 15 },
     ]);
   });
 
@@ -116,7 +116,7 @@ describe('Admin analytics', () => {
       });
       const pkg = (title: string, extra: Record<string, unknown> = {}) =>
         Package.create({
-          senderId: sender.id, title, pickupAddress: 'Main Mall', dropoffAddress: 'Tlokweng',
+          senderId: sender.id, title, pickupAddress: 'Main Mall', dropoffAddress: 'Tlokweng Border Post',
           pickupCoordinates: point(25.92, -24.65), dropoffCoordinates: point(25.97, -24.67),
           senderPriceOffer: 40, packageSize: 'small', isActive: true, ...extra,
         } as any);
