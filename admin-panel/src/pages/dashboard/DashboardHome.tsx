@@ -61,7 +61,6 @@ import {
   selectUsageStats,
   selectAnalyticsLoading,
 } from '../../store/slices/analyticsSlice';
-import { apiClient } from '../../config/api';
 
 // Sample data for charts (replace with real data from API)
 const revenueData = [

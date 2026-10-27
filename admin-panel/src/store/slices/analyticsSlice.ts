@@ -5,7 +5,6 @@
  */
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { apiClient } from '../../config/api';
 import { analyticsService } from '../../services/api';
 
 export interface DashboardStats {
@@ -119,42 +118,42 @@ const initialState: AnalyticsState = {
 // Async thunks
 export const fetchDashboardStats = createAsyncThunk('analytics/fetchDashboardStats', async (_, { rejectWithValue }) => {
   try {
-    // Fetch data from multiple endpoints to build comprehensive dashboard
-    const [usersResponse, ridesResponse, packagesResponse, analyticsResponse] = await Promise.all([
-      apiClient.get('/api/users'),
-      apiClient.get('/api/rides'), 
-      apiClient.get('/api/packages'),
-      apiClient.get('/api/courier/analytics')
-    ]);
+    // This used to fan out to the passenger API (/api/users, /api/rides, ...)
+    // through the legacy fetch client in config/api. That client reads the
+    // token once at page load, so straight after sign-in it sent none, and the
+    // passenger routes reject an admin token anyway. Either way it got a 401,
+    // and its handler cleared the session and redirected to /login, so the
+    // dashboard signed every admin out within seconds of arriving. The admin
+    // API already computes these figures in one call.
+    const response = await analyticsService.getDashboardStats();
+    const data = response.data.data as any;
 
-    // Process the responses to match DashboardStats interface
-    const users = {
-      total: usersResponse.data?.length || 0,
-      active: usersResponse.data?.filter((u: any) => u.status === 'active').length || 0,
-      verified: usersResponse.data?.filter((u: any) => u.verified).length || 0,
+    return {
+      users: {
+        total: data?.users?.total ?? 0,
+        active: data?.users?.active ?? 0,
+        verified: data?.users?.verified ?? 0,
+      },
+      rides: {
+        total: data?.rides?.total ?? 0,
+        completed: data?.rides?.completed ?? 0,
+        cancelled: data?.rides?.cancelled ?? 0,
+      },
+      revenue: {
+        total: data?.revenue?.total ?? 0,
+        thisMonth: data?.revenue?.thisMonth ?? 0,
+        commission: data?.revenue?.commission ?? 0,
+      },
+      courier: {
+        packages: data?.courier?.totalPackages ?? 0,
+        disputes: data?.disputes?.open ?? 0,
+        completionRate: data?.courier?.successRate ?? 0,
+      },
     };
-
-    const rides = {
-      total: ridesResponse.data?.length || 0,
-      completed: ridesResponse.data?.filter((r: any) => r.status === 'confirmed').length || 0,
-      cancelled: ridesResponse.data?.filter((r: any) => r.status === 'cancelled').length || 0,
-    };
-
-    const revenue = {
-      total: analyticsResponse.packages?.totalRevenue || 0,
-      thisMonth: analyticsResponse.today?.revenue || 0,
-      commission: analyticsResponse.packages?.totalFees || 0,
-    };
-
-    const courier = {
-      packages: analyticsResponse.packages?.total || 0,
-      disputes: 0, // Will be implemented when dispute system is added
-      completionRate: analyticsResponse.packages?.completed || 0,
-    };
-
-    return { users, rides, revenue, courier };
   } catch (error: any) {
-    return rejectWithValue(error.message || 'Failed to fetch dashboard stats');
+    return rejectWithValue(
+      error.response?.data?.error || error.response?.data?.message || 'Failed to fetch dashboard stats'
+    );
   }
 });
 
