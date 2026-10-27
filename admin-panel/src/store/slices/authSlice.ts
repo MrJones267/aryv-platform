@@ -35,18 +35,30 @@ const initialState: AuthState = {
   error: null,
 };
 
+// The admin API wraps every payload as { success, data: {...} } and reports
+// failures in `error`, not `message`. Reading one level too high stored the
+// string "undefined" as the token, so the first dashboard request 401'd and
+// the interceptor bounced every sign-in back to /login within seconds.
+const errorMessage = (error: any, fallback: string): string =>
+  error.response?.data?.error || error.response?.data?.message || fallback;
+
 // Async thunks
 export const loginAdmin = createAsyncThunk(
   'auth/loginAdmin',
   async (credentials: { email: string; password: string }, { rejectWithValue }) => {
     try {
       const response = await adminApi.post('/auth/login', credentials);
-      const { user, token } = response.data;
+      const user = response.data?.data?.user;
+      const token = response.data?.data?.tokens?.accessToken;
+
+      if (!user || !token) {
+        return rejectWithValue('Login failed: unexpected response from server');
+      }
 
       localStorage.setItem('admin_token', token);
       return { user, token };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Login failed');
+      return rejectWithValue(errorMessage(error, 'Login failed'));
     }
   }
 );
@@ -54,10 +66,10 @@ export const loginAdmin = createAsyncThunk(
 export const verifyToken = createAsyncThunk('auth/verifyToken', async (_, { rejectWithValue }) => {
   try {
     const response = await adminApi.get('/auth/verify');
-    return response.data.user;
+    return response.data.data.user;
   } catch (error: any) {
     localStorage.removeItem('admin_token');
-    return rejectWithValue(error.response?.data?.message || 'Token verification failed');
+    return rejectWithValue(errorMessage(error, 'Token verification failed'));
   }
 });
 
@@ -68,7 +80,7 @@ export const logoutAdmin = createAsyncThunk('auth/logoutAdmin', async (_, { reje
     return null;
   } catch (error: any) {
     localStorage.removeItem('admin_token');
-    return rejectWithValue(error.response?.data?.message || 'Logout failed');
+    return rejectWithValue(errorMessage(error, 'Logout failed'));
   }
 });
 
@@ -77,9 +89,9 @@ export const updateAdminProfile = createAsyncThunk(
   async (profileData: Partial<AdminUser>, { rejectWithValue }) => {
     try {
       const response = await adminApi.put('/auth/profile', profileData);
-      return response.data.user;
+      return response.data.data.user;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Profile update failed');
+      return rejectWithValue(errorMessage(error, 'Profile update failed'));
     }
   }
 );
