@@ -133,6 +133,21 @@ class ResilientStore implements Store {
  * Named `makeStore` still, so every existing limiter picks the new behaviour
  * up without being touched.
  */
+// Every store made, so the integration tests can clear them between tests.
+const stores = new Set<ResilientStore>();
+
 export function makeStore(prefix: string): Store {
-  return new ResilientStore(prefix);
+  const store = new ResilientStore(prefix);
+  stores.add(store);
+  return store;
+}
+
+/**
+ * Clears this instance's counters in every rate-limit store. For tests: one
+ * suite signs up and logs in more than the auth limiter allows from a single
+ * IP, so without this a test's outcome depended on how many ran before it.
+ * Counters held in Redis are not touched.
+ */
+export async function resetAllRateLimits(): Promise<void> {
+  await Promise.all([...stores].map((store) => store.resetAll()));
 }

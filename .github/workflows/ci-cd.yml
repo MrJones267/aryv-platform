@@ -99,11 +99,11 @@ jobs:
       - name: Install dependencies (workspace root)
         run: npm ci
 
-      # Non-blocking for now: the integration suite still needs migration/seed
-      # wiring in CI. Kept visible so it can be promoted to a required gate once
-      # green. Run locally with `npm run test:integration --workspace backend`.
+      # This step had continue-on-error: true, so every suite failing to even
+      # start still showed as a green check. The schema is now built from the
+      # models in src/tests/setup.ts, and integration failures fail CI.
+      # Run locally with `npm run test:integration --workspace backend`.
       - name: Integration tests
-        continue-on-error: true
         run: npm run test:integration --workspace backend
         env:
           NODE_ENV: test

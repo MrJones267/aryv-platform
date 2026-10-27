@@ -2,9 +2,12 @@
  * @fileoverview Integration tests for admin auth route protection
  * @author Oabona-Majoko
  * @created 2026-04-17
- * @lastModified 2026-04-17
+ * @lastModified 2026-10-27
  *
- * Uses a minimal Express app — no DB or Redis required.
+ * Uses a minimal Express app against the integration test database. The
+ * database used to be replaced with a plain object, but the admin middleware
+ * loads the AdminUser model, whose Model.init needs a real Sequelize, so the
+ * suite crashed on import. Redis is still mocked.
  */
 
 import express from 'express';
@@ -12,7 +15,7 @@ import request from 'supertest';
 import { AuthService } from '../../services/AuthService';
 import { UserRole } from '../../types';
 
-// Mock Redis and DB before any module that needs them is loaded
+// Mock Redis before any module that needs it is loaded
 jest.mock('../../config/redis', () => ({
   redisClient: {
     get: jest.fn().mockResolvedValue(null),
@@ -24,20 +27,6 @@ jest.mock('../../config/redis', () => ({
   },
 }));
 
-jest.mock('../../config/database', () => ({
-  sequelize: {
-    authenticate: jest.fn().mockResolvedValue(undefined),
-    query: jest.fn().mockResolvedValue([]),
-    close: jest.fn().mockResolvedValue(undefined),
-    define: jest.fn(),
-    fn: jest.fn(),
-    col: jest.fn(),
-    literal: jest.fn(),
-  },
-  testConnection: jest.fn().mockResolvedValue(undefined),
-  Op: {},
-  QueryTypes: {},
-}));
 
 import { authenticateAdminToken } from '../../middleware/auth';
 

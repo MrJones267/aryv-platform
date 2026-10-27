@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "test": "jest --selectProjects unit contract",
     "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration",
+    "test:integration": "jest --selectProjects integration --runInBand",
     "test:all": "jest",
     "test:e2e": "jest --testPathPattern=e2e",
     "test:watch": "jest --selectProjects unit --watch",
