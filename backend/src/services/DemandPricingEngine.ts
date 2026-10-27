@@ -7,11 +7,11 @@
 
 import { DemandMetrics } from '../models/DemandMetrics';
 import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
-import { Package, PackageSize } from '../models/Package';
+import { PackageSize } from '../models/Package';
 import { CourierProfile } from '../models/CourierProfile';
 import { sequelize } from '../config/database';
 import logger from '../utils/logger';
-import { Op } from 'sequelize';
+import { QueryTypes } from 'sequelize';
 
 export interface PricingSuggestion {
   tierType: DeliveryTierType;
@@ -109,6 +109,26 @@ export class DemandPricingEngine {
   /**
    * Calculate pricing for a specific delivery tier
    */
+  /**
+   * Price before any tier multiplier, demand or urgency: the tier's base fare
+   * plus distance, scaled by package size, plus handling surcharges. Needs no
+   * database, so it is also the fallback when demand pricing is unavailable.
+   */
+  calculateBasePrice(
+    tierType: DeliveryTierType,
+    distance: number,
+    packageSize: PackageSize,
+    isFragile: boolean,
+    isValuable: boolean,
+  ): number {
+    let price = this.BASE_PRICES[tierType] || 25.0;
+    price += distance * this.DISTANCE_RATE_PER_KM;
+    price *= this.PACKAGE_SIZE_MULTIPLIERS[packageSize] || 1.0;
+    if (isFragile) price += this.FRAGILE_SURCHARGE;
+    if (isValuable) price += this.VALUABLE_SURCHARGE;
+    return price;
+  }
+
   private async calculateTierPricing(
     tier: DeliveryTier,
     distance: number,
@@ -118,24 +138,15 @@ export class DemandPricingEngine {
     demandMetrics: DemandMetrics | null,
     requestedDeliveryTime?: Date,
   ): Promise<PricingSuggestion> {
-    // Base price calculation
-    let basePrice = this.BASE_PRICES[tier.tierType] || 25.0;
-
-    // Distance-based pricing
-    basePrice += distance * this.DISTANCE_RATE_PER_KM;
-
-    // Package size multiplier
-    basePrice *= this.PACKAGE_SIZE_MULTIPLIERS[packageSize] || 1.0;
-
-    // Special handling surcharges
-    if (isFragile) basePrice += this.FRAGILE_SURCHARGE;
-    if (isValuable) basePrice += this.VALUABLE_SURCHARGE;
+    let basePrice = this.calculateBasePrice(tier.tierType, distance, packageSize, isFragile, isValuable);
 
     // Apply tier base multiplier
-    basePrice *= tier.basePriceMultiplier;
+    // DECIMAL columns arrive from Postgres as strings ("3.00"). `*` coerces
+    // them, but the values are also returned and stored, so convert once here.
+    basePrice *= Number(tier.basePriceMultiplier);
 
     // Apply demand multiplier
-    const demandMultiplier = demandMetrics?.demandMultiplier || 1.0;
+    const demandMultiplier = Number(demandMetrics?.demandMultiplier) || 1.0;
 
     // Apply urgency multiplier if delivery is requested soon
     const urgencyMultiplier = this.calculateUrgencyMultiplier(
@@ -240,62 +251,44 @@ export class DemandPricingEngine {
     const [lng, lat] = coordinates;
     const radiusKm = 20; // 20km radius for demand calculation
 
-    // Count available couriers in the area
-    const availableCouriers = await (CourierProfile as any).count({
-      where: {
-        isCourierActive: true,
-        isAvailable: true,
-      },
-      include: [{
-        model: sequelize.models['User'],
-        where: sequelize.literal(`
-          ST_DWithin(
-            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-            last_known_location::geography,
-            ${radiusKm * 1000}
-          )
-        `),
-      }],
+    // These three counts could never run. Supply filtered users on
+    // last_known_location, a column no model or migration defines, and
+    // CourierProfile on `isAvailable`, which is not an attribute. Demand used
+    // `{ [Op.is]: undefined }`, which Sequelize rejects. Completed deliveries
+    // included Package without the association's 'package' alias. Every call
+    // threw, and createPackage rethrew it, so no package could be created.
+    // Coordinates are now bound parameters rather than interpolated SQL.
+
+    // Supply is platform-wide. A courier's position is only recorded while
+    // carrying a delivery (courier_locations rows belong to an agreement), so
+    // an idle, available courier has no location to filter on.
+    const availableCouriers = await CourierProfile.count({
+      where: { isCourierActive: true, isAvailableForDeliveries: true },
     });
 
-    // Count active package requests in the area
-    const activeDemand = await Package.count({
-      where: {
-        isActive: true,
-        [Op.or]: [
-          { expiresAt: { [Op.is]: undefined } },
-          { expiresAt: { [Op.gt]: new Date() } },
-        ],
-        [Op.and]: [
-          sequelize.literal(`
-            ST_DWithin(
-              pickup_coordinates::geography,
-              ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-              ${radiusKm * 1000}
-            )
-          `),
-        ],
-      },
-    });
+    const point = 'ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography';
+    const replacements = { lng: Number(lng), lat: Number(lat), radius: radiusKm * 1000 };
 
-    // Calculate completed deliveries in last hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const completedDeliveries = await sequelize.models['DeliveryAgreement'].count({
-      where: {
-        status: 'completed',
-        deliveryConfirmedAt: { [Op.gte]: oneHourAgo },
-      },
-      include: [{
-        model: Package,
-        where: sequelize.literal(`
-          ST_DWithin(
-            pickup_coordinates::geography,
-            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-            ${radiusKm * 1000}
-          )
-        `),
-      }],
-    });
+    // Open package requests picked up within the radius
+    const [{ count: activeDemand }] = (await sequelize.query(
+      `SELECT COUNT(*)::int AS count
+         FROM packages
+        WHERE is_active = true
+          AND (expires_at IS NULL OR expires_at > NOW())
+          AND ST_DWithin(pickup_coordinates::geography, ${point}, :radius)`,
+      { type: QueryTypes.SELECT, replacements },
+    )) as Array<{ count: number }>;
+
+    // Deliveries completed in the last hour from pickups within the radius
+    const [{ count: completedDeliveries }] = (await sequelize.query(
+      `SELECT COUNT(*)::int AS count
+         FROM delivery_agreements da
+         JOIN packages p ON p.id = da.package_id
+        WHERE da.status = 'completed'
+          AND da.delivery_confirmed_at >= NOW() - INTERVAL '1 hour'
+          AND ST_DWithin(p.pickup_coordinates::geography, ${point}, :radius)`,
+      { type: QueryTypes.SELECT, replacements },
+    )) as Array<{ count: number }>;
 
     // Calculate demand multiplier
     const supplyDemandRatio = activeDemand > 0 ? Number(availableCouriers) / Number(activeDemand) : Number(availableCouriers);
@@ -368,7 +361,7 @@ export class DemandPricingEngine {
           locationHash,
           availableCouriers: metrics.availableCouriers,
           activeDemand: metrics.activeDemand,
-          demandMultiplier: metrics.demandMultiplier,
+          demandMultiplier: Number(metrics.demandMultiplier),
           lastUpdated: metrics.calculatedAt,
         });
       }

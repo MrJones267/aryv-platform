@@ -20,6 +20,10 @@ import DeliveryDispute from './DeliveryDispute';
 import CourierLocation from './CourierLocation';
 import CourierChatMessage from './CourierChatMessage';
 import PackageImage from './PackageImage';
+// Courier pricing. Not imported here before, so build-schema never created
+// their tables in production; migration 028 does.
+import DeliveryTier from './DeliveryTier';
+import DemandMetrics from './DemandMetrics';
 
 // Cash payment models
 import CashTransaction from './CashTransaction';
@@ -526,6 +530,8 @@ export {
   CourierLocation,
   CourierChatMessage,
   PackageImage,
+  DeliveryTier,
+  DemandMetrics,
   // Cash payment models
   CashTransaction,
   UserWallet,
@@ -569,6 +575,8 @@ export default {
   CourierLocation,
   CourierChatMessage,
   PackageImage,
+  DeliveryTier,
+  DemandMetrics,
   // Cash payment models
   CashTransaction,
   UserWallet,
