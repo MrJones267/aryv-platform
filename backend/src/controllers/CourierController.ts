@@ -87,6 +87,10 @@ export class CourierController {
         data: {
           distance,
           pricingSuggestions,
+          // The currency these prices are in: a package is charged in its
+          // sender's currency (see createPackage). The app printed every price
+          // with a hardcoded "P" because nothing here said which currency.
+          currency: await CurrencyService.getUserCurrencyCode(req.user?.id ?? ''),
           demandInfo: locationDemands[0] || null,
           calculatedAt: new Date().toISOString(),
         },
