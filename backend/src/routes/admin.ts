@@ -381,9 +381,11 @@ router.post('/courier/disputes/:id/resolve', authenticateAdminToken, requireAdmi
 // agreement's status, or, before any courier has accepted it, whether it is
 // still listed. This filtered Package on a `status` attribute it does not
 // have, and the admin panel's Courier page showed invented packages instead.
+// a.status is cast to text: where it is a Postgres enum, the CASE would
+// otherwise take the enum type and reject 'open' and 'expired'.
 const PACKAGE_STATE_SQL = `
   CASE
-    WHEN a.status IS NOT NULL THEN a.status
+    WHEN a.status IS NOT NULL THEN a.status::text
     WHEN p.is_active AND (p.expires_at IS NULL OR p.expires_at > NOW()) THEN 'open'
     ELSE 'expired'
   END`;
