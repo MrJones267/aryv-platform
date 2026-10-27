@@ -5,7 +5,7 @@
  * @lastModified 2025-01-25
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -86,6 +86,59 @@ const CreatePackageScreen: React.FC = () => {
   });
 
   const totalSteps = 5; // Added pricing step
+  const PRICING_STEP = 4; // rendered by renderStep5()
+
+  // Coordinates for the two addresses, looked up when the pricing step opens.
+  // Tier prices depend on the route, and this screen used to geocode only on
+  // submit, so the tier selector was always handed undefined coordinates and
+  // never asked the API for a price. The addresses are kept with the result
+  // so a later edit to either one forces a fresh lookup.
+  const [route, setRoute] = useState<{
+    pickupAddress: string;
+    dropoffAddress: string;
+    pickup: [number, number];
+    dropoff: [number, number];
+  } | null>(null);
+  const [routeStatus, setRouteStatus] = useState<'idle' | 'resolving' | 'failed'>('idle');
+
+  const routeMatchesForm = (r: typeof route): r is NonNullable<typeof route> =>
+    !!r && r.pickupAddress === formData.pickupAddress && r.dropoffAddress === formData.dropoffAddress;
+
+  const resolveRoute = async (): Promise<{ pickup: [number, number]; dropoff: [number, number] } | null> => {
+    if (routeMatchesForm(route)) {
+      return route;
+    }
+    const { pickupAddress, dropoffAddress } = formData;
+    setRouteStatus('resolving');
+    try {
+      const [pickup, dropoff] = await Promise.all([
+        LocationService.geocodeAddress(pickupAddress),
+        LocationService.geocodeAddress(dropoffAddress),
+      ]);
+      if (!pickup || !dropoff) {
+        setRoute(null);
+        setRouteStatus('failed');
+        return null;
+      }
+      setRoute({ pickupAddress, dropoffAddress, pickup, dropoff });
+      setRouteStatus('idle');
+      return { pickup, dropoff };
+    } catch (error) {
+      log.error('Geocoding the package route failed:', error);
+      setRoute(null);
+      setRouteStatus('failed');
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (currentStep === PRICING_STEP) {
+      resolveRoute();
+    }
+    // Re-run only when the step or an address changes, not on every keystroke
+    // elsewhere in the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, formData.pickupAddress, formData.dropoffAddress]);
 
   const updateFormData = (field: string, value: string | number | boolean | string[] | Date | undefined) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -157,15 +210,13 @@ const CreatePackageScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      // Get real coordinates from geocoding service
-      const [pickupCoordinates, dropoffCoordinates] = await Promise.all([
-        LocationService.geocodeAddress(formData.pickupAddress),
-        LocationService.geocodeAddress(formData.dropoffAddress),
-      ]);
-      
-      if (!pickupCoordinates || !dropoffCoordinates) {
+      // Reuses the coordinates the pricing step looked up, unless an address
+      // has changed since.
+      const resolved = await resolveRoute();
+      if (!resolved) {
         throw new Error('Unable to find coordinates for provided addresses');
       }
+      const { pickup: pickupCoordinates, dropoff: dropoffCoordinates } = resolved;
 
       const packageData: PackageCreationData = {
         title: formData.title,
@@ -521,9 +572,19 @@ const CreatePackageScreen: React.FC = () => {
         Choose your delivery speed and pricing. You can select a tier or set your own price.
       </Text>
 
+      {routeStatus === 'resolving' && (
+        <Text style={styles.stepSubtitle}>Working out the route to price each delivery speed…</Text>
+      )}
+      {routeStatus === 'failed' && (
+        <Text style={styles.stepSubtitle}>
+          We couldn&apos;t find one of the addresses, so delivery speeds can&apos;t be priced. Go back and
+          check the pickup and delivery addresses, or enter your own price below.
+        </Text>
+      )}
+
       <DeliveryTierSelector
-        pickupCoordinates={undefined}
-        dropoffCoordinates={undefined}
+        pickupCoordinates={routeMatchesForm(route) ? route.pickup : undefined}
+        dropoffCoordinates={routeMatchesForm(route) ? route.dropoff : undefined}
         packageSize={formData.packageSize as 'small' | 'medium' | 'large' | 'custom'}
         fragile={formData.fragile}
         valuable={formData.valuable}
