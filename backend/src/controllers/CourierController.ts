@@ -16,13 +16,19 @@ import {
 } from '../models';
 import { PackageSize } from '../models/Package';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
-import { DeliveryTier } from '../models/DeliveryTier';
+import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
 import { sequelize } from '../config/database';
 import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
 import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
+
+/** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
+const toGeoPoint = (coordinates: [number, number]): any => ({
+  type: 'Point',
+  coordinates: [Number(coordinates[0]), Number(coordinates[1])],
+});
 
 export class CourierController {
   /**
@@ -63,8 +69,15 @@ export class CourierController {
         requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
       );
 
-      // Update demand metrics
-      await pricingEngine.updateDemandMetrics(pickupCoordinates);
+      // Refresh demand metrics. Best effort: the suggestions above already
+      // read whatever metrics exist, so a failure here must not fail the quote.
+      try {
+        await pricingEngine.updateDemandMetrics(pickupCoordinates);
+      } catch (error) {
+        logger.warn('Demand metrics update failed; quoting without fresh metrics', {
+          error: (error as Error).message,
+        });
+      }
 
       // Get current demand information
       const locationDemands = await pricingEngine.getLocationDemands([pickupCoordinates]);
@@ -182,20 +195,36 @@ export class CourierController {
       // Calculate distance between pickup and dropoff
       const distance = this.calculateDistance(pickupCoordinates, dropoffCoordinates);
 
-      // Get demand-based pricing suggestions
+      // Demand-based pricing is advice for the suggested price, not a
+      // precondition for sending a package. Both calls used to be awaited
+      // bare, so any failure in the engine (and updateDemandMetrics could not
+      // succeed at all) turned every package creation into a 500. On failure
+      // the suggestion falls back to calculateSuggestedPrice below.
       const pricingEngine = DemandPricingEngine.getInstance();
-      const pricingSuggestions = await pricingEngine.calculatePricingSuggestions(
-        pickupCoordinates,
-        dropoffCoordinates,
-        packageSize || PackageSize.MEDIUM,
-        distance,
-        fragile || false,
-        valuable || false,
-        requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
-      );
+      let pricingSuggestions: Awaited<ReturnType<typeof pricingEngine.calculatePricingSuggestions>> = [];
+      try {
+        pricingSuggestions = await pricingEngine.calculatePricingSuggestions(
+          pickupCoordinates,
+          dropoffCoordinates,
+          packageSize || PackageSize.MEDIUM,
+          distance,
+          fragile || false,
+          valuable || false,
+          requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
+        );
+      } catch (error) {
+        logger.warn('Demand pricing unavailable; using the base suggested price', {
+          error: (error as Error).message,
+        });
+      }
 
-      // Update demand metrics for this location
-      await pricingEngine.updateDemandMetrics(pickupCoordinates);
+      try {
+        await pricingEngine.updateDemandMetrics(pickupCoordinates);
+      } catch (error) {
+        logger.warn('Demand metrics update failed after package pricing', {
+          error: (error as Error).message,
+        });
+      }
 
       // Get the system suggested price (median of all tier suggestions)
       const systemSuggestedPrice = pricingSuggestions.length > 0
@@ -229,11 +258,14 @@ export class CourierController {
         valuable: valuable || false,
         specialInstructions,
         pickupAddress,
-        pickupCoordinates,
+        // These are GEOMETRY(POINT) columns, so they take GeoJSON, as rides
+        // do. The request's [lng, lat] arrays were passed straight through,
+        // which PostGIS rejects. The model types them as tuples, hence the cast.
+        pickupCoordinates: toGeoPoint(pickupCoordinates),
         pickupContactName,
         pickupContactPhone,
         dropoffAddress,
-        dropoffCoordinates,
+        dropoffCoordinates: toGeoPoint(dropoffCoordinates),
         dropoffContactName,
         dropoffContactPhone,
         packageImages,
@@ -249,13 +281,17 @@ export class CourierController {
 
       await transaction.commit();
 
+      // deliveryTierId is a tier's UUID; suggestions name tiers by tierType.
+      // Comparing the two directly never matched, so this was always null.
+      const selectedTier = deliveryTierId ? await DeliveryTier.findByPk(deliveryTierId) : null;
+
       res.status(201).json({
         success: true,
         data: {
           package: packageData,
           pricingSuggestions,
           selectedSuggestion: pricingSuggestions.find(s =>
-            deliveryTierId ? s.tierType === deliveryTierId : false,
+            selectedTier ? s.tierType === selectedTier.tierType : false,
           ) || null,
         },
         timestamp: new Date().toISOString(),
@@ -1032,16 +1068,20 @@ export class CourierController {
     isFragile: boolean,
     isValuable: boolean,
   ): Promise<number> {
-    // Use the database function for price calculation
-    const result = await sequelize.query(
-      'SELECT calculate_suggested_delivery_price($1, $2, $3, $4) as suggested_price',
-      {
-        bind: [distance, packageSize, isFragile, isValuable],
-        type: QueryTypes.SELECT,
-      },
+    // This called a SQL function, calculate_suggested_delivery_price, from
+    // migration 002, which production recorded as applied without running;
+    // the function and the courier_pricing_config table it reads do not exist
+    // there. This is the fallback for when demand pricing fails, so it must
+    // not need the database: it prices as a Standard delivery, with no demand
+    // adjustment, using the engine's own rates.
+    const price = DemandPricingEngine.getInstance().calculateBasePrice(
+      DeliveryTierType.STANDARD,
+      distance,
+      packageSize,
+      isFragile,
+      isValuable,
     );
-
-    return (result[0] as any)?.suggested_price || 0;
+    return Math.round(price * 100) / 100;
   }
 }
 

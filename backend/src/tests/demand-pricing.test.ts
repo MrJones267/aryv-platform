@@ -112,24 +112,19 @@ describe('Demand-Based Pricing Engine', () => {
   });
 
   describe('Demand Metrics', () => {
-  // KNOWN BUG, marked it.failing: updateDemandMetrics() can never succeed.
-  // calculateCurrentMetrics() filters users on last_known_location, a column
-  // that exists in no model, migration or production schema, and passes
-  // `{ [Op.is]: undefined }`, which Sequelize rejects. Jest passes these while
-  // they fail and fails them once they pass, so fixing the engine will flag
-  // these markers for removal.
-    it.failing('should create and update demand metrics', async () => {
+    it('should create and update demand metrics', async () => {
       const coords: [number, number] = [25.0, -24.0];
       
       const metrics = await pricingEngine.updateDemandMetrics(coords);
       
       expect(metrics).toBeDefined();
       expect(metrics.locationHash).toBeDefined();
-      expect(metrics.demandMultiplier).toBeGreaterThan(0);
-      expect(metrics.demandMultiplier).toBeLessThanOrEqual(5.0);
+      // DECIMAL columns come back from Postgres as strings.
+      expect(Number(metrics.demandMultiplier)).toBeGreaterThan(0);
+      expect(Number(metrics.demandMultiplier)).toBeLessThanOrEqual(5.0);
     });
 
-    it.failing('should return consistent location hash for similar coordinates', async () => {
+    it('should return consistent location hash for similar coordinates', async () => {
       const coords1: [number, number] = [25.001, -24.001];
       const coords2: [number, number] = [25.002, -24.002];
       
@@ -139,7 +134,7 @@ describe('Demand-Based Pricing Engine', () => {
       expect(metrics1.locationHash).toBe(metrics2.locationHash);
     });
 
-    it.failing('should provide fresh data check', async () => {
+    it('should provide fresh data check', async () => {
       const coords: [number, number] = [25.1, -24.1];
       
       const metrics = await pricingEngine.updateDemandMetrics(coords);
@@ -149,8 +144,7 @@ describe('Demand-Based Pricing Engine', () => {
   });
 
   describe('Location Demand Analysis', () => {
-    // Same known bug as the Demand Metrics block above.
-    it.failing('should get demand information for multiple locations', async () => {
+    it('should get demand information for multiple locations', async () => {
       const locations: [number, number][] = [
         [25.0, -24.0],
         [25.1, -24.1],
@@ -169,7 +163,7 @@ describe('Demand-Based Pricing Engine', () => {
       
       demands.forEach(demand => {
         expect(demand.locationHash).toBeDefined();
-        expect(demand.demandMultiplier).toBeGreaterThan(0);
+        expect(Number(demand.demandMultiplier)).toBeGreaterThan(0);
         expect(demand.availableCouriers).toBeGreaterThanOrEqual(0);
         expect(demand.activeDemand).toBeGreaterThanOrEqual(0);
       });
@@ -177,8 +171,7 @@ describe('Demand-Based Pricing Engine', () => {
   });
 
   describe('Integration Tests', () => {
-    // Same known bug as the Demand Metrics block above.
-    it.failing('should calculate complete pricing with demand factors', async () => {
+    it('should calculate complete pricing with demand factors', async () => {
       const coords: [number, number] = [25.3, -24.3];
       
       // Update demand metrics first

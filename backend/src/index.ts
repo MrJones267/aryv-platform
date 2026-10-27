@@ -352,6 +352,9 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
     { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
     { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
+    // Courier package creation prices through these two.
+    { table: 'delivery_tiers', migration: '028_courier_delivery_tiers.sql' },
+    { table: 'demand_metrics', migration: '028_courier_delivery_tiers.sql' },
   ];
 
   // Indexes that carry a correctness guarantee rather than just performance.

@@ -18,6 +18,10 @@ import logger from '../utils/logger';
 
 const router = Router();
 
+// Handlers are bound, as the ride routes bind theirs. Passed bare, a method
+// runs with `this` undefined, so getPricingSuggestions and createPackage
+// threw on this.calculateDistance before doing anything else.
+
 // Apply authentication to all courier routes
 router.use(authenticateToken);
 
@@ -66,12 +70,12 @@ router.post('/pricing/suggestions',
 
     validateInput,
   ],
-  courierController.getPricingSuggestions as any,
+  courierController.getPricingSuggestions.bind(courierController) as any,
 );
 
 // Get available delivery tiers
 router.get('/delivery-tiers',
-  courierController.getDeliveryTiers as any,
+  courierController.getDeliveryTiers.bind(courierController) as any,
 );
 
 /**
@@ -186,7 +190,7 @@ router.post('/packages',
 
     validateInput,
   ],
-  courierController.createPackage as any,
+  courierController.createPackage.bind(courierController) as any,
 );
 
 // Get available packages for couriers
@@ -238,7 +242,7 @@ router.get('/packages/available',
 
     validateInput,
   ],
-  courierController.getAvailablePackages as any,
+  courierController.getAvailablePackages.bind(courierController) as any,
 );
 
 // Get user's packages (sent packages)
@@ -293,7 +297,7 @@ router.get('/packages/:packageId/tracking',
 
     validateInput,
   ],
-  courierController.getPackageTracking as any,
+  courierController.getPackageTracking.bind(courierController) as any,
 );
 
 /**
@@ -309,7 +313,7 @@ router.post('/packages/:packageId/accept',
 
     validateInput,
   ],
-  courierController.acceptDelivery as any,
+  courierController.acceptDelivery.bind(courierController) as any,
 );
 
 // Accept a delivery request
@@ -321,7 +325,7 @@ router.post('/deliveries/:packageId/accept',
 
     validateInput,
   ],
-  courierController.acceptDelivery as any,
+  courierController.acceptDelivery.bind(courierController) as any,
 );
 
 // Confirm package pickup (mobile app compatibility)
@@ -343,7 +347,7 @@ router.post('/agreements/:agreementId/pickup',
 
     validateInput,
   ],
-  courierController.confirmPickup as any,
+  courierController.confirmPickup.bind(courierController) as any,
 );
 
 // Confirm package pickup
@@ -365,7 +369,7 @@ router.post('/deliveries/:agreementId/pickup',
 
     validateInput,
   ],
-  courierController.confirmPickup as any,
+  courierController.confirmPickup.bind(courierController) as any,
 );
 
 // Verify delivery QR code (mobile app compatibility)
@@ -389,7 +393,7 @@ router.post('/verify-qr/:qrToken',
 
     validateInput,
   ],
-  courierController.verifyDeliveryQR as any,
+  courierController.verifyDeliveryQR.bind(courierController) as any,
 );
 
 // Verify delivery QR code
@@ -413,7 +417,7 @@ router.post('/deliveries/verify/:qrToken',
 
     validateInput,
   ],
-  courierController.verifyDeliveryQR as any,
+  courierController.verifyDeliveryQR.bind(courierController) as any,
 );
 
 // Update courier location during delivery (mobile app compatibility)
@@ -448,7 +452,7 @@ router.post('/agreements/:agreementId/location',
 
     validateInput,
   ],
-  courierController.updateCourierLocation as any,
+  courierController.updateCourierLocation.bind(courierController) as any,
 );
 
 // Update courier location during delivery
@@ -483,12 +487,12 @@ router.post('/deliveries/:agreementId/location',
 
     validateInput,
   ],
-  courierController.updateCourierLocation as any,
+  courierController.updateCourierLocation.bind(courierController) as any,
 );
 
 // Get courier's deliveries
 router.get('/deliveries',
-  courierController.getCourierDeliveries as any,
+  courierController.getCourierDeliveries.bind(courierController) as any,
 );
 
 /**
