@@ -74,11 +74,10 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
       }
-      
-      /* Hide loader once React takes over */
-      .app-loaded #initial-loader {
-        display: none;
-      }
+
+      /* No script hides this: it lives inside #root, so React's first render
+         replaces it. An inline script used to do it too, but the CSP in
+         public/_headers (script-src 'self') blocks inline scripts. */
     </style>
   </head>
   <body>
@@ -92,14 +91,5 @@
     </div>
     
     <script type="module" src="/src/index.tsx"></script>
-    
-    <script>
-      // Remove loader once React app is loaded
-      window.addEventListener('load', () => {
-        setTimeout(() => {
-          document.body.classList.add('app-loaded');
-        }, 500);
-      });
-    </script>
   </body>
 </html>
