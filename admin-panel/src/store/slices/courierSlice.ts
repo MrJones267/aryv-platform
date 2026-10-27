@@ -5,7 +5,7 @@
  */
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { courierService } from '../../services/api';
+import { courierService, CourierPackageRow, CourierPackageState } from '../../services/api';
 
 export interface CourierPackage {
   id: string;
@@ -85,7 +85,7 @@ export interface Dispute {
 }
 
 interface CourierState {
-  packages: CourierPackage[];
+  packages: CourierPackageRow[];
   agreements: DeliveryAgreement[];
   disputes: Dispute[];
   selectedDispute: Dispute | null;
@@ -149,9 +149,7 @@ export const fetchPackages = createAsyncThunk(
     params: {
       page?: number;
       limit?: number;
-      status?: string;
-      senderId?: string;
-      courierId?: string;
+      status?: CourierPackageState;
     } = {},
     { rejectWithValue }
   ) => {
@@ -265,8 +263,10 @@ const courierSlice = createSlice({
       })
       .addCase(fetchPackages.fulfilled, (state, action) => {
         state.loading = false;
-        state.packages = action.payload.data;
-        state.packagesPagination = action.payload.pagination;
+        // The server nests both under data. Reading payload.data as the
+        // array and payload.pagination as the pagination never matched it.
+        state.packages = action.payload.data.packages;
+        state.packagesPagination = action.payload.data.pagination;
       })
       .addCase(fetchPackages.rejected, (state, action) => {
         state.loading = false;

@@ -1,750 +1,356 @@
 /**
- * @fileoverview Package Management Page for Hitch Admin Panel
+ * @fileoverview Courier Packages Page for the ARYV Admin Panel
  * @author Oabona-Majoko
- * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @created 2025-01-24
+ * @lastModified 2026-10-27
+ *
+ * This page listed eight invented packages ("Important Documents", "John
+ * Smith") and derived every count and total from them, in US dollars. The
+ * admin endpoint it should have used filtered on a package `status` that
+ * does not exist.
+ *
+ * It now shows real packages. A package's state comes from its latest
+ * delivery agreement, or, before a courier accepts it, from whether it is
+ * still listed. Money is shown in each package's own currency, and
+ * delivery totals are kept per currency.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
-  Typography,
+  Button,
   Card,
   CardContent,
-  Grid,
   Chip,
-  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  IconButton,
+  MenuItem,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
-  Paper,
-  IconButton,
   TextField,
-  InputAdornment,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Avatar,
-  Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Alert,
-  Divider,
-  LinearProgress,
+  Typography,
 } from '@mui/material';
-import {
-  LocalShipping,
-  Search,
-  FilterList,
-  Visibility,
-  LocationOn,
-  AttachMoney,
-  Schedule,
-  Warning,
-  CheckCircle,
-  Cancel,
-  Person,
-  Phone,
-  Email,
-  Refresh,
-  GetApp,
-} from '@mui/icons-material';
+import { Gavel, LocalShipping, Refresh, Visibility } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
-interface Package {
-  id: string;
-  title: string;
-  status: 'pending' | 'accepted' | 'pickup_confirmed' | 'in_transit' | 'delivered' | 'cancelled' | 'disputed';
-  senderName: string;
-  courierName?: string;
-  pickupAddress: string;
-  dropoffAddress: string;
-  createdAt: string;
-  expectedDelivery?: string;
-  amount: number;
-  platformFee: number;
-  packageSize: 'small' | 'medium' | 'large' | 'custom';
-  fragile: boolean;
-  valuable: boolean;
-  priority: 'low' | 'normal' | 'high';
-}
+import { useAppDispatch, useAppSelector } from '../../store';
+import { fetchCurrencies, selectCurrencies } from '../../store/slices/settingsSlice';
+import { courierService, CourierPackageRow, CourierPackageState, CourierStats } from '../../services/api';
+import { formatMoney } from '../../utils/currency';
 
-interface PackageStats {
-  total: number;
-  pending: number;
-  active: number;
-  completed: number;
-  disputed: number;
-  revenue: number;
-  platformFees: number;
-}
+const STATES: Record<CourierPackageState, { label: string; color: 'default' | 'info' | 'warning' | 'primary' | 'success' | 'error' }> = {
+  open: { label: 'Waiting for a courier', color: 'info' },
+  pending_pickup: { label: 'Awaiting pickup', color: 'warning' },
+  in_transit: { label: 'In transit', color: 'primary' },
+  completed: { label: 'Delivered', color: 'success' },
+  disputed: { label: 'Disputed', color: 'error' },
+  cancelled: { label: 'Cancelled', color: 'default' },
+  expired: { label: 'Expired', color: 'default' },
+};
+
+const errorMessage = (error: any, fallback: string): string =>
+  error?.response?.data?.error || error?.response?.data?.message || fallback;
 
 const CourierPage: React.FC = () => {
   const navigate = useNavigate();
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [stats, setStats] = useState<PackageStats>({
-    total: 0,
-    pending: 0,
-    active: 0,
-    completed: 0,
-    disputed: 0,
-    revenue: 0,
-    platformFees: 0,
-  });
+  const dispatch = useAppDispatch();
+  const currencies = useAppSelector(selectCurrencies);
+
+  const [stats, setStats] = useState<CourierStats | null>(null);
+  const [packages, setPackages] = useState<CourierPackageRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [stateFilter, setStateFilter] = useState<CourierPackageState | 'all'>('all');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<CourierPackageRow | null>(null);
 
-  useEffect(() => {
-    loadPackageData();
-  }, []);
+  const money = (amount: string | number | null | undefined, code: string) => formatMoney(Number(amount), code, currencies);
 
-  const loadPackageData = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Mock data - in production, fetch from API
-      const mockPackages: Package[] = [
-        {
-          id: 'pkg_001',
-          title: 'Important Documents',
-          status: 'in_transit',
-          senderName: 'John Smith',
-          courierName: 'Maria Garcia',
-          pickupAddress: '123 Business Ave, NYC',
-          dropoffAddress: '456 Corporate Blvd, NYC',
-          createdAt: '2025-01-25T10:30:00Z',
-          expectedDelivery: '2025-01-25T15:00:00Z',
-          amount: 25.0,
-          platformFee: 3.75,
-          packageSize: 'small',
-          fragile: false,
-          valuable: true,
-          priority: 'high',
-        },
-        {
-          id: 'pkg_002',
-          title: 'Electronic Components',
-          status: 'pending',
-          senderName: 'TechCorp Inc.',
-          pickupAddress: '789 Innovation Dr, NYC',
-          dropoffAddress: '321 Assembly St, NYC',
-          createdAt: '2025-01-25T09:15:00Z',
-          amount: 45.0,
-          platformFee: 6.75,
-          packageSize: 'medium',
-          fragile: true,
-          valuable: true,
-          priority: 'normal',
-        },
-        {
-          id: 'pkg_003',
-          title: 'Gift Package',
-          status: 'delivered',
-          senderName: 'Sarah Johnson',
-          courierName: 'Mike Wilson',
-          pickupAddress: '555 Residential Ln, NYC',
-          dropoffAddress: '777 Family Ave, NYC',
-          createdAt: '2025-01-24T14:20:00Z',
-          expectedDelivery: '2025-01-24T18:00:00Z',
-          amount: 15.0,
-          platformFee: 2.25,
-          packageSize: 'small',
-          fragile: false,
-          valuable: false,
-          priority: 'low',
-        },
-        {
-          id: 'pkg_004',
-          title: 'Medical Supplies',
-          status: 'disputed',
-          senderName: 'HealthCare Plus',
-          courierName: 'Alex Chen',
-          pickupAddress: '999 Medical Center, NYC',
-          dropoffAddress: '111 Clinic Row, NYC',
-          createdAt: '2025-01-23T08:45:00Z',
-          expectedDelivery: '2025-01-23T12:00:00Z',
-          amount: 75.0,
-          platformFee: 11.25,
-          packageSize: 'large',
-          fragile: true,
-          valuable: true,
-          priority: 'high',
-        },
-        {
-          id: 'pkg_005',
-          title: 'Marketing Materials',
-          status: 'accepted',
-          senderName: 'Creative Agency',
-          courierName: 'Lisa Rodriguez',
-          pickupAddress: '444 Design St, NYC',
-          dropoffAddress: '888 Event Plaza, NYC',
-          createdAt: '2025-01-25T11:00:00Z',
-          expectedDelivery: '2025-01-25T16:30:00Z',
-          amount: 35.0,
-          platformFee: 5.25,
-          packageSize: 'medium',
-          fragile: false,
-          valuable: false,
-          priority: 'normal',
-        },
-      ];
-
-      setPackages(mockPackages);
-
-      // Calculate stats
-      const newStats: PackageStats = {
-        total: mockPackages.length,
-        pending: mockPackages.filter(p => p.status === 'pending').length,
-        active: mockPackages.filter(p => ['accepted', 'pickup_confirmed', 'in_transit'].includes(p.status)).length,
-        completed: mockPackages.filter(p => p.status === 'delivered').length,
-        disputed: mockPackages.filter(p => p.status === 'disputed').length,
-        revenue: mockPackages.reduce((sum, p) => sum + p.amount, 0),
-        platformFees: mockPackages.reduce((sum, p) => sum + p.platformFee, 0),
-      };
-
-      setStats(newStats);
-    } catch (error) {
-      console.error('Error loading package data:', error);
+      const [statsResponse, packagesResponse] = await Promise.all([
+        courierService.getStats(),
+        courierService.getPackages({
+          page: page + 1,
+          limit: rowsPerPage,
+          ...(stateFilter !== 'all' && { status: stateFilter }),
+        }),
+      ]);
+      setStats(statsResponse.data.data);
+      setPackages(packagesResponse.data.data.packages);
+      setTotal(packagesResponse.data.data.pagination.total);
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to load packages'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, rowsPerPage, stateFilter]);
 
-  const getStatusColor = (status: Package['status']) => {
-    switch (status) {
-      case 'pending':
-        return 'warning';
-      case 'accepted':
-        return 'info';
-      case 'pickup_confirmed':
-        return 'primary';
-      case 'in_transit':
-        return 'primary';
-      case 'delivered':
-        return 'success';
-      case 'cancelled':
-        return 'default';
-      case 'disputed':
-        return 'error';
-      default:
-        return 'default';
-    }
-  };
+  useEffect(() => {
+    dispatch(fetchCurrencies());
+  }, [dispatch]);
 
-  const getStatusIcon = (status: Package['status']) => {
-    switch (status) {
-      case 'pending':
-        return <Schedule />;
-      case 'accepted':
-        return <CheckCircle />;
-      case 'pickup_confirmed':
-        return <LocationOn />;
-      case 'in_transit':
-        return <LocalShipping />;
-      case 'delivered':
-        return <CheckCircle />;
-      case 'cancelled':
-        return <Cancel />;
-      case 'disputed':
-        return <Warning />;
-      default:
-        return <Schedule />;
-    }
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const filteredPackages = packages.filter(pkg => {
-    const matchesSearch =
-      pkg.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pkg.senderName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pkg.courierName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pkg.id.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || pkg.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
-
-  const handlePackageDetails = (pkg: Package) => {
-    setSelectedPackage(pkg);
-    setDetailsOpen(true);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
-
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
-  if (loading) {
-    return (
-      <Box p={3}>
-        <LinearProgress />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          Loading package data...
-        </Typography>
-      </Box>
-    );
-  }
+  const count = (state: CourierPackageState) => stats?.byState[state] ?? 0;
 
   return (
     <Box p={3}>
-      {/* Page Header */}
-      <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
+      <Box mb={3} display="flex" alignItems="center" justifyContent="space-between">
         <Box>
-          <Typography variant="h4" gutterBottom display="flex" alignItems="center">
-            <LocalShipping sx={{ mr: 2, color: 'primary.main' }} />
-            Package Management
+          <Typography variant="h4" gutterBottom display="flex" alignItems="center" gap={1}>
+            <LocalShipping color="primary" />
+            Courier Packages
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Monitor and manage all package deliveries across the platform
+          <Typography variant="body2" color="text.secondary">
+            Every package senders have listed, with where it is now.
           </Typography>
         </Box>
         <Box display="flex" gap={1}>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={loadPackageData}>
-            Refresh
+          <Button variant="outlined" startIcon={<Refresh />} onClick={load} disabled={loading}>
+            {loading ? 'Loading…' : 'Refresh'}
           </Button>
-          <Button variant="contained" startIcon={<GetApp />} onClick={() => navigate('/courier/disputes')}>
-            View Disputes
+          <Button variant="contained" startIcon={<Gavel />} onClick={() => navigate('/courier/disputes')}>
+            Disputes{count('disputed') ? ` (${count('disputed')})` : ''}
           </Button>
         </Box>
       </Box>
 
-      {/* Statistics Cards */}
-      <Grid container spacing={3} mb={3}>
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Total Packages
-                  </Typography>
-                  <Typography variant="h4">{stats.total}</Typography>
-                </Box>
-                <LocalShipping color="primary" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Pending
-                  </Typography>
-                  <Typography variant="h4" color="warning.main">
-                    {stats.pending}
-                  </Typography>
-                </Box>
-                <Schedule color="warning" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Active
-                  </Typography>
-                  <Typography variant="h4" color="primary.main">
-                    {stats.active}
-                  </Typography>
-                </Box>
-                <LocationOn color="primary" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Completed
-                  </Typography>
-                  <Typography variant="h4" color="success.main">
-                    {stats.completed}
-                  </Typography>
-                </Box>
-                <CheckCircle color="success" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Disputed
-                  </Typography>
-                  <Typography variant="h4" color="error.main">
-                    {stats.disputed}
-                  </Typography>
-                </Box>
-                <Warning color="error" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Box>
-                  <Typography color="text.secondary" gutterBottom variant="body2">
-                    Revenue
-                  </Typography>
-                  <Typography variant="h4" color="success.main">
-                    {formatCurrency(stats.revenue)}
-                  </Typography>
-                </Box>
-                <AttachMoney color="success" sx={{ fontSize: 40 }} />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
+      <Grid container spacing={2} mb={3}>
+        {(['open', 'pending_pickup', 'in_transit', 'completed', 'disputed'] as CourierPackageState[]).map(state => (
+          <Grid item xs={6} sm={4} md={2.4} key={state}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  {STATES[state].label}
+                </Typography>
+                <Typography variant="h4">{stats ? count(state) : '—'}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
       </Grid>
 
-      {/* Filters and Search */}
-      <Card sx={{ mb: 3 }}>
+      <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                variant="outlined"
-                placeholder="Search packages, senders, or couriers..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <FormControl fullWidth>
-                <InputLabel>Status Filter</InputLabel>
-                <Select
-                  value={statusFilter}
-                  label="Status Filter"
-                  onChange={e => setStatusFilter(e.target.value)}
-                  startAdornment={<FilterList sx={{ mr: 1 }} />}
-                >
-                  <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="pending">Pending</MenuItem>
-                  <MenuItem value="accepted">Accepted</MenuItem>
-                  <MenuItem value="pickup_confirmed">Pickup Confirmed</MenuItem>
-                  <MenuItem value="in_transit">In Transit</MenuItem>
-                  <MenuItem value="delivered">Delivered</MenuItem>
-                  <MenuItem value="cancelled">Cancelled</MenuItem>
-                  <MenuItem value="disputed">Disputed</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <Typography variant="body2" color="text.secondary">
-                Showing {filteredPackages.length} of {packages.length} packages
-              </Typography>
-            </Grid>
-          </Grid>
+          <Typography variant="h6" gutterBottom>
+            Completed deliveries
+          </Typography>
+          {!stats || stats.completedByCurrency.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {stats ? 'No deliveries completed yet.' : '—'}
+            </Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Currency</TableCell>
+                  <TableCell align="right">Deliveries</TableCell>
+                  <TableCell align="right">Delivery value</TableCell>
+                  <TableCell align="right">Platform fees</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {stats.completedByCurrency.map(row => (
+                  <TableRow key={row.currency}>
+                    <TableCell>{row.currency}</TableCell>
+                    <TableCell align="right">{row.deliveries}</TableCell>
+                    <TableCell align="right">{money(row.value, row.currency)}</TableCell>
+                    <TableCell align="right">{money(row.platformFees, row.currency)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      {/* Package Table */}
       <Card>
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Package</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Sender</TableCell>
-                <TableCell>Courier</TableCell>
-                <TableCell>Route</TableCell>
-                <TableCell>Amount</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell align="center">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredPackages.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                    <Typography color="text.secondary">No packages found matching your criteria</Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredPackages.map(pkg => (
-                  <TableRow key={pkg.id} hover>
-                    <TableCell>
-                      <Box>
-                        <Typography variant="subtitle2" fontWeight="bold">
+        <CardContent>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Packages</Typography>
+            <TextField
+              select
+              size="small"
+              label="State"
+              value={stateFilter}
+              onChange={e => {
+                setStateFilter(e.target.value as CourierPackageState | 'all');
+                setPage(0);
+              }}
+              sx={{ minWidth: 220 }}
+            >
+              <MenuItem value="all">All states</MenuItem>
+              {(Object.keys(STATES) as CourierPackageState[]).map(state => (
+                <MenuItem key={state} value={state}>
+                  {STATES[state].label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+
+          {!loading && packages.length === 0 ? (
+            <Box py={6} textAlign="center">
+              <Typography variant="body2" color="text.secondary">
+                {stateFilter === 'all' ? 'No packages have been listed yet.' : 'No packages in this state.'}
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Package</TableCell>
+                    <TableCell>Route</TableCell>
+                    <TableCell>Sender</TableCell>
+                    <TableCell>Courier</TableCell>
+                    <TableCell>State</TableCell>
+                    <TableCell align="right">Price</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {packages.map(pkg => (
+                    <TableRow key={pkg.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
                           {pkg.title}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {pkg.id}
+                          {new Date(pkg.createdAt).toLocaleString()}
                         </Typography>
-                        <Box display="flex" gap={0.5} mt={0.5}>
-                          <Chip size="small" label={pkg.packageSize} variant="outlined" />
-                          {pkg.fragile && <Chip size="small" label="Fragile" color="warning" variant="outlined" />}
-                          {pkg.valuable && <Chip size="small" label="Valuable" color="primary" variant="outlined" />}
-                        </Box>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        icon={getStatusIcon(pkg.status)}
-                        label={pkg.status.replace('_', ' ').toUpperCase()}
-                        color={getStatusColor(pkg.status)}
-                        variant="filled"
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Box display="flex" alignItems="center">
-                        <Avatar sx={{ width: 32, height: 32, mr: 1 }}>{pkg.senderName.charAt(0)}</Avatar>
-                        <Typography variant="body2">{pkg.senderName}</Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      {pkg.courierName ? (
-                        <Box display="flex" alignItems="center">
-                          <Avatar sx={{ width: 32, height: 32, mr: 1 }}>{pkg.courierName.charAt(0)}</Avatar>
-                          <Typography variant="body2">{pkg.courierName}</Typography>
-                        </Box>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          Not assigned
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Box>
-                        <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                          <strong>From:</strong> {pkg.pickupAddress}
-                        </Typography>
-                        <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                          <strong>To:</strong> {pkg.dropoffAddress}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Box>
-                        <Typography variant="body2" fontWeight="bold">
-                          {formatCurrency(pkg.amount)}
-                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{pkg.pickupAddress}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Fee: {formatCurrency(pkg.platformFee)}
+                          → {pkg.dropoffAddress}
                         </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{formatDateTime(pkg.createdAt)}</Typography>
-                      {pkg.expectedDelivery && (
-                        <Typography variant="caption" color="text.secondary">
-                          ETA: {formatDateTime(pkg.expectedDelivery)}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Tooltip title="View Details">
-                        <IconButton size="small" onClick={() => handlePackageDetails(pkg)}>
-                          <Visibility />
+                      </TableCell>
+                      <TableCell>{pkg.senderName}</TableCell>
+                      <TableCell>{pkg.courierName ?? '—'}</TableCell>
+                      <TableCell>
+                        <Chip size="small" label={STATES[pkg.status]?.label ?? pkg.status} color={STATES[pkg.status]?.color ?? 'default'} />
+                      </TableCell>
+                      <TableCell align="right">
+                        {pkg.agreedPrice !== null
+                          ? money(pkg.agreedPrice, pkg.agreementCurrency ?? pkg.currency)
+                          : money(pkg.senderPriceOffer, pkg.currency)}
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" aria-label={`Details for ${pkg.title}`} onClick={() => setSelected(pkg)}>
+                          <Visibility fontSize="small" />
                         </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={(_e, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={e => {
+              setRowsPerPage(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 20, 50, 100]}
+          />
+        </CardContent>
       </Card>
 
-      {/* Package Details Dialog */}
-      <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} maxWidth="md" fullWidth>
-        {selectedPackage && (
+      <Dialog open={!!selected} onClose={() => setSelected(null)} maxWidth="sm" fullWidth>
+        {selected && (
           <>
-            <DialogTitle>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Typography variant="h6">Package Details</Typography>
-                <Chip
-                  icon={getStatusIcon(selectedPackage.status)}
-                  label={selectedPackage.status.replace('_', ' ').toUpperCase()}
-                  color={getStatusColor(selectedPackage.status)}
-                  variant="filled"
-                />
-              </Box>
-            </DialogTitle>
-            <DialogContent>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom color="primary">
-                        Package Information
-                      </Typography>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Title</Typography>
-                        <Typography variant="body1">{selectedPackage.title}</Typography>
-                      </Box>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Package ID</Typography>
-                        <Typography variant="body1" fontFamily="monospace">
-                          {selectedPackage.id}
-                        </Typography>
-                      </Box>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Size & Properties</Typography>
-                        <Box display="flex" gap={1} mt={1}>
-                          <Chip size="small" label={selectedPackage.packageSize} />
-                          {selectedPackage.fragile && <Chip size="small" label="Fragile" color="warning" />}
-                          {selectedPackage.valuable && <Chip size="small" label="Valuable" color="primary" />}
-                          <Chip
-                            size="small"
-                            label={`${selectedPackage.priority} priority`}
-                            color={selectedPackage.priority === 'high' ? 'error' : 'default'}
-                          />
-                        </Box>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom color="primary">
-                        Financial Details
-                      </Typography>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Package Amount</Typography>
-                        <Typography variant="h6" color="success.main">
-                          {formatCurrency(selectedPackage.amount)}
-                        </Typography>
-                      </Box>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Platform Fee (15%)</Typography>
-                        <Typography variant="body1">{formatCurrency(selectedPackage.platformFee)}</Typography>
-                      </Box>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Courier Earnings</Typography>
-                        <Typography variant="body1" color="success.main">
-                          {formatCurrency(selectedPackage.amount - selectedPackage.platformFee)}
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom color="primary">
-                        Sender Information
-                      </Typography>
-                      <Box display="flex" alignItems="center" mb={2}>
-                        <Avatar sx={{ mr: 2 }}>{selectedPackage.senderName.charAt(0)}</Avatar>
-                        <Box>
-                          <Typography variant="subtitle1">{selectedPackage.senderName}</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Package Sender
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <Box mb={1}>
-                        <Typography variant="subtitle2">Pickup Address</Typography>
-                        <Typography variant="body2">{selectedPackage.pickupAddress}</Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom color="primary">
-                        Courier Information
-                      </Typography>
-                      {selectedPackage.courierName ? (
-                        <>
-                          <Box display="flex" alignItems="center" mb={2}>
-                            <Avatar sx={{ mr: 2 }}>{selectedPackage.courierName.charAt(0)}</Avatar>
-                            <Box>
-                              <Typography variant="subtitle1">{selectedPackage.courierName}</Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Assigned Courier
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </>
-                      ) : (
-                        <Alert severity="warning">No courier assigned yet</Alert>
-                      )}
-                      <Box mb={1}>
-                        <Typography variant="subtitle2">Delivery Address</Typography>
-                        <Typography variant="body2">{selectedPackage.dropoffAddress}</Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
+            <DialogTitle>{selected.title}</DialogTitle>
+            <DialogContent dividers>
+              <Grid container spacing={2}>
                 <Grid item xs={12}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom color="primary">
-                        Timeline
-                      </Typography>
-                      <Box mb={2}>
-                        <Typography variant="subtitle2">Created</Typography>
-                        <Typography variant="body2">{formatDateTime(selectedPackage.createdAt)}</Typography>
-                      </Box>
-                      {selectedPackage.expectedDelivery && (
-                        <Box mb={2}>
-                          <Typography variant="subtitle2">Expected Delivery</Typography>
-                          <Typography variant="body2">{formatDateTime(selectedPackage.expectedDelivery)}</Typography>
-                        </Box>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <Chip label={STATES[selected.status]?.label ?? selected.status} color={STATES[selected.status]?.color ?? 'default'} />
                 </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Pickup</Typography>
+                  <Typography variant="body2">{selected.pickupAddress}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Drop-off</Typography>
+                  <Typography variant="body2">{selected.dropoffAddress}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Sender</Typography>
+                  <Typography variant="body2">{selected.senderName}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Courier</Typography>
+                  <Typography variant="body2">{selected.courierName ?? 'Not yet accepted'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Size</Typography>
+                  <Typography variant="body2">
+                    {selected.packageSize}
+                    {selected.fragile ? ' · fragile' : ''}
+                    {selected.valuable ? ' · valuable' : ''}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Payment</Typography>
+                  <Typography variant="body2">{selected.paymentMethod === 'cash_on_delivery' ? 'Cash on delivery' : selected.paymentMethod}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Sender&apos;s offer</Typography>
+                  <Typography variant="body2">{money(selected.senderPriceOffer, selected.currency)}</Typography>
+                </Grid>
+                {selected.agreedPrice !== null && (
+                  <>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Agreed price</Typography>
+                      <Typography variant="body2">{money(selected.agreedPrice, selected.agreementCurrency ?? selected.currency)}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Platform fee</Typography>
+                      <Typography variant="body2">{money(selected.platformFee, selected.agreementCurrency ?? selected.currency)}</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="caption" color="text.secondary">Courier receives</Typography>
+                      <Typography variant="body2">
+                        {money(Number(selected.agreedPrice) - Number(selected.platformFee), selected.agreementCurrency ?? selected.currency)}
+                      </Typography>
+                    </Grid>
+                  </>
+                )}
               </Grid>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setDetailsOpen(false)}>Close</Button>
-              {selectedPackage.status === 'disputed' && (
-                <Button variant="contained" color="primary" onClick={() => navigate('/courier/disputes')}>
-                  Handle Dispute
+              <Button onClick={() => setSelected(null)}>Close</Button>
+              {selected.status === 'disputed' && (
+                <Button variant="contained" onClick={() => navigate('/courier/disputes')}>
+                  Open disputes
                 </Button>
               )}
             </DialogActions>

@@ -131,9 +131,55 @@ export const rideService = {
     adminApi.get<PaginatedResponse<any>>('/bookings', { params }),
 };
 
+/** A package's state: its latest delivery agreement's status, or its listing. */
+export type CourierPackageState =
+  | 'open'
+  | 'expired'
+  | 'pending_pickup'
+  | 'in_transit'
+  | 'completed'
+  | 'disputed'
+  | 'cancelled';
+
+export interface CourierPackageRow {
+  id: string;
+  title: string;
+  status: CourierPackageState;
+  pickupAddress: string;
+  dropoffAddress: string;
+  packageSize: 'small' | 'medium' | 'large' | 'custom';
+  fragile: boolean;
+  valuable: boolean;
+  urgencyLevel: string | null;
+  senderPriceOffer: string | number;
+  currency: string;
+  paymentMethod: string;
+  requestedDeliveryTime: string | null;
+  createdAt: string;
+  senderName: string;
+  courierName: string | null;
+  agreementId: string | null;
+  agreedPrice: string | number | null;
+  platformFee: string | number | null;
+  agreementCurrency: string | null;
+}
+
+export interface CourierStats {
+  total: number;
+  byState: Record<CourierPackageState, number>;
+  completedByCurrency: { currency: string; deliveries: number; value: number; platformFees: number }[];
+}
+
 export const courierService = {
-  getPackages: (params: { page?: number; limit?: number; status?: string; senderId?: string; courierId?: string }) =>
-    adminApi.get<PaginatedResponse<any>>('/courier/packages', { params }),
+  getPackages: (params: { page?: number; limit?: number; status?: CourierPackageState }) =>
+    adminApi.get<
+      ApiResponse<{
+        packages: CourierPackageRow[];
+        pagination: { page: number; limit: number; total: number; totalPages: number };
+      }>
+    >('/courier/packages', { params }),
+
+  getStats: () => adminApi.get<ApiResponse<CourierStats>>('/courier/stats'),
 
   // NOT IMPLEMENTED on the server: there is no GET /api/admin/courier/agreements,
   // only the release-payment action below. This call 404s.
@@ -168,7 +214,9 @@ export const analyticsService = {
     >('/analytics/dashboard'),
 
   getUserGrowth: (period: '7d' | '30d' | '90d' | '1y') =>
-    adminApi.get<ApiResponse<any[]>>(`/analytics/user-growth/${period}`),
+    adminApi.get<ApiResponse<{ date: string; newUsers: number; totalUsers: number }[]>>(
+      `/analytics/user-growth/${period}`
+    ),
 
   // Each figure is in the currency it was charged in; nothing is converted.
   getRevenueReport: (months: number = 6) =>
@@ -182,15 +230,17 @@ export const analyticsService = {
     >('/analytics/revenue', { params: { months } }),
 
   // The server takes no path parameter here — a trailing /10 was a 404.
+  // Grouped per currency: a route priced in pula and in rand is two rows.
   getTopRoutes: (limit: number = 10) =>
-    adminApi.get<ApiResponse<any[]>>('/analytics/top-routes', { params: { limit } }),
+    adminApi.get<
+      ApiResponse<{ origin: string; destination: string; currency: string; tripCount: number; avgPricePerSeat: number }[]>
+    >('/analytics/top-routes', { params: { limit } }),
 
   getUsageStats: () =>
     adminApi.get<
       ApiResponse<{
-        platform: { activeUsers: number; sessionsToday: number };
-        rides: { todayRides: number; avgRideTime: number };
-        courier: { activeDeliveries: number; avgDeliveryTime: number };
+        rides: { todayRides: number; total: number; completed: number; completionRate: number; avgRating: number | null };
+        courier: { activeDeliveries: number; total: number; completed: number; successRate: number };
       }>
     >('/analytics/usage'),
 };
