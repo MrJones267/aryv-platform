@@ -5,7 +5,8 @@
  */
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { settingsService } from '../../services/api';
+import { currencyService, settingsService } from '../../services/api';
+import { CurrencyOption, PLATFORM_DEFAULT_CURRENCY } from '../../utils/currency';
 
 export interface CommissionSettings {
   rideCommission: number;
@@ -26,6 +27,8 @@ export interface ContentSettings {
 }
 
 export interface AppSettings {
+  /** Currency the dashboard reports in. Rides are still charged locally. */
+  defaultCurrency?: string;
   appName: string;
   supportEmail: string;
   supportPhone: string;
@@ -53,6 +56,7 @@ export interface AppSettings {
 
 interface SettingsState {
   appSettings: AppSettings | null;
+  currencies: CurrencyOption[];
   commissionSettings: CommissionSettings | null;
   contentSettings: ContentSettings | null;
   loading: {
@@ -70,6 +74,7 @@ interface SettingsState {
 
 const initialState: SettingsState = {
   appSettings: null,
+  currencies: [],
   commissionSettings: null,
   contentSettings: null,
   loading: {
@@ -91,7 +96,16 @@ export const fetchAppSettings = createAsyncThunk('settings/fetchAppSettings', as
     const response = await settingsService.getSettings();
     return response.data.data;
   } catch (error: any) {
-    return rejectWithValue(error.response?.data?.message || 'Failed to fetch app settings');
+    return rejectWithValue(error.response?.data?.error || error.response?.data?.message || 'Failed to fetch app settings');
+  }
+});
+
+export const fetchCurrencies = createAsyncThunk('settings/fetchCurrencies', async (_, { rejectWithValue }) => {
+  try {
+    const response = await currencyService.list();
+    return response.data.data?.currencies ?? [];
+  } catch (error: any) {
+    return rejectWithValue(error.response?.data?.error || 'Failed to fetch currencies');
   }
 });
 
@@ -102,7 +116,7 @@ export const updateAppSettings = createAsyncThunk(
       const response = await settingsService.updateSettings(settings);
       return response.data.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update app settings');
+      return rejectWithValue(error.response?.data?.error || error.response?.data?.message || 'Failed to update app settings');
     }
   }
 );
@@ -200,6 +214,11 @@ const settingsSlice = createSlice({
   },
   extraReducers: builder => {
     builder
+      // Currencies (no loading flag: the pickers fall back to the current code)
+      .addCase(fetchCurrencies.fulfilled, (state, action) => {
+        state.currencies = action.payload;
+      })
+
       // Fetch app settings
       .addCase(fetchAppSettings.pending, state => {
         state.loading.app = true;
@@ -311,4 +330,7 @@ export const selectCommissionSettings = (state: { settings: SettingsState }) => 
 export const selectContentSettings = (state: { settings: SettingsState }) => state.settings.contentSettings;
 export const selectSettingsLoading = (state: { settings: SettingsState }) => state.settings.loading;
 export const selectSettingsError = (state: { settings: SettingsState }) => state.settings.error;
+export const selectCurrencies = (state: { settings: SettingsState }) => state.settings.currencies;
+export const selectDisplayCurrency = (state: { settings: SettingsState }) =>
+  state.settings.appSettings?.defaultCurrency || PLATFORM_DEFAULT_CURRENCY;
 export const selectSettingsDirty = (state: { settings: SettingsState }) => state.settings.isDirty;

@@ -56,6 +56,13 @@ import {
 } from '@mui/icons-material';
 
 import { useAppDispatch, useAppSelector } from '../../store';
+import {
+  fetchAppSettings,
+  fetchCurrencies,
+  selectCurrencies,
+  selectDisplayCurrency,
+  updateAppSettings,
+} from '../../store/slices/settingsSlice';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -115,11 +122,31 @@ const SettingsPage: React.FC = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingRate, setEditingRate] = useState<any>(null);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSaveSettings = () => {
-    console.log('Saving settings...');
-    // Implement save functionality
-    setUnsavedChanges(false);
+  const currencies = useAppSelector(selectCurrencies);
+  const savedCurrency = useAppSelector(selectDisplayCurrency);
+  const [currencyDraft, setCurrencyDraft] = useState<string | null>(null);
+  const currency = currencyDraft ?? savedCurrency;
+
+  useEffect(() => {
+    dispatch(fetchAppSettings());
+    dispatch(fetchCurrencies());
+  }, [dispatch]);
+
+  // Only the reporting currency is persisted so far. The other fields on this
+  // page are still local placeholders and are not sent anywhere.
+  const handleSaveSettings = async () => {
+    setSaveError(null);
+    try {
+      if (currencyDraft && currencyDraft !== savedCurrency) {
+        await dispatch(updateAppSettings({ defaultCurrency: currencyDraft })).unwrap();
+      }
+      setCurrencyDraft(null);
+      setUnsavedChanges(false);
+    } catch (error: any) {
+      setSaveError(typeof error === 'string' ? error : 'Failed to save settings');
+    }
   };
 
   const handleResetSettings = () => {
@@ -185,6 +212,12 @@ const SettingsPage: React.FC = () => {
       {unsavedChanges && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           You have unsaved changes. Don&apos;t forget to save your settings.
+        </Alert>
+      )}
+
+      {saveError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>
+          {saveError}
         </Alert>
       )}
 
@@ -531,10 +564,27 @@ const SettingsPage: React.FC = () => {
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <TextField select fullWidth label="Default Currency" defaultValue="USD" size="small" sx={{ mb: 2 }}>
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
+                <TextField
+                  select
+                  fullWidth
+                  label="Reporting Currency"
+                  value={currency}
+                  onChange={e => {
+                    setCurrencyDraft(e.target.value);
+                    setUnsavedChanges(true);
+                  }}
+                  SelectProps={{ native: true }}
+                  helperText="Dashboard revenue is shown in this currency. Rides are still charged in each country's own currency."
+                  size="small"
+                  sx={{ mb: 2 }}
+                >
+                  {/* Filled from the currencies table, not hardcoded. Until it loads,
+                      show the saved code so the field is never blank. */}
+                  {(currencies.length ? currencies : [{ code: currency, name: currency, symbol: '' }]).map(c => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} - {c.name}
+                    </option>
+                  ))}
                 </TextField>
 
                 <TextField select fullWidth label="Default Language" defaultValue="en" size="small" sx={{ mb: 2 }}>

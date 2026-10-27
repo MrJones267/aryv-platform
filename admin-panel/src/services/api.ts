@@ -170,8 +170,16 @@ export const analyticsService = {
   getUserGrowth: (period: '7d' | '30d' | '90d' | '1y') =>
     adminApi.get<ApiResponse<any[]>>(`/analytics/user-growth/${period}`),
 
-  getRevenueReport: (params: { dateFrom: string; dateTo: string; granularity: 'day' | 'week' | 'month' }) =>
-    adminApi.get<ApiResponse<any[]>>('/analytics/revenue', { params }),
+  // Each figure is in the currency it was charged in; nothing is converted.
+  getRevenueReport: (months: number = 6) =>
+    adminApi.get<
+      ApiResponse<{
+        platformCurrency: string;
+        months: number;
+        byCurrency: { currency: string; total: number; thisMonth: number; lastMonth: number }[];
+        monthly: { month: string; currency: string; rides: number; courier: number; total: number }[];
+      }>
+    >('/analytics/revenue', { params: { months } }),
 
   // The server takes no path parameter here — a trailing /10 was a 404.
   getTopRoutes: (limit: number = 10) =>
@@ -185,6 +193,16 @@ export const analyticsService = {
         courier: { activeDeliveries: number; avgDeliveryTime: number };
       }>
     >('/analytics/usage'),
+};
+
+// The currency list is public and lives outside /api/admin, so it bypasses
+// adminApi's base URL (and its 401 redirect, which it can never trigger).
+export const currencyService = {
+  list: () =>
+    axios.get<ApiResponse<{ currencies: { code: string; name: string; symbol: string; decimalPlaces: number }[] }>>(
+      `${API_BASE_URL}/api/currencies`,
+      { timeout: 30000 }
+    ),
 };
 
 export const settingsService = {

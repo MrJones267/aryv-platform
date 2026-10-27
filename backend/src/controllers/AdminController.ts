@@ -13,10 +13,11 @@ import { AdminUser } from '../models/AdminUser';
 import { AuthService } from '../services/AuthService';
 import User from '../models/User';
 import Ride from '../models/Ride';
-import Booking from '../models/Booking';
 import Package from '../models/Package';
 import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
 import { DeliveryDispute } from '../models/DeliveryDispute';
+import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
+import { getRevenueByCurrency } from '../services/RevenueReportService';
 
 /**
  * How long an admin session lasts.
@@ -30,7 +31,7 @@ import { DeliveryDispute } from '../models/DeliveryDispute';
 const ADMIN_TOKEN_TTL = '24h';
 const ADMIN_REMEMBER_ME_TTL = '24h';
 const ADMIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
-import { UserStatus, RideStatus, BookingStatus } from '../types';
+import { UserStatus, RideStatus } from '../types';
 
 // Configuration constants — fail fast if secrets are missing
 if (!process.env['JWT_SECRET']) throw new Error('JWT_SECRET environment variable is required');
@@ -345,18 +346,19 @@ export class AdminController {
         ? Math.round((completedDeliveries / totalDeliveries) * 1000) / 10
         : 0;
 
-      // Revenue from completed bookings
-      const [revenueAll, revenueThisMonth, revenueLastMonth] = await Promise.all([
-        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED } }) as Promise<number | null>,
-        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED, createdAt: { [Op.gte]: startOfMonth } } }) as Promise<number | null>,
-        Booking.sum('totalAmount', { where: { status: BookingStatus.COMPLETED, createdAt: { [Op.between]: [startOfLastMonth, endOfLastMonth] } } }) as Promise<number | null>,
-      ]);
-      const totalRevenue = revenueAll ?? 0;
-      const monthRevenue = revenueThisMonth ?? 0;
-      const lastMonthRevenue = revenueLastMonth ?? 0;
-      const revenueGrowth = lastMonthRevenue > 0
-        ? Math.round(((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 1000) / 10
-        : 0;
+      // Revenue from completed bookings and deliveries, kept per currency.
+      // This summed total_amount across every currency into one figure, so a
+      // pula fare and a rand fare were added together as if they were the
+      // same money.
+      const growthRate = (thisMonth: number, lastMonth: number): number => (lastMonth > 0
+        ? Math.round(((thisMonth - lastMonth) / lastMonth) * 1000) / 10
+        : 0);
+      const revenueByCurrency = (await getRevenueByCurrency(now)).map((r) => ({
+        ...r,
+        growthRate: growthRate(r.thisMonth, r.lastMonth),
+      }));
+      const platformRevenue = revenueByCurrency.find((r) => r.currency === PLATFORM_DEFAULT_CURRENCY)
+        ?? { currency: PLATFORM_DEFAULT_CURRENCY, total: 0, thisMonth: 0, lastMonth: 0, growthRate: 0 };
 
       // Open disputes
       const [openDisputes, resolvedDisputes] = await Promise.all([
@@ -388,12 +390,10 @@ export class AdminController {
           newThisMonth: newPackagesThisMonth,
           successRate: courierSuccessRate,
         },
-        revenue: {
-          total: Math.round(totalRevenue * 100) / 100,
-          thisMonth: Math.round(monthRevenue * 100) / 100,
-          lastMonth: Math.round(lastMonthRevenue * 100) / 100,
-          growthRate: revenueGrowth,
-        },
+        // `revenue` is the platform currency only; `revenueByCurrency` has
+        // every currency that has earned anything.
+        revenue: platformRevenue,
+        revenueByCurrency,
         disputes: {
           total: openDisputes + resolvedDisputes,
           open: openDisputes,
