@@ -21,8 +21,11 @@ import User from '../models/User';
 import { DeliveryDispute } from '../models/DeliveryDispute';
 import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
 import Package from '../models/Package';
+import { Currency } from '../models/Currency';
 import { BookingStatus, RideStatus } from '../types';
 import { redisClient } from '../config/redis';
+import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
+import { getMonthlyRevenue, getRevenueByCurrency } from '../services/RevenueReportService';
 
 const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
@@ -39,7 +42,7 @@ const DEFAULT_SETTINGS = {
   registrationOpen: true,
   driverApplicationsOpen: true,
   maxRideRadius: 100,
-  defaultCurrency: 'BWP',
+  defaultCurrency: PLATFORM_DEFAULT_CURRENCY,
   supportedCountries: ['BW', 'ZA', 'ZW', 'ZM', 'NA'],
   minRidePrice: 5,
   maxRidePrice: 5000,
@@ -428,39 +431,26 @@ router.post('/courier/agreements/:id/release-payment', authenticateAdminToken, r
  * @desc    Get revenue analytics
  * @access  Private (Admin)
  */
-router.get('/analytics/revenue', authenticateAdminToken, async (_req, res) => {
+router.get('/analytics/revenue', authenticateAdminToken, async (req, res) => {
   try {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    // The dashboard chart asks for six months; allow up to two years.
+    const requested = parseInt(String(req.query['months'] ?? '6'), 10);
+    const months = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 24) : 6;
 
-    const [thisMonthRevenue, lastMonthRevenue, totalRevenue, completedBookings] = await Promise.all([
-      Booking.sum('totalAmount' as any, {
-        where: { status: BookingStatus.COMPLETED, createdAt: { [Op.gte]: startOfMonth } },
-      }),
-      Booking.sum('totalAmount' as any, {
-        where: { status: BookingStatus.COMPLETED, createdAt: { [Op.between]: [startOfLastMonth, endOfLastMonth] } },
-      }),
-      Booking.sum('totalAmount' as any, { where: { status: BookingStatus.COMPLETED } }),
-      Booking.count({ where: { status: BookingStatus.COMPLETED } }),
+    const [byCurrency, monthly] = await Promise.all([
+      getRevenueByCurrency(),
+      getMonthlyRevenue(months),
     ]);
 
-    const thisMonth = Number(thisMonthRevenue) || 0;
-    const lastMonth = Number(lastMonthRevenue) || 0;
-    const growth = lastMonth > 0 ? ((thisMonth - lastMonth) / lastMonth) * 100 : 0;
-    const avgBookingValue = completedBookings > 0 ? (Number(totalRevenue) || 0) / completedBookings : 0;
-
+    // Each figure stays in the currency it was charged in. This used to sum
+    // completed bookings across every currency and label the result 'BWP'.
     res.json({
       success: true,
       data: {
-        totalRevenue: Number(totalRevenue) || 0,
-        thisMonthRevenue: thisMonth,
-        lastMonthRevenue: lastMonth,
-        revenueGrowth: Math.round(growth * 10) / 10,
-        totalCompletedBookings: completedBookings,
-        averageBookingValue: Math.round(avgBookingValue * 100) / 100,
-        currency: 'BWP',
+        platformCurrency: PLATFORM_DEFAULT_CURRENCY,
+        months,
+        byCurrency,
+        monthly,
       },
       timestamp: new Date().toISOString(),
     });
@@ -630,13 +620,24 @@ router.get('/settings', authenticateAdminToken, async (_req, res) => {
  */
 router.put('/settings', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
   try {
+    // The admin panel's currency picker is filled from the currencies table,
+    // so anything else did not come from it.
+    if (req.body?.defaultCurrency !== undefined) {
+      const code = String(req.body.defaultCurrency).toUpperCase();
+      const known = /^[A-Z]{3}$/.test(code) && await Currency.findOne({ where: { code, isActive: true } });
+      if (!known) {
+        return res.status(400).json({ success: false, error: `Unknown or inactive currency: ${req.body.defaultCurrency}`, code: 'INVALID_CURRENCY', timestamp: new Date().toISOString() });
+      }
+      req.body.defaultCurrency = code;
+    }
+
     const raw = await redisClient.get(SETTINGS_KEY);
     const current = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
     const updated = { ...current, ...req.body };
     await redisClient.set(SETTINGS_KEY, JSON.stringify(updated));
-    res.json({ success: true, message: 'Settings updated', data: updated, timestamp: new Date().toISOString() });
+    return res.json({ success: true, message: 'Settings updated', data: updated, timestamp: new Date().toISOString() });
   } catch {
-    res.status(500).json({ success: false, error: 'Failed to update settings', code: 'UPDATE_SETTINGS_FAILED', timestamp: new Date().toISOString() });
+    return res.status(500).json({ success: false, error: 'Failed to update settings', code: 'UPDATE_SETTINGS_FAILED', timestamp: new Date().toISOString() });
   }
 });
 

@@ -23,6 +23,8 @@ export interface DashboardStats {
     thisMonth: number;
     commission: number;
   };
+  /** Every currency that has earned anything. Never summed across currencies. */
+  revenueByCurrency: CurrencyRevenue[];
   courier: {
     packages: number;
     disputes: number;
@@ -37,12 +39,21 @@ export interface UserGrowthData {
   activeUsers: number;
 }
 
+export interface CurrencyRevenue {
+  currency: string;
+  total: number;
+  thisMonth: number;
+  lastMonth: number;
+}
+
+/** One calendar month of revenue in one currency. */
 export interface RevenueData {
-  date: string;
+  /** First day of the month, YYYY-MM-01. */
+  month: string;
+  currency: string;
   rides: number;
   courier: number;
   total: number;
-  commission: number;
 }
 
 export interface TopRoute {
@@ -144,6 +155,7 @@ export const fetchDashboardStats = createAsyncThunk('analytics/fetchDashboardSta
         thisMonth: data?.revenue?.thisMonth ?? 0,
         commission: data?.revenue?.commission ?? 0,
       },
+      revenueByCurrency: data?.revenueByCurrency ?? [],
       courier: {
         packages: data?.courier?.totalPackages ?? 0,
         disputes: data?.disputes?.open ?? 0,
@@ -177,17 +189,10 @@ export const fetchUserGrowth = createAsyncThunk(
 
 export const fetchRevenueReport = createAsyncThunk(
   'analytics/fetchRevenueReport',
-  async (
-    params: {
-      dateFrom: string;
-      dateTo: string;
-      granularity: 'day' | 'week' | 'month';
-    },
-    { rejectWithValue }
-  ) => {
+  async (months: number = 6, { rejectWithValue }) => {
     try {
-      const response = await analyticsService.getRevenueReport(params);
-      return response.data.data;
+      const response = await analyticsService.getRevenueReport(months);
+      return (response.data.data?.monthly ?? []) as RevenueData[];
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch revenue report');
     }

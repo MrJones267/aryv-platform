@@ -13,10 +13,6 @@ import {
   Typography,
   IconButton,
   Avatar,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar,
   Chip,
   LinearProgress,
   Button,
@@ -54,64 +50,27 @@ import {
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   fetchDashboardStats,
+  fetchRevenueReport,
   fetchUserGrowth,
   fetchUsageStats,
   selectDashboardStats,
+  selectRevenueData,
   selectUserGrowth,
   selectUsageStats,
   selectAnalyticsLoading,
 } from '../../store/slices/analyticsSlice';
+import {
+  fetchAppSettings,
+  fetchCurrencies,
+  selectCurrencies,
+  selectDisplayCurrency,
+} from '../../store/slices/settingsSlice';
+import { formatMoney } from '../../utils/currency';
 
-// Sample data for charts (replace with real data from API)
-const revenueData = [
-  { month: 'Jan', rides: 12000, courier: 8000, total: 20000 },
-  { month: 'Feb', rides: 15000, courier: 9500, total: 24500 },
-  { month: 'Mar', rides: 18000, courier: 11000, total: 29000 },
-  { month: 'Apr', rides: 22000, courier: 13500, total: 35500 },
-  { month: 'May', rides: 25000, courier: 15000, total: 40000 },
-  { month: 'Jun', rides: 28000, courier: 17500, total: 45500 },
-];
+const SERVICE_COLORS = { rides: '#1976d2', courier: '#dc004e' };
 
-const pieData = [
-  { name: 'Rides', value: 65, color: '#1976d2' },
-  { name: 'Courier', value: 35, color: '#dc004e' },
-];
-
-const recentActivity = [
-  {
-    id: 1,
-    type: 'user_signup',
-    user: 'John Doe',
-    action: 'New user registered',
-    time: '2 minutes ago',
-    avatar: 'JD',
-  },
-  {
-    id: 2,
-    type: 'dispute',
-    user: 'Sarah Wilson',
-    action: 'Raised a delivery dispute',
-    time: '15 minutes ago',
-    avatar: 'SW',
-    severity: 'warning',
-  },
-  {
-    id: 3,
-    type: 'ride_completed',
-    user: 'Mike Johnson',
-    action: 'Completed a ride (₹450)',
-    time: '32 minutes ago',
-    avatar: 'MJ',
-  },
-  {
-    id: 4,
-    type: 'verification',
-    user: 'Emma Brown',
-    action: 'ID verification approved',
-    time: '1 hour ago',
-    avatar: 'EB',
-  },
-];
+const monthLabel = (month: string): string =>
+  new Date(`${month}T00:00:00Z`).toLocaleString('en', { month: 'short', timeZone: 'UTC' });
 
 interface StatCardProps {
   title: string;
@@ -172,18 +131,49 @@ const DashboardHome: React.FC = () => {
   const userGrowth = useAppSelector(selectUserGrowth);
   const usageStats = useAppSelector(selectUsageStats);
   const loading = useAppSelector(selectAnalyticsLoading);
+  const revenueData = useAppSelector(selectRevenueData);
+  const currencies = useAppSelector(selectCurrencies);
+  const currency = useAppSelector(selectDisplayCurrency);
 
   useEffect(() => {
+    dispatch(fetchAppSettings());
+    dispatch(fetchCurrencies());
     dispatch(fetchDashboardStats());
+    dispatch(fetchRevenueReport(6));
     dispatch(fetchUserGrowth('30d'));
     dispatch(fetchUsageStats());
   }, [dispatch]);
 
   const handleRefresh = () => {
     dispatch(fetchDashboardStats());
+    dispatch(fetchRevenueReport(6));
     dispatch(fetchUserGrowth('30d'));
     dispatch(fetchUsageStats());
   };
+
+  const money = (amount: number | null | undefined) => formatMoney(amount, currency, currencies);
+
+  // Revenue is reported per currency and never added across currencies, so
+  // everything below is the display currency only. Other currencies that
+  // have earned something are listed by code under the revenue card.
+  const revenue = dashboardStats?.revenueByCurrency?.find(r => r.currency === currency);
+  const otherCurrencies = (dashboardStats?.revenueByCurrency ?? []).filter(
+    r => r.currency !== currency && r.total > 0
+  );
+  const revenueGrowth =
+    revenue && revenue.lastMonth > 0
+      ? Math.round(((revenue.thisMonth - revenue.lastMonth) / revenue.lastMonth) * 1000) / 10
+      : undefined;
+
+  const chartData = revenueData
+    .filter(r => r.currency === currency)
+    .map(r => ({ ...r, label: monthLabel(r.month) }));
+  const ridesTotal = chartData.reduce((sum, r) => sum + r.rides, 0);
+  const courierTotal = chartData.reduce((sum, r) => sum + r.courier, 0);
+  const pieData = [
+    { name: 'Rides', value: ridesTotal, color: SERVICE_COLORS.rides },
+    { name: 'Courier', value: courierTotal, color: SERVICE_COLORS.courier },
+  ].filter(d => d.value > 0);
 
   return (
     <Box>
@@ -208,8 +198,6 @@ const DashboardHome: React.FC = () => {
           <StatCard
             title="Total Users"
             value={dashboardStats?.users?.total?.toLocaleString() || '0'}
-            change={12}
-            changeType="increase"
             icon={<PeopleIcon />}
             color="#1976d2"
             subtitle={`${dashboardStats?.users?.active || 0} active users`}
@@ -219,8 +207,6 @@ const DashboardHome: React.FC = () => {
           <StatCard
             title="Total Rides"
             value={dashboardStats?.rides?.total?.toLocaleString() || '0'}
-            change={8}
-            changeType="increase"
             icon={<RidesIcon />}
             color="#2e7d32"
             subtitle={`${dashboardStats?.rides?.completed || 0} completed`}
@@ -230,8 +216,6 @@ const DashboardHome: React.FC = () => {
           <StatCard
             title="Courier Packages"
             value={dashboardStats?.courier?.packages?.toLocaleString() || '0'}
-            change={15}
-            changeType="increase"
             icon={<CourierIcon />}
             color="#ed6c02"
             subtitle={`${dashboardStats?.courier?.completionRate || 0}% completion rate`}
@@ -240,12 +224,15 @@ const DashboardHome: React.FC = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Total Revenue"
-            value={`₹${dashboardStats?.revenue?.total?.toLocaleString() || '0'}`}
-            change={22}
-            changeType="increase"
+            value={money(revenue?.total)}
+            change={revenueGrowth === undefined ? undefined : Math.abs(revenueGrowth)}
+            changeType={revenueGrowth !== undefined && revenueGrowth < 0 ? 'decrease' : 'increase'}
             icon={<MoneyIcon />}
             color="#9c27b0"
-            subtitle={`₹${dashboardStats?.revenue?.thisMonth?.toLocaleString() || '0'} this month`}
+            subtitle={
+              `${money(revenue?.thisMonth)} this month` +
+              (otherCurrencies.length ? ` · also earned in ${otherCurrencies.map(r => r.currency).join(', ')}` : '')
+            }
           />
         </Grid>
       </Grid>
@@ -260,13 +247,21 @@ const DashboardHome: React.FC = () => {
                 <Typography variant="h6" fontWeight="bold">
                   Revenue Overview
                 </Typography>
-                <Box display="flex" alignItems="center">
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Chip label={currency} size="small" color="primary" variant="outlined" />
                   <Chip label="Last 6 months" size="small" variant="outlined" />
                 </Box>
               </Box>
               <Box height={300}>
+                {chartData.every(r => r.total === 0) ? (
+                  <Box height="100%" display="flex" alignItems="center" justifyContent="center">
+                    <Typography variant="body2" color="textSecondary">
+                      {loading.revenue ? 'Loading revenue…' : `No completed rides or deliveries in ${currency} in the last 6 months.`}
+                    </Typography>
+                  </Box>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueData}>
+                  <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#1976d2" stopOpacity={0.8} />
@@ -274,15 +269,16 @@ const DashboardHome: React.FC = () => {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
+                    <XAxis dataKey="label" />
+                    <YAxis tickFormatter={(value: number) => money(value)} width={90} />
                     <Tooltip
-                      formatter={(value: any) => [`₹${value.toLocaleString()}`, '']}
+                      formatter={(value: any) => [money(value), 'Revenue']}
                       labelFormatter={label => `Month: ${label}`}
                     />
                     <Area type="monotone" dataKey="total" stroke="#1976d2" fillOpacity={1} fill="url(#colorTotal)" />
                   </AreaChart>
                 </ResponsiveContainer>
+                )}
               </Box>
             </CardContent>
           </Card>
@@ -296,6 +292,11 @@ const DashboardHome: React.FC = () => {
                 Service Distribution
               </Typography>
               <Box height={250} display="flex" alignItems="center" justifyContent="center">
+                {pieData.length === 0 ? (
+                  <Typography variant="body2" color="textSecondary">
+                    No {currency} revenue to split yet.
+                  </Typography>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -311,10 +312,11 @@ const DashboardHome: React.FC = () => {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: any) => [`${value}%`, '']} />
+                    <Tooltip formatter={(value: any) => [money(value), '']} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
+                )}
               </Box>
             </CardContent>
           </Card>
@@ -330,49 +332,12 @@ const DashboardHome: React.FC = () => {
               <Typography variant="h6" fontWeight="bold" mb={2}>
                 Recent Activity
               </Typography>
-              <List>
-                {recentActivity.map((activity, index) => (
-                  <React.Fragment key={activity.id}>
-                    <ListItem alignItems="flex-start" sx={{ px: 0 }}>
-                      <ListItemAvatar>
-                        <Avatar
-                          sx={{
-                            bgcolor: activity.severity === 'warning' ? 'warning.main' : 'primary.main',
-                            width: 32,
-                            height: 32,
-                            fontSize: '0.875rem',
-                          }}
-                        >
-                          {activity.avatar}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Typography variant="body2" fontWeight={500}>
-                              {activity.user}
-                            </Typography>
-                            {activity.severity === 'warning' && (
-                              <WarningIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-                            )}
-                          </Box>
-                        }
-                        secondary={
-                          <Box>
-                            <Typography variant="body2" color="textPrimary">
-                              {activity.action}
-                            </Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              {activity.time}
-                            </Typography>
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                    {index < recentActivity.length - 1 && <Divider variant="inset" component="li" />}
-                  </React.Fragment>
-                ))}
-              </List>
+              {/* This was four invented people ("John Doe completed a ride (₹450)").
+                  There is no activity feed endpoint yet, so say so instead. */}
+              <Typography variant="body2" color="textSecondary">
+                The activity feed is not connected yet. Recent signups, rides and disputes are on the
+                Users, Rides and Courier pages.
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
