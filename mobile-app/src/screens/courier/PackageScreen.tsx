@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import PackageService, { Package } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import CurrencyService from '../../services/CurrencyService';
 
 const PackageScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -160,7 +161,7 @@ const PackageScreen: React.FC = () => {
             </View>
           )}
         </View>
-        <Text style={styles.priceText}>P{package_.senderPriceOffer.toFixed(2)}</Text>
+        <Text style={styles.priceText}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
       </View>
 
       <Text style={styles.dateText}>

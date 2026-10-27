@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import packageService, { DeliveryTier, PricingSuggestion, DemandInfo } from '../../services/PackageService';
+import CurrencyService, { Currency } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
 
 const log = logger.createLogger('DeliveryTierSelector');
@@ -33,6 +34,10 @@ interface DeliveryTierSelectorProps {
   selectedPrice?: number;
   onTierSelect: (tierId: string, suggestion: PricingSuggestion) => void;
   onPriceChange?: (price: number) => void;
+  /** Currency to show until the API says which one the prices are in. */
+  currency?: Currency | null;
+  /** Called when the pricing response names the currency it priced in. */
+  onCurrencyResolved?: (currency: Currency) => void;
 }
 
 const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
@@ -46,7 +51,17 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
   selectedPrice,
   onTierSelect,
   onPriceChange,
+  currency: initialCurrency,
+  onCurrencyResolved,
 }) => {
+  // Every price here was printed with a hardcoded "P", so a rand or kwacha
+  // price read as pula. The pricing response names its currency; until it
+  // arrives, the screen's currency (the sender's own) is shown.
+  const [pricedCurrency, setPricedCurrency] = useState<Currency | null>(null);
+  const currency = pricedCurrency ?? initialCurrency ?? null;
+  const money = (amount: number) =>
+    currency ? CurrencyService.formatAmount(amount, currency) : amount.toFixed(2);
+
   const [deliveryTiers, setDeliveryTiers] = useState<DeliveryTier[]>([]);
   const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestion[]>([]);
   const [demandInfo, setDemandInfo] = useState<DemandInfo | null>(null);
@@ -99,6 +114,13 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
       if (response.success && response.data) {
         setPricingSuggestions(response.data.pricingSuggestions);
         setDemandInfo(response.data.demandInfo);
+        if (response.data.currency) {
+          const resolved = await CurrencyService.getCurrencyByCode(response.data.currency);
+          if (resolved) {
+            setPricedCurrency(resolved);
+            onCurrencyResolved?.(resolved);
+          }
+        }
       } else {
         log.error('Failed to load pricing suggestions:', response.error);
       }
@@ -178,7 +200,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                 styles.tierPrice,
                 isSelected && styles.selectedTierText
               ]}>
-                P{price.toFixed(2)}
+                {money(price)}
               </Text>
               <View style={[
                 styles.demandBadge,
@@ -219,7 +241,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                 isSelected && styles.selectedTierText,
                 styles.earningsText
               ]}>
-                P{suggestion.courierEarnings.toFixed(2)}
+                {money(suggestion.courierEarnings)}
               </Text>
             </View>
 
@@ -311,7 +333,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
             You can still offer your own price:
           </Text>
           <Text style={styles.customPriceValue}>
-            Current offer: P{selectedPrice.toFixed(2)}
+            Current offer: {money(selectedPrice)}
           </Text>
         </View>
       )}

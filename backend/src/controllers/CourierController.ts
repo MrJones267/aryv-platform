@@ -23,6 +23,7 @@ import DemandPricingEngine from '../services/DemandPricingEngine';
 import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
+import { DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 
 /** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
 const toGeoPoint = (coordinates: [number, number]): any => ({
@@ -87,6 +88,10 @@ export class CourierController {
         data: {
           distance,
           pricingSuggestions,
+          // The currency these prices are in: a package is charged in its
+          // sender's currency (see createPackage). The app printed every price
+          // with a hardcoded "P" because nothing here said which currency.
+          currency: await CurrencyService.getUserCurrencyCode(req.user?.id ?? ''),
           demandInfo: locationDemands[0] || null,
           calculatedAt: new Date().toISOString(),
         },
@@ -529,7 +534,7 @@ export class CourierController {
 
       // Get delivery tier to determine platform fee
       const agreedPrice = packageData.senderPriceOffer;
-      let platformFeePercentage = 0.25; // Default 25%
+      let platformFeePercentage = DEFAULT_COURIER_FEE_RATE;
 
       if (packageData.deliveryTierId) {
         const deliveryTier = await DeliveryTier.findByPk(packageData.deliveryTierId);

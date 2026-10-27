@@ -114,6 +114,24 @@ describe('Courier package creation', () => {
     expect(await DemandMetrics.count()).toBe(1);
   });
 
+  it('prices every tier for a route, in the sender\'s currency', async () => {
+    const response = await request(app)
+      .post('/api/courier/pricing/suggestions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        pickupCoordinates: GABORONE,
+        dropoffCoordinates: MOGODITSHANE,
+        packageSize: 'small',
+        fragile: false,
+        valuable: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.pricingSuggestions).toHaveLength(4);
+    // A sender with no currency preference prices in the platform currency.
+    expect(response.body.data.currency).toBe('BWP');
+  });
+
   it('lists the four default delivery tiers', async () => {
     const response = await request(app)
       .get('/api/courier/delivery-tiers')

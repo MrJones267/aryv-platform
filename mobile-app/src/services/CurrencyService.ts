@@ -440,6 +440,19 @@ export class CurrencyService {
   }
 
   /**
+   * Format an amount given only its currency code, without waiting on the
+   * API: uses the cached list, then the built-in regional list, then the bare
+   * code. Accepts the decimal strings the API returns ("45.00").
+   */
+  static formatByCode(amount: number | string | null | undefined, code: string | null | undefined): string {
+    const value = Number(amount) || 0;
+    const upper = (code || 'BWP').toUpperCase();
+    const currency =
+      this.currencyCache.find(c => c.code === upper) ?? this.fallbackCurrencies.find(c => c.code === upper);
+    return currency ? this.formatAmount(value, currency) : `${upper} ${value.toFixed(2)}`;
+  }
+
+  /**
    * Get currency by code from cache or API
    */
   static async getCurrencyByCode(code: string): Promise<Currency | null> {

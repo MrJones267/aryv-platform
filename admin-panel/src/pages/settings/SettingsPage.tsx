@@ -1,59 +1,43 @@
 /**
- * @fileoverview System Settings Page for Hitch Admin Panel
+ * @fileoverview Platform Settings Page for the ARYV Admin Panel
  * @author Oabona-Majoko
  * @created 2025-01-24
- * @lastModified 2025-01-24
+ * @lastModified 2026-10-27
+ *
+ * This page used to show invented values: commission rates of 15/20/12%,
+ * notification and security switches that nothing read, a company address of
+ * "123 Main Street", and "System Information" (v2.1.0, 99.8% uptime, 45,230
+ * users) that was hardcoded. Saving did nothing but log to the console.
+ *
+ * It now shows only what is real. Values the backend takes from its code are
+ * read from /settings/platform and shown read-only, labelled as set in code.
+ * The two things the system genuinely reads from stored configuration are
+ * editable: courier delivery tiers (fee and delivery window, read by pricing
+ * on every quote) and the reporting currency the dashboard uses.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
+  Button,
   Card,
   CardContent,
-  Typography,
-  Grid,
-  TextField,
-  Button,
-  Switch,
-  FormControlLabel,
-  Divider,
-  Alert,
-  Tabs,
-  Tab,
-  Slider,
   Chip,
+  Grid,
+  Switch,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Tabs,
+  TextField,
+  Typography,
 } from '@mui/material';
-import {
-  Settings,
-  AttachMoney,
-  Notifications,
-  Security,
-  Storage,
-  Language,
-  Save,
-  Refresh,
-  Edit,
-  Delete,
-  Add,
-  ExpandMore,
-  Warning,
-  CheckCircle,
-  Info,
-} from '@mui/icons-material';
+import { AttachMoney, Security, Settings, Save } from '@mui/icons-material';
 
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
@@ -63,6 +47,8 @@ import {
   selectDisplayCurrency,
   updateAppSettings,
 } from '../../store/slices/settingsSlice';
+import { selectAdminUser } from '../../store/slices/authSlice';
+import { settingsService, DeliveryTierRow, PlatformValues } from '../../services/api';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -76,580 +62,369 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
   </div>
 );
 
-// Mock settings data
-const mockCommissionRates = [
-  {
-    service: 'Ride Sharing',
-    rate: 15,
-    description: 'Standard commission for ride services',
-  },
-  {
-    service: 'Courier Service',
-    rate: 20,
-    description: 'Commission for package delivery',
-  },
-  {
-    service: 'Premium Rides',
-    rate: 12,
-    description: 'Reduced rate for premium tier',
-  },
-];
+const SetInCode: React.FC = () => (
+  <Chip label="Set in code" size="small" variant="outlined" sx={{ ml: 1 }} />
+);
 
-const mockNotificationSettings = {
-  emailNotifications: true,
-  smsAlerts: false,
-  pushNotifications: true,
-  disputeAlerts: true,
-  systemMaintenance: true,
-  weeklyReports: true,
-};
+/** One read-only value with what it means. */
+const ValueRow: React.FC<{ label: string; value: string; detail: string }> = ({ label, value, detail }) => (
+  <Box py={1.5} borderBottom={1} borderColor="divider">
+    <Box display="flex" justifyContent="space-between" alignItems="center">
+      <Typography variant="body1">{label}</Typography>
+      <Typography variant="h6">{value}</Typography>
+    </Box>
+    <Typography variant="body2" color="text.secondary">
+      {detail}
+    </Typography>
+  </Box>
+);
 
-const mockSecuritySettings = {
-  twoFactorAuth: true,
-  sessionTimeout: 30,
-  maxLoginAttempts: 5,
-  passwordExpiry: 90,
-  ipWhitelisting: false,
-};
+const errorMessage = (error: any, fallback: string): string =>
+  error?.response?.data?.error || error?.response?.data?.message || fallback;
+
+type TierDraft = { minDeliveryHours: string; maxDeliveryHours: string; platformFeePercentage: string; isActive: boolean };
+
+const toDraft = (tier: DeliveryTierRow): TierDraft => ({
+  minDeliveryHours: String(tier.minDeliveryHours),
+  maxDeliveryHours: String(tier.maxDeliveryHours),
+  platformFeePercentage: String(Number(tier.platformFeePercentage)),
+  isActive: tier.isActive,
+});
 
 const SettingsPage: React.FC = () => {
   const dispatch = useAppDispatch();
+  const adminUser = useAppSelector(selectAdminUser);
+  // The backend allows only super admins to change these; others see values.
+  const canEdit = adminUser?.role === 'super_admin';
 
   const [tabValue, setTabValue] = useState(0);
-  const [commissionRates, setCommissionRates] = useState(mockCommissionRates);
-  const [notificationSettings, setNotificationSettings] = useState(mockNotificationSettings);
-  const [securitySettings, setSecuritySettings] = useState(mockSecuritySettings);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editingRate, setEditingRate] = useState<any>(null);
-  const [unsavedChanges, setUnsavedChanges] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<PlatformValues | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [tiers, setTiers] = useState<DeliveryTierRow[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, TierDraft>>({});
+  const [tierStatus, setTierStatus] = useState<Record<string, { saving?: boolean; error?: string; saved?: boolean }>>({});
 
   const currencies = useAppSelector(selectCurrencies);
   const savedCurrency = useAppSelector(selectDisplayCurrency);
   const [currencyDraft, setCurrencyDraft] = useState<string | null>(null);
+  const [currencyStatus, setCurrencyStatus] = useState<{ saving?: boolean; error?: string; saved?: boolean }>({});
   const currency = currencyDraft ?? savedCurrency;
 
   useEffect(() => {
     dispatch(fetchAppSettings());
     dispatch(fetchCurrencies());
+
+    settingsService
+      .getPlatformValues()
+      .then(response => setPlatform(response.data.data))
+      .catch(error => setLoadError(errorMessage(error, 'Failed to load platform values')));
+
+    settingsService
+      .getDeliveryTiers()
+      .then(response => {
+        const rows = response.data.data ?? [];
+        setTiers(rows);
+        setDrafts(Object.fromEntries(rows.map(t => [t.id, toDraft(t)])));
+      })
+      .catch(error => setLoadError(errorMessage(error, 'Failed to load delivery tiers')));
   }, [dispatch]);
 
-  // Only the reporting currency is persisted so far. The other fields on this
-  // page are still local placeholders and are not sent anywhere.
-  const handleSaveSettings = async () => {
-    setSaveError(null);
+  const updateDraft = (id: string, field: keyof TierDraft, value: string | boolean) => {
+    setDrafts(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+    setTierStatus(prev => ({ ...prev, [id]: {} }));
+  };
+
+  const isDirty = (tier: DeliveryTierRow): boolean => {
+    const draft = drafts[tier.id];
+    if (!draft) return false;
+    const original = toDraft(tier);
+    return (Object.keys(original) as Array<keyof TierDraft>).some(k => original[k] !== draft[k]);
+  };
+
+  const saveTier = async (tier: DeliveryTierRow) => {
+    const draft = drafts[tier.id];
+    setTierStatus(prev => ({ ...prev, [tier.id]: { saving: true } }));
     try {
-      if (currencyDraft && currencyDraft !== savedCurrency) {
-        await dispatch(updateAppSettings({ defaultCurrency: currencyDraft })).unwrap();
-      }
-      setCurrencyDraft(null);
-      setUnsavedChanges(false);
-    } catch (error: any) {
-      setSaveError(typeof error === 'string' ? error : 'Failed to save settings');
+      const response = await settingsService.updateDeliveryTier(tier.id, {
+        minDeliveryHours: Number(draft.minDeliveryHours),
+        maxDeliveryHours: Number(draft.maxDeliveryHours),
+        platformFeePercentage: Number(draft.platformFeePercentage),
+        isActive: draft.isActive,
+      });
+      const updated = response.data.data;
+      setTiers(prev => prev.map(t => (t.id === updated.id ? updated : t)));
+      setDrafts(prev => ({ ...prev, [updated.id]: toDraft(updated) }));
+      setTierStatus(prev => ({ ...prev, [tier.id]: { saved: true } }));
+    } catch (error) {
+      setTierStatus(prev => ({ ...prev, [tier.id]: { error: errorMessage(error, 'Failed to save tier') } }));
     }
   };
 
-  const handleResetSettings = () => {
-    console.log('Resetting settings...');
-    // Implement reset functionality
+  const saveCurrency = async () => {
+    if (!currencyDraft || currencyDraft === savedCurrency) return;
+    setCurrencyStatus({ saving: true });
+    try {
+      await dispatch(updateAppSettings({ defaultCurrency: currencyDraft })).unwrap();
+      setCurrencyDraft(null);
+      setCurrencyStatus({ saved: true });
+    } catch (error: any) {
+      setCurrencyStatus({ error: typeof error === 'string' ? error : 'Failed to save the reporting currency' });
+    }
   };
 
-  const handleCommissionRateChange = (index: number, newRate: number) => {
-    const updatedRates = [...commissionRates];
-    updatedRates[index].rate = newRate;
-    setCommissionRates(updatedRates);
-    setUnsavedChanges(true);
-  };
-
-  const handleNotificationChange = (setting: string, value: boolean) => {
-    setNotificationSettings(prev => ({
-      ...prev,
-      [setting]: value,
-    }));
-    setUnsavedChanges(true);
-  };
-
-  const handleSecurityChange = (setting: string, value: any) => {
-    setSecuritySettings(prev => ({
-      ...prev,
-      [setting]: value,
-    }));
-    setUnsavedChanges(true);
-  };
+  const fees = platform?.fees;
+  const security = platform?.adminSecurity;
 
   return (
     <Box p={3}>
-      {/* Page Header */}
-      <Box mb={3} display="flex" alignItems="center" justifyContent="space-between">
-        <Box>
-          <Typography variant="h4" gutterBottom display="flex" alignItems="center" gap={1}>
-            <Settings color="primary" />
-            System Settings
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Configure system-wide settings, commission rates, and platform preferences
-          </Typography>
-        </Box>
-
-        <Box display="flex" gap={1}>
-          {unsavedChanges && <Chip label="Unsaved Changes" color="warning" icon={<Warning />} size="small" />}
-          <Button variant="outlined" startIcon={<Refresh />} onClick={handleResetSettings} size="small">
-            Reset
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Save />}
-            onClick={handleSaveSettings}
-            disabled={!unsavedChanges}
-            size="small"
-          >
-            Save Changes
-          </Button>
-        </Box>
+      <Box mb={3}>
+        <Typography variant="h4" gutterBottom display="flex" alignItems="center" gap={1}>
+          <Settings color="primary" />
+          Platform Settings
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          The values the platform runs on. Those marked &quot;Set in code&quot; change only with a new release.
+          {!canEdit && ' Only a super admin can change the editable settings.'}
+        </Typography>
       </Box>
 
-      {/* Unsaved Changes Warning */}
-      {unsavedChanges && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          You have unsaved changes. Don&apos;t forget to save your settings.
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
         </Alert>
       )}
 
-      {saveError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>
-          {saveError}
-        </Alert>
-      )}
-
-      {/* Settings Tabs */}
       <Card>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-            <Tab label="Commission Rates" icon={<AttachMoney />} iconPosition="start" />
-            <Tab label="Notifications" icon={<Notifications />} iconPosition="start" />
-            <Tab label="Security" icon={<Security />} iconPosition="start" />
+          <Tabs value={tabValue} onChange={(_e, newValue) => setTabValue(newValue)}>
+            <Tab label="Fees & Delivery Tiers" icon={<AttachMoney />} iconPosition="start" />
+            <Tab label="Admin Security" icon={<Security />} iconPosition="start" />
             <Tab label="General" icon={<Settings />} iconPosition="start" />
           </Tabs>
         </Box>
 
         <TabPanel value={tabValue} index={0}>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Commission Rate Configuration
+            <Typography variant="h6" display="flex" alignItems="center">
+              Platform fees
+              <SetInCode />
             </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              Set commission rates for different service types. Changes will affect new bookings only.
-            </Typography>
-
-            <Grid container spacing={3}>
-              {commissionRates.map((rate, index) => (
-                <Grid item xs={12} md={6} key={index}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Typography variant="h6">{rate.service}</Typography>
-                        <Chip label={`${rate.rate}%`} color="primary" size="medium" />
-                      </Box>
-
-                      <Typography variant="body2" color="text.secondary" gutterBottom>
-                        {rate.description}
-                      </Typography>
-
-                      <Box mt={2}>
-                        <Typography variant="caption" gutterBottom display="block">
-                          Commission Rate: {rate.rate}%
-                        </Typography>
-                        <Slider
-                          value={rate.rate}
-                          onChange={(e, newValue) => handleCommissionRateChange(index, newValue as number)}
-                          min={5}
-                          max={30}
-                          step={1}
-                          marks={[
-                            { value: 5, label: '5%' },
-                            { value: 15, label: '15%' },
-                            { value: 25, label: '25%' },
-                          ]}
-                          valueLabelDisplay="auto"
-                          valueLabelFormat={value => `${value}%`}
-                        />
-                      </Box>
-
-                      <Box mt={2} display="flex" justifyContent="space-between" alignItems="center">
-                        <Typography variant="caption" color="text.secondary">
-                          Revenue Impact: ${((rate.rate / 100) * 10000).toFixed(0)}/month
-                        </Typography>
-                        <Button size="small" startIcon={<Edit />}>
-                          Advanced
-                        </Button>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-
-            <Box mt={3}>
-              <Alert severity="info">
-                <Typography variant="body2">
-                  <strong>Note:</strong> Commission rate changes will only apply to new bookings. Existing active
-                  bookings will maintain their original commission rates.
-                </Typography>
-              </Alert>
+            <Box mb={4}>
+              <ValueRow
+                label="Ride booking fee"
+                value={fees ? `${fees.bookingPlatformFeePercent}%` : '…'}
+                detail="Added to every ride booking."
+              />
+              <ValueRow
+                label="Cash ride commission"
+                value={fees ? `${fees.cashCommissionPercent}%` : '…'}
+                detail="Taken from the driver on rides paid in cash."
+              />
+              <ValueRow
+                label="Courier fee without a tier"
+                value={fees ? `${fees.defaultCourierFeePercent}%` : '…'}
+                detail="Platform share of a delivery when the sender picked no delivery tier. With a tier, the tier's fee below applies."
+              />
             </Box>
+
+            <Typography variant="h6">Courier delivery tiers</Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Read by courier pricing on every quote and package. The fee must be between 5% and 50%, and
+              each window between 1 and 48 hours, with the minimum no greater than the maximum.
+            </Typography>
+
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Tier</TableCell>
+                    <TableCell>Delivery window (hours)</TableCell>
+                    <TableCell>Platform fee %</TableCell>
+                    <TableCell>Offered</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {tiers.map(tier => {
+                    const draft = drafts[tier.id] ?? toDraft(tier);
+                    const status = tierStatus[tier.id] ?? {};
+                    return (
+                      <TableRow key={tier.id}>
+                        <TableCell>
+                          <Typography variant="body2" fontWeight={500}>
+                            {tier.tierName}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {tier.description}
+                          </Typography>
+                          {status.error && (
+                            <Typography variant="caption" color="error" display="block">
+                              {status.error}
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {canEdit ? (
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <TextField
+                                size="small"
+                                type="number"
+                                value={draft.minDeliveryHours}
+                                onChange={e => updateDraft(tier.id, 'minDeliveryHours', e.target.value)}
+                                inputProps={{ min: 1, max: 48, 'aria-label': `${tier.tierName} minimum hours` }}
+                                sx={{ width: 80 }}
+                              />
+                              –
+                              <TextField
+                                size="small"
+                                type="number"
+                                value={draft.maxDeliveryHours}
+                                onChange={e => updateDraft(tier.id, 'maxDeliveryHours', e.target.value)}
+                                inputProps={{ min: 1, max: 48, 'aria-label': `${tier.tierName} maximum hours` }}
+                                sx={{ width: 80 }}
+                              />
+                            </Box>
+                          ) : (
+                            `${tier.minDeliveryHours}–${tier.maxDeliveryHours}`
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {canEdit ? (
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={draft.platformFeePercentage}
+                              onChange={e => updateDraft(tier.id, 'platformFeePercentage', e.target.value)}
+                              inputProps={{ min: 5, max: 50, step: 0.5, 'aria-label': `${tier.tierName} platform fee` }}
+                              sx={{ width: 90 }}
+                            />
+                          ) : (
+                            `${Number(tier.platformFeePercentage)}%`
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={draft.isActive}
+                            disabled={!canEdit}
+                            onChange={e => updateDraft(tier.id, 'isActive', e.target.checked)}
+                            inputProps={{ 'aria-label': `${tier.tierName} offered to senders` }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          {canEdit && (
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<Save />}
+                              disabled={!isDirty(tier) || status.saving}
+                              onClick={() => saveTier(tier)}
+                            >
+                              {status.saving ? 'Saving…' : status.saved && !isDirty(tier) ? 'Saved' : 'Save'}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </CardContent>
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Notification Preferences
+            <Typography variant="h6" display="flex" alignItems="center">
+              Admin sign-in and sessions
+              <SetInCode />
             </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              Configure how and when you receive notifications about platform activities.
-            </Typography>
-
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Alert Types
-                </Typography>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.emailNotifications}
-                        onChange={e => handleNotificationChange('emailNotifications', e.target.checked)}
-                      />
-                    }
-                    label="Email Notifications"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Receive important alerts via email
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.smsAlerts}
-                        onChange={e => handleNotificationChange('smsAlerts', e.target.checked)}
-                      />
-                    }
-                    label="SMS Alerts"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Critical alerts sent via SMS
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.pushNotifications}
-                        onChange={e => handleNotificationChange('pushNotifications', e.target.checked)}
-                      />
-                    }
-                    label="Push Notifications"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Browser push notifications
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Event Notifications
-                </Typography>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.disputeAlerts}
-                        onChange={e => handleNotificationChange('disputeAlerts', e.target.checked)}
-                      />
-                    }
-                    label="Dispute Alerts"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Immediate alerts for new disputes
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.systemMaintenance}
-                        onChange={e => handleNotificationChange('systemMaintenance', e.target.checked)}
-                      />
-                    }
-                    label="System Maintenance"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Notifications about system updates
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={notificationSettings.weeklyReports}
-                        onChange={e => handleNotificationChange('weeklyReports', e.target.checked)}
-                      />
-                    }
-                    label="Weekly Reports"
-                  />
-                  <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                    Weekly analytics and performance reports
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
+            <ValueRow
+              label="Session length"
+              value={security ? `${security.sessionHours} hours` : '…'}
+              detail="An admin is signed out this long after signing in. Signing out ends the session immediately."
+            />
+            <ValueRow
+              label="Sign-in attempts"
+              value={security ? `${security.loginAttemptsPerWindow} per ${security.loginWindowMinutes} min` : '…'}
+              detail="Per network address. Further attempts are refused until the window passes."
+            />
+            <ValueRow
+              label="Minimum password length"
+              value={security ? `${security.passwordMinLength} characters` : '…'}
+              detail="Passwords also need upper and lower case letters, a number and a symbol."
+            />
+            <ValueRow
+              label="Two-factor sign-in"
+              value={security ? (security.twoFactorAvailable ? 'Available' : 'Not available') : '…'}
+              detail="Not built yet. Admin accounts are protected by password and sign-in limits only."
+            />
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Admin accounts are created and reset with <code>npm run admin:create</code> on the server, which
+              prints a generated password once.
+            </Alert>
           </CardContent>
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Security Configuration
-            </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              Configure security settings to protect your admin panel and user data.
-            </Typography>
-
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Accordion>
-                  <AccordionSummary expandIcon={<ExpandMore />}>
-                    <Typography variant="subtitle1">Authentication Settings</Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={securitySettings.twoFactorAuth}
-                            onChange={e => handleSecurityChange('twoFactorAuth', e.target.checked)}
-                          />
-                        }
-                        label="Two-Factor Authentication"
-                      />
-                      <Typography variant="caption" display="block" color="text.secondary" mb={2}>
-                        Require 2FA for all admin accounts
-                      </Typography>
-                    </Box>
-
-                    <Box mb={2}>
-                      <Typography variant="caption" gutterBottom display="block">
-                        Session Timeout (minutes): {securitySettings.sessionTimeout}
-                      </Typography>
-                      <Slider
-                        value={securitySettings.sessionTimeout}
-                        onChange={(e, newValue) => handleSecurityChange('sessionTimeout', newValue)}
-                        min={5}
-                        max={120}
-                        step={5}
-                        marks={[
-                          { value: 5, label: '5m' },
-                          { value: 30, label: '30m' },
-                          { value: 60, label: '1h' },
-                          { value: 120, label: '2h' },
-                        ]}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={value => `${value}m`}
-                      />
-                    </Box>
-
-                    <TextField
-                      fullWidth
-                      label="Max Login Attempts"
-                      type="number"
-                      value={securitySettings.maxLoginAttempts}
-                      onChange={e => handleSecurityChange('maxLoginAttempts', parseInt(e.target.value))}
-                      size="small"
-                      inputProps={{ min: 3, max: 10 }}
-                    />
-                  </AccordionDetails>
-                </Accordion>
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Accordion>
-                  <AccordionSummary expandIcon={<ExpandMore />}>
-                    <Typography variant="subtitle1">Password Policy</Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <TextField
-                      fullWidth
-                      label="Password Expiry (days)"
-                      type="number"
-                      value={securitySettings.passwordExpiry}
-                      onChange={e => handleSecurityChange('passwordExpiry', parseInt(e.target.value))}
-                      size="small"
-                      inputProps={{ min: 30, max: 365 }}
-                      sx={{ mb: 2 }}
-                    />
-
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={securitySettings.ipWhitelisting}
-                          onChange={e => handleSecurityChange('ipWhitelisting', e.target.checked)}
-                        />
-                      }
-                      label="IP Whitelisting"
-                    />
-                    <Typography variant="caption" display="block" color="text.secondary">
-                      Restrict admin access to specific IP addresses
-                    </Typography>
-                  </AccordionDetails>
-                </Accordion>
-              </Grid>
-            </Grid>
-
-            <Box mt={3}>
-              <Alert severity="warning">
-                <Typography variant="body2">
-                  <strong>Warning:</strong> Changes to security settings will affect all admin users. Ensure all
-                  administrators are notified before applying changes.
-                </Typography>
-              </Alert>
-            </Box>
-          </CardContent>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={3}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              General Settings
-            </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              Configure general platform settings and preferences.
-            </Typography>
-
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Platform Name"
-                  defaultValue="ARYV Ride-Sharing Platform"
-                  size="small"
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Support Email"
-                  defaultValue="support@aryv-app.com"
-                  size="small"
-                  sx={{ mb: 2 }}
-                />
-
-                <TextField
-                  fullWidth
-                  label="Company Address"
-                  multiline
-                  rows={3}
-                  defaultValue="123 Main Street, City, Country"
-                  size="small"
-                  sx={{ mb: 2 }}
-                />
-              </Grid>
-
               <Grid item xs={12} md={6}>
                 <TextField
                   select
                   fullWidth
                   label="Reporting Currency"
                   value={currency}
+                  disabled={!canEdit}
                   onChange={e => {
                     setCurrencyDraft(e.target.value);
-                    setUnsavedChanges(true);
+                    setCurrencyStatus({});
                   }}
                   SelectProps={{ native: true }}
                   helperText="Dashboard revenue is shown in this currency. Rides are still charged in each country's own currency."
                   size="small"
                   sx={{ mb: 2 }}
                 >
-                  {/* Filled from the currencies table, not hardcoded. Until it loads,
-                      show the saved code so the field is never blank. */}
+                  {/* Filled from the currencies table. Until it loads, show the
+                      saved code so the field is never blank. */}
                   {(currencies.length ? currencies : [{ code: currency, name: currency, symbol: '' }]).map(c => (
                     <option key={c.code} value={c.code}>
                       {c.code} - {c.name}
                     </option>
                   ))}
                 </TextField>
-
-                <TextField select fullWidth label="Default Language" defaultValue="en" size="small" sx={{ mb: 2 }}>
-                  <option value="en">English</option>
-                  <option value="es">Spanish</option>
-                  <option value="fr">French</option>
-                </TextField>
-
-                <TextField select fullWidth label="Time Zone" defaultValue="UTC" size="small" sx={{ mb: 2 }}>
-                  <option value="UTC">UTC</option>
-                  <option value="EST">Eastern Time</option>
-                  <option value="PST">Pacific Time</option>
-                </TextField>
-              </Grid>
-            </Grid>
-
-            <Divider sx={{ my: 3 }} />
-
-            <Typography variant="h6" gutterBottom>
-              System Information
-            </Typography>
-
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box textAlign="center" p={2} border={1} borderColor="divider" borderRadius={1}>
-                  <Typography variant="h6" color="primary.main">
-                    v2.1.0
+                {canEdit && (
+                  <Button
+                    variant="contained"
+                    startIcon={<Save />}
+                    onClick={saveCurrency}
+                    disabled={!currencyDraft || currencyDraft === savedCurrency || currencyStatus.saving}
+                  >
+                    {currencyStatus.saving ? 'Saving…' : 'Save'}
+                  </Button>
+                )}
+                {currencyStatus.saved && (
+                  <Typography variant="body2" color="success.main" mt={1}>
+                    Saved.
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Platform Version
+                )}
+                {currencyStatus.error && (
+                  <Typography variant="body2" color="error" mt={1}>
+                    {currencyStatus.error}
                   </Typography>
-                </Box>
+                )}
               </Grid>
 
-              <Grid item xs={12} sm={6} md={3}>
-                <Box textAlign="center" p={2} border={1} borderColor="divider" borderRadius={1}>
-                  <Typography variant="h6" color="success.main">
-                    99.8%
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    System Uptime
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={3}>
-                <Box textAlign="center" p={2} border={1} borderColor="divider" borderRadius={1}>
-                  <Typography variant="h6" color="info.main">
-                    45,230
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Active Users
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={3}>
-                <Box textAlign="center" p={2} border={1} borderColor="divider" borderRadius={1}>
-                  <Typography variant="h6" color="warning.main">
-                    2.3GB
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Database Size
-                  </Typography>
-                </Box>
+              <Grid item xs={12} md={6}>
+                <Typography variant="h6" display="flex" alignItems="center">
+                  Platform currency
+                  <SetInCode />
+                </Typography>
+                <ValueRow
+                  label="Default currency"
+                  value={platform?.platformCurrency ?? '…'}
+                  detail="Used for anyone who has not chosen a currency, and for revenue shown on the dashboard by default."
+                />
               </Grid>
             </Grid>
           </CardContent>

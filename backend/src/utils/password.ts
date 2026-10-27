@@ -12,7 +12,7 @@
  */
 
 // Constants
-const MIN_LENGTH = 8;
+export const MIN_LENGTH = 8;
 const MAX_LENGTH = 128;
 
 /**

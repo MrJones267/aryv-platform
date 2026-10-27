@@ -23,6 +23,7 @@ import { colors } from '../../theme';
 import PackageService, { Package } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
+import CurrencyService from '../../services/CurrencyService';
 
 type PackageDetailsRouteProp = RouteProp<CourierStackParamList, 'PackageDetails'>;
 
@@ -244,7 +245,7 @@ const PackageDetailsScreen: React.FC = () => {
             <View style={styles.feeBreakdown}>
               <View style={styles.feeRow}>
                 <Text style={styles.feeLabel}>Package Price</Text>
-                <Text style={styles.feeValue}>P{package_.senderPriceOffer.toFixed(2)}</Text>
+                <Text style={styles.feeValue}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
               </View>
               <View style={styles.feeRow}>
                 <Text style={styles.feeLabel}>Platform Fee (10%)</Text>

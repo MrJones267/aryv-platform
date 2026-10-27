@@ -255,7 +255,45 @@ export const currencyService = {
     ),
 };
 
+export interface PlatformValues {
+  platformCurrency: string;
+  fees: { bookingPlatformFeePercent: number; cashCommissionPercent: number; defaultCourierFeePercent: number };
+  adminSecurity: {
+    sessionHours: number;
+    loginAttemptsPerWindow: number;
+    loginWindowMinutes: number;
+    passwordMinLength: number;
+    twoFactorAvailable: boolean;
+  };
+}
+
+export interface DeliveryTierRow {
+  id: string;
+  tierType: 'lightning' | 'express' | 'standard' | 'economy';
+  tierName: string;
+  description: string;
+  minDeliveryHours: number;
+  maxDeliveryHours: number;
+  basePriceMultiplier: number | string;
+  platformFeePercentage: number | string;
+  slaGuarantee: number | string;
+  isActive: boolean;
+}
+
+export type DeliveryTierUpdate = Partial<
+  Pick<DeliveryTierRow, 'minDeliveryHours' | 'maxDeliveryHours' | 'isActive'> & { platformFeePercentage: number }
+>;
+
 export const settingsService = {
+  // Read-only: the fee and sign-in values the backend code actually uses.
+  getPlatformValues: () => adminApi.get<ApiResponse<PlatformValues>>('/settings/platform'),
+
+  // Courier delivery tiers: real, editable configuration read by pricing.
+  getDeliveryTiers: () => adminApi.get<ApiResponse<DeliveryTierRow[]>>('/delivery-tiers'),
+
+  updateDeliveryTier: (id: string, changes: DeliveryTierUpdate) =>
+    adminApi.put<ApiResponse<DeliveryTierRow>>(`/delivery-tiers/${id}`, changes),
+
   getSettings: () => adminApi.get<ApiResponse<any>>('/settings'),
 
   updateSettings: (settings: any) => adminApi.put<ApiResponse<any>>('/settings', settings),

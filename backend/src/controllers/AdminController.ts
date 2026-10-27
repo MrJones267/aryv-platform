@@ -30,7 +30,7 @@ import { getRevenueByCurrency } from '../services/RevenueReportService';
  */
 const ADMIN_TOKEN_TTL = '24h';
 const ADMIN_REMEMBER_ME_TTL = '24h';
-const ADMIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+export const ADMIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 import { UserStatus, RideStatus } from '../types';
 
 // Configuration constants — fail fast if secrets are missing
