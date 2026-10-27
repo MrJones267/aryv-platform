@@ -27,6 +27,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import ImagePicker from '../../components/common/ImagePicker';
 import DeliveryTierSelector from '../../components/courier/DeliveryTierSelector';
 import LocationService from '../../services/LocationService';
+import CurrencyService, { Currency } from '../../services/CurrencyService';
 import { useAppDispatch } from '../../store/hooks';
 import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
 import logger from '../../services/LoggingService';
@@ -86,6 +87,17 @@ const CreatePackageScreen: React.FC = () => {
   });
 
   const totalSteps = 5; // Added pricing step
+
+  // The currency the package will be priced and paid in: the sender's own,
+  // which is what the API charges in. Price fields showed a hardcoded "P".
+  // The tier selector replaces it with the currency the pricing response
+  // names, so the two can never disagree.
+  const [currency, setCurrency] = useState<Currency | null>(null);
+  useEffect(() => {
+    CurrencyService.getUserCurrencies()
+      .then(preferences => setCurrency(preferences?.primaryCurrency ?? null))
+      .catch(error => log.warn('Could not load the sender\'s currency:', error));
+  }, []);
   const PRICING_STEP = 4; // rendered by renderStep5()
 
   // Coordinates for the two addresses, looked up when the pricing step opens.
@@ -354,7 +366,7 @@ const CreatePackageScreen: React.FC = () => {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Offered Price *</Text>
         <View style={styles.priceInput}>
-          <Text style={styles.currencySymbol}>P</Text>
+          <Text style={styles.currencySymbol}>{currency?.symbol ?? ''}</Text>
           <TextInput
             style={styles.priceField}
             value={formData.senderPriceOffer.toString()}
@@ -593,6 +605,8 @@ const CreatePackageScreen: React.FC = () => {
         selectedPrice={formData.senderPriceOffer}
         onTierSelect={handleTierSelect}
         onPriceChange={handlePriceChange}
+        currency={currency}
+        onCurrencyResolved={setCurrency}
       />
 
       <View style={styles.inputGroup}>
@@ -672,7 +686,9 @@ const CreatePackageScreen: React.FC = () => {
         <View style={styles.reviewItem}>
           <Text style={styles.reviewLabel}>Your Offer:</Text>
           <Text style={[styles.reviewValue, styles.priceValue]}>
-            P{formData.senderPriceOffer}
+            {currency
+              ? CurrencyService.formatAmount(formData.senderPriceOffer, currency)
+              : formData.senderPriceOffer.toFixed(2)}
           </Text>
         </View>
         {selectedTierSuggestion && (

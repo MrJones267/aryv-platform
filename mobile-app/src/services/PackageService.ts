@@ -92,6 +92,8 @@ export interface Package {
   dropoffAddress: string;
   distance?: number;
   senderPriceOffer: number;
+  /** ISO code the package is priced and paid in (the sender's currency). */
+  currency?: string;
   systemSuggestedPrice?: number;
   deliveryTierId?: string;
   requestedDeliveryTime?: string;
@@ -195,6 +197,8 @@ class PackageService {
     data?: {
       distance: number;
       pricingSuggestions: PricingSuggestion[];
+      /** ISO code of the currency every price above is in. */
+      currency?: string;
       demandInfo: DemandInfo | null;
       calculatedAt: string;
     };
