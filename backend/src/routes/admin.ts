@@ -444,6 +444,7 @@ router.get('/courier/packages', authenticateAdminToken, async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    logger.error(`Admin courier packages failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to fetch packages', code: 'FETCH_PACKAGES_FAILED', timestamp: new Date().toISOString() });
   }
 });
@@ -492,6 +493,7 @@ router.get('/courier/stats', authenticateAdminToken, async (_req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    logger.error(`Admin courier stats failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to fetch courier stats', code: 'COURIER_STATS_FAILED', timestamp: new Date().toISOString() });
   }
 });
