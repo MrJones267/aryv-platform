@@ -111,6 +111,9 @@ const SettingsPage: React.FC = () => {
   const [currencyStatus, setCurrencyStatus] = useState<{ saving?: boolean; error?: string; saved?: boolean }>({});
   const currency = currencyDraft ?? savedCurrency;
 
+  const [sessionDraft, setSessionDraft] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<{ saving?: boolean; error?: string; saved?: boolean }>({});
+
   useEffect(() => {
     dispatch(fetchAppSettings());
     dispatch(fetchCurrencies());
@@ -175,6 +178,27 @@ const SettingsPage: React.FC = () => {
 
   const fees = platform?.fees;
   const security = platform?.adminSecurity;
+  const sessionValue = sessionDraft ?? (security ? String(security.sessionHours) : '');
+  const sessionNumber = Number(sessionValue);
+  const sessionValid =
+    !!security &&
+    Number.isInteger(sessionNumber) &&
+    sessionNumber >= security.sessionHoursMin &&
+    sessionNumber <= security.sessionHoursMax;
+
+  const saveSessionHours = async () => {
+    if (!security || !sessionValid || sessionNumber === security.sessionHours) return;
+    setSessionStatus({ saving: true });
+    try {
+      await dispatch(updateAppSettings({ adminSessionHours: sessionNumber })).unwrap();
+      const response = await settingsService.getPlatformValues();
+      setPlatform(response.data.data);
+      setSessionDraft(null);
+      setSessionStatus({ saved: true });
+    } catch (error: any) {
+      setSessionStatus({ error: typeof error === 'string' ? error : 'Failed to save the session length' });
+    }
+  };
 
   return (
     <Box p={3}>
@@ -335,15 +359,57 @@ const SettingsPage: React.FC = () => {
 
         <TabPanel value={tabValue} index={1}>
           <CardContent>
-            <Typography variant="h6" display="flex" alignItems="center">
-              Admin sign-in and sessions
+            <Typography variant="h6">Session length</Typography>
+            <Box py={1.5} borderBottom={1} borderColor="divider">
+              {canEdit && security ? (
+                <Box display="flex" alignItems="flex-start" gap={2}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Hours"
+                    value={sessionValue}
+                    onChange={e => {
+                      setSessionDraft(e.target.value);
+                      setSessionStatus({});
+                    }}
+                    error={sessionDraft !== null && !sessionValid}
+                    helperText={`Whole hours, ${security.sessionHoursMin} to ${security.sessionHoursMax}`}
+                    inputProps={{ min: security.sessionHoursMin, max: security.sessionHoursMax, step: 1 }}
+                    sx={{ width: 160 }}
+                  />
+                  <Button
+                    variant="contained"
+                    startIcon={<Save />}
+                    onClick={saveSessionHours}
+                    disabled={!sessionValid || sessionNumber === security.sessionHours || sessionStatus.saving}
+                    sx={{ mt: 0.25 }}
+                  >
+                    {sessionStatus.saving ? 'Saving…' : 'Save'}
+                  </Button>
+                </Box>
+              ) : (
+                <Typography variant="h6">{security ? `${security.sessionHours} hours` : '…'}</Typography>
+              )}
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                An admin is signed out this long after signing in. A change applies to sign-ins from now on;
+                anyone already signed in keeps the length they signed in with. Signing out ends a session at once.
+              </Typography>
+              {sessionStatus.saved && (
+                <Typography variant="body2" color="success.main">
+                  Saved.
+                </Typography>
+              )}
+              {sessionStatus.error && (
+                <Typography variant="body2" color="error">
+                  {sessionStatus.error}
+                </Typography>
+              )}
+            </Box>
+
+            <Typography variant="h6" display="flex" alignItems="center" mt={3}>
+              Sign-in protection
               <SetInCode />
             </Typography>
-            <ValueRow
-              label="Session length"
-              value={security ? `${security.sessionHours} hours` : '…'}
-              detail="An admin is signed out this long after signing in. Signing out ends the session immediately."
-            />
             <ValueRow
               label="Sign-in attempts"
               value={security ? `${security.loginAttemptsPerWindow} per ${security.loginWindowMinutes} min` : '…'}

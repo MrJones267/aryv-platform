@@ -29,6 +29,8 @@ export interface ContentSettings {
 export interface AppSettings {
   /** Currency the dashboard reports in. Rides are still charged locally. */
   defaultCurrency?: string;
+  /** Admin session length in hours, set by a super admin. */
+  adminSessionHours?: number;
   appName: string;
   supportEmail: string;
   supportPhone: string;

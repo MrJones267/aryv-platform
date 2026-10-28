@@ -260,6 +260,8 @@ export interface PlatformValues {
   fees: { bookingPlatformFeePercent: number; cashCommissionPercent: number; defaultCourierFeePercent: number };
   adminSecurity: {
     sessionHours: number;
+    sessionHoursMin: number;
+    sessionHoursMax: number;
     loginAttemptsPerWindow: number;
     loginWindowMinutes: number;
     passwordMinLength: number;

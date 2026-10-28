@@ -26,13 +26,12 @@ import { redisClient } from '../config/redis';
 import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getMonthlyRevenue, getRevenueByCurrency } from '../services/RevenueReportService';
 import { DeliveryTier } from '../models/DeliveryTier';
-import { ADMIN_TOKEN_TTL_SECONDS } from '../controllers/AdminController';
 import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
+import { ADMIN_SESSION_HOURS, SETTINGS_KEY, getAdminSessionHours, isValidAdminSessionHours } from '../services/PlatformSettingsService';
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 
-const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
 
 // Hierarchical: super_admin implies admin implies moderator. The local
@@ -52,6 +51,7 @@ const DEFAULT_SETTINGS = {
   minRidePrice: 5,
   maxRidePrice: 5000,
   maxPassengersPerRide: 8,
+  adminSessionHours: ADMIN_SESSION_HOURS.DEFAULT,
 };
 
 const DEFAULT_COMMISSION = {
@@ -741,10 +741,30 @@ router.put('/settings', authenticateAdminToken, requireSuperAdmin, async (req, r
       req.body.defaultCurrency = code;
     }
 
+    if (req.body?.adminSessionHours !== undefined && !isValidAdminSessionHours(req.body.adminSessionHours)) {
+      return res.status(400).json({
+        success: false,
+        error: `adminSessionHours must be a whole number of hours from ${ADMIN_SESSION_HOURS.MIN} to ${ADMIN_SESSION_HOURS.MAX}`,
+        code: 'VALIDATION_ERROR',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const raw = await redisClient.get(SETTINGS_KEY);
     const current = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
     const updated = { ...current, ...req.body };
-    await redisClient.set(SETTINGS_KEY, JSON.stringify(updated));
+    const serialised = JSON.stringify(updated);
+    await redisClient.set(SETTINGS_KEY, serialised);
+
+    // The Redis client drops writes when it is disconnected, and swallows
+    // errors when it is not, so this used to report success for a change
+    // that was never stored. Read it back; for a security setting such as the
+    // session length, "saved" has to be true.
+    if ((await redisClient.get(SETTINGS_KEY)) !== serialised) {
+      logger.error('Admin settings were not stored: Redis did not keep the write');
+      return res.status(503).json({ success: false, error: 'The settings store is unavailable, so nothing was saved. Try again shortly.', code: 'SETTINGS_STORE_UNAVAILABLE', timestamp: new Date().toISOString() });
+    }
+    logger.info('Admin settings changed', { adminId: (req as any).user?.id, changes: Object.keys(req.body ?? {}) });
     return res.json({ success: true, message: 'Settings updated', data: updated, timestamp: new Date().toISOString() });
   } catch {
     return res.status(500).json({ success: false, error: 'Failed to update settings', code: 'UPDATE_SETTINGS_FAILED', timestamp: new Date().toISOString() });
@@ -809,7 +829,7 @@ router.put('/settings/commission', authenticateAdminToken, requireSuperAdmin, as
  * page used to show invented rates (rides 15%, courier 20%) and security
  * options the backend does not have.
  */
-router.get('/settings/platform', authenticateAdminToken, (_req, res) => {
+router.get('/settings/platform', authenticateAdminToken, async (_req, res) => {
   res.json({
     success: true,
     data: {
@@ -820,7 +840,9 @@ router.get('/settings/platform', authenticateAdminToken, (_req, res) => {
         defaultCourierFeePercent: DEFAULT_COURIER_FEE_RATE * 100,
       },
       adminSecurity: {
-        sessionHours: ADMIN_TOKEN_TTL_SECONDS / 3600,
+        sessionHours: await getAdminSessionHours(),
+        sessionHoursMin: ADMIN_SESSION_HOURS.MIN,
+        sessionHoursMax: ADMIN_SESSION_HOURS.MAX,
         loginAttemptsPerWindow: ADMIN_LOGIN_MAX_ATTEMPTS,
         loginWindowMinutes: ADMIN_LOGIN_WINDOW_MS / 60000,
         passwordMinLength: PASSWORD_MIN_LENGTH,
