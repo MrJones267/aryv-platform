@@ -456,6 +456,9 @@ const SettingsPage: React.FC = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Texted the moment someone raises an SOS, with who raised it, their phone number and a map
               link. Local numbers are read as Botswana numbers; add +27 or another code for other countries.
+              {sos?.reminderMinutes?.length
+                ? ` If no one acknowledges it in this panel, they are texted again ${sos.reminderMinutes.length} times, ${sos.reminderMinutes.join(', ')} minutes after it was raised.`
+                : ''}
             </Typography>
             {sos && !sos.smsConfigured && (
               <Alert severity="error" sx={{ mb: 2 }}>

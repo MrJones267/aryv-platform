@@ -54,27 +54,33 @@ describe('ScheduledTasks', () => {
   afterEach(() => tasks.stop());
 
   describe('starting', () => {
-    it('registers the exchange rate refresh and the expiry sweep', () => {
+    it('registers the exchange rate refresh, the expiry sweep and SOS escalation', () => {
       tasks.start();
 
-      expect(scheduled).toHaveLength(2);
-      expect(tasks.status().map((t) => t.name)).toEqual(['exchange-rates', 'expiry-sweep']);
+      expect(scheduled).toHaveLength(3);
+      expect(tasks.status().map((t) => t.name)).toEqual(['exchange-rates', 'expiry-sweep', 'sos-escalation']);
     });
 
-    it('schedules them daily rather than continuously', () => {
+    it('schedules the rate refresh and expiry sweep daily rather than continuously', () => {
       tasks.start();
 
       // Providers quote daily; polling harder spends quota for nothing.
-      for (const { expression } of scheduled) {
+      for (const { expression } of scheduled.slice(0, 2)) {
         expect(expression).toMatch(/^\d+ \d+ \* \* \*$/);
       }
+    });
+
+    it('checks for unacknowledged SOS alerts every minute', () => {
+      tasks.start();
+      // Reminders fall due minutes apart; a daily check would be useless.
+      expect(scheduled[2]!.expression).toBe('* * * * *');
     });
 
     it('does not register twice if started again', () => {
       tasks.start();
       tasks.start();
 
-      expect(scheduled).toHaveLength(2);
+      expect(scheduled).toHaveLength(3);
     });
 
     it('stops everything it started', () => {

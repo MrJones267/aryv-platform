@@ -45,6 +45,7 @@ import {
   normaliseOnCallPhones,
 } from '../services/PlatformSettingsService';
 import { smsService } from '../services/SMSService';
+import { SOS_ESCALATION, reminderDueAfterMinutes } from '../services/EmergencyService';
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 
 const COMMISSION_KEY = 'platform:commission';
@@ -884,6 +885,8 @@ router.get('/settings/platform', authenticateAdminToken, async (_req, res) => {
         serverOnCallPhones: getServerOnCallPhones().length,
         maxOnCallPhones: MAX_ONCALL_PHONES,
         smsConfigured: smsService.isConfigured(),
+        // Minutes after raising at which an unacknowledged SOS is re-sent.
+        reminderMinutes: Array.from({ length: SOS_ESCALATION.MAX_REMINDERS }, (_, i) => reminderDueAfterMinutes(i + 1)),
       },
     },
     timestamp: new Date().toISOString(),

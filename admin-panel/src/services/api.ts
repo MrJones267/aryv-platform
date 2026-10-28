@@ -267,7 +267,14 @@ export interface PlatformValues {
     passwordMinLength: number;
     twoFactorAvailable: boolean;
   };
-  sos: { onCallPhones: string[]; serverOnCallPhones: number; maxOnCallPhones: number; smsConfigured: boolean };
+  sos: {
+    onCallPhones: string[];
+    serverOnCallPhones: number;
+    maxOnCallPhones: number;
+    smsConfigured: boolean;
+    /** Minutes after raising at which an unacknowledged SOS is texted again. */
+    reminderMinutes: number[];
+  };
 }
 
 export interface DeliveryTierRow {

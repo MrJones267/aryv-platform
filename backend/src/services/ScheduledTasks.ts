@@ -18,6 +18,7 @@ import cron, { ScheduledTask } from 'node-cron';
 import { CurrencyService } from './CurrencyService';
 import verificationService from './VerificationService';
 import deliveryHandoverService from './DeliveryHandoverService';
+import { emergencyService } from './EmergencyService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 
 /**
@@ -28,6 +29,12 @@ const EXCHANGE_RATE_SCHEDULE = '0 3 * * *';
 
 /** Documents and codes expire on a date, so a daily sweep is timely enough. */
 const EXPIRY_SWEEP_SCHEDULE = '30 3 * * *';
+
+/**
+ * An unacknowledged SOS is re-sent to on-call minutes apart, so this has to
+ * look every minute. The check is one indexed query when nothing is raised.
+ */
+const SOS_ESCALATION_SCHEDULE = '* * * * *';
 
 const TIMEZONE = 'Africa/Gaborone';
 
@@ -52,6 +59,9 @@ export class ScheduledTasks {
       await this.refreshExchangeRates();
     });
     this.schedule('expiry-sweep', EXPIRY_SWEEP_SCHEDULE, () => this.runExpirySweeps());
+    this.schedule('sos-escalation', SOS_ESCALATION_SCHEDULE, async () => {
+      await emergencyService.escalateUnacknowledged();
+    });
 
     this.running = true;
     logInfo('Scheduled tasks started', { tasks: [...this.tasks.keys()], timezone: TIMEZONE });
