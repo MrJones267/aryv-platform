@@ -40,6 +40,7 @@ import {
   Warning as DisputeIcon,
   VerifiedUser as VerificationIcon,
   History as AuditIcon,
+  Payments as CommissionIcon,
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../../store';
@@ -69,6 +70,7 @@ const sidebarItems: SidebarItem[] = [
   { text: 'Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
   // Badge: drivers with documents waiting for review, set in the component.
   { text: 'Driver Verification', icon: <VerificationIcon />, path: '/verifications', color: 'warning' },
+  { text: 'Commission', icon: <CommissionIcon />, path: '/commission', roles: ['super_admin', 'admin'] },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
   { text: 'Audit Log', icon: <AuditIcon />, path: '/audit-log', roles: ['super_admin', 'admin'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
