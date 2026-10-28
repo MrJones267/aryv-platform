@@ -395,6 +395,50 @@ export const twoFactorService = {
     adminApi.post<ApiResponse<{ enabled: boolean }>>('/auth/2fa/disable', { password, code }),
 };
 
+export interface DriverCommission {
+  driverId: string;
+  driverName: string;
+  email: string;
+  phone: string | null;
+  owed: number;
+  threshold: number;
+  totalPaid: number;
+  lastSettledAt: string | null;
+  blocked: boolean;
+  /** The currency of the driver's latest ride; null if they have none. */
+  currency: string | null;
+}
+
+export interface CommissionEntry {
+  id: string;
+  entryType: 'accrual' | 'settlement' | 'waiver' | 'adjustment';
+  amount: number;
+  balanceAfter: number;
+  settlementMethod: string | null;
+  description: string | null;
+  createdAt: string;
+  recordedBy: string | null;
+}
+
+export type CommissionPaymentMethod = 'cash_agent' | 'mobile_money' | 'bank_transfer' | 'manual';
+
+// Collecting the commission drivers owe on cash rides.
+export const commissionService = {
+  getOwing: (filter?: 'blocked') =>
+    adminApi.get<ApiResponse<{ drivers: DriverCommission[]; totals: { drivers: number; blocked: number } }>>(
+      '/commission',
+      { params: filter ? { filter } : {} }
+    ),
+
+  getLedger: (driverId: string) => adminApi.get<ApiResponse<{ entries: CommissionEntry[] }>>(`/commission/${driverId}/ledger`),
+
+  recordPayment: (driverId: string, payment: { amount: number; method: CommissionPaymentMethod; reference: string; note?: string }) =>
+    adminApi.post<ApiResponse<{ amountSettled: number; remainingOwed: number; ledgerEntryId: string }>>(
+      `/commission/${driverId}/settlements`,
+      payment
+    ),
+};
+
 // What is waiting on an operator. The layout polls this for the bell, the
 // Disputes badge and the SOS banner.
 export const alertsService = {

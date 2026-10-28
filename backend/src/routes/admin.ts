@@ -31,6 +31,8 @@ import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RA
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
 import { recordAdminAction } from '../services/AuditService';
+import CommissionService from '../services/CommissionService';
+import { SettlementMethod } from '../models/CommissionLedger';
 import { adminTwoFactorService, isTwoFactorConfigured } from '../services/AdminTwoFactorService';
 import path from 'path';
 import DriverDocument from '../models/DriverDocument';
@@ -149,6 +151,7 @@ const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> 
   'POST /emergency-alerts/:id/resolve': { action: 'sos.resolve', resourceType: 'emergency_alert' },
   'POST /settings/on-call/test': { action: 'settings.oncall_test', resourceType: 'settings' },
   'POST /verifications/documents/:id/review': { action: 'document.review', resourceType: 'driver_document' },
+  'POST /commission/:id/settlements': { action: 'commission.payment_recorded', resourceType: 'driver' },
 };
 
 router.use((req: any, res, next) => {
@@ -1450,6 +1453,131 @@ router.post('/auth/2fa/disable', authenticateAdminToken, async (req, res) => {
     logger.error(`Two-factor disable failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Turning two-factor off failed', code: 'TWO_FACTOR_FAILED' });
   }
+});
+
+/**
+ * Commission collection.
+ *
+ * Riders pay drivers in cash, and the platform's commission on each cash ride
+ * accrues as a debt on the driver (user_wallets.commission_owed). A driver
+ * owing the block threshold (P50 by default) cannot take cash rides. The only
+ * way to record a payment was a driver-side endpoint that settles from the
+ * in-app wallet, which does not exist in production, so a blocked driver
+ * stayed blocked. These let an admin see who owes what and record a payment
+ * received, through the existing CommissionService.settleCommission.
+ */
+
+const commissionService = new CommissionService();
+
+// Ways an admin can receive commission. Wallet deduction is the driver-side
+// path and is not offered here.
+const ADMIN_SETTLEMENT_METHODS = [
+  SettlementMethod.CASH_AGENT,
+  SettlementMethod.MOBILE_MONEY,
+  SettlementMethod.BANK_TRANSFER,
+  SettlementMethod.MANUAL,
+] as const;
+
+/**
+ * @route   GET /api/admin/commission
+ * @desc    Drivers who owe commission, most owed first
+ * @access  Private (Admin)
+ */
+router.get('/commission', authenticateAdminToken, requireAdmin, async (req, res) => {
+  try {
+    const blockedOnly = req.query['filter'] === 'blocked';
+    const drivers = await sequelize.query(
+      `SELECT w.user_id AS "driverId",
+              TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS "driverName", u.email, u.phone_number AS phone,
+              w.commission_owed::float AS owed, w.commission_block_threshold::float AS threshold,
+              w.total_commission_paid::float AS "totalPaid", w.last_commission_settled_at AS "lastSettledAt",
+              (w.commission_owed >= w.commission_block_threshold) AS blocked,
+              -- The debt has no currency of its own; it accrues from the
+              -- driver's rides, so it is labelled with their latest ride's.
+              (SELECT r.currency FROM rides r WHERE r.driver_id = w.user_id ORDER BY r.created_at DESC LIMIT 1) AS currency
+         FROM user_wallets w
+         JOIN users u ON u.id = w.user_id
+        WHERE w.commission_owed > 0
+          ${blockedOnly ? 'AND w.commission_owed >= w.commission_block_threshold' : ''}
+        ORDER BY w.commission_owed DESC
+        LIMIT 500`,
+      { type: QueryTypes.SELECT },
+    );
+    const [totals] = await sequelize.query<{ drivers: number; blocked: number }>(
+      `SELECT COUNT(*)::int AS drivers,
+              COUNT(*) FILTER (WHERE commission_owed >= commission_block_threshold)::int AS blocked
+         FROM user_wallets WHERE commission_owed > 0`,
+      { type: QueryTypes.SELECT },
+    );
+    return res.json({ success: true, data: { drivers, totals }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin commission list failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load commission balances', code: 'COMMISSION_LIST_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/commission/:id/ledger
+ * @desc    A driver's commission history, newest first
+ * @access  Private (Admin)
+ */
+router.get('/commission/:id/ledger', authenticateAdminToken, requireAdmin, async (req, res) => {
+  try {
+    const entries = await sequelize.query(
+      `SELECT l.id, l.entry_type AS "entryType", l.amount::float AS amount, l.balance_after::float AS "balanceAfter",
+              l.settlement_method AS "settlementMethod", l.description, l.created_at AS "createdAt",
+              COALESCE(a.email, u.email) AS "recordedBy"
+         FROM commission_ledger l
+         LEFT JOIN admin_users a ON a.id = l.recorded_by
+         LEFT JOIN users u ON u.id = l.recorded_by
+        WHERE l.driver_id::text = :driverId
+        ORDER BY l.created_at DESC
+        LIMIT 200`,
+      { type: QueryTypes.SELECT, replacements: { driverId: String(req.params['id']) } },
+    );
+    return res.json({ success: true, data: { entries }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin commission ledger failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the commission history', code: 'COMMISSION_LEDGER_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/commission/:id/settlements
+ * @desc    Record commission a driver has paid; clears the debt by that much
+ * @access  Private (Admin)
+ */
+router.post('/commission/:id/settlements', authenticateAdminToken, requireAdmin, async (req: any, res) => {
+  const { amount, method, reference, note } = req.body ?? {};
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
+    return res.status(400).json({ success: false, error: 'amount must be a positive amount with at most two decimal places', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (!(ADMIN_SETTLEMENT_METHODS as readonly string[]).includes(method)) {
+    return res.status(400).json({ success: false, error: `method must be one of ${ADMIN_SETTLEMENT_METHODS.join(', ')}`, code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (typeof reference !== 'string' || reference.trim().length < 2 || reference.length > 100) {
+    return res.status(400).json({ success: false, error: 'A reference of 2 to 100 characters is required (receipt number, transaction id…)', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (note !== undefined && (typeof note !== 'string' || note.length > 500)) {
+    return res.status(400).json({ success: false, error: 'note must be up to 500 characters', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+
+  const result = await commissionService.settleCommission(
+    String(req.params['id']),
+    amount,
+    method,
+    req.user?.id,
+    `Recorded by ${req.user?.email ?? 'an admin'} via ${method}, ref ${reference.trim()}${note ? `: ${note.trim()}` : ''}`,
+  );
+  if (!result.success) {
+    const status = /not found/i.test(result.error ?? '') ? 404 : /no outstanding/i.test(result.error ?? '') ? 409 : 400;
+    return res.status(status).json({ success: false, error: result.error, code: 'SETTLEMENT_REFUSED', timestamp: new Date().toISOString() });
+  }
+  return res.json({
+    success: true,
+    data: { amountSettled: result.amountSettled, remainingOwed: result.remainingOwed, ledgerEntryId: result.ledgerEntryId },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;
