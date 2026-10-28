@@ -360,6 +360,28 @@ export const verificationService = {
     ),
 };
 
+export interface AuditEntry {
+  id: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  details: { outcome?: 'succeeded' | 'refused' | 'failed'; statusCode?: number; reason?: string; request?: unknown; [k: string]: unknown } | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  adminId: string;
+  adminEmail: string | null;
+  adminName: string | null;
+  adminRole: string | null;
+}
+
+export const auditService = {
+  getEntries: (params: { page?: number; limit?: number; action?: string; resourceType?: string; adminId?: string; resourceId?: string }) =>
+    adminApi.get<
+      ApiResponse<{ entries: AuditEntry[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>
+    >('/audit-logs', { params }),
+};
+
 // What is waiting on an operator. The layout polls this for the bell, the
 // Disputes badge and the SOS banner.
 export const alertsService = {

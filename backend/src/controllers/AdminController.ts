@@ -19,6 +19,7 @@ import { DeliveryDispute } from '../models/DeliveryDispute';
 import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getRevenueByCurrency } from '../services/RevenueReportService';
 import { ADMIN_SESSION_HOURS, getAdminSessionHours } from '../services/PlatformSettingsService';
+import { recordAdminAction } from '../services/AuditService';
 
 /**
  * How long an admin session lasts.
@@ -71,6 +72,10 @@ export class AdminController {
       const admin = await AdminUser.findByEmail(email);
       if (!admin || !admin.isActive) {
         logWarn('Admin login attempt with invalid email', { email, ip: req.ip });
+        // A disabled account is still an admin to attribute the attempt to.
+        if (admin) {
+          await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'refused', reason: 'account_disabled' } });
+        }
         res.status(401).json({
           success: false,
           error: 'Invalid credentials',
@@ -82,6 +87,7 @@ export class AdminController {
       // Check if account is locked
       if (admin.isAccountLocked()) {
         logWarn('Admin login attempt on locked account', { email, ip: req.ip });
+        await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'refused', reason: 'account_locked' } });
         res.status(423).json({
           success: false,
           error: 'Account is temporarily locked due to multiple failed login attempts',
@@ -102,6 +108,7 @@ export class AdminController {
           ip: req.ip,
           failedAttempts: admin.failedLoginAttempts,
         });
+        await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'refused', reason: 'wrong_password', failedAttempts: admin.failedLoginAttempts } });
 
         res.status(401).json({
           success: false,
@@ -126,6 +133,7 @@ export class AdminController {
       };
 
       const sessionHours = await getAdminSessionHours();
+      await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'succeeded', sessionHours } });
       const accessToken = jwt.sign(
         tokenPayload,
         ADMIN_JWT_SECRET,
