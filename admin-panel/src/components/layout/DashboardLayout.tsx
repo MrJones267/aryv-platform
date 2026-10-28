@@ -37,12 +37,14 @@ import {
   Settings as SettingsIcon,
   AccountCircle as ProfileIcon,
   Logout as LogoutIcon,
-  Notifications as NotificationsIcon,
   Warning as DisputeIcon,
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { logoutAdmin, selectAdminUser } from '../../store/slices/authSlice';
+import useAdminAlerts from '../../hooks/useAdminAlerts';
+import NotificationBell from '../alerts/NotificationBell';
+import SosBanner from '../alerts/SosBanner';
 
 const DRAWER_WIDTH = 280;
 
@@ -59,13 +61,8 @@ const sidebarItems: SidebarItem[] = [
   { text: 'Users', icon: <PeopleIcon />, path: '/users' },
   { text: 'Rides', icon: <RidesIcon />, path: '/rides' },
   { text: 'Courier Service', icon: <CourierIcon />, path: '/courier' },
-  {
-    text: 'Disputes',
-    icon: <DisputeIcon />,
-    path: '/courier/disputes',
-    badge: 3,
-    color: 'error',
-  },
+  // The badge is the live count of open disputes, set in the component.
+  { text: 'Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
@@ -104,12 +101,24 @@ const DashboardLayout: React.FC = () => {
     navigate('/profile');
   };
 
-  const isActivePath = (path: string) => {
-    if (path === '/dashboard') {
-      return location.pathname === '/dashboard' || location.pathname === '/';
-    }
-    return location.pathname.startsWith(path);
-  };
+  const { alerts, error: alertsError, refresh: refreshAlerts } = useAdminAlerts();
+  const navItems = sidebarItems.map(item =>
+    item.path === '/courier/disputes' ? { ...item, badge: alerts?.counts.disputes || undefined } : item
+  );
+
+  // Exactly one item is active: the most specific path the URL is inside.
+  // A bare startsWith() made /courier/disputes highlight both Disputes and
+  // Courier Service, and the title took the first match, "Courier Service".
+  const matches = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const activePath =
+    location.pathname === '/'
+      ? '/dashboard'
+      : sidebarItems
+          .map(item => item.path)
+          .filter(matches)
+          .sort((a, b) => b.length - a.length)[0];
+  const isActivePath = (path: string) => path === activePath;
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -142,7 +151,7 @@ const DashboardLayout: React.FC = () => {
       {/* Navigation */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         <List sx={{ px: 2 }}>
-          {sidebarItems.map(item => (
+          {navItems.map(item => (
             <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
               <ListItemButton
                 onClick={() => navigate(item.path)}
@@ -231,17 +240,11 @@ const DashboardLayout: React.FC = () => {
 
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             {/* Page title based on current route */}
-            {sidebarItems.find(item => isActivePath(item.path))?.text || 'Dashboard'}
+            {sidebarItems.find(item => isActivePath(item.path))?.text ?? (location.pathname.startsWith('/profile') ? 'Profile' : 'Dashboard')}
           </Typography>
 
-          {/* Notifications */}
-          <Tooltip title="Notifications">
-            <IconButton sx={{ mr: 1 }}>
-              <Badge badgeContent={5} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
+          {/* Notifications: what is waiting on an operator, polled */}
+          <NotificationBell alerts={alerts} error={alertsError} onOpen={refreshAlerts} />
 
           {/* Profile Menu */}
           <Tooltip title="Account settings">
@@ -341,6 +344,7 @@ const DashboardLayout: React.FC = () => {
       >
         <Toolbar />
         <Box sx={{ p: 3 }}>
+          <SosBanner alerts={alerts?.sos ?? []} onChanged={refreshAlerts} />
           <Outlet />
         </Box>
       </Box>

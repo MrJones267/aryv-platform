@@ -30,6 +30,7 @@ import { ADMIN_TOKEN_TTL_SECONDS } from '../controllers/AdminController';
 import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
+import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 
 const SETTINGS_KEY = 'platform:settings';
 const COMMISSION_KEY = 'platform:commission';
@@ -890,6 +891,157 @@ router.put('/delivery-tiers/:id', authenticateAdminToken, requireSuperAdmin, asy
       return res.status(400).json({ success: false, error: details.join('; ') || 'Invalid value', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
     }
     return res.status(500).json({ success: false, error: 'Failed to update delivery tier', code: 'DELIVERY_TIERS_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/alerts
+ * @desc    Everything waiting on an operator: active SOS alerts, open
+ *          disputes, and drivers whose documents need review
+ * @access  Private (Admin)
+ *
+ * The admin panel's notification bell showed a hardcoded 5 and the Disputes
+ * badge a hardcoded 3. Worse, an SOS alert reached nobody at ARYV:
+ * EmergencyService.notifyOperators() only confirms back to the user who
+ * raised it. This is what the panel polls instead.
+ */
+router.get('/alerts', authenticateAdminToken, async (_req, res) => {
+  try {
+    const [sos, disputes, verifications, [counts]] = await Promise.all([
+      sequelize.query(
+        `SELECT ea.id, ea.alert_type AS "alertType", ea.status, ea.message, ea.created_at AS "createdAt",
+                ea.last_location_at AS "lastLocationAt",
+                ST_Y(ea.last_coordinates) AS latitude, ST_X(ea.last_coordinates) AS longitude,
+                ea.contacts_notified AS "contactsNotified", ea.ride_id AS "rideId",
+                ea.user_id AS "userId", TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS "userName",
+                u.phone_number AS "userPhone"
+           FROM emergency_alerts ea
+           JOIN users u ON u.id = ea.user_id
+          WHERE ea.status IN ('raised', 'acknowledged')
+          ORDER BY ea.created_at DESC
+          LIMIT 20`,
+        { type: QueryTypes.SELECT },
+      ),
+      sequelize.query(
+        `SELECT d.id, d.dispute_type AS "disputeType", d.status::text AS status, d.created_at AS "createdAt",
+                p.title AS "packageTitle"
+           FROM delivery_disputes d
+           LEFT JOIN delivery_agreements a ON a.id = d.delivery_agreement_id
+           LEFT JOIN packages p ON p.id = a.package_id
+          WHERE d.status::text IN ('open', 'under_review')
+          ORDER BY d.created_at DESC
+          LIMIT 20`,
+        { type: QueryTypes.SELECT },
+      ),
+      sequelize.query(
+        `SELECT u.id AS "userId", TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS "userName",
+                COUNT(*)::int AS documents, MIN(dd.submitted_at) AS "waitingSince"
+           FROM driver_documents dd
+           JOIN users u ON u.id = dd.user_id
+          WHERE dd.status::text IN ('uploaded', 'under_review')
+          GROUP BY u.id, u.first_name, u.last_name
+          ORDER BY MIN(dd.submitted_at)
+          LIMIT 20`,
+        { type: QueryTypes.SELECT },
+      ),
+      sequelize.query<{ sos: number; disputes: number; verifications: number }>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM emergency_alerts WHERE status IN ('raised', 'acknowledged')) AS sos,
+           (SELECT COUNT(*)::int FROM delivery_disputes WHERE status::text IN ('open', 'under_review')) AS disputes,
+           (SELECT COUNT(DISTINCT user_id)::int FROM driver_documents WHERE status::text IN ('uploaded', 'under_review')) AS verifications`,
+        { type: QueryTypes.SELECT },
+      ),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        counts: { ...counts, total: counts!.sos + counts!.disputes + counts!.verifications },
+        sos,
+        disputes,
+        verifications,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(`Admin alerts failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load alerts', code: 'ALERTS_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * An admin's handling of an SOS alert is written into resolution_note and the
+ * log. acknowledged_by references users(id), and admins are admin_users, so
+ * it cannot hold the admin's id and is left empty.
+ */
+const adminLabel = (req: any): string => req.user?.email ?? req.user?.id ?? 'unknown admin';
+
+/**
+ * @route   POST /api/admin/emergency-alerts/:id/acknowledge
+ * @desc    Mark a raised SOS alert as being handled
+ * @access  Private (any admin role)
+ */
+// Any signed-in staff member, moderators included: an emergency should not
+// wait for someone with a higher role to be on duty.
+router.post('/emergency-alerts/:id/acknowledge', authenticateAdminToken, async (req, res) => {
+  try {
+    const alert = await EmergencyAlert.findByPk(req.params['id']);
+    if (!alert) {
+      return res.status(404).json({ success: false, error: 'Alert not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    if (alert.status !== EmergencyAlertStatus.RAISED) {
+      return res.status(409).json({ success: false, error: `Alert is already ${alert.status}`, code: 'INVALID_STATUS', timestamp: new Date().toISOString() });
+    }
+    const at = new Date();
+    await alert.update({
+      status: EmergencyAlertStatus.ACKNOWLEDGED,
+      acknowledgedAt: at,
+      resolutionNote: `Acknowledged by ${adminLabel(req)} at ${at.toISOString()}`,
+    });
+    logger.warn('SOS alert acknowledged', { alertId: alert.id, admin: adminLabel(req) });
+    return res.json({ success: true, data: alert, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Acknowledging SOS alert failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to acknowledge alert', code: 'ALERT_UPDATE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/emergency-alerts/:id/resolve
+ * @desc    Close an SOS alert as resolved or as a false alarm, with a note
+ * @access  Private (any admin role)
+ */
+router.post('/emergency-alerts/:id/resolve', authenticateAdminToken, async (req, res) => {
+  try {
+    const outcome = req.body?.outcome;
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+    if (outcome !== EmergencyAlertStatus.RESOLVED && outcome !== EmergencyAlertStatus.FALSE_ALARM) {
+      return res.status(400).json({ success: false, error: "outcome must be 'resolved' or 'false_alarm'", code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    if (!note || note.length > 1000) {
+      return res.status(400).json({ success: false, error: 'A note of up to 1000 characters saying what happened is required', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+
+    const alert = await EmergencyAlert.findByPk(req.params['id']);
+    if (!alert) {
+      return res.status(404).json({ success: false, error: 'Alert not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    if (alert.status !== EmergencyAlertStatus.RAISED && alert.status !== EmergencyAlertStatus.ACKNOWLEDGED) {
+      return res.status(409).json({ success: false, error: `Alert is already ${alert.status}`, code: 'INVALID_STATUS', timestamp: new Date().toISOString() });
+    }
+    const at = new Date();
+    const previous = alert.resolutionNote ? `${alert.resolutionNote}\n` : '';
+    await alert.update({
+      status: outcome,
+      resolvedAt: at,
+      acknowledgedAt: alert.acknowledgedAt ?? at,
+      resolutionNote: `${previous}${outcome === EmergencyAlertStatus.FALSE_ALARM ? 'False alarm' : 'Resolved'} by ${adminLabel(req)} at ${at.toISOString()}: ${note}`,
+    });
+    logger.warn('SOS alert closed', { alertId: alert.id, outcome, admin: adminLabel(req) });
+    return res.json({ success: true, data: alert, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Resolving SOS alert failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to resolve alert', code: 'ALERT_UPDATE_FAILED', timestamp: new Date().toISOString() });
   }
 });
 
