@@ -61,6 +61,21 @@ if (!process.env['ADMIN_JWT_SECRET']) throw new Error('ADMIN_JWT_SECRET environm
 const ADMIN_JWT_SECRET = process.env['ADMIN_JWT_SECRET'] as string;
 const JWT_REFRESH_SECRET = process.env['JWT_REFRESH_SECRET'] as string;
 
+/**
+ * A signed admin access token for the configured session length. Used at
+ * sign-in, and to keep the current session going after an admin ends their
+ * other sessions or changes their password.
+ */
+export async function issueAdminAccessToken(admin: AdminUser): Promise<{ accessToken: string; sessionHours: number }> {
+  const sessionHours = await getAdminSessionHours();
+  const accessToken = jwt.sign(
+    { id: admin.id, email: admin.email, role: admin.role, permissions: admin.permissions, type: 'admin' },
+    ADMIN_JWT_SECRET,
+    { expiresIn: sessionHours * 60 * 60 },
+  );
+  return { accessToken, sessionHours };
+}
+
 export class AdminController {
   /**
    * Admin login
@@ -156,22 +171,8 @@ export class AdminController {
       admin.updateLastLogin();
       await admin.save();
 
-      // Generate JWT token
-      const tokenPayload = {
-        id: admin.id,
-        email: admin.email,
-        role: admin.role,
-        permissions: admin.permissions,
-        type: 'admin',
-      };
-
-      const sessionHours = await getAdminSessionHours();
+      const { accessToken, sessionHours } = await issueAdminAccessToken(admin);
       await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'succeeded', sessionHours } });
-      const accessToken = jwt.sign(
-        tokenPayload,
-        ADMIN_JWT_SECRET,
-        { expiresIn: sessionHours * 60 * 60 },
-      );
 
       const refreshToken = jwt.sign(
         { id: admin.id, type: 'admin' },
@@ -308,6 +309,15 @@ export class AdminController {
       const { firstName, lastName } = req.body;
       const adminId = req.user?.id;
 
+      // Names are shown across the panel and the audit log; keep them plain.
+      // This accepted anything, of any length, and ignored an empty value.
+      for (const [field, value] of [['firstName', firstName], ['lastName', lastName]] as const) {
+        if (value !== undefined && (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 50)) {
+          res.status(400).json({ success: false, error: `${field} must be 1 to 50 characters`, code: 'VALIDATION_ERROR' });
+          return;
+        }
+      }
+
       // Find admin user
       const admin = await AdminUser.findByPk(adminId);
       if (!admin) {
@@ -320,8 +330,8 @@ export class AdminController {
       }
 
       // Update profile
-      if (firstName) admin.firstName = firstName;
-      if (lastName) admin.lastName = lastName;
+      if (firstName !== undefined) admin.firstName = firstName.trim();
+      if (lastName !== undefined) admin.lastName = lastName.trim();
       await admin.save();
 
       logInfo('Admin profile updated', { adminId, changes: { firstName, lastName } });

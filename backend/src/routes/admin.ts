@@ -11,7 +11,7 @@ import { sequelize, QueryTypes } from '../config/database';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
-import { AdminController } from '../controllers/AdminController';
+import { AdminController, issueAdminAccessToken } from '../controllers/AdminController';
 import AdminRideController from '../controllers/AdminRideController';
 import AdminUserController from '../controllers/AdminUserController';
 import { AdminUser } from '../models/AdminUser';
@@ -31,6 +31,7 @@ import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RA
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
 import { recordAdminAction } from '../services/AuditService';
+import { validatePasswordStrength } from '../utils/password';
 import CommissionService from '../services/CommissionService';
 import { SettlementMethod } from '../models/CommissionLedger';
 import { adminTwoFactorService, isTwoFactorConfigured } from '../services/AdminTwoFactorService';
@@ -136,6 +137,8 @@ const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> 
   'POST /auth/2fa/setup': { action: 'admin.two_factor_setup_started', resourceType: 'admin_user' },
   'POST /auth/2fa/confirm': { action: 'admin.two_factor_enabled', resourceType: 'admin_user' },
   'POST /auth/2fa/disable': { action: 'admin.two_factor_disabled', resourceType: 'admin_user' },
+  'POST /auth/password': { action: 'admin.password_change', resourceType: 'admin_user' },
+  'POST /auth/sessions/revoke-others': { action: 'admin.sessions_revoked', resourceType: 'admin_user' },
   'PUT /users/:id': { action: 'user.update', resourceType: 'user' },
   'POST /users/:id/block': { action: 'user.block', resourceType: 'user' },
   'POST /users/:id/unblock': { action: 'user.unblock', resourceType: 'user' },
@@ -1578,6 +1581,101 @@ router.post('/commission/:id/settlements', authenticateAdminToken, requireAdmin,
     data: { amountSettled: result.amountSettled, remainingOwed: result.remainingOwed, ledgerEntryId: result.ledgerEntryId },
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * The signed-in admin's own account: password, other sessions, and their
+ * own recent activity. Ending sessions sets sessions_revoked_at, which
+ * authenticateAdminToken checks; the caller gets a new token so the device
+ * they are using stays signed in.
+ */
+
+/**
+ * @route   POST /api/admin/auth/password
+ * @desc    Change your password; ends every other session
+ * @access  Private (any admin role)
+ */
+router.post('/auth/password', authenticateAdminToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {};
+    const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s+/g, '') : '';
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+      return res.status(400).json({ success: false, error: 'currentPassword and newPassword are required', code: 'VALIDATION_ERROR' });
+    }
+
+    const admin = await signedInAdmin(req);
+    if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+
+    if (!(await admin.validatePassword(currentPassword))) {
+      return res.status(400).json({ success: false, error: 'Your current password is not right', code: 'INVALID_PASSWORD' });
+    }
+    // With two-factor on, a password alone is not enough to replace the
+    // password: otherwise a stolen session could lock the owner out.
+    if (admin.twoFactorEnabled) {
+      if (!code) return res.status(400).json({ success: false, error: 'Enter the code from your authenticator app', code: 'TWO_FACTOR_REQUIRED' });
+      const check = await adminTwoFactorService.verifySignInCode(admin, code);
+      if (!check.ok) return twoFactorFailure(res, check.error);
+    }
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.ok) {
+      return res.status(400).json({ success: false, error: strength.message, code: 'WEAK_PASSWORD' });
+    }
+    if (await admin.validatePassword(newPassword)) {
+      return res.status(400).json({ success: false, error: 'Choose a password different from the current one', code: 'SAME_PASSWORD' });
+    }
+
+    await admin.setPassword(newPassword);
+    admin.sessionsRevokedAt = new Date();
+    await admin.save();
+    const { accessToken } = await issueAdminAccessToken(admin);
+    return res.json({ success: true, data: { accessToken }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin password change failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Changing the password failed', code: 'PASSWORD_CHANGE_FAILED' });
+  }
+});
+
+/**
+ * @route   POST /api/admin/auth/sessions/revoke-others
+ * @desc    Sign out every other device signed in to your account
+ * @access  Private (any admin role)
+ */
+router.post('/auth/sessions/revoke-others', authenticateAdminToken, async (req, res) => {
+  try {
+    const admin = await signedInAdmin(req);
+    if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+    admin.sessionsRevokedAt = new Date();
+    await admin.save();
+    const { accessToken } = await issueAdminAccessToken(admin);
+    return res.json({ success: true, data: { accessToken }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin session revoke failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Signing out other devices failed', code: 'SESSION_REVOKE_FAILED' });
+  }
+});
+
+/**
+ * @route   GET /api/admin/auth/activity
+ * @desc    Your own recent sign-ins and actions, from the audit trail
+ * @access  Private (any admin role; each admin sees only their own)
+ */
+router.get('/auth/activity', authenticateAdminToken, async (req: any, res) => {
+  try {
+    const entries = await sequelize.query(
+      `SELECT id, action, resource_type AS "resourceType", resource_id AS "resourceId",
+              details->>'outcome' AS outcome, details->>'reason' AS reason,
+              host(ip_address) AS "ipAddress", user_agent AS "userAgent", created_at AS "createdAt"
+         FROM admin_audit_logs
+        WHERE admin_user_id::text = :adminId
+        ORDER BY created_at DESC
+        LIMIT 30`,
+      { type: QueryTypes.SELECT, replacements: { adminId: String(req.user?.id) } },
+    );
+    return res.json({ success: true, data: { entries }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin own activity failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load your activity', code: 'ACTIVITY_FAILED' });
+  }
 });
 
 export default router;

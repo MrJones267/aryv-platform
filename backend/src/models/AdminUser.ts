@@ -24,13 +24,15 @@ export interface AdminUserAttributes {
   lockoutUntil: Date | null;
   twoFactorSecret: string | null;
   twoFactorEnabled: boolean;
+  /** Tokens issued before this are refused (migration 031). */
+  sessionsRevokedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 // Optional attributes for creation
 interface AdminUserCreationAttributes
-  extends Optional<AdminUserAttributes, 'id' | 'lastLogin' | 'failedLoginAttempts' | 'lockoutUntil' | 'twoFactorSecret' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<AdminUserAttributes, 'id' | 'lastLogin' | 'failedLoginAttempts' | 'lockoutUntil' | 'twoFactorSecret' | 'sessionsRevokedAt' | 'createdAt' | 'updatedAt'> {}
 
 // Admin user model class
 export class AdminUser extends Model<AdminUserAttributes, AdminUserCreationAttributes> implements AdminUserAttributes {
@@ -47,6 +49,7 @@ export class AdminUser extends Model<AdminUserAttributes, AdminUserCreationAttri
   public lockoutUntil!: Date | null;
   public twoFactorSecret!: string | null;
   public twoFactorEnabled!: boolean;
+  public sessionsRevokedAt!: Date | null;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 
@@ -205,6 +208,11 @@ AdminUser.init(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
+    },
+    sessionsRevokedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'sessions_revoked_at',
     },
     createdAt: {
       type: DataTypes.DATE,
