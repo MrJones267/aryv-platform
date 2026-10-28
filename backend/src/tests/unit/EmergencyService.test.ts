@@ -27,6 +27,13 @@ import EmergencyContact from '../../models/EmergencyContact';
 import User from '../../models/User';
 import { smsService } from '../../services/SMSService';
 import { notificationService } from '../../services/NotificationService';
+import { getOnCallPhones } from '../../services/PlatformSettingsService';
+
+// No on-call numbers unless a test sets them, so the contact SMS counts below
+// stay as they were.
+jest.mock('../../services/PlatformSettingsService', () => ({
+  getOnCallPhones: jest.fn().mockResolvedValue([]),
+}));
 
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
@@ -407,6 +414,67 @@ describe('EmergencyService', () => {
           order: [['isPrimary', 'DESC'], ['priority', 'ASC'], ['createdAt', 'ASC']],
         }),
       );
+    });
+  });
+
+  describe('texting on-call staff', () => {
+    const ONCALL = ['+26772000001', '+27821234567'];
+    const raise = () =>
+      service.raiseAlert({ userId: USER, alertType: EmergencyAlertType.MEDICAL, coordinates: GABORONE });
+    const onCallBodies = () =>
+      (smsService.sendMessage as jest.Mock).mock.calls.filter(([to]) => ONCALL.includes(to)).map(([, body]) => body);
+
+    beforeEach(() => {
+      (getOnCallPhones as jest.Mock).mockResolvedValue(ONCALL);
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        id: USER, firstName: 'Naledi', lastName: 'Moeng', phone: '+26771111111', countryCode: 'BW',
+      } as any);
+    });
+
+    afterEach(() => {
+      (getOnCallPhones as jest.Mock).mockResolvedValue([]);
+    });
+
+    it('texts every on-call number, with who, how to reach them, and where', async () => {
+      await raise();
+
+      const bodies = onCallBodies();
+      expect(bodies).toHaveLength(2);
+      for (const body of bodies) {
+        expect(body).toContain('ARYV SOS (medical)');
+        expect(body).toContain('Naledi Moeng');
+        expect(body).toContain('+26771111111');
+        expect(body).toContain('https://maps.google.com/?q=-24.65,25.92');
+        expect(body).toContain('admin.aryv-app.com');
+      }
+    });
+
+    it('still texts on-call staff when the rider has no contacts', async () => {
+      jest.spyOn(EmergencyContact, 'findAll').mockResolvedValue([] as any);
+      await raise();
+      expect(onCallBodies()).toHaveLength(2);
+    });
+
+    it('still texts on-call staff when looking up the contacts fails', async () => {
+      jest.spyOn(EmergencyContact, 'findAll').mockRejectedValue(new Error('database down'));
+      await raise();
+      expect(onCallBodies()).toHaveLength(2);
+    });
+
+    it('counts how many on-call numbers were reached', async () => {
+      (smsService.sendMessage as jest.Mock).mockImplementation(async (to: string) => to !== ONCALL[1]);
+      await expect(service.notifyOnCall(alertRow, 'Naledi Moeng', null, GABORONE)).resolves.toBe(1);
+    });
+
+    it('sends nothing, and does not throw, when no on-call numbers are set', async () => {
+      (getOnCallPhones as jest.Mock).mockResolvedValue([]);
+      await expect(service.notifyOnCall(alertRow, 'Naledi Moeng', null, GABORONE)).resolves.toBe(0);
+      expect(onCallBodies()).toHaveLength(0);
+    });
+
+    it('does not throw when reading the on-call numbers fails', async () => {
+      (getOnCallPhones as jest.Mock).mockRejectedValue(new Error('redis down'));
+      await expect(service.notifyOnCall(alertRow, 'Naledi Moeng', null, GABORONE)).resolves.toBe(0);
     });
   });
 });

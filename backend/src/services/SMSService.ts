@@ -41,6 +41,11 @@ class SMSService {
    * body is logged instead, so local development still works — but callers
    * must treat a false return as "the recipient did not get this".
    */
+  /** Whether a message can actually be sent: credentials and a sending number. */
+  isConfigured(): boolean {
+    return this.initialized && !!TWILIO_PHONE_NUMBER;
+  }
+
   async sendMessage(phoneNumber: string, body: string, countryCode?: string): Promise<boolean> {
     // Twilio requires E.164 and rejects anything else. People type 71234567.
     const to = toE164(phoneNumber, countryCode);

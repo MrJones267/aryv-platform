@@ -106,4 +106,47 @@ describe('Admin session length', () => {
       await redisClient.connect();
     }
   });
+
+  describe('SOS on-call numbers', () => {
+    const save = (token: string, onCallPhones: unknown) =>
+      request(app).put('/api/admin/settings').set('Authorization', `Bearer ${token}`).send({ onCallPhones });
+    const platform = async () =>
+      (await request(app).get('/api/admin/settings/platform').set('Authorization', `Bearer ${adminToken}`).expect(200))
+        .body.data.sos;
+
+    it('starts empty', async () => {
+      expect((await platform()).onCallPhones).toEqual([]);
+    });
+
+    it('stores numbers in E.164, reading local ones as Botswana, without duplicates', async () => {
+      await save(superToken, ['71234567', '+27 82 123 4567', '+26771234567']).expect(200);
+      expect((await platform()).onCallPhones).toEqual(['+26771234567', '+27821234567']);
+    });
+
+    it.each([['not a phone'], 'not a list', [42], Array.from({ length: 11 }, (_, i) => `7100000${i}`)])(
+      'refuses %p',
+      async value => {
+        await save(superToken, value).expect(400);
+      }
+    );
+
+    it('only lets a super admin change them', async () => {
+      await save(adminToken, ['71234567']).expect(403);
+    });
+
+    it('says when SMS is not configured, rather than claiming a test was sent', async () => {
+      // CI has no Twilio credentials.
+      await save(superToken, ['71234567']).expect(200);
+      expect((await platform()).smsConfigured).toBe(false);
+      const response = await request(app)
+        .post('/api/admin/settings/on-call/test')
+        .set('Authorization', `Bearer ${superToken}`)
+        .expect(503);
+      expect(response.body.code).toBe('SMS_NOT_CONFIGURED');
+    });
+
+    it('refuses a test with no numbers set', async () => {
+      await request(app).post('/api/admin/settings/on-call/test').set('Authorization', `Bearer ${superToken}`).expect(400);
+    });
+  });
 });

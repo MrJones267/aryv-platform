@@ -36,6 +36,7 @@ import EmergencyAlert, {
 import EmergencyContact, { EmergencyContactModel } from '../models/EmergencyContact';
 import User from '../models/User';
 import { smsService } from './SMSService';
+import { getOnCallPhones } from './PlatformSettingsService';
 import { notificationService } from './NotificationService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 import { GeoPoint } from '../types';
@@ -130,11 +131,19 @@ export class EmergencyService {
       });
 
       const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'An ARYV user';
-      const contacts = await this.getContacts(alert.userId);
 
-      const smsOutcome = await this.notifyContacts(alert, contacts, name, coordinates);
+      // The rider's contacts and ARYV's on-call staff at the same time, so a
+      // slow or failing contact lookup or SMS cannot hold up, or skip, the
+      // on-call texts. Both are waited for before a contact failure is
+      // reported below.
+      const [contactsResult] = await Promise.allSettled([
+        this.getContacts(alert.userId).then((contacts) => this.notifyContacts(alert, contacts, name, coordinates)),
+        this.notifyOnCall(alert, name, user?.phone ?? null, coordinates),
+      ]);
+      if (contactsResult.status === 'rejected') throw contactsResult.reason;
+      const smsOutcome = contactsResult.value;
 
-      // Operators, over the channel they already watch.
+      // Confirm back to the rider, over the channel they already watch.
       await this.notifyOperators(alert);
 
       // Only tell the ride when the alert is not about someone on it.
@@ -275,6 +284,52 @@ export class EmergencyService {
         alertId: alert.id,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  /**
+   * Text ARYV's on-call staff. Until this existed an SOS reached no one at
+   * ARYV: notifyOperators() only confirms back to the rider, and the admin
+   * panel shows alerts only to someone who has it open.
+   *
+   * Never throws, and returns how many on-call numbers were reached.
+   */
+  async notifyOnCall(
+    alert: EmergencyAlertModel,
+    name: string,
+    phone: string | null,
+    coordinates: Coordinates,
+  ): Promise<number> {
+    try {
+      const numbers = await getOnCallPhones();
+      if (numbers.length === 0) {
+        logWarning('SOS raised with no on-call numbers configured; no one at ARYV was texted', {
+          alertId: alert.id,
+        });
+        return 0;
+      }
+
+      const body =
+        `ARYV SOS (${alert.alertType}): ${name}` +
+        `${phone ? `, ${phone}` : ''}. ` +
+        `Location: ${mapsLink(coordinates)} . ` +
+        'Acknowledge in the admin panel: https://admin.aryv-app.com';
+
+      const results = await Promise.allSettled(numbers.map((number) => smsService.sendMessage(number, body)));
+      const reached = results.filter((r) => r.status === 'fulfilled' && r.value).length;
+
+      if (reached === 0) {
+        logError('SOS on-call SMS failed for every number', new Error('All on-call SMS failed'), {
+          alertId: alert.id,
+          attempted: numbers.length,
+        });
+      } else {
+        logInfo('SOS on-call staff texted', { alertId: alert.id, reached, attempted: numbers.length });
+      }
+      return reached;
+    } catch (error) {
+      logError('Failed to text on-call staff', error as Error, { alertId: alert.id });
+      return 0;
     }
   }
 

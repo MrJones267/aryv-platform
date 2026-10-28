@@ -267,6 +267,7 @@ export interface PlatformValues {
     passwordMinLength: number;
     twoFactorAvailable: boolean;
   };
+  sos: { onCallPhones: string[]; serverOnCallPhones: number; maxOnCallPhones: number; smsConfigured: boolean };
 }
 
 export interface DeliveryTierRow {
@@ -326,6 +327,10 @@ export const settingsService = {
 
   // Courier delivery tiers: real, editable configuration read by pricing.
   getDeliveryTiers: () => adminApi.get<ApiResponse<DeliveryTierRow[]>>('/delivery-tiers'),
+
+  // Sends a test SMS to every on-call number and reports each result.
+  testOnCall: () =>
+    adminApi.post<ApiResponse<{ results: { number: string; sent: boolean }[] }>>('/settings/on-call/test'),
 
   updateDeliveryTier: (id: string, changes: DeliveryTierUpdate) =>
     adminApi.put<ApiResponse<DeliveryTierRow>>(`/delivery-tiers/${id}`, changes),
