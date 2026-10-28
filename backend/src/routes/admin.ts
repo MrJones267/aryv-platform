@@ -14,6 +14,7 @@ import { rateLimitKey } from '../config/rateLimitKey';
 import { AdminController } from '../controllers/AdminController';
 import AdminRideController from '../controllers/AdminRideController';
 import AdminUserController from '../controllers/AdminUserController';
+import { AdminUser } from '../models/AdminUser';
 import { authenticateAdminToken, authorizeAdminRoles } from '../middleware/auth';
 import Booking from '../models/Booking';
 import Ride from '../models/Ride';
@@ -30,6 +31,7 @@ import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RA
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
 import { recordAdminAction } from '../services/AuditService';
+import { adminTwoFactorService, isTwoFactorConfigured } from '../services/AdminTwoFactorService';
 import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
@@ -129,6 +131,9 @@ router.use(adminApiLimiter);
 const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> = {
   'POST /auth/logout': { action: 'admin.sign_out', resourceType: 'admin_user' },
   'PUT /auth/profile': { action: 'admin.profile_update', resourceType: 'admin_user' },
+  'POST /auth/2fa/setup': { action: 'admin.two_factor_setup_started', resourceType: 'admin_user' },
+  'POST /auth/2fa/confirm': { action: 'admin.two_factor_enabled', resourceType: 'admin_user' },
+  'POST /auth/2fa/disable': { action: 'admin.two_factor_disabled', resourceType: 'admin_user' },
   'PUT /users/:id': { action: 'user.update', resourceType: 'user' },
   'POST /users/:id/block': { action: 'user.block', resourceType: 'user' },
   'POST /users/:id/unblock': { action: 'user.unblock', resourceType: 'user' },
@@ -930,7 +935,8 @@ router.get('/settings/platform', authenticateAdminToken, async (_req, res) => {
         loginAttemptsPerWindow: ADMIN_LOGIN_MAX_ATTEMPTS,
         loginWindowMinutes: ADMIN_LOGIN_WINDOW_MS / 60000,
         passwordMinLength: PASSWORD_MIN_LENGTH,
-        twoFactorAvailable: false,
+        // Whether the server can hold two-factor secrets (TOTP_ENCRYPTION_KEY).
+        twoFactorAvailable: isTwoFactorConfigured(),
       },
       sos: {
         // The saved numbers, which the panel edits. Numbers set on the server
@@ -1343,6 +1349,106 @@ router.get('/audit-logs', authenticateAdminToken, requireAdmin, async (req, res)
   } catch (error) {
     logger.error(`Admin audit log query failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to load the audit log', code: 'AUDIT_LOG_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * Two-factor sign-in for the signed-in admin's own account. Each admin turns
+ * it on for themselves, with their own phone; a super admin cannot do it for
+ * them. See AdminTwoFactorService.
+ */
+const TWO_FACTOR_ERRORS: Record<string, { status: number; message: string }> = {
+  NOT_CONFIGURED: { status: 503, message: 'Two-factor sign-in is not available: the server has no TOTP_ENCRYPTION_KEY' },
+  ALREADY_ENABLED: { status: 409, message: 'Two-factor sign-in is already on' },
+  NOT_STARTED: { status: 409, message: 'Start setting up two-factor sign-in first' },
+  NOT_ENABLED: { status: 409, message: 'Two-factor sign-in is not on' },
+  INVALID_CODE: { status: 400, message: 'That code is not right. Check the time on your phone is set automatically.' },
+  CODE_REUSED: { status: 400, message: 'That code has already been used; wait for the next one' },
+  INVALID_PASSWORD: { status: 400, message: 'That password is not right' },
+};
+
+const twoFactorFailure = (res: any, error: string) => {
+  const known = TWO_FACTOR_ERRORS[error] ?? { status: 500, message: 'Two-factor request failed' };
+  return res.status(known.status).json({ success: false, error: known.message, code: error, timestamp: new Date().toISOString() });
+};
+
+const signedInAdmin = (req: any) => AdminUser.findByPk(req.user?.id);
+
+/**
+ * @route   GET /api/admin/auth/2fa
+ * @desc    Whether the signed-in admin has two-factor on, and whether it is available
+ * @access  Private (Admin)
+ */
+router.get('/auth/2fa', authenticateAdminToken, async (req, res) => {
+  const admin = await signedInAdmin(req);
+  if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+  return res.json({
+    success: true,
+    data: { enabled: admin.twoFactorEnabled, available: isTwoFactorConfigured() },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
+ * @route   POST /api/admin/auth/2fa/setup
+ * @desc    Start setup: a new secret, as a QR code and as text. Two-factor
+ *          stays off until a code from the app is confirmed.
+ * @access  Private (Admin)
+ */
+router.post('/auth/2fa/setup', authenticateAdminToken, async (req, res) => {
+  try {
+    const admin = await signedInAdmin(req);
+    if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+    const result = await adminTwoFactorService.beginSetup(admin);
+    if (!result.ok) return twoFactorFailure(res, result.error);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      data: { secret: result.secret, otpauthUri: result.otpauthUri, qrCodeDataUrl: result.qrCodeDataUrl },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(`Two-factor setup failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Two-factor setup failed', code: 'TWO_FACTOR_FAILED' });
+  }
+});
+
+/**
+ * @route   POST /api/admin/auth/2fa/confirm
+ * @desc    Turn two-factor on with a code from the app just set up
+ * @access  Private (Admin)
+ */
+router.post('/auth/2fa/confirm', authenticateAdminToken, async (req, res) => {
+  try {
+    const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s+/g, '') : '';
+    const admin = await signedInAdmin(req);
+    if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+    const result = await adminTwoFactorService.confirmSetup(admin, code);
+    if (!result.ok) return twoFactorFailure(res, result.error);
+    return res.json({ success: true, data: { enabled: true }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Two-factor confirm failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Two-factor confirmation failed', code: 'TWO_FACTOR_FAILED' });
+  }
+});
+
+/**
+ * @route   POST /api/admin/auth/2fa/disable
+ * @desc    Turn two-factor off; needs the password and a current code
+ * @access  Private (Admin)
+ */
+router.post('/auth/2fa/disable', authenticateAdminToken, async (req, res) => {
+  try {
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s+/g, '') : '';
+    const admin = await signedInAdmin(req);
+    if (!admin) return res.status(404).json({ success: false, error: 'Admin not found', code: 'NOT_FOUND' });
+    const result = await adminTwoFactorService.disable(admin, password, code);
+    if (!result.ok) return twoFactorFailure(res, result.error);
+    return res.json({ success: true, data: { enabled: false }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Two-factor disable failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Turning two-factor off failed', code: 'TWO_FACTOR_FAILED' });
   }
 });
 

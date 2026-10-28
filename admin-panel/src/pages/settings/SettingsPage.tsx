@@ -564,7 +564,11 @@ const SettingsPage: React.FC = () => {
             <ValueRow
               label="Two-factor sign-in"
               value={security ? (security.twoFactorAvailable ? 'Available' : 'Not available') : '…'}
-              detail="Not built yet. Admin accounts are protected by password and sign-in limits only."
+              detail={
+                security?.twoFactorAvailable
+                  ? "Each admin turns it on for their own account from Your Account (the profile menu)."
+                  : "The server has no TOTP_ENCRYPTION_KEY, so two-factor secrets cannot be stored yet. Set it on Railway to make this available."
+              }
             />
             <Alert severity="info" sx={{ mt: 2 }}>
               Admin accounts are created and reset with <code>npm run admin:create</code> on the server, which

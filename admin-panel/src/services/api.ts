@@ -382,6 +382,19 @@ export const auditService = {
     >('/audit-logs', { params }),
 };
 
+// Two-factor sign-in for the signed-in admin's own account.
+export const twoFactorService = {
+  getStatus: () => adminApi.get<ApiResponse<{ enabled: boolean; available: boolean }>>('/auth/2fa'),
+
+  beginSetup: () =>
+    adminApi.post<ApiResponse<{ secret: string; otpauthUri: string; qrCodeDataUrl: string }>>('/auth/2fa/setup'),
+
+  confirm: (code: string) => adminApi.post<ApiResponse<{ enabled: boolean }>>('/auth/2fa/confirm', { code }),
+
+  disable: (password: string, code: string) =>
+    adminApi.post<ApiResponse<{ enabled: boolean }>>('/auth/2fa/disable', { password, code }),
+};
+
 // What is waiting on an operator. The layout polls this for the bell, the
 // Disputes badge and the SOS banner.
 export const alertsService = {
