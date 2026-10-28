@@ -69,7 +69,7 @@ export interface Dispute {
   raisedById: string;
   reason: string;
   description: string;
-  status: 'open' | 'investigating' | 'resolved' | 'closed';
+  status: 'open' | 'under_review' | 'resolved' | 'closed'; // the server's DisputeStatus
   priority: 'low' | 'medium' | 'high' | 'urgent';
   resolution?: string;
   resolvedBy?: string;

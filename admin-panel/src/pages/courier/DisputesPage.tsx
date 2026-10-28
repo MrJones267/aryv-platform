@@ -175,7 +175,7 @@ const DisputesPage: React.FC = () => {
     switch (status) {
       case 'open':
         return 'error';
-      case 'investigating':
+      case 'under_review':
         return 'warning';
       case 'resolved':
         return 'success';
@@ -190,7 +190,7 @@ const DisputesPage: React.FC = () => {
     switch (status) {
       case 'open':
         return <Warning fontSize="small" />;
-      case 'investigating':
+      case 'under_review':
         return <Schedule fontSize="small" />;
       case 'resolved':
         return <CheckCircle fontSize="small" />;
@@ -377,10 +377,10 @@ const DisputesPage: React.FC = () => {
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Schedule color="warning" sx={{ fontSize: 40 }} />
             <Typography variant="h4" color="warning.main" sx={{ mt: 1 }}>
-              {disputes.filter(d => d.status === 'investigating').length}
+              {disputes.filter(d => d.status === 'under_review').length}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Investigating
+              Under review
             </Typography>
           </Paper>
         </Grid>
@@ -439,7 +439,7 @@ const DisputesPage: React.FC = () => {
             >
               <MenuItem value="all">All Status</MenuItem>
               <MenuItem value="open">Open</MenuItem>
-              <MenuItem value="investigating">Investigating</MenuItem>
+              <MenuItem value="under_review">Under review</MenuItem>
               <MenuItem value="resolved">Resolved</MenuItem>
               <MenuItem value="closed">Closed</MenuItem>
             </TextField>

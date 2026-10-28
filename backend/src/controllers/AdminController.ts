@@ -362,7 +362,8 @@ export class AdminController {
 
       // Open disputes
       const [openDisputes, resolvedDisputes] = await Promise.all([
-        DeliveryDispute.count({ where: { status: { [Op.in]: ['open', 'investigating'] } } }),
+        // 'investigating' is not a dispute status; under_review is.
+        DeliveryDispute.count({ where: { status: { [Op.in]: ['open', 'under_review'] } } }),
         DeliveryDispute.count({ where: { status: 'resolved' } }),
       ]);
 

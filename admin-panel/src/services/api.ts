@@ -284,6 +284,40 @@ export type DeliveryTierUpdate = Partial<
   Pick<DeliveryTierRow, 'minDeliveryHours' | 'maxDeliveryHours' | 'isActive'> & { platformFeePercentage: number }
 >;
 
+export interface SosAlert {
+  id: string;
+  alertType: string;
+  status: 'raised' | 'acknowledged';
+  message: string | null;
+  createdAt: string;
+  lastLocationAt: string;
+  latitude: number;
+  longitude: number;
+  contactsNotified: number;
+  rideId: string | null;
+  userId: string;
+  userName: string;
+  userPhone: string | null;
+}
+
+export interface AdminAlerts {
+  counts: { sos: number; disputes: number; verifications: number; total: number };
+  sos: SosAlert[];
+  disputes: { id: string; disputeType: string; status: string; createdAt: string; packageTitle: string | null }[];
+  verifications: { userId: string; userName: string; documents: number; waitingSince: string }[];
+}
+
+// What is waiting on an operator. The layout polls this for the bell, the
+// Disputes badge and the SOS banner.
+export const alertsService = {
+  getAlerts: () => adminApi.get<ApiResponse<AdminAlerts>>('/alerts'),
+
+  acknowledgeSos: (id: string) => adminApi.post<ApiResponse<unknown>>(`/emergency-alerts/${id}/acknowledge`),
+
+  resolveSos: (id: string, outcome: 'resolved' | 'false_alarm', note: string) =>
+    adminApi.post<ApiResponse<unknown>>(`/emergency-alerts/${id}/resolve`, { outcome, note }),
+};
+
 export const settingsService = {
   // Read-only: the fee and sign-in values the backend code actually uses.
   getPlatformValues: () => adminApi.get<ApiResponse<PlatformValues>>('/settings/platform'),
