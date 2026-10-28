@@ -337,6 +337,9 @@ process.on('unhandledRejection', (reason, promise) => {
  */
 const assertSchemaIsCurrent = async (): Promise<void> => {
   const REQUIRED_COLUMNS: Array<{ table: string; column: string; migration: string }> = [
+    // Read on every admin request (AdminUser model), so its absence would
+    // break admin sign-in; refuse to boot instead.
+    { table: 'admin_users', column: 'sessions_revoked_at', migration: '031_admin_sessions_revoked_at.sql' },
     { table: 'users', column: 'driver_verification_status', migration: '013_driver_document_verification.sql' },
     { table: 'users', column: 'driver_verified_at', migration: '013_driver_document_verification.sql' },
     { table: 'delivery_qr_codes', column: 'failed_attempts', migration: '014_delivery_handover_codes.sql' },

@@ -382,6 +382,32 @@ export const auditService = {
     >('/audit-logs', { params }),
 };
 
+export interface OwnActivity {
+  id: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  outcome: 'succeeded' | 'refused' | 'failed' | null;
+  reason: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+// The signed-in admin's own account. Changing the password and signing out
+// other devices both return a new token for this session.
+export const accountService = {
+  updateName: (body: { firstName: string; lastName: string }) =>
+    adminApi.put<ApiResponse<{ user: any }>>('/auth/profile', body),
+
+  changePassword: (body: { currentPassword: string; newPassword: string; code?: string }) =>
+    adminApi.post<ApiResponse<{ accessToken: string }>>('/auth/password', body),
+
+  revokeOtherSessions: () => adminApi.post<ApiResponse<{ accessToken: string }>>('/auth/sessions/revoke-others'),
+
+  getActivity: () => adminApi.get<ApiResponse<{ entries: OwnActivity[] }>>('/auth/activity'),
+};
+
 // Two-factor sign-in for the signed-in admin's own account.
 export const twoFactorService = {
   getStatus: () => adminApi.get<ApiResponse<{ enabled: boolean; available: boolean }>>('/auth/2fa'),

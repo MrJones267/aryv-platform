@@ -306,6 +306,21 @@ export const authenticateAdminToken = async (
       return;
     }
 
+    // Tokens issued before the admin last ended their other sessions (or
+    // changed their password) are refused. JWT iat is in whole seconds, so
+    // compare at that granularity: the token issued in the same second as
+    // the revocation, to the session that did it, stays valid.
+    if (admin.sessionsRevokedAt && typeof decoded.iat === 'number'
+      && decoded.iat < Math.floor(new Date(admin.sessionsRevokedAt).getTime() / 1000)) {
+      res.status(401).json({
+        success: false,
+        error: 'This session was ended. Sign in again.',
+        code: 'SESSION_REVOKED',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     // Attach admin user to request
     req.user = admin.toSafeObject() as any;
 
