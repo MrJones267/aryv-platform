@@ -26,6 +26,7 @@ import RideDetailsPage from './pages/rides/RideDetailsPage';
 import CourierPage from './pages/courier/CourierPage';
 import DisputesPage from './pages/courier/DisputesPage';
 import VerificationPage from './pages/verification/VerificationPage';
+import AuditLogPage from './pages/audit/AuditLogPage';
 import AnalyticsPage from './pages/analytics/AnalyticsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import ProfilePage from './pages/profile/ProfilePage';
@@ -80,6 +81,7 @@ const App: React.FC = () => {
           <Route path="courier" element={<CourierPage />} />
           <Route path="courier/disputes" element={<DisputesPage />} />
           <Route path="verifications" element={<VerificationPage />} />
+          <Route path="audit-log" element={<AuditLogPage />} />
 
           {/* Analytics and reporting */}
           <Route path="analytics" element={<AnalyticsPage />} />

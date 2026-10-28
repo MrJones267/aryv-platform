@@ -39,6 +39,7 @@ import {
   Logout as LogoutIcon,
   Warning as DisputeIcon,
   VerifiedUser as VerificationIcon,
+  History as AuditIcon,
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../../store';
@@ -55,6 +56,8 @@ interface SidebarItem {
   path: string;
   badge?: number;
   color?: string;
+  /** Only these roles see the item; the backend refuses everyone else. */
+  roles?: Array<'super_admin' | 'admin' | 'moderator'>;
 }
 
 const sidebarItems: SidebarItem[] = [
@@ -67,6 +70,7 @@ const sidebarItems: SidebarItem[] = [
   // Badge: drivers with documents waiting for review, set in the component.
   { text: 'Driver Verification', icon: <VerificationIcon />, path: '/verifications', color: 'warning' },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
+  { text: 'Audit Log', icon: <AuditIcon />, path: '/audit-log', roles: ['super_admin', 'admin'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 
@@ -109,9 +113,9 @@ const DashboardLayout: React.FC = () => {
     '/courier/disputes': alerts?.counts.disputes || undefined,
     '/verifications': alerts?.counts.verifications || undefined,
   };
-  const navItems = sidebarItems.map(item =>
-    item.path in liveBadges ? { ...item, badge: liveBadges[item.path] } : item
-  );
+  const navItems = sidebarItems
+    .filter(item => !item.roles || (adminUser?.role && item.roles.includes(adminUser.role)))
+    .map(item => (item.path in liveBadges ? { ...item, badge: liveBadges[item.path] } : item));
 
   // Exactly one item is active: the most specific path the URL is inside.
   // A bare startsWith() made /courier/disputes highlight both Disputes and

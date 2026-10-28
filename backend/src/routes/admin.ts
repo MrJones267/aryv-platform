@@ -29,6 +29,7 @@ import { DeliveryTier } from '../models/DeliveryTier';
 import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
+import { recordAdminAction } from '../services/AuditService';
 import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
@@ -116,6 +117,59 @@ const adminApiLimiter = rateLimit({
 
 // Apply general rate limiting to all admin routes
 router.use(adminApiLimiter);
+
+/**
+ * The audit trail. Every admin request that changes something is recorded
+ * once it has been answered: who, what, to which record, from where, the
+ * request body with credentials removed, and whether it succeeded or was
+ * refused. One hook rather than a call in each handler, so a route added
+ * later cannot be left out. Sign-in is recorded by AdminController.login,
+ * since there is no admin on the request until it succeeds.
+ */
+const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> = {
+  'POST /auth/logout': { action: 'admin.sign_out', resourceType: 'admin_user' },
+  'PUT /auth/profile': { action: 'admin.profile_update', resourceType: 'admin_user' },
+  'PUT /users/:id': { action: 'user.update', resourceType: 'user' },
+  'POST /users/:id/block': { action: 'user.block', resourceType: 'user' },
+  'POST /users/:id/unblock': { action: 'user.unblock', resourceType: 'user' },
+  'PUT /users/:id/verify': { action: 'user.verify', resourceType: 'user' },
+  'POST /rides/:id/cancel': { action: 'ride.cancel', resourceType: 'ride' },
+  'PUT /rides/:id/status': { action: 'ride.status_change', resourceType: 'ride' },
+  'POST /courier/disputes/:id/resolve': { action: 'dispute.resolve', resourceType: 'dispute' },
+  'POST /courier/agreements/:id/release-payment': { action: 'delivery.release_payment', resourceType: 'delivery_agreement' },
+  'PUT /settings': { action: 'settings.update', resourceType: 'settings' },
+  'PUT /settings/commission': { action: 'settings.commission_update', resourceType: 'settings' },
+  'PUT /delivery-tiers/:id': { action: 'tier.update', resourceType: 'delivery_tier' },
+  'POST /emergency-alerts/:id/acknowledge': { action: 'sos.acknowledge', resourceType: 'emergency_alert' },
+  'POST /emergency-alerts/:id/resolve': { action: 'sos.resolve', resourceType: 'emergency_alert' },
+  'POST /settings/on-call/test': { action: 'settings.oncall_test', resourceType: 'settings' },
+  'POST /verifications/documents/:id/review': { action: 'document.review', resourceType: 'driver_document' },
+};
+
+router.use((req: any, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  res.on('finish', () => {
+    const adminId = req.user?.id;
+    const routePath: string | undefined = req.route?.path;
+    // No admin means the request never got past authentication: nothing was
+    // done, and there is no one to attribute it to.
+    if (!adminId || !routePath) return;
+    const key = `${req.method} ${routePath}`;
+    const known = AUDITED_ACTIONS[key];
+    void recordAdminAction(req, {
+      adminUserId: adminId,
+      action: known?.action ?? key.toLowerCase(),
+      resourceType: known?.resourceType ?? 'other',
+      resourceId: req.params?.id ?? null,
+      details: {
+        outcome: res.statusCode < 400 ? 'succeeded' : res.statusCode === 401 || res.statusCode === 403 ? 'refused' : 'failed',
+        statusCode: res.statusCode,
+        request: req.body,
+      },
+    });
+  });
+  return next();
+});
 
 /**
  * Authentication Routes
@@ -1243,6 +1297,53 @@ router.post('/verifications/documents/:id/review', authenticateAdminToken, requi
     return res.status(status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
   }
   return res.json({ success: true, data: { status: result.status, driverStatus: result.driverStatus }, timestamp: new Date().toISOString() });
+});
+
+/**
+ * @route   GET /api/admin/audit-logs
+ * @desc    The admin audit trail, newest first, filterable
+ * @access  Private (Admin)
+ */
+router.get('/audit-logs', authenticateAdminToken, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query['page'] || 1));
+    const limit = Math.min(200, Math.max(1, Number(req.query['limit'] || 50)));
+    const filters: string[] = [];
+    const replacements: Record<string, unknown> = { limit, offset: (page - 1) * limit };
+    for (const [param, column] of [['adminId', 'l.admin_user_id'], ['action', 'l.action'], ['resourceType', 'l.resource_type'], ['resourceId', 'l.resource_id']] as const) {
+      const value = req.query[param];
+      if (typeof value === 'string' && value) {
+        filters.push(`${column}${param === 'adminId' ? '::text' : ''} = :${param}`);
+        replacements[param] = value;
+      }
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const [entries, [{ total }]] = await Promise.all([
+      sequelize.query(
+        `SELECT l.id, l.action, l.resource_type AS "resourceType", l.resource_id AS "resourceId", l.details,
+                host(l.ip_address) AS "ipAddress", l.user_agent AS "userAgent", l.created_at AS "createdAt",
+                l.admin_user_id AS "adminId", a.email AS "adminEmail",
+                TRIM(CONCAT(a.first_name, ' ', a.last_name)) AS "adminName", a.role AS "adminRole"
+           FROM admin_audit_logs l
+           LEFT JOIN admin_users a ON a.id = l.admin_user_id
+           ${where}
+          ORDER BY l.created_at DESC
+          LIMIT :limit OFFSET :offset`,
+        { type: QueryTypes.SELECT, replacements },
+      ),
+      sequelize.query(`SELECT COUNT(*)::int AS total FROM admin_audit_logs l ${where}`, { type: QueryTypes.SELECT, replacements }) as Promise<Array<{ total: number }>>,
+    ]);
+
+    return res.json({
+      success: true,
+      data: { entries, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(`Admin audit log query failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the audit log', code: 'AUDIT_LOG_FAILED', timestamp: new Date().toISOString() });
+  }
 });
 
 export default router;
