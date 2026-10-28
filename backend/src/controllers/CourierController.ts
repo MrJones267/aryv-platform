@@ -58,6 +58,9 @@ export class CourierController {
       // Calculate distance
       const distance = this.calculateDistance(pickupCoordinates, dropoffCoordinates);
 
+      // Quotes are in the sender's currency, the one a package is charged in.
+      const currency = await CurrencyService.getUserCurrencyCode(req.user?.id ?? '');
+
       // Get pricing suggestions from demand engine
       const pricingEngine = DemandPricingEngine.getInstance();
       const pricingSuggestions = await pricingEngine.calculatePricingSuggestions(
@@ -68,6 +71,7 @@ export class CourierController {
         fragile,
         valuable,
         requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
+        currency,
       );
 
       // Refresh demand metrics. Best effort: the suggestions above already
@@ -91,7 +95,7 @@ export class CourierController {
           // The currency these prices are in: a package is charged in its
           // sender's currency (see createPackage). The app printed every price
           // with a hardcoded "P" because nothing here said which currency.
-          currency: await CurrencyService.getUserCurrencyCode(req.user?.id ?? ''),
+          currency,
           demandInfo: locationDemands[0] || null,
           calculatedAt: new Date().toISOString(),
         },
@@ -205,6 +209,10 @@ export class CourierController {
       // bare, so any failure in the engine (and updateDemandMetrics could not
       // succeed at all) turned every package creation into a 500. On failure
       // the suggestion falls back to calculateSuggestedPrice below.
+      // The sender names the price, so the package, and every suggestion for
+      // it, is in their currency.
+      const packageCurrency = await CurrencyService.getUserCurrencyCode(userId);
+
       const pricingEngine = DemandPricingEngine.getInstance();
       let pricingSuggestions: Awaited<ReturnType<typeof pricingEngine.calculatePricingSuggestions>> = [];
       try {
@@ -216,6 +224,7 @@ export class CourierController {
           fragile || false,
           valuable || false,
           requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
+          packageCurrency,
         );
       } catch (error) {
         logger.warn('Demand pricing unavailable; using the base suggested price', {
@@ -239,14 +248,13 @@ export class CourierController {
             packageSize || PackageSize.MEDIUM,
             fragile || false,
             valuable || false,
+            packageCurrency,
           );
 
       // Apply demand multiplier if any tier was suggested
       const demandMultiplierApplied = pricingSuggestions.length > 0
         ? pricingSuggestions[0].demandMultiplier
         : 1.0;
-
-      const packageCurrency = await CurrencyService.getUserCurrencyCode(userId);
 
       const packageData = await Package.create({
         // The sender names the price, so the package is in their currency.
@@ -1072,21 +1080,28 @@ export class CourierController {
     packageSize: PackageSize,
     isFragile: boolean,
     isValuable: boolean,
-  ): Promise<number> {
+    currency: string,
+  ): Promise<number | null> {
     // This called a SQL function, calculate_suggested_delivery_price, from
     // migration 002, which production recorded as applied without running;
     // the function and the courier_pricing_config table it reads do not exist
     // there. This is the fallback for when demand pricing fails, so it must
     // not need the database: it prices as a Standard delivery, with no demand
     // adjustment, using the engine's own rates.
-    const price = DemandPricingEngine.getInstance().calculateBasePrice(
-      DeliveryTierType.STANDARD,
-      distance,
-      packageSize,
-      isFragile,
-      isValuable,
-    );
-    return Math.round(price * 100) / 100;
+    const engine = DemandPricingEngine.getInstance();
+    const price = engine.calculateBasePrice(DeliveryTierType.STANDARD, distance, packageSize, isFragile, isValuable);
+    try {
+      // The engine's rates are in pula; the package is in the sender's currency.
+      return Math.round(price * (await engine.rateFromBaseCurrency(currency)) * 100) / 100;
+    } catch (error) {
+      // No suggestion beats a pula figure labelled as something else. The
+      // sender's own offer still stands, and the column allows null.
+      logger.warn('No suggested price: the currency could not be converted', {
+        currency,
+        error: (error as Error).message,
+      });
+      return null;
+    }
   }
 }
 

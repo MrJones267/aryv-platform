@@ -8,6 +8,10 @@
 import { DemandMetrics } from '../models/DemandMetrics';
 import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
 import { PackageSize } from '../models/Package';
+import { CurrencyService, PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
+
+/** The currency every rate in this engine is set in: the platform's, pula. */
+export const PRICING_BASE_CURRENCY = PLATFORM_DEFAULT_CURRENCY;
 import { CourierProfile } from '../models/CourierProfile';
 import { sequelize } from '../config/database';
 import logger from '../utils/logger';
@@ -72,8 +76,15 @@ export class DemandPricingEngine {
     isFragile: boolean = false,
     isValuable: boolean = false,
     requestedDeliveryTime?: Date,
+    currency: string = PRICING_BASE_CURRENCY,
   ): Promise<PricingSuggestion[]> {
     try {
+      // Every rate here is in pula. A quote for a sender in another currency
+      // is worked out in pula and converted at the end, at one rate for all
+      // of its figures. These used to be returned unconverted, so a quote of
+      // 45 meant 45 pula, 45 rand or 45 kwacha depending only on the label.
+      const rate = await this.rateFromBaseCurrency(currency);
+
       // Get current demand metrics for pickup location
       const locationHash = this.generateLocationHash(pickupCoordinates);
       const demandMetrics = await this.getCurrentDemandMetrics(locationHash);
@@ -96,7 +107,7 @@ export class DemandPricingEngine {
           demandMetrics,
           requestedDeliveryTime,
         );
-        suggestions.push(suggestion);
+        suggestions.push(rate === 1 ? suggestion : this.convertSuggestion(suggestion, rate));
       }
 
       return suggestions;
@@ -109,6 +120,33 @@ export class DemandPricingEngine {
   /**
    * Calculate pricing for a specific delivery tier
    */
+  /**
+   * How many units of `currency` one pula buys, from the daily exchange
+   * rates. Throws when the currency cannot be converted, so a caller never
+   * shows a pula figure under another currency's symbol.
+   */
+  async rateFromBaseCurrency(currency: string): Promise<number> {
+    if (currency === PRICING_BASE_CURRENCY) return 1;
+    const { exchangeRate } = await CurrencyService.convertCurrency(PRICING_BASE_CURRENCY, currency, 1);
+    const rate = Number(exchangeRate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new Error(`No usable exchange rate from ${PRICING_BASE_CURRENCY} to ${currency}`);
+    }
+    return rate;
+  }
+
+  /** A pula suggestion in another currency. Multipliers are unit-free. */
+  private convertSuggestion(suggestion: PricingSuggestion, rate: number): PricingSuggestion {
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      ...suggestion,
+      basePrice: round2(suggestion.basePrice * rate),
+      finalPrice: round2(suggestion.finalPrice * rate),
+      platformFee: round2(suggestion.platformFee * rate),
+      courierEarnings: round2(suggestion.courierEarnings * rate),
+    };
+  }
+
   /**
    * Price before any tier multiplier, demand or urgency: the tier's base fare
    * plus distance, scaled by package size, plus handling surcharges. Needs no
