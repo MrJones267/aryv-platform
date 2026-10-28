@@ -18,6 +18,7 @@ import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
 import { DeliveryDispute } from '../models/DeliveryDispute';
 import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getRevenueByCurrency } from '../services/RevenueReportService';
+import { ADMIN_SESSION_HOURS, getAdminSessionHours } from '../services/PlatformSettingsService';
 
 /**
  * How long an admin session lasts.
@@ -25,12 +26,14 @@ import { getRevenueByCurrency } from '../services/RevenueReportService';
  * "Remember me" used to mint a **seven day** bearer token for full platform
  * administration — user records, ride history, commission settings, manual
  * payment release — held in localStorage where any script on the origin can
- * read it. A day is still a full working session and cuts the window an
- * exposed token is useful for by 85%.
+ * read it. That became a fixed day, and is now a setting a super admin
+ * chooses between ADMIN_SESSION_HOURS.MIN and MAX (1 to 24 hours), starting
+ * at 1. "Remember me" no longer changes it.
+ *
+ * This constant is the ceiling: a revoked token has to stay on the
+ * revocation list for as long as any admin token can live.
  */
-const ADMIN_TOKEN_TTL = '24h';
-const ADMIN_REMEMBER_ME_TTL = '24h';
-export const ADMIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+export const ADMIN_TOKEN_TTL_SECONDS = ADMIN_SESSION_HOURS.MAX * 60 * 60;
 import { UserStatus, RideStatus } from '../types';
 
 // Configuration constants — fail fast if secrets are missing
@@ -62,7 +65,7 @@ export class AdminController {
    */
   static async login(req: Request, res: Response): Promise<void> {
     try {
-      const { email, password, rememberMe } = req.body;
+      const { email, password } = req.body;
 
       // Find admin user by email
       const admin = await AdminUser.findByEmail(email);
@@ -122,10 +125,11 @@ export class AdminController {
         type: 'admin',
       };
 
+      const sessionHours = await getAdminSessionHours();
       const accessToken = jwt.sign(
         tokenPayload,
         ADMIN_JWT_SECRET,
-        { expiresIn: rememberMe ? ADMIN_REMEMBER_ME_TTL : ADMIN_TOKEN_TTL },
+        { expiresIn: sessionHours * 60 * 60 },
       );
 
       const refreshToken = jwt.sign(
@@ -150,7 +154,7 @@ export class AdminController {
           tokens: {
             accessToken,
             refreshToken,
-            expiresIn: rememberMe ? ADMIN_REMEMBER_ME_TTL : ADMIN_TOKEN_TTL,
+            expiresIn: `${sessionHours}h`,
           },
         },
       });

@@ -58,7 +58,10 @@ describe('Admin settings', () => {
         platformCurrency: 'BWP',
         fees: { bookingPlatformFeePercent: 5, cashCommissionPercent: 10, defaultCourierFeePercent: 25 },
         adminSecurity: {
-          sessionHours: 24,
+          // The default when no super admin has set it: the 1-hour minimum.
+          sessionHours: 1,
+          sessionHoursMin: 1,
+          sessionHoursMax: 24,
           loginAttemptsPerWindow: 5,
           loginWindowMinutes: 15,
           passwordMinLength: 8,
