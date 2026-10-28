@@ -13,8 +13,6 @@ import {
   Alert,
   InputAdornment,
   IconButton,
-  FormControlLabel,
-  Checkbox,
   Typography,
 } from '@mui/material';
 import {
@@ -28,13 +26,12 @@ import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { loginAdmin, selectAuthLoading, selectAuthError, clearError } from '../../store/slices/authSlice';
+import { loginAdmin, selectAuthLoading, selectAuthError, clearError, TWO_FACTOR_REQUIRED } from '../../store/slices/authSlice';
 
 // Validation schema
 const loginSchema = yup.object({
   email: yup.string().email('Please enter a valid email address').required('Email is required'),
   password: yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
-  rememberMe: yup.boolean(),
 });
 
 type LoginFormData = yup.InferType<typeof loginSchema>;
@@ -56,9 +53,13 @@ const LoginPage: React.FC = () => {
     defaultValues: {
       email: '',
       password: '',
-      rememberMe: false,
     },
   });
+
+  // Second step, for accounts with two-factor sign-in on: the password was
+  // right, and the server wants the code from the authenticator app.
+  const [needsCode, setNeedsCode] = useState(false);
+  const [code, setCode] = useState('');
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -67,11 +68,16 @@ const LoginPage: React.FC = () => {
         loginAdmin({
           email: data.email,
           password: data.password,
+          ...(needsCode && { code: code.replace(/\s+/g, '') }),
         })
       );
 
       if (loginAdmin.fulfilled.match(result)) {
         navigate('/dashboard');
+      } else if (result.payload === TWO_FACTOR_REQUIRED) {
+        setNeedsCode(true);
+      } else if (needsCode) {
+        setCode('');
       }
     } catch (err) {
       console.error('Login failed:', err);
@@ -154,18 +160,26 @@ const LoginPage: React.FC = () => {
         )}
       />
 
-      {/* Remember Me Checkbox */}
-      <Controller
-        name="rememberMe"
-        control={control}
-        render={({ field }) => (
-          <FormControlLabel
-            control={<Checkbox {...field} checked={field.value} disabled={loading} color="primary" />}
-            label="Remember me"
-            sx={{ mb: 3 }}
+      {/* "Remember me" was removed: the session length is set by a super
+          admin in Settings, and the box no longer changed anything. */}
+
+      {needsCode && (
+        <Box mb={3}>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Two-factor sign-in is on for this account. Enter the 6-digit code from your authenticator app.
+          </Alert>
+          <TextField
+            fullWidth
+            autoFocus
+            label="Authenticator code"
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/[^\d\s]/g, '').slice(0, 7))}
+            disabled={loading}
+            inputProps={{ inputMode: 'numeric', autoComplete: 'one-time-code', 'aria-label': 'Authenticator code' }}
+            helperText="Lost your phone? Ask a super admin to reset your account."
           />
-        )}
-      />
+        </Box>
+      )}
 
       {/* Login Button */}
       <Button
@@ -173,7 +187,7 @@ const LoginPage: React.FC = () => {
         fullWidth
         variant="contained"
         size="large"
-        disabled={loading}
+        disabled={loading || (needsCode && code.replace(/\s+/g, '').length !== 6)}
         startIcon={loading ? null : <LoginIcon />}
         sx={{
           py: 1.5,

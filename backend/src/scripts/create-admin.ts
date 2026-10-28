@@ -106,8 +106,16 @@ const main = async (): Promise<void> => {
     existing.permissions = PERMISSIONS_BY_ROLE[roleInput];
     existing.failedLoginAttempts = 0;
     existing.lockoutUntil = null;
+    // This is the recovery path for a lost phone too: a reset turns
+    // two-factor sign-in off, and the admin sets it up again afterwards.
+    const hadTwoFactor = existing.twoFactorEnabled;
+    existing.twoFactorEnabled = false;
+    existing.twoFactorSecret = null;
     await existing.save();
     console.log(`Reset the existing ${roleInput} account for ${email}.`);
+    if (hadTwoFactor) {
+      console.log('Two-factor sign-in was on for this account and has been turned off. Set it up again from the Profile page.');
+    }
   } else {
     const admin = AdminUser.build({
       email,

@@ -42,10 +42,16 @@ const initialState: AuthState = {
 const errorMessage = (error: any, fallback: string): string =>
   error.response?.data?.error || error.response?.data?.message || fallback;
 
+/**
+ * What loginAdmin rejects with when the password was right and the account
+ * needs its authenticator code: a prompt for the next step, not an error.
+ */
+export const TWO_FACTOR_REQUIRED = 'TWO_FACTOR_REQUIRED';
+
 // Async thunks
 export const loginAdmin = createAsyncThunk(
   'auth/loginAdmin',
-  async (credentials: { email: string; password: string }, { rejectWithValue }) => {
+  async (credentials: { email: string; password: string; code?: string }, { rejectWithValue }) => {
     try {
       const response = await adminApi.post('/auth/login', credentials);
       const user = response.data?.data?.user;
@@ -58,6 +64,9 @@ export const loginAdmin = createAsyncThunk(
       localStorage.setItem('admin_token', token);
       return { user, token };
     } catch (error: any) {
+      if (error.response?.data?.code === TWO_FACTOR_REQUIRED) {
+        return rejectWithValue(TWO_FACTOR_REQUIRED);
+      }
       return rejectWithValue(errorMessage(error, 'Login failed'));
     }
   }
@@ -133,7 +142,8 @@ const authSlice = createSlice({
       })
       .addCase(loginAdmin.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        // The code prompt is the next step, not a failure to show.
+        state.error = action.payload === TWO_FACTOR_REQUIRED ? null : (action.payload as string);
         state.isAuthenticated = false;
       })
 

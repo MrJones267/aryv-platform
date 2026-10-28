@@ -20,6 +20,7 @@ import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getRevenueByCurrency } from '../services/RevenueReportService';
 import { ADMIN_SESSION_HOURS, getAdminSessionHours } from '../services/PlatformSettingsService';
 import { recordAdminAction } from '../services/AuditService';
+import { adminTwoFactorService } from '../services/AdminTwoFactorService';
 
 /**
  * How long an admin session lasts.
@@ -116,6 +117,38 @@ export class AdminController {
           code: 'INVALID_CREDENTIALS',
         });
         return;
+      }
+
+      // The second step, for accounts that have two-factor sign-in on. The
+      // password is already right, so a missing code is a prompt, not a
+      // failure; a wrong or reused one counts towards the lockout.
+      if (admin.twoFactorEnabled) {
+        const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s+/g, '') : '';
+        if (!code) {
+          res.status(401).json({
+            success: false,
+            error: 'Enter the 6-digit code from your authenticator app',
+            code: 'TWO_FACTOR_REQUIRED',
+          });
+          return;
+        }
+        const check = await adminTwoFactorService.verifySignInCode(admin, code);
+        if (!check.ok) {
+          if (check.error === 'NOT_CONFIGURED') {
+            logError('Admin with two-factor on cannot sign in: TOTP_ENCRYPTION_KEY is not set', new Error('2FA key missing'), { adminId: admin.id });
+            res.status(503).json({ success: false, error: 'Two-factor sign-in is unavailable on the server', code: 'TWO_FACTOR_UNAVAILABLE' });
+            return;
+          }
+          admin.incrementFailedAttempts();
+          await admin.save();
+          await recordAdminAction(req, { adminUserId: admin.id, action: 'admin.sign_in', resourceType: 'admin_user', resourceId: admin.id, details: { outcome: 'refused', reason: check.error === 'CODE_REUSED' ? 'two_factor_code_reused' : 'wrong_two_factor_code', failedAttempts: admin.failedLoginAttempts } });
+          res.status(401).json({
+            success: false,
+            error: check.error === 'CODE_REUSED' ? 'That code has already been used; wait for the next one' : 'That code is not right',
+            code: 'TWO_FACTOR_INVALID',
+          });
+          return;
+        }
       }
 
       // Reset failed attempts on successful login
