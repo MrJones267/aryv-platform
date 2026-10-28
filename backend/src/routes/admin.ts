@@ -29,7 +29,18 @@ import { DeliveryTier } from '../models/DeliveryTier';
 import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
-import { ADMIN_SESSION_HOURS, SETTINGS_KEY, getAdminSessionHours, isValidAdminSessionHours } from '../services/PlatformSettingsService';
+import {
+  ADMIN_SESSION_HOURS,
+  MAX_ONCALL_PHONES,
+  SETTINGS_KEY,
+  getAdminSessionHours,
+  getOnCallPhones,
+  getServerOnCallPhones,
+  getStoredOnCallPhones,
+  isValidAdminSessionHours,
+  normaliseOnCallPhones,
+} from '../services/PlatformSettingsService';
+import { smsService } from '../services/SMSService';
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 
 const COMMISSION_KEY = 'platform:commission';
@@ -52,6 +63,7 @@ const DEFAULT_SETTINGS = {
   maxRidePrice: 5000,
   maxPassengersPerRide: 8,
   adminSessionHours: ADMIN_SESSION_HOURS.DEFAULT,
+  onCallPhones: [] as string[],
 };
 
 const DEFAULT_COMMISSION = {
@@ -750,6 +762,19 @@ router.put('/settings', authenticateAdminToken, requireSuperAdmin, async (req, r
       });
     }
 
+    if (req.body?.onCallPhones !== undefined) {
+      const numbers = normaliseOnCallPhones(req.body.onCallPhones);
+      if (!numbers) {
+        return res.status(400).json({
+          success: false,
+          error: `onCallPhones must be a list of up to ${MAX_ONCALL_PHONES} valid phone numbers`,
+          code: 'VALIDATION_ERROR',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      req.body.onCallPhones = numbers;
+    }
+
     const raw = await redisClient.get(SETTINGS_KEY);
     const current = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
     const updated = { ...current, ...req.body };
@@ -847,6 +872,14 @@ router.get('/settings/platform', authenticateAdminToken, async (_req, res) => {
         loginWindowMinutes: ADMIN_LOGIN_WINDOW_MS / 60000,
         passwordMinLength: PASSWORD_MIN_LENGTH,
         twoFactorAvailable: false,
+      },
+      sos: {
+        // The saved numbers, which the panel edits. Numbers set on the server
+        // (ONCALL_PHONE_NUMBERS) are texted too, but only counted here.
+        onCallPhones: await getStoredOnCallPhones(),
+        serverOnCallPhones: getServerOnCallPhones().length,
+        maxOnCallPhones: MAX_ONCALL_PHONES,
+        smsConfigured: smsService.isConfigured(),
       },
     },
     timestamp: new Date().toISOString(),
@@ -1064,6 +1097,33 @@ router.post('/emergency-alerts/:id/resolve', authenticateAdminToken, async (req,
   } catch (error) {
     logger.error(`Resolving SOS alert failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to resolve alert', code: 'ALERT_UPDATE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/settings/on-call/test
+ * @desc    Send a test SMS to every on-call number
+ * @access  Private (Super admin)
+ *
+ * The only way to know an SOS will reach someone is to try it. Reports each
+ * number's result rather than one overall success.
+ */
+router.post('/settings/on-call/test', authenticateAdminToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const numbers = await getOnCallPhones();
+    if (numbers.length === 0) {
+      return res.status(400).json({ success: false, error: 'No on-call numbers are set', code: 'NO_ONCALL_NUMBERS', timestamp: new Date().toISOString() });
+    }
+    if (!smsService.isConfigured()) {
+      return res.status(503).json({ success: false, error: 'SMS is not configured on the server (Twilio credentials or sending number missing)', code: 'SMS_NOT_CONFIGURED', timestamp: new Date().toISOString() });
+    }
+    const body = 'ARYV test: this number will be texted when someone raises an SOS. No action needed.';
+    const results = await Promise.all(numbers.map(async (number) => ({ number, sent: await smsService.sendMessage(number, body) })));
+    logger.info('On-call SMS test sent', { adminId: (req as any).user?.id, results });
+    return res.json({ success: true, data: { results }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`On-call SMS test failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to send the test', code: 'ONCALL_TEST_FAILED', timestamp: new Date().toISOString() });
   }
 });
 

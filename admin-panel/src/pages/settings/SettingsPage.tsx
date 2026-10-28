@@ -112,6 +112,9 @@ const SettingsPage: React.FC = () => {
   const currency = currencyDraft ?? savedCurrency;
 
   const [sessionDraft, setSessionDraft] = useState<string | null>(null);
+  const [onCallDraft, setOnCallDraft] = useState<string[] | null>(null);
+  const [newOnCall, setNewOnCall] = useState('');
+  const [onCallStatus, setOnCallStatus] = useState<{ saving?: boolean; testing?: boolean; error?: string; message?: string }>({});
   const [sessionStatus, setSessionStatus] = useState<{ saving?: boolean; error?: string; saved?: boolean }>({});
 
   useEffect(() => {
@@ -185,6 +188,47 @@ const SettingsPage: React.FC = () => {
     Number.isInteger(sessionNumber) &&
     sessionNumber >= security.sessionHoursMin &&
     sessionNumber <= security.sessionHoursMax;
+
+  const sos = platform?.sos;
+  const onCallList = onCallDraft ?? sos?.onCallPhones ?? [];
+  const onCallDirty = onCallDraft !== null;
+
+  const addOnCall = () => {
+    const value = newOnCall.trim();
+    if (!value || onCallList.includes(value)) return;
+    setOnCallDraft([...onCallList, value]);
+    setNewOnCall('');
+    setOnCallStatus({});
+  };
+
+  const saveOnCall = async () => {
+    setOnCallStatus({ saving: true });
+    try {
+      await dispatch(updateAppSettings({ onCallPhones: onCallList })).unwrap();
+      const response = await settingsService.getPlatformValues();
+      setPlatform(response.data.data);
+      setOnCallDraft(null);
+      setOnCallStatus({ message: 'Saved.' });
+    } catch (error: any) {
+      setOnCallStatus({ error: typeof error === 'string' ? error : 'Failed to save the on-call numbers' });
+    }
+  };
+
+  const testOnCall = async () => {
+    setOnCallStatus({ testing: true });
+    try {
+      const response = await settingsService.testOnCall();
+      const results = response.data.data.results;
+      const failed = results.filter(r => !r.sent).map(r => r.number);
+      setOnCallStatus(
+        failed.length
+          ? { error: `Test SMS failed for ${failed.join(', ')}. Sent to ${results.length - failed.length} of ${results.length}.` }
+          : { message: `Test SMS sent to all ${results.length} number${results.length === 1 ? '' : 's'}. Check each phone received it.` }
+      );
+    } catch (error: any) {
+      setOnCallStatus({ error: error?.response?.data?.error || 'Failed to send the test' });
+    }
+  };
 
   const saveSessionHours = async () => {
     if (!security || !sessionValid || sessionNumber === security.sessionHours) return;
@@ -405,6 +449,100 @@ const SettingsPage: React.FC = () => {
                 </Typography>
               )}
             </Box>
+
+            <Typography variant="h6" mt={3}>
+              SOS on-call numbers
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Texted the moment someone raises an SOS, with who raised it, their phone number and a map
+              link. Local numbers are read as Botswana numbers; add +27 or another code for other countries.
+            </Typography>
+            {sos && !sos.smsConfigured && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                SMS is not configured on the server, so no one would be texted. Set the Twilio credentials and
+                sending number.
+              </Alert>
+            )}
+            {sos && sos.serverOnCallPhones > 0 && (
+              <Typography variant="body2" color="text.secondary" mb={1}>
+                Also texted: {sos.serverOnCallPhones} number{sos.serverOnCallPhones === 1 ? '' : 's'} set on the
+                server (ONCALL_PHONE_NUMBERS), which cannot be changed here.
+              </Typography>
+            )}
+            {sos && sos.smsConfigured && onCallList.length === 0 && sos.serverOnCallPhones === 0 && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                No on-call numbers are set. An SOS is only visible to someone with this panel open.
+              </Alert>
+            )}
+            <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
+              {onCallList.map(number => (
+                <Chip
+                  key={number}
+                  label={number}
+                  onDelete={
+                    canEdit
+                      ? () => {
+                          setOnCallDraft(onCallList.filter(n => n !== number));
+                          setOnCallStatus({});
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </Box>
+            {canEdit && sos && (
+              <Box display="flex" gap={1} flexWrap="wrap" alignItems="flex-start">
+                <TextField
+                  size="small"
+                  label="Add a number"
+                  placeholder="71234567 or +27821234567"
+                  value={newOnCall}
+                  onChange={e => setNewOnCall(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') addOnCall();
+                  }}
+                  disabled={onCallList.length >= sos.maxOnCallPhones}
+                  helperText={`Up to ${sos.maxOnCallPhones}`}
+                  sx={{ width: 240 }}
+                />
+                <Button variant="outlined" onClick={addOnCall} disabled={!newOnCall.trim()} sx={{ mt: 0.25 }}>
+                  Add
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<Save />}
+                  onClick={saveOnCall}
+                  disabled={!onCallDirty || onCallStatus.saving}
+                  sx={{ mt: 0.25 }}
+                >
+                  {onCallStatus.saving ? 'Saving…' : 'Save'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={testOnCall}
+                  disabled={
+                    onCallDirty ||
+                    onCallList.length + sos.serverOnCallPhones === 0 ||
+                    !sos.smsConfigured ||
+                    onCallStatus.testing
+                  }
+                  sx={{ mt: 0.25 }}
+                >
+                  {onCallStatus.testing ? 'Sending…' : 'Send test SMS'}
+                </Button>
+              </Box>
+            )}
+            {onCallStatus.message && (
+              <Typography variant="body2" color="success.main" mt={1}>
+                {onCallStatus.message}
+              </Typography>
+            )}
+            {onCallStatus.error && (
+              <Typography variant="body2" color="error" mt={1}>
+                {onCallStatus.error}
+              </Typography>
+            )}
 
             <Typography variant="h6" display="flex" alignItems="center" mt={3}>
               Sign-in protection

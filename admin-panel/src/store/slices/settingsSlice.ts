@@ -31,6 +31,8 @@ export interface AppSettings {
   defaultCurrency?: string;
   /** Admin session length in hours, set by a super admin. */
   adminSessionHours?: number;
+  /** Numbers texted when an SOS is raised, in E.164. */
+  onCallPhones?: string[];
   appName: string;
   supportEmail: string;
   supportPhone: string;
