@@ -485,12 +485,9 @@ const defineAssociations = (): void => {
     onUpdate: 'CASCADE',
   });
 
-  DriverDocument.belongsTo(User, {
-    foreignKey: 'reviewedBy',
-    as: 'reviewer',
-    onDelete: 'SET NULL',
-    onUpdate: 'CASCADE',
-  });
+  // No association for reviewedBy: it holds an admin_users id when a document
+  // is reviewed from the admin panel, so it cannot be a users foreign key
+  // (migration 029). Nothing used the 'reviewer' association.
 };
 
 // Initialize associations

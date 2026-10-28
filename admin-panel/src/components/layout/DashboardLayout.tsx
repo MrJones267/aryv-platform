@@ -38,6 +38,7 @@ import {
   AccountCircle as ProfileIcon,
   Logout as LogoutIcon,
   Warning as DisputeIcon,
+  VerifiedUser as VerificationIcon,
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../../store';
@@ -63,6 +64,8 @@ const sidebarItems: SidebarItem[] = [
   { text: 'Courier Service', icon: <CourierIcon />, path: '/courier' },
   // The badge is the live count of open disputes, set in the component.
   { text: 'Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
+  // Badge: drivers with documents waiting for review, set in the component.
+  { text: 'Driver Verification', icon: <VerificationIcon />, path: '/verifications', color: 'warning' },
   { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
@@ -102,8 +105,12 @@ const DashboardLayout: React.FC = () => {
   };
 
   const { alerts, error: alertsError, refresh: refreshAlerts } = useAdminAlerts();
+  const liveBadges: Record<string, number | undefined> = {
+    '/courier/disputes': alerts?.counts.disputes || undefined,
+    '/verifications': alerts?.counts.verifications || undefined,
+  };
   const navItems = sidebarItems.map(item =>
-    item.path === '/courier/disputes' ? { ...item, badge: alerts?.counts.disputes || undefined } : item
+    item.path in liveBadges ? { ...item, badge: liveBadges[item.path] } : item
   );
 
   // Exactly one item is active: the most specific path the URL is inside.

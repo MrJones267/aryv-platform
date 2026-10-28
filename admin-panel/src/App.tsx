@@ -25,6 +25,7 @@ import RidesPage from './pages/rides/RidesPage';
 import RideDetailsPage from './pages/rides/RideDetailsPage';
 import CourierPage from './pages/courier/CourierPage';
 import DisputesPage from './pages/courier/DisputesPage';
+import VerificationPage from './pages/verification/VerificationPage';
 import AnalyticsPage from './pages/analytics/AnalyticsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import ProfilePage from './pages/profile/ProfilePage';
@@ -78,6 +79,7 @@ const App: React.FC = () => {
           {/* Courier service */}
           <Route path="courier" element={<CourierPage />} />
           <Route path="courier/disputes" element={<DisputesPage />} />
+          <Route path="verifications" element={<VerificationPage />} />
 
           {/* Analytics and reporting */}
           <Route path="analytics" element={<AnalyticsPage />} />

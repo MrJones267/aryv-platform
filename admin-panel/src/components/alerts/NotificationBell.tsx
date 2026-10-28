@@ -138,7 +138,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ alerts, error, onOp
             ))}
 
             {alerts.verifications.map(v => (
-              <ListItemButton key={v.userId} onClick={() => go(`/users/${v.userId}`)}>
+              <ListItemButton key={v.userId} onClick={() => go('/verifications')}>
                 <ListItemIcon sx={{ minWidth: 36 }}>
                   <DocumentIcon color="info" />
                 </ListItemIcon>
