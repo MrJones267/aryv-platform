@@ -68,7 +68,7 @@ describe('Admin settings', () => {
           twoFactorAvailable: false,
         },
         // CI has no Twilio credentials and no on-call numbers.
-        sos: { onCallPhones: [], serverOnCallPhones: 0, maxOnCallPhones: 10, smsConfigured: false },
+        sos: { onCallPhones: [], serverOnCallPhones: 0, maxOnCallPhones: 10, smsConfigured: false, reminderMinutes: [3, 8, 13] },
       });
     });
 

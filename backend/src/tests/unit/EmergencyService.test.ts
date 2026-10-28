@@ -477,4 +477,60 @@ describe('EmergencyService', () => {
       await expect(service.notifyOnCall(alertRow, 'Naledi Moeng', null, GABORONE)).resolves.toBe(0);
     });
   });
+
+  describe('escalating an SOS nobody has acknowledged', () => {
+    const ONCALL = ['+26772000001'];
+    const RAISED_AT = new Date('2026-10-28T10:00:00Z');
+    const at = (minutes: number) => new Date(RAISED_AT.getTime() + minutes * 60_000);
+    let unacknowledged: any;
+    const reminders = () =>
+      (smsService.sendMessage as jest.Mock).mock.calls.filter(([to]) => ONCALL.includes(to)).map(([, body]) => body);
+
+    beforeEach(() => {
+      (getOnCallPhones as jest.Mock).mockResolvedValue(ONCALL);
+      unacknowledged = {
+        id: `alert-${Math.random()}`,
+        alertType: EmergencyAlertType.PANIC,
+        status: EmergencyAlertStatus.RAISED,
+        createdAt: RAISED_AT,
+        lastCoordinates: { type: 'Point', coordinates: [25.93, -24.66] },
+        user: { firstName: 'Naledi', lastName: 'Moeng', phone: '+26771111111' },
+      };
+      jest.spyOn(EmergencyAlert, 'findAll').mockResolvedValue([unacknowledged] as any);
+    });
+
+    afterEach(() => {
+      (getOnCallPhones as jest.Mock).mockResolvedValue([]);
+    });
+
+    it('only looks at alerts still raised, i.e. not acknowledged', async () => {
+      await service.escalateUnacknowledged(at(3));
+      const where = (EmergencyAlert.findAll as jest.Mock).mock.calls[0][0].where;
+      expect(where.status).toBe(EmergencyAlertStatus.RAISED);
+    });
+
+    it('reminds at 3, 8 and 13 minutes, once each, and then stops', async () => {
+      const schedule: Array<[number, number]> = [
+        [2, 0], [3, 1], [3, 1], [4, 1], [8, 2], [12, 2], [13, 3], [30, 3], [60, 3],
+      ];
+      for (const [minute, expected] of schedule) {
+        await service.escalateUnacknowledged(at(minute));
+        expect([minute, reminders().length]).toEqual([minute, expected]);
+      }
+    });
+
+    it('says the alert is still unacknowledged, which reminder it is, and where the person is now', async () => {
+      await service.escalateUnacknowledged(at(8));
+      const [body] = reminders();
+      expect(body).toContain('STILL UNACKNOWLEDGED after 8 min (reminder 1 of 3)');
+      expect(body).toContain('Naledi Moeng');
+      expect(body).toContain('+26771111111');
+      expect(body).toContain('https://maps.google.com/?q=-24.66,25.93');
+    });
+
+    it('does not throw when the check itself fails', async () => {
+      jest.spyOn(EmergencyAlert, 'findAll').mockRejectedValue(new Error('database down'));
+      await expect(service.escalateUnacknowledged(at(5))).resolves.toBe(0);
+    });
+  });
 });

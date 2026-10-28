@@ -37,6 +37,7 @@ import EmergencyContact, { EmergencyContactModel } from '../models/EmergencyCont
 import User from '../models/User';
 import { smsService } from './SMSService';
 import { getOnCallPhones } from './PlatformSettingsService';
+import { redisClient } from '../config/redis';
 import { notificationService } from './NotificationService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 import { GeoPoint } from '../types';
@@ -53,6 +54,21 @@ export interface RaiseAlertInput {
   message?: string | undefined;
   rideId?: string | undefined;
 }
+
+/**
+ * When an SOS nobody has acknowledged is texted to on-call again: first at
+ * FIRST_AFTER_MINUTES, then every REPEAT_EVERY_MINUTES, MAX_REMINDERS times
+ * (3, 8 and 13 minutes after it was raised). One missed text should not mean
+ * a missed emergency, but an endless stream would get the number muted.
+ */
+export const SOS_ESCALATION = { FIRST_AFTER_MINUTES: 3, REPEAT_EVERY_MINUTES: 5, MAX_REMINDERS: 3 } as const;
+
+/** Minutes after an alert was raised that reminder `n` (1-based) is due. */
+export const reminderDueAfterMinutes = (n: number): number =>
+  SOS_ESCALATION.FIRST_AFTER_MINUTES + (n - 1) * SOS_ESCALATION.REPEAT_EVERY_MINUTES;
+
+const ESCALATION_KEY = (alertId: string) => `sos:reminders:${alertId}`;
+const ESCALATION_TTL_SECONDS = 24 * 60 * 60;
 
 export interface NotifyOutcome {
   notified: number;
@@ -299,6 +315,7 @@ export class EmergencyService {
     name: string,
     phone: string | null,
     coordinates: Coordinates,
+    options: { prefix?: string } = {},
   ): Promise<number> {
     try {
       const numbers = await getOnCallPhones();
@@ -310,7 +327,7 @@ export class EmergencyService {
       }
 
       const body =
-        `ARYV SOS (${alert.alertType}): ${name}` +
+        `ARYV SOS (${alert.alertType}): ${options.prefix ?? ''}${name}` +
         `${phone ? `, ${phone}` : ''}. ` +
         `Location: ${mapsLink(coordinates)} . ` +
         'Acknowledge in the admin panel: https://admin.aryv-app.com';
@@ -329,6 +346,71 @@ export class EmergencyService {
       return reached;
     } catch (error) {
       logError('Failed to text on-call staff', error as Error, { alertId: alert.id });
+      return 0;
+    }
+  }
+
+  // How many reminders each alert has had. Redis carries it across restarts;
+  // this map carries it when Redis is unreachable. Either can only make a
+  // reminder repeat, never be skipped.
+  private remindersSent = new Map<string, number>();
+
+  private async getRemindersSent(alertId: string): Promise<number> {
+    const stored = Number(await redisClient.get(ESCALATION_KEY(alertId))) || 0;
+    return Math.max(stored, this.remindersSent.get(alertId) ?? 0);
+  }
+
+  private async setRemindersSent(alertId: string, count: number): Promise<void> {
+    this.remindersSent.set(alertId, count);
+    await redisClient.set(ESCALATION_KEY(alertId), String(count), ESCALATION_TTL_SECONDS);
+  }
+
+  /**
+   * Text on-call staff again about every SOS that is still raised, i.e. that
+   * nobody has acknowledged, once each reminder falls due. Run every minute.
+   *
+   * Never throws. Returns how many reminders were sent.
+   */
+  async escalateUnacknowledged(now: Date = new Date()): Promise<number> {
+    try {
+      const earliestDue = new Date(now.getTime() - SOS_ESCALATION.FIRST_AFTER_MINUTES * 60_000);
+      const alerts = await EmergencyAlert.findAll({
+        where: { status: EmergencyAlertStatus.RAISED, createdAt: { [Op.lte]: earliestDue } },
+        include: [{ model: User, as: 'user', attributes: ['firstName', 'lastName', 'phone'] }],
+      });
+
+      let sent = 0;
+      for (const alert of alerts) {
+        const already = await this.getRemindersSent(alert.id);
+        if (already >= SOS_ESCALATION.MAX_REMINDERS) continue;
+
+        const minutes = Math.floor((now.getTime() - new Date(alert.createdAt).getTime()) / 60_000);
+        if (minutes < reminderDueAfterMinutes(already + 1)) continue;
+
+        const user = (alert as any).user as { firstName?: string; lastName?: string; phone?: string } | undefined;
+        const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'An ARYV user';
+        const [longitude, latitude] = alert.lastCoordinates.coordinates;
+        const reminder = already + 1;
+
+        const reached = await this.notifyOnCall(alert, name, user?.phone ?? null, { latitude, longitude }, {
+          prefix: `STILL UNACKNOWLEDGED after ${minutes} min (reminder ${reminder} of ${SOS_ESCALATION.MAX_REMINDERS}). `,
+        });
+        // Counted even if no one was reached: retrying a failing number every
+        // minute would not reach it either, and the next reminder still comes.
+        await this.setRemindersSent(alert.id, reminder);
+        sent += 1;
+
+        if (reminder === SOS_ESCALATION.MAX_REMINDERS) {
+          logError('SOS still unacknowledged after the last reminder', new Error('SOS unacknowledged'), {
+            alertId: alert.id,
+            minutes,
+            reached,
+          });
+        }
+      }
+      return sent;
+    } catch (error) {
+      logError('SOS escalation check failed', error as Error);
       return 0;
     }
   }
