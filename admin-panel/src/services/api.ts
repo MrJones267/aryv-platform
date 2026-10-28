@@ -310,6 +310,49 @@ export interface AdminAlerts {
   verifications: { userId: string; userName: string; documents: number; waitingSince: string }[];
 }
 
+export interface PendingDocument {
+  id: string;
+  documentType: string;
+  status: 'uploaded' | 'under_review';
+  originalFilename: string | null;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  documentExpiresAt: string | null;
+  attemptNumber: number;
+  submittedAt: string;
+}
+
+export interface DriverAwaitingReview {
+  userId: string;
+  userName: string;
+  email: string;
+  phone: string | null;
+  driverStatus: string;
+  documents: PendingDocument[];
+}
+
+export interface DocumentDecision {
+  approve: boolean;
+  rejectionReason?: string;
+  allowResubmission?: boolean;
+  adminNotes?: string;
+}
+
+// Driver document review. The file comes back as a Blob so it can be shown
+// from an object URL, which the panel's CSP allows (img-src blob:).
+export const verificationService = {
+  getQueue: () => adminApi.get<ApiResponse<{ drivers: DriverAwaitingReview[] }>>('/verifications'),
+
+  getFile: (documentId: string) =>
+    adminApi.get<Blob>(`/verifications/documents/${documentId}/file`, { responseType: 'blob' }),
+
+  review: (documentId: string, decision: DocumentDecision) =>
+    adminApi.post<ApiResponse<{ status: string; driverStatus: string }>>(
+      `/verifications/documents/${documentId}/review`,
+      decision
+    ),
+};
+
 // What is waiting on an operator. The layout polls this for the bell, the
 // Disputes badge and the SOS banner.
 export const alertsService = {

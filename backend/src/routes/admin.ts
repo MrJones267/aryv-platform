@@ -29,6 +29,10 @@ import { DeliveryTier } from '../models/DeliveryTier';
 import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
+import path from 'path';
+import DriverDocument from '../models/DriverDocument';
+import { verificationService } from '../services/VerificationService';
+import { UPLOADS_DIR } from '../middleware/upload';
 import {
   ADMIN_SESSION_HOURS,
   MAX_ONCALL_PHONES,
@@ -1125,6 +1129,117 @@ router.post('/settings/on-call/test', authenticateAdminToken, requireSuperAdmin,
     logger.error(`On-call SMS test failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to send the test', code: 'ONCALL_TEST_FAILED', timestamp: new Date().toISOString() });
   }
+});
+
+/**
+ * Driver document review from the admin panel.
+ *
+ * Documents could not be reviewed from the panel: the existing review routes
+ * under /api/verification/admin take a rider's token, not an admin panel
+ * one, and driver_documents.reviewed_by could not hold an admin_users id
+ * (migration 029). These call the same VerificationService.reviewDocument,
+ * so approval and rejection, and the driver's resulting status, work exactly
+ * as before.
+ */
+
+/**
+ * @route   GET /api/admin/verifications
+ * @desc    Documents waiting for review, grouped by driver, oldest first
+ * @access  Private (Admin)
+ */
+router.get('/verifications', authenticateAdminToken, async (_req, res) => {
+  try {
+    const rows = await sequelize.query<any>(
+      `SELECT dd.id, dd.user_id AS "userId", dd.document_type AS "documentType", dd.status::text AS status,
+              dd.original_filename AS "originalFilename", dd.mime_type AS "mimeType",
+              dd.file_size_bytes AS "fileSizeBytes", dd.document_expires_at AS "documentExpiresAt",
+              dd.attempt_number AS "attemptNumber", dd.submitted_at AS "submittedAt",
+              TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS "userName", u.email,
+              u.phone_number AS phone, u.driver_verification_status AS "driverStatus"
+         FROM driver_documents dd
+         JOIN users u ON u.id = dd.user_id
+        WHERE dd.status::text IN ('uploaded', 'under_review')
+        ORDER BY dd.submitted_at ASC
+        LIMIT 200`,
+      { type: QueryTypes.SELECT },
+    );
+
+    const drivers = new Map<string, any>();
+    for (const row of rows) {
+      const { userId, userName, email, phone, driverStatus, ...document } = row;
+      if (!drivers.has(userId)) drivers.set(userId, { userId, userName, email, phone, driverStatus, documents: [] });
+      drivers.get(userId).documents.push(document);
+    }
+    return res.json({ success: true, data: { drivers: [...drivers.values()] }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin verification queue failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the review queue', code: 'VERIFICATION_QUEUE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/verifications/documents/:id/file
+ * @desc    The uploaded file, for the reviewer to look at
+ * @access  Private (Admin)
+ */
+router.get('/verifications/documents/:id/file', authenticateAdminToken, requireAdmin, async (req, res) => {
+  try {
+    const document = await DriverDocument.findByPk(req.params['id']);
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    // storageKey is a bare filename from the upload middleware; basename
+    // still guards against a crafted value walking out of the directory.
+    const filePath = path.resolve(UPLOADS_DIR, 'documents', path.basename(document.storageKey));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(filePath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).json({ success: false, error: 'The file is no longer on the server', code: 'FILE_NOT_FOUND', timestamp: new Date().toISOString() });
+      }
+    });
+  } catch (error) {
+    logger.error(`Admin document file failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the file', code: 'DOCUMENT_FILE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/verifications/documents/:id/review
+ * @desc    Approve or reject a document; a rejection needs a reason
+ * @access  Private (Admin)
+ */
+router.post('/verifications/documents/:id/review', authenticateAdminToken, requireAdmin, async (req: any, res) => {
+  const { approve, rejectionReason, adminNotes, allowResubmission } = req.body ?? {};
+  if (typeof approve !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'approve must be true or false', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (rejectionReason !== undefined && (typeof rejectionReason !== 'string' || rejectionReason.trim().length < 3 || rejectionReason.length > 1000)) {
+    return res.status(400).json({ success: false, error: 'rejectionReason must be 3 to 1000 characters', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (adminNotes !== undefined && (typeof adminNotes !== 'string' || adminNotes.length > 2000)) {
+    return res.status(400).json({ success: false, error: 'adminNotes must be up to 2000 characters', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+  if (allowResubmission !== undefined && typeof allowResubmission !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'allowResubmission must be true or false', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+  }
+
+  const result = await verificationService.reviewDocument({
+    documentId: String(req.params['id']),
+    adminId: req.user?.id,
+    approve,
+    rejectionReason: rejectionReason?.trim(),
+    adminNotes,
+    allowResubmission,
+  });
+
+  if (!result.success) {
+    const status = result.code === 'DOCUMENT_NOT_FOUND' ? 404
+      : result.code === 'ALREADY_REVIEWED' ? 409
+        : result.code === 'REJECTION_REASON_REQUIRED' ? 400
+          : 500;
+    return res.status(status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+  }
+  return res.json({ success: true, data: { status: result.status, driverStatus: result.driverStatus }, timestamp: new Date().toISOString() });
 });
 
 export default router;
