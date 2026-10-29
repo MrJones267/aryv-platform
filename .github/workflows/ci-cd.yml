@@ -146,6 +146,55 @@ jobs:
       - name: Audit backend production dependencies
         run: npm audit --workspace backend --omit=dev --audit-level=high
 
-  # NOTE: admin-panel (Cloudflare) and ai-services CI jobs are intentionally
-  # omitted until their lint/test suites pass cleanly, to keep this gate
-  # green and meaningful. Track re-adding them as a follow-up.
+  # ── Admin panel: the same type-check and build the deploy runs ────────────
+  # The panel deploys to Cloudflare on every push to main, and until now
+  # nothing checked it before that: a change that broke its build or types
+  # was found only by the failed deploy, after merging. Lint is not run yet:
+  # its config fails on --max-warnings 0 for warnings that predate this job.
+  admin-panel:
+    name: Admin panel (type-check, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      # Same install as deploy-admin.yml, so this checks what would ship.
+      - run: npm ci --legacy-peer-deps
+      - name: Type-check
+        run: npm run type-check --workspace admin-panel
+      - name: Build
+        run: npm run build --workspace admin-panel
+        env:
+          VITE_API_BASE_URL: https://api.aryv-app.com
+      - name: Verify the build produced a bundle
+        run: |
+          test -f admin-panel/dist/index.html || { echo "::error::admin-panel/dist/index.html missing after build"; exit 1; }
+          test -f admin-panel/dist/_headers   || { echo "::error::_headers missing — security headers would not be served"; exit 1; }
+
+  # ── Mobile app: type-check and lint ───────────────────────────────────────
+  # Not an npm workspace (React Native is kept out of the root install), so it
+  # installs from its own lockfile. App changes reached main unchecked; this
+  # does not build an APK, which needs the Android toolchain.
+  mobile-app:
+    name: Mobile app (type-check, lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile-app/package-lock.json
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Type-check
+        run: npm run type-check
+      - name: Lint (errors fail the job; warnings are reported)
+        run: npm run lint
+
+  # ai-services (Python) still has no CI job; it is not deployed.
