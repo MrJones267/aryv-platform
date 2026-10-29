@@ -92,7 +92,7 @@ describe('Admin alerts', () => {
     const response = await as(adminToken).get('/api/admin/alerts').expect(200);
     const data = response.body.data;
 
-    expect(data.counts).toEqual({ sos: 1, disputes: 1, verifications: 1, total: 3 });
+    expect(data.counts).toEqual({ sos: 1, disputes: 1, verifications: 1, cashDisputes: 0, total: 3 });
     expect(data.sos).toHaveLength(1);
     expect(data.sos[0]).toMatchObject({ id: raised.id, alertType: 'panic', status: 'raised', userName: 'Lesedi Rider' });
     expect(data.sos[0].latitude).toBeCloseTo(-24.66);

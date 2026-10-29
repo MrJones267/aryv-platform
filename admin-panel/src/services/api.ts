@@ -328,11 +328,74 @@ export interface SosAlert {
 }
 
 export interface AdminAlerts {
-  counts: { sos: number; disputes: number; verifications: number; total: number };
+  counts: { sos: number; disputes: number; verifications: number; cashDisputes: number; total: number };
   sos: SosAlert[];
   disputes: { id: string; disputeType: string; status: string; createdAt: string; packageTitle: string | null }[];
   verifications: { userId: string; userName: string; documents: number; waitingSince: string }[];
+  cashDisputes: { id: string; reason: string; createdAt: string; amount: number; currency: string }[];
 }
+
+/** What the admin decided happened to the cash. Commission follows it. */
+export type CashDisputeOutcome = 'paid_in_full' | 'not_paid' | 'part_paid';
+
+export interface CashDispute {
+  id: string;
+  reason: string;
+  description: string | null;
+  priority: number;
+  status: 'open' | 'resolved';
+  transactionStatusBefore: string | null;
+  outcome: CashDisputeOutcome | null;
+  amountPaid: number | null;
+  resolutionNotes: string | null;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolvedByName: string | null;
+  createdAt: string;
+  reporterId: string;
+  reporterName: string | null;
+  reportedBy: 'rider' | 'driver';
+  transactionId: string;
+  transactionStatus: string;
+  amount: number;
+  currency: string;
+  platformFee: number;
+  amountClaimedByDriver: number | null;
+  riderConfirmedAt: string | null;
+  driverConfirmedAt: string | null;
+  riskScore: number;
+  fraudFlags: string[] | null;
+  paymentStartedAt: string;
+  riderId: string;
+  riderName: string | null;
+  riderPhone: string | null;
+  driverId: string;
+  driverName: string | null;
+  driverPhone: string | null;
+  rideId: string | null;
+  origin: string | null;
+  destination: string | null;
+  departureTime: string | null;
+  /** Only on the single-dispute read. */
+  commission?: { entryType: string; amount: number; balanceAfter: number; description: string | null; createdAt: string }[];
+}
+
+export const cashDisputeService = {
+  list: (params: { status?: 'open' | 'resolved'; page?: number; limit?: number }) =>
+    adminApi.get<
+      ApiResponse<{
+        disputes: CashDispute[];
+        openCount: number;
+        pagination: { page: number; limit: number; total: number; totalPages: number };
+      }>
+    >('/cash-disputes', { params }),
+  get: (id: string) => adminApi.get<ApiResponse<{ dispute: CashDispute }>>(`/cash-disputes/${id}`),
+  resolve: (id: string, body: { outcome: CashDisputeOutcome; reason: string; amountPaid?: number }) =>
+    adminApi.post<ApiResponse<{ outcome: CashDisputeOutcome; commissionBefore: number; commissionAfter: number }>>(
+      `/cash-disputes/${id}/resolve`,
+      body
+    ),
+};
 
 export interface PendingDocument {
   id: string;

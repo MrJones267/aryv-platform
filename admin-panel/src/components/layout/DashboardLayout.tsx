@@ -38,6 +38,7 @@ import {
   AccountCircle as ProfileIcon,
   Logout as LogoutIcon,
   Warning as DisputeIcon,
+  RequestQuote as PaymentDisputeIcon,
   VerifiedUser as VerificationIcon,
   History as AuditIcon,
   Payments as CommissionIcon,
@@ -67,7 +68,9 @@ const sidebarItems: SidebarItem[] = [
   { text: 'Rides', icon: <RidesIcon />, path: '/rides' },
   { text: 'Courier Service', icon: <CourierIcon />, path: '/courier' },
   // The badge is the live count of open disputes, set in the component.
-  { text: 'Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
+  { text: 'Delivery Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
+  // Badge: open cash ride payment disputes, set in the component.
+  { text: 'Payment Disputes', icon: <PaymentDisputeIcon />, path: '/payment-disputes', color: 'error' },
   // Badge: drivers with documents waiting for review, set in the component.
   { text: 'Driver Verification', icon: <VerificationIcon />, path: '/verifications', color: 'warning' },
   { text: 'Commission', icon: <CommissionIcon />, path: '/commission', roles: ['super_admin', 'admin'] },
@@ -113,6 +116,7 @@ const DashboardLayout: React.FC = () => {
   const { alerts, error: alertsError, refresh: refreshAlerts } = useAdminAlerts();
   const liveBadges: Record<string, number | undefined> = {
     '/courier/disputes': alerts?.counts.disputes || undefined,
+    '/payment-disputes': alerts?.counts.cashDisputes || undefined,
     '/verifications': alerts?.counts.verifications || undefined,
   };
   const navItems = sidebarItems

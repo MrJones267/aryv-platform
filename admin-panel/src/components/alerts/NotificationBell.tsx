@@ -137,6 +137,18 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ alerts, error, onOp
               </ListItemButton>
             ))}
 
+            {(alerts.cashDisputes ?? []).map(d => (
+              <ListItemButton key={d.id} onClick={() => go('/payment-disputes')}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <DisputeIcon color="warning" />
+                </ListItemIcon>
+                <ListItemText
+                  primary={`Cash payment dispute: ${humanise(d.reason)} — ${d.currency} ${d.amount.toFixed(2)}`}
+                  secondary={`Open · ${ago(d.createdAt)}`}
+                />
+              </ListItemButton>
+            ))}
+
             {alerts.verifications.map(v => (
               <ListItemButton key={v.userId} onClick={() => go('/verifications')}>
                 <ListItemIcon sx={{ minWidth: 36 }}>

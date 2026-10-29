@@ -223,13 +223,11 @@ DeliveryDispute.init({
       min: 0,
     },
   },
+  // An admin_users id. It referenced users(id), where admins are not, so
+  // resolving from the admin panel failed the foreign key (migration 032).
   resolvedByAdminId: {
     type: DataTypes.UUID,
     allowNull: true,
-    references: {
-      model: 'users',
-      key: 'id',
-    },
     field: 'resolved_by_admin_id',
   },
   resolvedAt: {

@@ -8,7 +8,8 @@
 import { Response } from 'express';
 import { validationResult } from 'express-validator';
 import CashPaymentService from '../services/CashPaymentService';
-import CashTransaction from '../models/CashTransaction';
+import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
+import CashDispute from '../models/CashDispute';
 import UserWallet from '../models/UserWallet';
 import { AuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
@@ -472,25 +473,41 @@ export class CashPaymentController {
         return;
       }
 
-      // Create dispute record
-      const dispute = await sequelize.models['CashDispute'].create({
-        transactionId,
-        reporterId: userId,
-        reason,
-        description,
-        evidence: evidence ? JSON.stringify(evidence) : null,
-        priority: this.calculateDisputePriority(reason, transaction.amount),
-        status: 'open',
-      });
+      const open = await CashDispute.findOne({ where: { transactionId, status: 'open' } });
+      if (open) {
+        res.status(409).json({
+          success: false,
+          error: 'This payment already has an open dispute',
+          code: 'DISPUTE_EXISTS',
+          data: { disputeId: open.id },
+        });
+        return;
+      }
 
-      // Update transaction status to disputed
-      await transaction.update({
-        status: 'disputed' as any,
-        disputeReason: reason,
+      // Both rows together: a dispute with no disputed payment, or the
+      // reverse, would leave an admin nothing coherent to resolve.
+      const dispute = await sequelize.transaction(async t => {
+        const created = await CashDispute.create({
+          transactionId: transactionId as string,
+          reporterId: userId,
+          reason,
+          description,
+          evidence: evidence ?? null,
+          priority: this.calculateDisputePriority(reason, Number(transaction.amount)),
+          status: 'open',
+          transactionStatusBefore: transaction.status,
+        }, { transaction: t });
+
+        await transaction.update({
+          status: CashPaymentStatus.DISPUTED,
+          disputeReason: reason,
+        }, { transaction: t });
+
+        return created;
       });
 
       logInfo('Cash payment dispute created', {
-        disputeId: (dispute as any).id,
+        disputeId: dispute.id,
         transactionId,
         reporterId: userId,
         reason,
@@ -499,7 +516,7 @@ export class CashPaymentController {
       res.status(201).json({
         success: true,
         data: {
-          disputeId: (dispute as any).id,
+          disputeId: dispute.id,
           status: 'dispute_created',
           message: 'Dispute has been reported and will be reviewed within 24-48 hours',
         },
@@ -534,11 +551,11 @@ export class CashPaymentController {
       priority = 70;
     }
 
-    // Adjust based on amount
-    if (amount > 100) {
-      priority += 10;
-    } else if (amount > 500) {
+    // Adjust based on amount (the larger threshold first, or it never applies)
+    if (amount > 500) {
       priority += 20;
+    } else if (amount > 100) {
+      priority += 10;
     }
 
     return Math.min(100, priority);

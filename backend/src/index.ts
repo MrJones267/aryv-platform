@@ -350,6 +350,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'bookings', column: 'currency', migration: '020_money_currency.sql' },
     { table: 'rides', column: 'currency', migration: '020_money_currency.sql' },
     { table: 'delivery_agreements', column: 'payment_method', migration: '015_courier_cash_on_delivery.sql' },
+    // Written when an admin resolves a cash payment dispute.
+    { table: 'cash_disputes', column: 'resolved_by', migration: '032_cash_payment_holds_and_disputes.sql' },
   ];
 
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
@@ -358,6 +360,9 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     // Courier package creation prices through these two.
     { table: 'delivery_tiers', migration: '028_courier_delivery_tiers.sql' },
     { table: 'demand_metrics', migration: '028_courier_delivery_tiers.sql' },
+    // Every cash ride payment writes a hold; without it none can start.
+    { table: 'trust_holds', migration: '032_cash_payment_holds_and_disputes.sql' },
+    { table: 'cash_disputes', migration: '032_cash_payment_holds_and_disputes.sql' },
   ];
 
   // Indexes that carry a correctness guarantee rather than just performance.
