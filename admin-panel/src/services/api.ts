@@ -482,6 +482,27 @@ export const commissionService = {
     ),
 };
 
+export interface ActivityEvent {
+  type:
+    | 'user_signup'
+    | 'ride_posted'
+    | 'seats_booked'
+    | 'package_listed'
+    | 'delivery_completed'
+    | 'dispute_raised'
+    | 'sos_raised'
+    | 'document_submitted';
+  at: string;
+  actor: string | null;
+  detail: string | null;
+  entityType: 'user' | 'ride' | 'package' | 'dispute' | 'emergency_alert';
+  entityId: string;
+}
+
+export const activityService = {
+  getFeed: (limit = 10) => adminApi.get<ApiResponse<{ events: ActivityEvent[] }>>('/activity-feed', { params: { limit } }),
+};
+
 // What is waiting on an operator. The layout polls this for the bell, the
 // Disputes badge and the SOS banner.
 export const alertsService = {
