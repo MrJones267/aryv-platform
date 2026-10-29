@@ -94,9 +94,24 @@ export const authService = {
   updateProfile: (data: any) => adminApi.put<ApiResponse<{ user: any }>>('/auth/profile', data),
 };
 
+export interface UserDocument {
+  id: string;
+  documentType: string;
+  status: string;
+  originalFilename: string | null;
+  mimeType: string | null;
+  documentExpiresAt: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  attemptNumber: number;
+}
+
 export const userService = {
   getUsers: (params: { page?: number; limit?: number; search?: string; status?: string; role?: string }) =>
-    adminApi.get<PaginatedResponse<any>>('/users', { params }),
+    adminApi.get<
+      ApiResponse<{ users: any[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>
+    >('/users', { params }),
 
   getUserById: (id: string) => adminApi.get<ApiResponse<any>>(`/users/${id}`),
 
@@ -123,9 +138,15 @@ export const userService = {
       }>
     >(`/users/${id}/moderation`),
 
-  deleteUser: (id: string) => adminApi.delete<ApiResponse<null>>(`/users/${id}`),
 
-  verifyUser: (id: string, verified: boolean) => adminApi.put<ApiResponse<any>>(`/users/${id}/verify`, { verified }),
+  verifyUser: (id: string, body: { email?: boolean; phone?: boolean; reason: string }) =>
+    adminApi.put<ApiResponse<{ userId: string; isEmailVerified: boolean; isPhoneVerified: boolean }>>(
+      `/users/${id}/verify`,
+      body
+    ),
+
+  /** The user's driver documents, every attempt, newest first. */
+  getDocuments: (id: string) => adminApi.get<ApiResponse<{ documents: UserDocument[] }>>(`/users/${id}/documents`),
 };
 
 export const rideService = {

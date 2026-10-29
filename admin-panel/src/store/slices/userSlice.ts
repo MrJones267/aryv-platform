@@ -12,13 +12,19 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
+  /** Empty when the user has no phone number. */
   phoneNumber: string;
   profileImage?: string;
+  /** The account's status on the server: active, suspended, ... */
+  status: string;
+  isEmailVerified: boolean;
+  isPhoneVerified: boolean;
+  /** Email verified, and phone too where there is one. */
   isVerified: boolean;
   isActive: boolean;
   isBlocked: boolean;
   blockReason?: string;
-  role: 'passenger' | 'driver' | 'both';
+  role: 'passenger' | 'driver' | 'courier' | 'admin';
   totalRidesAsPassenger: number;
   totalRidesAsDriver: number;
   totalDeliveries: number;
@@ -28,10 +34,39 @@ export interface User {
   updatedAt: string;
 }
 
+/**
+ * The API's user (phone, status, isEmailVerified, ...) as the panel's User.
+ * The panel was written against a different shape: it read phoneNumber,
+ * isBlocked and isVerified, none of which the API sends, and took the list's
+ * pagination from the wrong level, so the Users pages could not show real data.
+ */
+export const fromApiUser = (raw: any, stats?: any): User => ({
+  id: raw.id,
+  email: raw.email ?? '',
+  firstName: raw.firstName ?? '',
+  lastName: raw.lastName ?? '',
+  phoneNumber: raw.phone ?? '',
+  profileImage: raw.profilePicture ?? undefined,
+  status: raw.status ?? 'active',
+  isEmailVerified: !!raw.isEmailVerified,
+  isPhoneVerified: !!raw.isPhoneVerified,
+  isVerified: !!raw.isEmailVerified && (!raw.phone || !!raw.isPhoneVerified),
+  isActive: raw.status === 'active',
+  isBlocked: raw.status === 'suspended',
+  role: raw.role,
+  totalRidesAsDriver: stats?.rides?.total ?? stats?.totalRides ?? 0,
+  totalRidesAsPassenger: stats?.bookings?.total ?? stats?.totalBookings ?? 0,
+  totalDeliveries: 0,
+  rating: Number(raw.rating ?? 0),
+  lastLogin: raw.lastLoginAt ?? '',
+  createdAt: raw.createdAt,
+  updatedAt: raw.updatedAt,
+});
+
 interface UserFilters {
   search: string;
   status: 'all' | 'active' | 'inactive' | 'blocked' | 'unverified';
-  role: 'all' | 'passenger' | 'driver' | 'both';
+  role: 'all' | 'passenger' | 'driver' | 'courier';
   dateFrom?: string;
   dateTo?: string;
 }
@@ -95,7 +130,8 @@ export const fetchUsers = createAsyncThunk(
   ) => {
     try {
       const response = await userService.getUsers(params);
-      return response.data;
+      const { users, pagination } = response.data.data;
+      return { users: users.map((u: any) => fromApiUser(u, u.stats)), pagination };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch users');
     }
@@ -105,7 +141,7 @@ export const fetchUsers = createAsyncThunk(
 export const fetchUserById = createAsyncThunk('users/fetchUserById', async (userId: string, { rejectWithValue }) => {
   try {
     const response = await userService.getUserById(userId);
-    return response.data.data;
+    return fromApiUser(response.data.data.user, response.data.data.stats);
   } catch (error: any) {
     return rejectWithValue(error.response?.data?.message || 'Failed to fetch user');
   }
@@ -116,9 +152,9 @@ export const updateUser = createAsyncThunk(
   async ({ id, data }: { id: string; data: Partial<User> }, { rejectWithValue }) => {
     try {
       const response = await userService.updateUser(id, data);
-      return response.data.data;
+      return fromApiUser(response.data.data.user);
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to update user');
+      return rejectWithValue(error.response?.data?.error || error.response?.data?.message || 'Failed to update user');
     }
   }
 );
@@ -130,7 +166,7 @@ export const blockUser = createAsyncThunk(
       await userService.blockUser(id, reason);
       return { id, isBlocked: true, blockReason: reason };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to block user');
+      return rejectWithValue(error.response?.data?.error || error.response?.data?.message || 'Failed to block user');
     }
   }
 );
@@ -149,26 +185,21 @@ export const unblockUser = createAsyncThunk(
   }
 );
 
+// Each flag is set explicitly, with a reason kept in the moderation history.
 export const verifyUser = createAsyncThunk(
   'users/verifyUser',
-  async ({ id, verified }: { id: string; verified: boolean }, { rejectWithValue }) => {
+  async (
+    { id, email, phone, reason }: { id: string; email?: boolean; phone?: boolean; reason: string },
+    { rejectWithValue }
+  ) => {
     try {
-      const response = await userService.verifyUser(id, verified);
-      return response.data.data;
+      const response = await userService.verifyUser(id, { email, phone, reason });
+      return { id, ...response.data.data } as { id: string; isEmailVerified: boolean; isPhoneVerified: boolean };
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to verify user');
+      return rejectWithValue(error.response?.data?.error || 'Failed to update verification');
     }
   }
 );
-
-export const deleteUser = createAsyncThunk('users/deleteUser', async (id: string, { rejectWithValue }) => {
-  try {
-    await userService.deleteUser(id);
-    return id;
-  } catch (error: any) {
-    return rejectWithValue(error.response?.data?.message || 'Failed to delete user');
-  }
-});
 
 const userSlice = createSlice({
   name: 'users',
@@ -202,15 +233,15 @@ const userSlice = createSlice({
       })
       .addCase(fetchUsers.fulfilled, (state, action) => {
         state.loading = false;
-        state.users = action.payload.data;
+        state.users = action.payload.users;
         state.pagination = action.payload.pagination;
 
-        // Calculate stats
+        // Counts on this page; total is across all pages
         state.stats = {
           total: action.payload.pagination.total,
-          active: action.payload.data.filter((u: User) => u.isActive).length,
-          verified: action.payload.data.filter((u: User) => u.isVerified).length,
-          blocked: action.payload.data.filter((u: User) => u.isBlocked).length,
+          active: action.payload.users.filter(u => u.isActive).length,
+          verified: action.payload.users.filter(u => u.isVerified).length,
+          blocked: action.payload.users.filter(u => u.isBlocked).length,
         };
       })
       .addCase(fetchUsers.rejected, (state, action) => {
@@ -234,12 +265,15 @@ const userSlice = createSlice({
 
       // Update user
       .addCase(updateUser.fulfilled, (state, action) => {
-        const index = state.users.findIndex(user => user.id === action.payload.id);
+        // The edit response has no ride counts; keep the ones already loaded.
+        const { totalRidesAsDriver, totalRidesAsPassenger, totalDeliveries, rating, lastLogin, ...edited } =
+          action.payload;
+        const index = state.users.findIndex(user => user.id === edited.id);
         if (index !== -1) {
-          state.users[index] = action.payload;
+          state.users[index] = { ...state.users[index], ...edited };
         }
-        if (state.selectedUser?.id === action.payload.id) {
-          state.selectedUser = action.payload;
+        if (state.selectedUser?.id === edited.id) {
+          state.selectedUser = { ...state.selectedUser, ...edited };
         }
       })
       .addCase(updateUser.rejected, (state, action) => {
@@ -282,26 +316,17 @@ const userSlice = createSlice({
 
       // Verify user
       .addCase(verifyUser.fulfilled, (state, action) => {
-        const index = state.users.findIndex(user => user.id === action.payload.id);
-        if (index !== -1) {
-          state.users[index] = action.payload;
-        }
-        if (state.selectedUser?.id === action.payload.id) {
-          state.selectedUser = action.payload;
-        }
+        const { id, isEmailVerified, isPhoneVerified } = action.payload;
+        const apply = (u: User) => {
+          u.isEmailVerified = isEmailVerified;
+          u.isPhoneVerified = isPhoneVerified;
+          u.isVerified = isEmailVerified && (!u.phoneNumber || isPhoneVerified);
+        };
+        const listed = state.users.find(user => user.id === id);
+        if (listed) apply(listed);
+        if (state.selectedUser?.id === id) apply(state.selectedUser);
       })
       .addCase(verifyUser.rejected, (state, action) => {
-        state.error = action.payload as string;
-      })
-
-      // Delete user
-      .addCase(deleteUser.fulfilled, (state, action) => {
-        state.users = state.users.filter(user => user.id !== action.payload);
-        if (state.selectedUser?.id === action.payload) {
-          state.selectedUser = null;
-        }
-      })
-      .addCase(deleteUser.rejected, (state, action) => {
         state.error = action.payload as string;
       });
   },

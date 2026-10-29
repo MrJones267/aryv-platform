@@ -66,11 +66,11 @@ import {
 import { useAppDispatch, useAppSelector } from '../../store';
 import { userService } from '../../services/api';
 import ReasonDialog from '../../components/users/ReasonDialog';
+import UserVerificationDialog from '../../components/users/UserVerificationDialog';
 import {
   fetchUserById,
   blockUser,
   unblockUser,
-  verifyUser,
   clearSelectedUser,
   clearError,
   selectSelectedUser,
@@ -104,6 +104,7 @@ const UserDetailsPage: React.FC = () => {
   // Blocking and unblocking both ask for a reason (ReasonDialog).
   const [reasonAction, setReasonAction] = useState<'block' | 'unblock' | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
   const [edit, setEdit] = useState({ firstName: '', lastName: '', email: '', phone: '', role: 'passenger' });
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -177,11 +178,6 @@ const UserDetailsPage: React.FC = () => {
     }
   };
 
-  const handleVerifyUser = async (verified: boolean) => {
-    if (user) {
-      await dispatch(verifyUser({ id: user.id, verified }));
-    }
-  };
 
   const getStatusColor = (user: User) => {
     if (user.isBlocked) return 'error';
@@ -253,20 +249,9 @@ const UserDetailsPage: React.FC = () => {
             Edit User
           </Button>
 
-          {!user.isVerified ? (
-            <Button
-              variant="contained"
-              startIcon={<SecurityUpdateGood />}
-              color="success"
-              onClick={() => handleVerifyUser(true)}
-            >
-              Verify User
-            </Button>
-          ) : (
-            <Button variant="outlined" startIcon={<Warning />} color="warning" onClick={() => handleVerifyUser(false)}>
-              Unverify
-            </Button>
-          )}
+          <Button variant="outlined" startIcon={<SecurityUpdateGood />} onClick={() => setVerifyOpen(true)}>
+            Verification
+          </Button>
 
           {!user.isBlocked ? (
             <Button variant="contained" startIcon={<Block />} color="error" onClick={() => setReasonAction('block')}>
@@ -438,7 +423,7 @@ const UserDetailsPage: React.FC = () => {
                   <ListItemText primary="Email Address" secondary={user.email} />
                 </ListItem>
                 <ListItem>
-                  <ListItemText primary="Phone Number" secondary={user.phoneNumber} />
+                  <ListItemText primary="Phone Number" secondary={user.phoneNumber || 'None'} />
                 </ListItem>
                 <ListItem>
                   <ListItemText primary="User Role" secondary={user.role} />
@@ -459,7 +444,9 @@ const UserDetailsPage: React.FC = () => {
                 <ListItem>
                   <ListItemText
                     primary="Verification Status"
-                    secondary={user.isVerified ? 'Verified' : 'Not Verified'}
+                    secondary={`Email ${user.isEmailVerified ? 'verified' : 'not verified'} · phone ${
+                      !user.phoneNumber ? 'none' : user.isPhoneVerified ? 'verified' : 'not verified'
+                    }`}
                   />
                 </ListItem>
                 <ListItem>
@@ -539,26 +526,31 @@ const UserDetailsPage: React.FC = () => {
           <Typography variant="h6" gutterBottom>
             Verification Status
           </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <List>
-                <ListItem>
-                  <ListItemIcon>
-                    {user.isVerified ? <Verified color="success" /> : <Warning color="warning" />}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Identity Verification"
-                    secondary={user.isVerified ? 'Verified' : 'Pending verification'}
-                  />
-                </ListItem>
-              </List>
-            </Grid>
-          </Grid>
-          {user.role === 'driver' && (
-            <Button variant="outlined" onClick={() => navigate('/verifications')}>
-              Review driver documents
+          <List>
+            <ListItem>
+              <ListItemIcon>
+                {user.isEmailVerified ? <Verified color="success" /> : <Warning color="warning" />}
+              </ListItemIcon>
+              <ListItemText primary="Email" secondary={user.isEmailVerified ? 'Verified' : 'Not verified'} />
+            </ListItem>
+            <ListItem>
+              <ListItemIcon>
+                {user.isPhoneVerified ? <Verified color="success" /> : <Warning color="warning" />}
+              </ListItemIcon>
+              <ListItemText
+                primary="Phone"
+                secondary={!user.phoneNumber ? 'No phone number' : user.isPhoneVerified ? 'Verified' : 'Not verified'}
+              />
+            </ListItem>
+          </List>
+          <Box display="flex" gap={1}>
+            <Button variant="outlined" onClick={() => setVerifyOpen(true)}>
+              Change verification or see documents
             </Button>
-          )}
+            {user.role === 'driver' && (
+              <Button onClick={() => navigate('/verifications')}>Driver Verification queue</Button>
+            )}
+          </Box>
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
@@ -584,6 +576,15 @@ const UserDetailsPage: React.FC = () => {
           </List>
         </TabPanel>
       </Card>
+
+      <UserVerificationDialog
+        open={verifyOpen}
+        user={user}
+        onClose={() => {
+          setVerifyOpen(false);
+          loadModeration(user.id);
+        }}
+      />
 
       <ReasonDialog
         open={!!reasonAction}
