@@ -19,10 +19,6 @@ import {
   Menu,
   ListItemIcon,
   ListItemText,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Alert,
   Grid,
   Paper,
@@ -43,7 +39,6 @@ import {
   Star,
   Visibility,
   Edit,
-  Delete,
   PersonAdd,
   Download,
   Refresh,
@@ -56,8 +51,6 @@ import {
   fetchUsers,
   blockUser,
   unblockUser,
-  verifyUser,
-  deleteUser,
   setFilters,
   setPagination,
   clearError,
@@ -69,7 +62,8 @@ import {
   selectUsersStats,
   User,
 } from '../../store/slices/userSlice';
-import VerificationModal from '../../components/users/VerificationModal';
+import UserVerificationDialog from '../../components/users/UserVerificationDialog';
+import { useNavigate } from 'react-router-dom';
 import ReasonDialog from '../../components/users/ReasonDialog';
 
 const UsersPage: React.FC = () => {
@@ -85,7 +79,7 @@ const UsersPage: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   // Blocking and unblocking both ask for a reason (ReasonDialog).
   const [reasonAction, setReasonAction] = useState<'block' | 'unblock' | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const navigate = useNavigate();
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
 
   useEffect(() => {
@@ -134,22 +128,6 @@ const UsersPage: React.FC = () => {
       await dispatch(blockUser({ id: selectedUser.id, reason })).unwrap();
     } else {
       await dispatch(unblockUser({ id: selectedUser.id, reason })).unwrap();
-    }
-  };
-
-  const handleVerifyUser = async (verified: boolean, notes?: string) => {
-    if (selectedUser) {
-      await dispatch(verifyUser({ id: selectedUser.id, verified }));
-      setVerificationModalOpen(false);
-      handleActionClose();
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (selectedUser) {
-      await dispatch(deleteUser(selectedUser.id));
-      setDeleteDialogOpen(false);
-      handleActionClose();
     }
   };
 
@@ -410,7 +388,7 @@ const UsersPage: React.FC = () => {
               <MenuItem value="all">All Roles</MenuItem>
               <MenuItem value="passenger">Passenger</MenuItem>
               <MenuItem value="driver">Driver</MenuItem>
-              <MenuItem value="both">Both</MenuItem>
+              <MenuItem value="courier">Courier</MenuItem>
             </TextField>
 
             <Button variant="outlined" startIcon={<FilterList />} size="small">
@@ -447,37 +425,26 @@ const UsersPage: React.FC = () => {
 
       {/* Action Menu */}
       <Menu anchorEl={actionMenuAnchor} open={Boolean(actionMenuAnchor)} onClose={handleActionClose}>
-        <MenuItem onClick={() => console.log('View user')}>
+        <MenuItem onClick={() => selectedUser && navigate(`/users/${selectedUser.id}`)}>
           <ListItemIcon>
             <Visibility fontSize="small" />
           </ListItemIcon>
           <ListItemText>View Details</ListItemText>
         </MenuItem>
 
-        <MenuItem onClick={() => console.log('Edit user')}>
+        <MenuItem onClick={() => selectedUser && navigate(`/users/${selectedUser.id}`)}>
           <ListItemIcon>
             <Edit fontSize="small" />
           </ListItemIcon>
           <ListItemText>Edit User</ListItemText>
         </MenuItem>
 
-        {selectedUser && !selectedUser.isVerified && (
-          <MenuItem onClick={() => setVerificationModalOpen(true)}>
-            <ListItemIcon>
-              <SecurityUpdateGood fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Review Verification</ListItemText>
-          </MenuItem>
-        )}
-
-        {selectedUser && selectedUser.isVerified && (
-          <MenuItem onClick={() => handleVerifyUser(false)}>
-            <ListItemIcon>
-              <Warning fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Unverify User</ListItemText>
-          </MenuItem>
-        )}
+        <MenuItem onClick={() => { setActionMenuAnchor(null); setVerificationModalOpen(true); }}>
+          <ListItemIcon>
+            <SecurityUpdateGood fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Verification</ListItemText>
+        </MenuItem>
 
         {selectedUser && !selectedUser.isBlocked ? (
           <MenuItem onClick={() => { setActionMenuAnchor(null); setReasonAction('block'); }}>
@@ -495,12 +462,6 @@ const UsersPage: React.FC = () => {
           </MenuItem>
         )}
 
-        <MenuItem onClick={() => setDeleteDialogOpen(true)} sx={{ color: 'error.main' }}>
-          <ListItemIcon>
-            <Delete fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText>Delete User</ListItemText>
-        </MenuItem>
       </Menu>
 
       <ReasonDialog
@@ -514,29 +475,14 @@ const UsersPage: React.FC = () => {
         onConfirm={confirmReasonAction}
       />
 
-      {/* Delete User Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Delete User</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to permanently delete {selectedUser?.firstName} {selectedUser?.lastName}? This action
-            cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteUser} variant="contained" color="error">
-            Delete User
-          </Button>
-        </DialogActions>
-      </Dialog>
 
-      {/* Verification Modal */}
-      <VerificationModal
+      <UserVerificationDialog
         open={verificationModalOpen}
-        onClose={() => setVerificationModalOpen(false)}
         user={selectedUser}
-        onVerify={handleVerifyUser}
+        onClose={() => {
+          setVerificationModalOpen(false);
+          handleActionClose();
+        }}
       />
     </Box>
   );

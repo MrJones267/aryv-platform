@@ -1692,6 +1692,35 @@ router.get('/auth/activity', authenticateAdminToken, async (req: any, res) => {
 });
 
 /**
+ * @route   GET /api/admin/users/:id/documents
+ * @desc    A user's driver documents, every attempt, newest first
+ * @access  Private (any admin role)
+ *
+ * For the user's verification review, which showed an invented "John Doe"
+ * ID card instead. The files themselves are served, to admins only, by
+ * GET /verifications/documents/:id/file.
+ */
+router.get('/users/:id/documents', authenticateAdminToken, async (req, res) => {
+  try {
+    const documents = await sequelize.query(
+      `SELECT d.id, d.document_type::text AS "documentType", d.status::text AS status,
+              d.original_filename AS "originalFilename", d.mime_type AS "mimeType",
+              d.document_expires_at AS "documentExpiresAt", d.submitted_at AS "submittedAt",
+              d.reviewed_at AS "reviewedAt", d.rejection_reason AS "rejectionReason",
+              d.attempt_number AS "attemptNumber"
+         FROM driver_documents d
+        WHERE d.user_id = :userId
+        ORDER BY d.submitted_at DESC`,
+      { type: QueryTypes.SELECT, replacements: { userId: String(req.params['id']) } },
+    );
+    return res.json({ success: true, data: { documents }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`User documents failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the documents', code: 'USER_DOCUMENTS_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
  * @route   GET /api/admin/users/:id/moderation
  * @desc    Every admin decision about one user: blocks, unblocks, edits and
  *          verification changes, with who made it, when and why

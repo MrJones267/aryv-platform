@@ -16,6 +16,21 @@ import { UserRole, UserStatus, RideStatus, BookingStatus, AdminAuthenticatedRequ
 import { logInfo, logError } from '../utils/logger';
 import { toE164 } from '../utils/phone';
 
+// Constants
+/**
+ * The user fields admin responses carry. Responses spread user.toJSON(),
+ * which drops only the password, so they also carried the refresh-token hash
+ * and every other column. Listing them keeps that from happening again.
+ */
+const ADMIN_USER_FIELDS = [
+  'id', 'email', 'phone', 'firstName', 'lastName', 'role', 'status', 'profilePicture',
+  'isEmailVerified', 'isPhoneVerified', 'countryCode', 'driverVerificationStatus', 'driverVerifiedAt',
+  'rating', 'totalRides', 'passengerRating', 'lastLoginAt', 'deactivatedAt', 'deactivationReason',
+  'createdAt', 'updatedAt',
+] as const;
+
+const SORTABLE = ['createdAt', 'updatedAt', 'lastLoginAt', 'firstName', 'lastName', 'email', 'rating'] as const;
+
 export class AdminUserController {
   /**
    * Get all users with filtering and pagination for admin panel
@@ -38,15 +53,16 @@ export class AdminUserController {
       const offset = (Number(page) - 1) * Number(limit);
       const whereClause: any = {};
 
-      // Filter by active status
-      if (status && status !== 'all') {
-        if (status === 'active') {
-          whereClause[Op.and] = whereClause[Op.and] || [];
-          whereClause[Op.and].push(sequelize.where(sequelize.col('is_active'), '=', true));
-        } else if (status === 'inactive') {
-          whereClause[Op.and] = whereClause[Op.and] || [];
-          whereClause[Op.and].push(sequelize.where(sequelize.col('is_active'), '=', false));
-        }
+      // Filter by account status. This filtered on an is_active column that
+      // does not exist, so choosing a status failed the whole list.
+      if (status === 'active') {
+        whereClause.status = UserStatus.ACTIVE;
+      } else if (status === 'blocked') {
+        whereClause.status = UserStatus.SUSPENDED;
+      } else if (status === 'inactive') {
+        whereClause.status = { [Op.in]: [UserStatus.DEACTIVATED, UserStatus.PENDING_VERIFICATION] };
+      } else if (status === 'unverified') {
+        whereClause.isEmailVerified = false;
       }
 
       // Filter by role
@@ -54,13 +70,11 @@ export class AdminUserController {
         whereClause.role = role;
       }
 
-      // Filter by verification status (using is_verified from database)
+      // Filter by email verification (stored in is_verified)
       if (verified === 'true') {
-        whereClause[Op.and] = whereClause[Op.and] || [];
-        whereClause[Op.and].push(sequelize.where(sequelize.col('is_verified'), '=', true));
+        whereClause.isEmailVerified = true;
       } else if (verified === 'false') {
-        whereClause[Op.and] = whereClause[Op.and] || [];
-        whereClause[Op.and].push(sequelize.where(sequelize.col('is_verified'), '=', false));
+        whereClause.isEmailVerified = false;
       }
 
       // Filter by date range
@@ -80,12 +94,12 @@ export class AdminUserController {
         ];
       }
 
+      const order = (SORTABLE as readonly string[]).includes(String(sortBy)) ? String(sortBy) : 'createdAt';
+      const direction = String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
       const { rows: users, count: total } = await User.findAndCountAll({
         where: whereClause,
-        attributes: {
-          exclude: ['password'],
-        },
-        order: [[sortBy as string, sortOrder as string]],
+        attributes: [...ADMIN_USER_FIELDS],
+        order: [[order, direction]],
         limit: Number(limit),
         offset,
       });
@@ -186,9 +200,7 @@ export class AdminUserController {
       const { id } = req.params;
 
       const user = await User.findByPk(id, {
-        attributes: {
-          exclude: ['password'],
-        },
+        attributes: [...ADMIN_USER_FIELDS],
       });
 
       if (!user) {
@@ -216,7 +228,9 @@ export class AdminUserController {
         }),
         Vehicle.findAll({
           where: { driverId: id },
-          attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'vehicleType', 'isVerified', 'isActive'],
+          // Asked for vehicleType and isActive, which Vehicle does not have, so
+          // every user's page failed with a 500.
+          attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'type', 'capacity', 'status', 'isVerified'],
         }),
       ]);
 
@@ -586,80 +600,60 @@ export class AdminUserController {
   }
 
   /**
-   * Verify user identity (manual verification)
+   * Set whether a user's email and phone count as verified
+   *
+   * The panel sent { verified } and this read { verificationType }, so both
+   * "Approve" and "Revoke verification" changed nothing while reporting
+   * success. It now takes each flag explicitly, true or false, with a reason:
+   * marking a contact verified without the user proving it is a trust
+   * decision, kept in the moderation history.
    */
   static async verifyUser(req: AdminAuthenticatedRequest, res: Response): Promise<void> {
-    const transaction = await sequelize.transaction();
+    const fail = (status: number, code: string, error: string) => {
+      res.status(status).json({ success: false, error, code, timestamp: new Date().toISOString() });
+    };
 
     try {
-      const { id } = req.params;
-      const { verificationType, documents, notes } = req.body;
-      const adminUser = req.user;
+      const { email, phone, reason } = req.body ?? {};
+      if (email === undefined && phone === undefined) {
+        return fail(400, 'NOTHING_TO_CHANGE', 'Set email, phone, or both, to true or false');
+      }
+      if ((email !== undefined && typeof email !== 'boolean') || (phone !== undefined && typeof phone !== 'boolean')) {
+        return fail(400, 'VALIDATION_ERROR', 'email and phone must be true or false');
+      }
+      const trimmed = typeof reason === 'string' ? reason.trim() : '';
+      if (trimmed.length < 5 || trimmed.length > 500) {
+        return fail(400, 'REASON_REQUIRED', 'Give a reason of 5 to 500 characters');
+      }
 
-      const user = await User.findByPk(id, { transaction });
-
+      const user = await User.findByPk(req.params['id']);
       if (!user) {
-        res.status(404).json({
-          success: false,
-          error: 'User not found',
-          code: 'USER_NOT_FOUND',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
+        return fail(404, 'USER_NOT_FOUND', 'User not found');
+      }
+      if (phone === true && !user.phone) {
+        return fail(400, 'NO_PHONE', 'This user has no phone number to verify');
       }
 
-      const updateData: any = {};
+      await user.update({
+        ...(email !== undefined && { isEmailVerified: email }),
+        ...(phone !== undefined && { isPhoneVerified: phone }),
+      });
 
-      if (verificationType === 'email' || verificationType === 'both') {
-        updateData.isEmailVerified = true;
-      }
-
-      if (verificationType === 'phone' || verificationType === 'both') {
-        updateData.isPhoneVerified = true;
-      }
-
-      if (verificationType === 'identity') {
-        // For identity verification, we could add additional fields
-        updateData.isEmailVerified = true;
-        updateData.isPhoneVerified = true;
-      }
-
-      await user.update(updateData, { transaction });
-      await transaction.commit();
-
-      // Log admin action
-      logInfo('Admin verified user', {
-        adminId: adminUser?.id,
-        adminEmail: adminUser?.email,
-        userId: id,
-        userEmail: user.email,
-        verificationType,
-        documents: documents || [],
-        notes: notes || 'No notes provided',
+      logInfo('Admin changed user verification', {
+        adminId: req.user?.id,
+        userId: user.id,
+        email,
+        phone,
       });
 
       res.status(200).json({
         success: true,
-        message: 'User verification updated successfully',
-        data: {
-          userId: id,
-          verificationType,
-          isEmailVerified: user.isEmailVerified,
-          isPhoneVerified: user.isPhoneVerified,
-        },
+        data: { userId: user.id, isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
         timestamp: new Date().toISOString(),
       });
-
     } catch (error) {
-      await transaction.rollback();
       logError('Admin verifyUser error', error as Error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to verify user',
-        code: 'VERIFY_USER_FAILED',
-        timestamp: new Date().toISOString(),
-      });
+      fail(500, 'VERIFY_USER_FAILED', 'Failed to update verification');
     }
   }
 
