@@ -64,6 +64,8 @@ import {
 } from '@mui/icons-material';
 
 import { useAppDispatch, useAppSelector } from '../../store';
+import { userService } from '../../services/api';
+import ReasonDialog from '../../components/users/ReasonDialog';
 import {
   fetchUserById,
   blockUser,
@@ -99,30 +101,79 @@ const UserDetailsPage: React.FC = () => {
   const error = useAppSelector(selectUsersError);
 
   const [tabValue, setTabValue] = useState(0);
-  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
-  const [blockReason, setBlockReason] = useState('');
+  // Blocking and unblocking both ask for a reason (ReasonDialog).
+  const [reasonAction, setReasonAction] = useState<'block' | 'unblock' | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [edit, setEdit] = useState({ firstName: '', lastName: '', email: '', phone: '', role: 'passenger' });
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [moderation, setModeration] = useState<
+    Awaited<ReturnType<typeof userService.getModeration>>['data']['data']['entries'] | null
+  >(null);
+
+  const loadModeration = async (userId: string) => {
+    try {
+      const response = await userService.getModeration(userId);
+      setModeration(response.data.data.entries);
+    } catch {
+      setModeration([]);
+    }
+  };
 
   useEffect(() => {
     if (id) {
       dispatch(fetchUserById(id));
+      loadModeration(id);
     }
     return () => {
       dispatch(clearSelectedUser());
     };
   }, [dispatch, id]);
 
-  const handleBlockUser = async () => {
-    if (user && blockReason.trim()) {
-      await dispatch(blockUser({ id: user.id, reason: blockReason }));
-      setBlockDialogOpen(false);
-      setBlockReason('');
+  const confirmReasonAction = async (reason: string) => {
+    if (!user || !reasonAction) return;
+    // unwrap() throws the server's message, which the dialog shows.
+    if (reasonAction === 'block') {
+      await dispatch(blockUser({ id: user.id, reason })).unwrap();
+    } else {
+      await dispatch(unblockUser({ id: user.id, reason })).unwrap();
     }
+    await loadModeration(user.id);
   };
 
-  const handleUnblockUser = async () => {
-    if (user) {
-      await dispatch(unblockUser(user.id));
+  const openEdit = () => {
+    if (!user) return;
+    setEdit({
+      firstName: user.firstName ?? '',
+      lastName: user.lastName ?? '',
+      email: user.email ?? '',
+      phone: user.phoneNumber ?? '',
+      role: ['passenger', 'driver', 'courier'].includes(user.role as string) ? (user.role as string) : 'passenger',
+    });
+    setEditError(null);
+    setEditDialogOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!user) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      // Status is not edited here; Block and Unblock record a reason.
+      await userService.updateUser(user.id, {
+        firstName: edit.firstName.trim(),
+        lastName: edit.lastName.trim(),
+        email: edit.email.trim(),
+        phone: edit.phone.trim() || null,
+        role: edit.role,
+      });
+      setEditDialogOpen(false);
+      dispatch(fetchUserById(user.id));
+      loadModeration(user.id);
+    } catch (err: any) {
+      setEditError(err?.response?.data?.error || 'Could not save the changes');
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -198,7 +249,7 @@ const UserDetailsPage: React.FC = () => {
         </Box>
 
         <Box display="flex" gap={1}>
-          <Button variant="outlined" startIcon={<Edit />} onClick={() => setEditDialogOpen(true)}>
+          <Button variant="outlined" startIcon={<Edit />} onClick={openEdit}>
             Edit User
           </Button>
 
@@ -218,11 +269,11 @@ const UserDetailsPage: React.FC = () => {
           )}
 
           {!user.isBlocked ? (
-            <Button variant="contained" startIcon={<Block />} color="error" onClick={() => setBlockDialogOpen(true)}>
+            <Button variant="contained" startIcon={<Block />} color="error" onClick={() => setReasonAction('block')}>
               Block User
             </Button>
           ) : (
-            <Button variant="contained" startIcon={<CheckCircle />} color="success" onClick={handleUnblockUser}>
+            <Button variant="contained" startIcon={<CheckCircle />} color="success" onClick={() => setReasonAction('unblock')}>
               Unblock User
             </Button>
           )}
@@ -364,7 +415,7 @@ const UserDetailsPage: React.FC = () => {
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
             <Tab label="Personal Info" />
-            <Tab label="Activity History" />
+            <Tab label="Moderation history" />
             <Tab label="Verification" />
             <Tab label="Security" />
           </Tabs>
@@ -433,14 +484,55 @@ const UserDetailsPage: React.FC = () => {
 
         <TabPanel value={tabValue} index={1}>
           <Typography variant="h6" gutterBottom>
-            Activity History
+            Moderation history
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            Recent user activities and transaction history
+            Every admin decision about this account: blocks, unblocks, edits and verification changes, with who
+            made it and why. Recorded since the audit trail was added.
           </Typography>
-          <Alert severity="info">
-            Activity history feature will be implemented when backend endpoints are available.
-          </Alert>
+          {!moderation ? (
+            <Typography variant="body2" color="text.secondary">
+              Loading…
+            </Typography>
+          ) : moderation.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No admin has acted on this account.
+            </Typography>
+          ) : (
+            <List>
+              {moderation.map(entry => (
+                <ListItem key={entry.id} alignItems="flex-start" divider>
+                  <ListItemText
+                    primary={
+                      <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+                        <Typography variant="body2" fontWeight={600}>
+                          {{
+                            'user.block': 'Blocked',
+                            'user.unblock': 'Unblocked',
+                            'user.update': 'Edited',
+                            'user.verify': 'Verification changed',
+                          }[entry.action] ?? entry.action}
+                        </Typography>
+                        {entry.outcome && entry.outcome !== 'succeeded' && (
+                          <Chip size="small" color="warning" label={entry.outcome} />
+                        )}
+                        <Typography variant="caption" color="text.secondary">
+                          {new Date(entry.createdAt).toLocaleString()} · {entry.adminName ?? entry.adminEmail ?? 'an admin'}
+                        </Typography>
+                      </Box>
+                    }
+                    secondary={
+                      entry.reason
+                        ? `Reason: ${entry.reason}`
+                        : entry.action === 'user.update' && entry.request
+                          ? `Changed: ${Object.keys(entry.request).join(', ')}`
+                          : null
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
@@ -462,9 +554,11 @@ const UserDetailsPage: React.FC = () => {
               </List>
             </Grid>
           </Grid>
-          <Typography variant="body2" color="text.secondary">
-            Additional verification features will be implemented based on requirements.
-          </Typography>
+          {user.role === 'driver' && (
+            <Button variant="outlined" onClick={() => navigate('/verifications')}>
+              Review driver documents
+            </Button>
+          )}
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
@@ -476,7 +570,10 @@ const UserDetailsPage: React.FC = () => {
               <ListItemIcon>
                 <Security />
               </ListItemIcon>
-              <ListItemText primary="Account Security" secondary="All security features active" />
+              <ListItemText
+                primary="Account status"
+                secondary={user.isBlocked ? 'Blocked: cannot sign in or use the app' : 'Active'}
+              />
             </ListItem>
             <ListItem>
               <ListItemIcon>
@@ -488,40 +585,53 @@ const UserDetailsPage: React.FC = () => {
         </TabPanel>
       </Card>
 
-      {/* Block User Dialog */}
-      <Dialog open={blockDialogOpen} onClose={() => setBlockDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Block User</DialogTitle>
-        <DialogContent>
-          <Typography gutterBottom>
-            Are you sure you want to block {user.firstName} {user.lastName}?
-          </Typography>
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Block Reason"
-            value={blockReason}
-            onChange={e => setBlockReason(e.target.value)}
-            required
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBlockDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleBlockUser} variant="contained" color="error" disabled={!blockReason.trim()}>
-            Block User
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ReasonDialog
+        open={!!reasonAction}
+        action={reasonAction ?? 'block'}
+        userName={`${user.firstName} ${user.lastName}`}
+        onClose={() => setReasonAction(null)}
+        onConfirm={confirmReasonAction}
+      />
 
-      {/* Edit User Dialog Placeholder */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Edit User</DialogTitle>
+      {/* Edit user: names, contact details and role. Status goes through
+          Block and Unblock, which record a reason. */}
+      <Dialog open={editDialogOpen} onClose={editBusy ? undefined : () => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit user</DialogTitle>
         <DialogContent>
-          <Alert severity="info">User editing functionality will be implemented in the next phase.</Alert>
+          <Grid container spacing={2} sx={{ mt: 0 }}>
+            <Grid item xs={6}>
+              <TextField fullWidth label="First name" value={edit.firstName} onChange={e => setEdit({ ...edit, firstName: e.target.value })} inputProps={{ maxLength: 50 }} />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField fullWidth label="Last name" value={edit.lastName} onChange={e => setEdit({ ...edit, lastName: e.target.value })} inputProps={{ maxLength: 50 }} />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField fullWidth label="Email" type="email" value={edit.email} onChange={e => setEdit({ ...edit, email: e.target.value })} helperText="Their sign-in email. Must not be used by another account." />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField fullWidth label="Phone" value={edit.phone} onChange={e => setEdit({ ...edit, phone: e.target.value })} helperText="Local numbers are read in their country; stored as +267…, +27… Leave empty to remove." />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField select fullWidth label="Role" value={edit.role} onChange={e => setEdit({ ...edit, role: e.target.value })} SelectProps={{ native: true }}>
+                <option value="passenger">Rider</option>
+                <option value="driver">Driver</option>
+                <option value="courier">Courier</option>
+              </TextField>
+            </Grid>
+          </Grid>
+          {editError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {editError}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Close</Button>
+          <Button onClick={() => setEditDialogOpen(false)} disabled={editBusy}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={saveEdit} disabled={editBusy || !edit.firstName.trim() || !edit.lastName.trim() || !edit.email.trim()}>
+            {editBusy ? 'Saving…' : 'Save changes'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

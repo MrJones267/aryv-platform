@@ -135,14 +135,19 @@ export const blockUser = createAsyncThunk(
   }
 );
 
-export const unblockUser = createAsyncThunk('users/unblockUser', async (id: string, { rejectWithValue }) => {
-  try {
-    await userService.unblockUser(id);
-    return { id, isBlocked: false, blockReason: undefined };
-  } catch (error: any) {
-    return rejectWithValue(error.response?.data?.message || 'Failed to unblock user');
+// Unblocking needs a reason as blocking does; both are kept in the user's
+// moderation history.
+export const unblockUser = createAsyncThunk(
+  'users/unblockUser',
+  async ({ id, reason }: { id: string; reason: string }, { rejectWithValue }) => {
+    try {
+      await userService.unblockUser(id, reason);
+      return { id, isBlocked: false, blockReason: undefined };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.error || error.response?.data?.message || 'Failed to unblock user');
+    }
   }
-});
+);
 
 export const verifyUser = createAsyncThunk(
   'users/verifyUser',
