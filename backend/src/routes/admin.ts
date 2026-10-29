@@ -38,6 +38,7 @@ import { adminTwoFactorService, isTwoFactorConfigured } from '../services/AdminT
 import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
+import { cashDisputeService } from '../services/CashDisputeService';
 import { UPLOADS_DIR } from '../middleware/upload';
 import {
   ADMIN_SESSION_HOURS,
@@ -155,6 +156,7 @@ const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> 
   'POST /settings/on-call/test': { action: 'settings.oncall_test', resourceType: 'settings' },
   'POST /verifications/documents/:id/review': { action: 'document.review', resourceType: 'driver_document' },
   'POST /commission/:id/settlements': { action: 'commission.payment_recorded', resourceType: 'driver' },
+  'POST /cash-disputes/:id/resolve': { action: 'cash_dispute.resolve', resourceType: 'cash_dispute' },
 };
 
 router.use((req: any, res, next) => {
@@ -1035,7 +1037,7 @@ router.put('/delivery-tiers/:id', authenticateAdminToken, requireSuperAdmin, asy
  */
 router.get('/alerts', authenticateAdminToken, async (_req, res) => {
   try {
-    const [sos, disputes, verifications, [counts]] = await Promise.all([
+    const [sos, disputes, verifications, [counts], cashDisputes] = await Promise.all([
       sequelize.query(
         `SELECT ea.id, ea.alert_type AS "alertType", ea.status, ea.message, ea.created_at AS "createdAt",
                 ea.last_location_at AS "lastLocationAt",
@@ -1072,11 +1074,21 @@ router.get('/alerts', authenticateAdminToken, async (_req, res) => {
           LIMIT 20`,
         { type: QueryTypes.SELECT },
       ),
-      sequelize.query<{ sos: number; disputes: number; verifications: number }>(
+      sequelize.query<{ sos: number; disputes: number; verifications: number; cashDisputes: number }>(
         `SELECT
            (SELECT COUNT(*)::int FROM emergency_alerts WHERE status IN ('raised', 'acknowledged')) AS sos,
            (SELECT COUNT(*)::int FROM delivery_disputes WHERE status::text IN ('open', 'under_review')) AS disputes,
-           (SELECT COUNT(DISTINCT user_id)::int FROM driver_documents WHERE status::text IN ('uploaded', 'under_review')) AS verifications`,
+           (SELECT COUNT(DISTINCT user_id)::int FROM driver_documents WHERE status::text IN ('uploaded', 'under_review')) AS verifications,
+           (SELECT COUNT(*)::int FROM cash_disputes WHERE status = 'open') AS "cashDisputes"`,
+        { type: QueryTypes.SELECT },
+      ),
+      sequelize.query(
+        `SELECT d.id, d.reason, d.created_at AS "createdAt", t.amount::float AS amount, t.currency
+           FROM cash_disputes d
+           JOIN cash_transactions t ON t.id = d.transaction_id
+          WHERE d.status = 'open'
+          ORDER BY d.priority DESC, d.created_at
+          LIMIT 20`,
         { type: QueryTypes.SELECT },
       ),
     ]);
@@ -1084,10 +1096,11 @@ router.get('/alerts', authenticateAdminToken, async (_req, res) => {
     return res.json({
       success: true,
       data: {
-        counts: { ...counts, total: counts!.sos + counts!.disputes + counts!.verifications },
+        counts: { ...counts, total: counts!.sos + counts!.disputes + counts!.verifications + counts!.cashDisputes },
         sos,
         disputes,
         verifications,
+        cashDisputes,
       },
       timestamp: new Date().toISOString(),
     });
@@ -1687,6 +1700,69 @@ router.get('/auth/activity', authenticateAdminToken, async (req: any, res) => {
  * Read from the audit trail, which has kept each request's body (credentials
  * removed) since #24, so a block's reason is no longer only in a log line.
  */
+// ---------------------------------------------------------------------------
+// Cash ride payment disputes, reported from the app (see CashDisputeService)
+// ---------------------------------------------------------------------------
+
+/**
+ * @route   GET /api/admin/cash-disputes
+ * @desc    Cash payment disputes: open first, then by priority and age
+ * @access  Private (any admin role)
+ */
+router.get('/cash-disputes', authenticateAdminToken, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query['page'] || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 25)));
+    const status = req.query['status'];
+    if (status !== undefined && status !== 'open' && status !== 'resolved') {
+      return res.status(400).json({ success: false, error: 'status must be open or resolved', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    const data = await cashDisputeService.list({ status: status as 'open' | 'resolved' | undefined, page, limit });
+    return res.json({ success: true, data, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Cash disputes list failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load payment disputes', code: 'CASH_DISPUTES_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/cash-disputes/:id
+ * @desc    One dispute: both people, the ride, both confirmations, and the
+ *          commission charged so far for the payment
+ * @access  Private (any admin role)
+ */
+router.get('/cash-disputes/:id', authenticateAdminToken, async (req, res) => {
+  try {
+    const dispute = await cashDisputeService.get(String(req.params['id']));
+    if (!dispute) {
+      return res.status(404).json({ success: false, error: 'Dispute not found', code: 'DISPUTE_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    return res.json({ success: true, data: { dispute }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Cash dispute read failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the dispute', code: 'CASH_DISPUTE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/cash-disputes/:id/resolve
+ * @desc    Record what happened to the cash; the payment and the driver's
+ *          commission follow from it
+ * @access  Private (Admin)
+ */
+router.post('/cash-disputes/:id/resolve', authenticateAdminToken, requireAdmin, async (req: any, res) => {
+  try {
+    const result = await cashDisputeService.resolve(String(req.params['id']), req.user.id, req.body ?? {});
+    if (!result.success) {
+      return res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+    }
+    return res.json({ success: true, data: result, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Cash dispute resolve failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to resolve the dispute', code: 'RESOLVE_CASH_DISPUTE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
 router.get('/users/:id/moderation', authenticateAdminToken, async (req, res) => {
   try {
     const entries = await sequelize.query(

@@ -10,6 +10,7 @@ import { Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import CashTransaction, { CashPaymentStatus } from '../models/CashTransaction';
 import UserWallet, { VerificationLevel } from '../models/UserWallet';
+import TrustHold from '../models/TrustHold';
 import { Booking, Ride } from '../models';
 import { BookingStatus } from '../types';
 import { NotificationService } from './NotificationService';
@@ -315,12 +316,17 @@ export class CashPaymentService {
         fraudFlags: fraudFlags.length > 0 ? fraudFlags : null,
       }, { transaction });
 
+      // Completing in the same transaction: committing BOTH_CONFIRMED first
+      // left a payment stuck there, with no commission, whenever completion
+      // then failed.
+      if (newStatus === CashPaymentStatus.BOTH_CONFIRMED) {
+        await this.completeCashTransaction(transactionId, transaction);
+      }
+
       await transaction.commit();
 
       // Handle based on new status
       if (newStatus === CashPaymentStatus.BOTH_CONFIRMED) {
-        // Both parties confirmed - complete the transaction
-        await this.completeCashTransaction(transactionId);
 
         return {
           success: true,
@@ -341,7 +347,8 @@ export class CashPaymentService {
       };
 
     } catch (error) {
-      await transaction.rollback();
+      // A failure after commit (a notification) must not try to roll back.
+      if (!(transaction as unknown as { finished?: string }).finished) await transaction.rollback();
 
       logError('Error confirming cash received', error as Error, {
         transactionId,
@@ -408,12 +415,17 @@ export class CashPaymentService {
         riderConfirmedAt: new Date(),
       }, { transaction });
 
+      // Completing in the same transaction: committing BOTH_CONFIRMED first
+      // left a payment stuck there, with no commission, whenever completion
+      // then failed.
+      if (newStatus === CashPaymentStatus.BOTH_CONFIRMED) {
+        await this.completeCashTransaction(transactionId, transaction);
+      }
+
       await transaction.commit();
 
       // Handle based on new status
       if (newStatus === CashPaymentStatus.BOTH_CONFIRMED) {
-        // Both parties confirmed - complete the transaction
-        await this.completeCashTransaction(transactionId);
 
         return {
           success: true,
@@ -431,7 +443,8 @@ export class CashPaymentService {
       };
 
     } catch (error) {
-      await transaction.rollback();
+      // A failure after commit (a notification) must not try to roll back.
+      if (!(transaction as unknown as { finished?: string }).finished) await transaction.rollback();
 
       logError('Error confirming cash paid', error as Error, {
         transactionId,
@@ -521,8 +534,12 @@ export class CashPaymentService {
     // Reset counters if needed
     await this.resetLimitCountersIfNeeded(wallet);
 
+    // DECIMAL columns arrive from Postgres as strings, so `used + amount`
+    // concatenated ("0.00" + 50 = "0.0050") and the limit was compared as
+    // text. The Number() calls below make these real sums.
+
     // Check daily limit
-    if (wallet.dailyCashUsed + amount > wallet.dailyCashLimit) {
+    if (Number(wallet.dailyCashUsed) + amount > Number(wallet.dailyCashLimit)) {
       return {
         withinLimits: false,
         reason: `Daily cash limit exceeded. Used: ${wallet.dailyCashUsed}, limit: ${wallet.dailyCashLimit}` as string,
@@ -530,7 +547,7 @@ export class CashPaymentService {
     }
 
     // Check weekly limit
-    if (wallet.weeklyCashUsed + amount > wallet.weeklyCashLimit) {
+    if (Number(wallet.weeklyCashUsed) + amount > Number(wallet.weeklyCashLimit)) {
       return {
         withinLimits: false,
         reason: `Weekly cash limit exceeded. Used: ${wallet.weeklyCashUsed}, limit: ${wallet.weeklyCashLimit}` as string,
@@ -538,7 +555,7 @@ export class CashPaymentService {
     }
 
     // Check monthly limit
-    if (wallet.monthlyCashUsed + amount > wallet.monthlyCashLimit) {
+    if (Number(wallet.monthlyCashUsed) + amount > Number(wallet.monthlyCashLimit)) {
       return {
         withinLimits: false,
         reason: `Monthly cash limit exceeded. Used: ${wallet.monthlyCashUsed}, limit: ${wallet.monthlyCashLimit}` as string,
@@ -580,7 +597,7 @@ export class CashPaymentService {
     transactionId: string,
     transaction: Transaction,
   ): Promise<void> {
-    await sequelize.models['TrustHold'].create({
+    await TrustHold.create({
       userId,
       transactionId,
       amount,
@@ -592,93 +609,81 @@ export class CashPaymentService {
   /**
    * Complete cash transaction and update trust scores
    */
-  private async completeCashTransaction(transactionId: string): Promise<void> {
-    const transaction = await sequelize.transaction();
-
-    try {
-      const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction });
-      if (!cashTransaction) {
-        throw new Error('Transaction not found');
-      }
-
-      // Update transaction status
-      await cashTransaction.update({
-        status: CashPaymentStatus.COMPLETED,
-      }, { transaction });
-
-      // Update rider wallet
-      const riderWallet = await UserWallet.findOne({
-        where: { userId: cashTransaction.riderId },
-        transaction,
-      });
-
-      if (riderWallet) {
-        const newTrustScore = await this.calculateNewTrustScore(riderWallet, true);
-        await riderWallet.update({
-          completedCashTransactions: riderWallet.completedCashTransactions + 1,
-          successfulTransactions: riderWallet.successfulTransactions + 1,
-          totalTransactionValue: riderWallet.totalTransactionValue + cashTransaction.amount,
-          trustScore: newTrustScore,
-          lastTrustScoreUpdate: new Date(),
-          // Update usage limits
-          dailyCashUsed: riderWallet.dailyCashUsed + cashTransaction.amount,
-          weeklyCashUsed: riderWallet.weeklyCashUsed + cashTransaction.amount,
-          monthlyCashUsed: riderWallet.monthlyCashUsed + cashTransaction.amount,
-        }, { transaction });
-      }
-
-      // Update driver wallet
-      const driverWallet = await UserWallet.findOne({
-        where: { userId: cashTransaction.driverId },
-        transaction,
-      });
-
-      if (driverWallet) {
-        const newTrustScore = await this.calculateNewTrustScore(driverWallet, true);
-        await driverWallet.update({
-          completedCashTransactions: driverWallet.completedCashTransactions + 1,
-          successfulTransactions: driverWallet.successfulTransactions + 1,
-          trustScore: newTrustScore,
-          lastTrustScoreUpdate: new Date(),
-        }, { transaction });
-      }
-
-      // Accrue platform commission to the driver's owed balance. The rider
-      // paid 100% in cash; the platform collects its fee from the driver via
-      // periodic settlement (see CommissionService). This is what makes cash
-      // rides actually revenue-generating.
-      await this.commissionService.accrueCommission(
-        cashTransaction.driverId,
-        Number(cashTransaction.platformFee),
-        cashTransaction.id,
-        transaction,
-      );
-
-      // Release trust hold
-      await sequelize.models['TrustHold'].destroy({
-        where: { transactionId },
-        transaction,
-      });
-
-      // Update booking status
-      await (Booking as any).update(
-        { paymentStatus: 'completed' },
-        { where: { cashTransactionId: transactionId }, transaction },
-      );
-
-      await transaction.commit();
-
-      logInfo('Cash transaction completed successfully', {
-        transactionId,
-        riderId: cashTransaction.riderId,
-        driverId: cashTransaction.driverId,
-        amount: cashTransaction.amount,
-      });
-
-    } catch (error) {
-      await transaction.rollback();
-      throw error;
+  private async completeCashTransaction(transactionId: string, transaction: Transaction): Promise<void> {
+    const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction });
+    if (!cashTransaction) {
+      throw new Error('Transaction not found');
     }
+
+    // Update transaction status
+    await cashTransaction.update({
+      status: CashPaymentStatus.COMPLETED,
+    }, { transaction });
+
+    // Update rider wallet
+    const riderWallet = await UserWallet.findOne({
+      where: { userId: cashTransaction.riderId },
+      transaction,
+    });
+
+    if (riderWallet) {
+      const newTrustScore = await this.calculateNewTrustScore(riderWallet, true);
+      await riderWallet.update({
+        completedCashTransactions: riderWallet.completedCashTransactions + 1,
+        successfulTransactions: riderWallet.successfulTransactions + 1,
+        totalTransactionValue: round2(Number(riderWallet.totalTransactionValue) + Number(cashTransaction.amount)),
+        trustScore: newTrustScore,
+        lastTrustScoreUpdate: new Date(),
+        // Update usage limits
+        dailyCashUsed: round2(Number(riderWallet.dailyCashUsed) + Number(cashTransaction.amount)),
+        weeklyCashUsed: round2(Number(riderWallet.weeklyCashUsed) + Number(cashTransaction.amount)),
+        monthlyCashUsed: round2(Number(riderWallet.monthlyCashUsed) + Number(cashTransaction.amount)),
+      }, { transaction });
+    }
+
+    // Update driver wallet
+    const driverWallet = await UserWallet.findOne({
+      where: { userId: cashTransaction.driverId },
+      transaction,
+    });
+
+    if (driverWallet) {
+      const newTrustScore = await this.calculateNewTrustScore(driverWallet, true);
+      await driverWallet.update({
+        completedCashTransactions: driverWallet.completedCashTransactions + 1,
+        successfulTransactions: driverWallet.successfulTransactions + 1,
+        trustScore: newTrustScore,
+        lastTrustScoreUpdate: new Date(),
+      }, { transaction });
+    }
+
+    // Accrue platform commission to the driver's owed balance. The rider
+    // paid 100% in cash; the platform collects its fee from the driver via
+    // periodic settlement (see CommissionService). This is what makes cash
+    // rides actually revenue-generating.
+    await this.commissionService.accrueCommission(
+      cashTransaction.driverId,
+      Number(cashTransaction.platformFee),
+      cashTransaction.id,
+      transaction,
+    );
+
+    // Release trust hold
+    await TrustHold.destroy({
+      where: { transactionId },
+      transaction,
+    });
+
+    // This also set bookings.payment_status where cash_transaction_id
+    // matched; Booking has neither column, so the query failed and took
+    // the whole completion with it. The payment's own status is the record.
+
+    logInfo('Cash transaction completed successfully', {
+      transactionId,
+      riderId: cashTransaction.riderId,
+      driverId: cashTransaction.driverId,
+      amount: cashTransaction.amount,
+    });
   }
 
   /**

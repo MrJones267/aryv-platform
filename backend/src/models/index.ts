@@ -29,6 +29,8 @@ import DemandMetrics from './DemandMetrics';
 import CashTransaction from './CashTransaction';
 import UserWallet from './UserWallet';
 import CommissionLedger from './CommissionLedger';
+import TrustHold from './TrustHold';
+import CashDispute from './CashDispute';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -533,6 +535,8 @@ export {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  TrustHold,
+  CashDispute,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -578,6 +582,8 @@ export default {
   CashTransaction,
   UserWallet,
   CommissionLedger,
+  TrustHold,
+  CashDispute,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
