@@ -228,7 +228,9 @@ export class AdminUserController {
         }),
         Vehicle.findAll({
           where: { driverId: id },
-          attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'vehicleType', 'isVerified', 'isActive'],
+          // Asked for vehicleType and isActive, which Vehicle does not have, so
+          // every user's page failed with a 500.
+          attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'type', 'capacity', 'status', 'isVerified'],
         }),
       ]);
 
