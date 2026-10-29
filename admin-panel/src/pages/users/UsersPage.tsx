@@ -70,6 +70,7 @@ import {
   User,
 } from '../../store/slices/userSlice';
 import VerificationModal from '../../components/users/VerificationModal';
+import ReasonDialog from '../../components/users/ReasonDialog';
 
 const UsersPage: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -82,8 +83,8 @@ const UsersPage: React.FC = () => {
 
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
-  const [blockReason, setBlockReason] = useState('');
+  // Blocking and unblocking both ask for a reason (ReasonDialog).
+  const [reasonAction, setReasonAction] = useState<'block' | 'unblock' | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
 
@@ -126,19 +127,13 @@ const UsersPage: React.FC = () => {
     setSelectedUser(null);
   };
 
-  const handleBlockUser = async () => {
-    if (selectedUser && blockReason.trim()) {
-      await dispatch(blockUser({ id: selectedUser.id, reason: blockReason }));
-      setBlockDialogOpen(false);
-      setBlockReason('');
-      handleActionClose();
-    }
-  };
-
-  const handleUnblockUser = async () => {
-    if (selectedUser) {
-      await dispatch(unblockUser(selectedUser.id));
-      handleActionClose();
+  const confirmReasonAction = async (reason: string) => {
+    if (!selectedUser || !reasonAction) return;
+    // unwrap() throws the server's message, which the dialog shows.
+    if (reasonAction === 'block') {
+      await dispatch(blockUser({ id: selectedUser.id, reason })).unwrap();
+    } else {
+      await dispatch(unblockUser({ id: selectedUser.id, reason })).unwrap();
     }
   };
 
@@ -485,14 +480,14 @@ const UsersPage: React.FC = () => {
         )}
 
         {selectedUser && !selectedUser.isBlocked ? (
-          <MenuItem onClick={() => setBlockDialogOpen(true)}>
+          <MenuItem onClick={() => { setActionMenuAnchor(null); setReasonAction('block'); }}>
             <ListItemIcon>
               <Block fontSize="small" />
             </ListItemIcon>
             <ListItemText>Block User</ListItemText>
           </MenuItem>
         ) : (
-          <MenuItem onClick={handleUnblockUser}>
+          <MenuItem onClick={() => { setActionMenuAnchor(null); setReasonAction('unblock'); }}>
             <ListItemIcon>
               <CheckCircle fontSize="small" />
             </ListItemIcon>
@@ -508,31 +503,16 @@ const UsersPage: React.FC = () => {
         </MenuItem>
       </Menu>
 
-      {/* Block User Dialog */}
-      <Dialog open={blockDialogOpen} onClose={() => setBlockDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Block User</DialogTitle>
-        <DialogContent>
-          <Typography gutterBottom>
-            Are you sure you want to block {selectedUser?.firstName} {selectedUser?.lastName}?
-          </Typography>
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Block Reason"
-            value={blockReason}
-            onChange={e => setBlockReason(e.target.value)}
-            required
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBlockDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleBlockUser} variant="contained" color="error" disabled={!blockReason.trim()}>
-            Block User
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ReasonDialog
+        open={!!reasonAction}
+        action={reasonAction ?? 'block'}
+        userName={selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}` : ''}
+        onClose={() => {
+          setReasonAction(null);
+          handleActionClose();
+        }}
+        onConfirm={confirmReasonAction}
+      />
 
       {/* Delete User Dialog */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>

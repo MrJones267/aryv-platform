@@ -14,6 +14,7 @@ import Booking from '../models/Booking';
 import Vehicle from '../models/Vehicle';
 import { UserRole, UserStatus, RideStatus, BookingStatus, AdminAuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
+import { toE164 } from '../utils/phone';
 
 export class AdminUserController {
   /**
@@ -267,61 +268,72 @@ export class AdminUserController {
     try {
       const { id } = req.params;
       const adminUser = req.user;
-      const {
-        firstName, lastName, email, phone,
-        role, status, isEmailVerified, isPhoneVerified,
-        dateOfBirth, gender, bio, emergencyContact,
-      } = req.body;
-      const updateData = {
-        ...(firstName !== undefined && { firstName }),
-        ...(lastName !== undefined && { lastName }),
-        ...(email !== undefined && { email }),
-        ...(phone !== undefined && { phone }),
-        ...(role !== undefined && { role }),
-        ...(status !== undefined && { status }),
-        ...(isEmailVerified !== undefined && { isEmailVerified }),
-        ...(isPhoneVerified !== undefined && { isPhoneVerified }),
-        ...(dateOfBirth !== undefined && { dateOfBirth }),
-        ...(gender !== undefined && { gender }),
-        ...(bio !== undefined && { bio }),
-        ...(emergencyContact !== undefined && { emergencyContact }),
+      const body = req.body ?? {};
+      const fail = async (status: number, error: string, code: string) => {
+        await transaction.rollback();
+        res.status(status).json({ success: false, error, code, timestamp: new Date().toISOString() });
       };
 
+      // Blocking and unblocking need a reason and their own side effects
+      // (cancelling the driver's rides), so status is not editable here; it
+      // used to be, which let an edit block or unblock without a reason.
+      if (body.status !== undefined) {
+        return fail(400, 'Use Block or Unblock to change an account\'s status, so the reason is recorded', 'STATUS_NOT_EDITABLE');
+      }
+
       const user = await User.findByPk(id, { transaction });
+      if (!user) return fail(404, 'User not found', 'USER_NOT_FOUND');
 
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: 'User not found',
-          code: 'USER_NOT_FOUND',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
+      const updateData: Record<string, unknown> = {};
+
+      for (const field of ['firstName', 'lastName'] as const) {
+        if (body[field] === undefined) continue;
+        if (typeof body[field] !== 'string' || body[field].trim().length < 1 || body[field].trim().length > 50) {
+          return fail(400, `${field} must be 1 to 50 characters`, 'VALIDATION_ERROR');
+        }
+        updateData[field] = body[field].trim();
       }
 
-      // Validate role changes
-      if (updateData.role && !Object.values(UserRole).includes(updateData.role)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid user role',
-          code: 'INVALID_ROLE',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
+      if (body.email !== undefined) {
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 255) {
+          return fail(400, 'That is not a valid email address', 'VALIDATION_ERROR');
+        }
+        const taken = await User.findOne({ where: { email, id: { [Op.ne]: user.id } }, transaction });
+        if (taken) return fail(409, 'Another account already uses that email', 'EMAIL_TAKEN');
+        updateData['email'] = email;
       }
 
-      // Validate status changes
-      if (updateData.status && !Object.values(UserStatus).includes(updateData.status)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid user status',
-          code: 'INVALID_STATUS',
-          timestamp: new Date().toISOString(),
-        });
-        await transaction.rollback();
-        return;
+      if (body.phone !== undefined) {
+        if (body.phone === null || body.phone === '') {
+          updateData['phone'] = null;
+        } else {
+          // Stored in E.164 everywhere else; SMS and sign-in by phone rely on it.
+          const phone = typeof body.phone === 'string' ? toE164(body.phone, user.countryCode ?? undefined) : null;
+          if (!phone) return fail(400, 'That is not a valid phone number', 'VALIDATION_ERROR');
+          const taken = await User.findOne({ where: { phone, id: { [Op.ne]: user.id } }, transaction });
+          if (taken) return fail(409, 'Another account already uses that phone number', 'PHONE_TAKEN');
+          updateData['phone'] = phone;
+        }
+      }
+
+      if (body.role !== undefined) {
+        // Admin panel staff are admin_users accounts; a rider is never made one here.
+        const allowed = [UserRole.PASSENGER, UserRole.DRIVER, UserRole.COURIER] as string[];
+        if (!allowed.includes(body.role)) {
+          return fail(400, `role must be one of ${allowed.join(', ')}`, 'INVALID_ROLE');
+        }
+        updateData['role'] = body.role;
+      }
+
+      for (const field of ['isEmailVerified', 'isPhoneVerified'] as const) {
+        if (body[field] === undefined) continue;
+        if (typeof body[field] !== 'boolean') return fail(400, `${field} must be true or false`, 'VALIDATION_ERROR');
+        updateData[field] = body[field];
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return fail(400, 'Nothing to change', 'VALIDATION_ERROR');
       }
 
       const oldData = { ...user.toJSON() };
@@ -344,10 +356,20 @@ export class AdminUserController {
       res.status(200).json({
         success: true,
         message: 'User updated successfully',
+        // Only what an admin needs. This spread the whole row, password
+        // removed but the stored refresh-token hash and other internals not.
         data: {
           user: {
-            ...user.toJSON(),
-            password: undefined,
+            id: user.id,
+            email: user.email,
+            phone: user.phone,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            status: user.status,
+            isEmailVerified: user.isEmailVerified,
+            isPhoneVerified: user.isPhoneVerified,
+            updatedAt: user.updatedAt,
           },
         },
         timestamp: new Date().toISOString(),
@@ -373,13 +395,15 @@ export class AdminUserController {
 
     try {
       const { id } = req.params;
-      const { reason } = req.body;
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
       const adminUser = req.user;
 
-      if (!reason) {
+      // The reason is what anyone looking at this account later will read, in
+      // its moderation history; a single word does not explain a block.
+      if (reason.length < 5 || reason.length > 500) {
         res.status(400).json({
           success: false,
-          error: 'Block reason is required',
+          error: 'Give a reason of 5 to 500 characters for blocking this account',
           code: 'REASON_REQUIRED',
           timestamp: new Date().toISOString(),
         });
@@ -483,8 +507,21 @@ export class AdminUserController {
 
     try {
       const { id } = req.params;
-      const { reason } = req.body;
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
       const adminUser = req.user;
+
+      // Lifting a block is as much a decision as making one, and is read back
+      // the same way, so it needs a reason too.
+      if (reason.length < 5 || reason.length > 500) {
+        res.status(400).json({
+          success: false,
+          error: 'Give a reason of 5 to 500 characters for unblocking this account',
+          code: 'REASON_REQUIRED',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
 
       const user = await User.findByPk(id, { transaction });
 
@@ -522,7 +559,7 @@ export class AdminUserController {
         adminEmail: adminUser?.email,
         userId: id,
         userEmail: user.email,
-        reason: reason || 'No reason provided',
+        reason,
       });
 
       res.status(200).json({
@@ -531,7 +568,7 @@ export class AdminUserController {
         data: {
           userId: id,
           newStatus: 'active',
-          reason: reason || 'No reason provided',
+          reason,
         },
         timestamp: new Date().toISOString(),
       });

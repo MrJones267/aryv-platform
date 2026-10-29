@@ -1678,4 +1678,35 @@ router.get('/auth/activity', authenticateAdminToken, async (req: any, res) => {
   }
 });
 
+/**
+ * @route   GET /api/admin/users/:id/moderation
+ * @desc    Every admin decision about one user: blocks, unblocks, edits and
+ *          verification changes, with who made it, when and why
+ * @access  Private (any admin role)
+ *
+ * Read from the audit trail, which has kept each request's body (credentials
+ * removed) since #24, so a block's reason is no longer only in a log line.
+ */
+router.get('/users/:id/moderation', authenticateAdminToken, async (req, res) => {
+  try {
+    const entries = await sequelize.query(
+      `SELECT l.id, l.action, l.created_at AS "createdAt",
+              l.details->>'outcome' AS outcome,
+              l.details->'request'->>'reason' AS reason,
+              l.details->'request' AS request,
+              a.email AS "adminEmail", NULLIF(TRIM(CONCAT(a.first_name, ' ', a.last_name)), '') AS "adminName"
+         FROM admin_audit_logs l
+         LEFT JOIN admin_users a ON a.id = l.admin_user_id
+        WHERE l.resource_type = 'user' AND l.resource_id = :userId
+        ORDER BY l.created_at DESC
+        LIMIT 100`,
+      { type: QueryTypes.SELECT, replacements: { userId: String(req.params['id']) } },
+    );
+    return res.json({ success: true, data: { entries }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`User moderation history failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the moderation history', code: 'MODERATION_HISTORY_FAILED' });
+  }
+});
+
 export default router;

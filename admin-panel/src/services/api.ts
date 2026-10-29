@@ -104,7 +104,24 @@ export const userService = {
 
   blockUser: (id: string, reason: string) => adminApi.post<ApiResponse<null>>(`/users/${id}/block`, { reason }),
 
-  unblockUser: (id: string) => adminApi.post<ApiResponse<null>>(`/users/${id}/unblock`),
+  unblockUser: (id: string, reason: string) => adminApi.post<ApiResponse<null>>(`/users/${id}/unblock`, { reason }),
+
+  // Every admin decision about this user, from the audit trail.
+  getModeration: (id: string) =>
+    adminApi.get<
+      ApiResponse<{
+        entries: {
+          id: string;
+          action: string;
+          createdAt: string;
+          outcome: string | null;
+          reason: string | null;
+          request: Record<string, unknown> | null;
+          adminEmail: string | null;
+          adminName: string | null;
+        }[];
+      }>
+    >(`/users/${id}/moderation`),
 
   deleteUser: (id: string) => adminApi.delete<ApiResponse<null>>(`/users/${id}`),
 
