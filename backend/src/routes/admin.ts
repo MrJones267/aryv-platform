@@ -1678,4 +1678,67 @@ router.get('/auth/activity', authenticateAdminToken, async (req: any, res) => {
   }
 });
 
+/**
+ * @route   GET /api/admin/activity-feed
+ * @desc    The latest things that happened on the platform, newest first
+ * @access  Private (Admin)
+ *
+ * The dashboard's Recent Activity showed four invented people, and since #12
+ * said it was not connected. Each source contributes only its newest rows
+ * (each subquery is ordered and limited on an indexed timestamp), then the
+ * union is sorted, so the feed stays cheap however large the tables grow.
+ */
+router.get('/activity-feed', authenticateAdminToken, async (req, res) => {
+  try {
+    const requested = parseInt(String(req.query['limit'] ?? '20'), 10);
+    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 50) : 20;
+    const name = (alias: string) => `NULLIF(TRIM(CONCAT(${alias}.first_name, ' ', ${alias}.last_name)), '')`;
+
+    const events = await sequelize.query(
+      `SELECT * FROM (
+         (SELECT 'user_signup' AS type, u.created_at AS at, ${name('u')} AS actor, u.role::text AS detail,
+                 'user' AS "entityType", u.id::text AS "entityId"
+            FROM users u ORDER BY u.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'ride_posted', r.created_at, ${name('u')}, CONCAT(r.origin_address, ' → ', r.destination_address),
+                 'ride', r.id::text
+            FROM rides r LEFT JOIN users u ON u.id = r.driver_id ORDER BY r.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'seats_booked', b.created_at, ${name('u')}, CONCAT(b.seats_booked, ' seat(s), ', b.status::text),
+                 'ride', b.ride_id::text
+            FROM bookings b LEFT JOIN users u ON u.id = b.passenger_id ORDER BY b.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'package_listed', p.created_at, ${name('u')}, p.title,
+                 'package', p.id::text
+            FROM packages p LEFT JOIN users u ON u.id = p.sender_id ORDER BY p.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'delivery_completed', a.delivery_confirmed_at, ${name('u')}, p.title,
+                 'package', p.id::text
+            FROM delivery_agreements a JOIN packages p ON p.id = a.package_id LEFT JOIN users u ON u.id = a.courier_id
+           WHERE a.status::text = 'completed' AND a.delivery_confirmed_at IS NOT NULL
+           ORDER BY a.delivery_confirmed_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'dispute_raised', d.created_at, ${name('u')}, d.dispute_type,
+                 'dispute', d.id::text
+            FROM delivery_disputes d LEFT JOIN users u ON u.id = d.raised_by_user_id ORDER BY d.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'sos_raised', e.created_at, ${name('u')}, CONCAT(e.alert_type, ' (', e.status, ')'),
+                 'emergency_alert', e.id::text
+            FROM emergency_alerts e LEFT JOIN users u ON u.id = e.user_id ORDER BY e.created_at DESC LIMIT :limit)
+         UNION ALL
+         (SELECT 'document_submitted', dd.submitted_at, ${name('u')}, dd.document_type::text,
+                 'user', dd.user_id::text
+            FROM driver_documents dd LEFT JOIN users u ON u.id = dd.user_id ORDER BY dd.submitted_at DESC LIMIT :limit)
+       ) feed
+       ORDER BY at DESC
+       LIMIT :limit`,
+      { type: QueryTypes.SELECT, replacements: { limit } },
+    );
+    return res.json({ success: true, data: { events }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Admin activity feed failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load recent activity', code: 'ACTIVITY_FEED_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
 export default router;

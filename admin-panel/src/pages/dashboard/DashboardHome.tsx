@@ -4,7 +4,7 @@
  * @created 2025-01-24
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Grid,
@@ -66,6 +66,7 @@ import {
   selectDisplayCurrency,
 } from '../../store/slices/settingsSlice';
 import { formatMoney } from '../../utils/currency';
+import RecentActivity from '../../components/dashboard/RecentActivity';
 
 const SERVICE_COLORS = { rides: '#1976d2', courier: '#dc004e' };
 
@@ -144,7 +145,10 @@ const DashboardHome: React.FC = () => {
     dispatch(fetchUsageStats());
   }, [dispatch]);
 
+  const [activityKey, setActivityKey] = useState(0);
+
   const handleRefresh = () => {
+    setActivityKey(k => k + 1);
     dispatch(fetchDashboardStats());
     dispatch(fetchRevenueReport(6));
     dispatch(fetchUserGrowth('30d'));
@@ -332,12 +336,7 @@ const DashboardHome: React.FC = () => {
               <Typography variant="h6" fontWeight="bold" mb={2}>
                 Recent Activity
               </Typography>
-              {/* This was four invented people ("John Doe completed a ride (₹450)").
-                  There is no activity feed endpoint yet, so say so instead. */}
-              <Typography variant="body2" color="textSecondary">
-                The activity feed is not connected yet. Recent signups, rides and disputes are on the
-                Users, Rides and Courier pages.
-              </Typography>
+              <RecentActivity refreshKey={activityKey} />
             </CardContent>
           </Card>
         </Grid>
