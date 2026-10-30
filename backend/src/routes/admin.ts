@@ -19,7 +19,6 @@ import { authenticateAdminToken, authorizeAdminRoles } from '../middleware/auth'
 import Booking from '../models/Booking';
 import Ride from '../models/Ride';
 import User from '../models/User';
-import { DeliveryDispute } from '../models/DeliveryDispute';
 import { DeliveryAgreement, DeliveryStatus } from '../models/DeliveryAgreement';
 import { Currency } from '../models/Currency';
 import { BookingStatus, RideStatus } from '../types';
@@ -39,6 +38,7 @@ import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
 import { cashDisputeService } from '../services/CashDisputeService';
+import { deliveryDisputeService } from '../services/DeliveryDisputeService';
 import { UPLOADS_DIR } from '../middleware/upload';
 import {
   ADMIN_SESSION_HOURS,
@@ -398,61 +398,66 @@ router.get('/bookings', authenticateAdminToken, async (req, res) => {
 
 /**
  * @route   GET /api/admin/courier/disputes
- * @desc    Get courier disputes
- * @access  Private (Admin)
+ * @desc    Delivery disputes, open first, with the package and both people
+ * @access  Private (any admin role)
+ *
+ * This returned bare dispute rows, while the Disputes page expected each one
+ * to carry its package, sender, courier and money, so a real dispute would
+ * have broken the page. See DeliveryDisputeService.
  */
 router.get('/courier/disputes', authenticateAdminToken, async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query['page'] || 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 20)));
-    const offset = (page - 1) * limit;
-    const { status } = req.query;
-
-    const where: Record<string, any> = {};
-    if (status) where['status'] = status;
-
-    const result = await DeliveryDispute.findAndCountAll({
-      where,
-      order: [['createdAt', 'DESC']],
-      limit,
-      offset,
-    });
-
-    res.json({
-      success: true,
-      data: { disputes: result.rows, pagination: { page, limit, total: result.count, totalPages: Math.ceil(result.count / limit) } },
-      timestamp: new Date().toISOString(),
-    });
+    const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 25)));
+    const status = req.query['status'];
+    if (status !== undefined && status !== 'open' && status !== 'resolved') {
+      return res.status(400).json({ success: false, error: 'status must be open or resolved', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    const data = await deliveryDisputeService.list({ status: status as 'open' | 'resolved' | undefined, page, limit });
+    return res.json({ success: true, data, timestamp: new Date().toISOString() });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch disputes', code: 'FETCH_DISPUTES_FAILED', timestamp: new Date().toISOString() });
+    logger.error(`Delivery disputes list failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to fetch disputes', code: 'FETCH_DISPUTES_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/courier/disputes/:id
+ * @desc    One delivery dispute, with the delivery's timeline and commission
+ * @access  Private (any admin role)
+ */
+router.get('/courier/disputes/:id', authenticateAdminToken, async (req, res) => {
+  try {
+    const dispute = await deliveryDisputeService.get(String(req.params['id']));
+    if (!dispute) {
+      return res.status(404).json({ success: false, error: 'Dispute not found', code: 'DISPUTE_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    return res.json({ success: true, data: { dispute }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Delivery dispute read failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the dispute', code: 'FETCH_DISPUTE_FAILED', timestamp: new Date().toISOString() });
   }
 });
 
 /**
  * @route   POST /api/admin/courier/disputes/:id/resolve
- * @desc    Resolve courier dispute
+ * @desc    Record what the courier earned; the delivery and the courier's
+ *          commission follow, and both people are told
  * @access  Private (Admin)
+ *
+ * This took { resolutionAmount, notes } while the panel sent { decision,
+ * reason, amount }, so the decision was dropped, and wrote the admin's id
+ * into a column that referenced users (fixed by migration 032).
  */
 router.post('/courier/disputes/:id/resolve', authenticateAdminToken, requireAdmin, async (req: any, res) => {
   try {
-    const { id } = req.params;
-    const { resolutionAmount, notes } = req.body;
-    const adminId = req.user?.id || 'admin';
-
-    const dispute = await DeliveryDispute.findByPk(id);
-    if (!dispute) {
-      return res.status(404).json({ success: false, error: 'Dispute not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
+    const result = await deliveryDisputeService.resolve(String(req.params['id']), req.user.id, req.body ?? {});
+    if (!result.success) {
+      return res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
     }
-
-    if (!dispute.canBeResolved()) {
-      return res.status(400).json({ success: false, error: 'Dispute cannot be resolved in its current status', code: 'INVALID_STATUS', timestamp: new Date().toISOString() });
-    }
-
-    // resolve() calls save() internally
-    await dispute.resolve(adminId, resolutionAmount !== undefined ? Number(resolutionAmount) : undefined, notes);
-
-    return res.json({ success: true, message: 'Dispute resolved', data: dispute, timestamp: new Date().toISOString() });
+    return res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
+    logger.error(`Delivery dispute resolve failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to resolve dispute', code: 'RESOLVE_DISPUTE_FAILED', timestamp: new Date().toISOString() });
   }
 });
