@@ -351,7 +351,7 @@ export interface SosAlert {
 }
 
 export interface AdminAlerts {
-  counts: { sos: number; disputes: number; verifications: number; cashDisputes: number; total: number };
+  counts: { sos: number; disputes: number; verifications: number; cashDisputes: number; reports: number; total: number };
   sos: SosAlert[];
   disputes: { id: string; disputeType: string; status: string; createdAt: string; packageTitle: string | null }[];
   verifications: { userId: string; userName: string; documents: number; waitingSince: string }[];
@@ -460,6 +460,43 @@ export const deliveryDisputeService = {
       `/courier/disputes/${id}/resolve`,
       body
     ),
+};
+
+export type ReportReason = 'harassment' | 'inappropriate' | 'spam' | 'scam' | 'safety' | 'other';
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+export interface ReportPerson { id: string; firstName: string; lastName: string; email: string; status: string }
+export interface ReportSummary {
+  id: string;
+  reason: ReportReason;
+  status: ReportStatus;
+  createdAt: string;
+  hasMessage: boolean;
+  excerpt: string | null;
+  reporter: ReportPerson | null;
+  reported: ReportPerson | null;
+}
+export interface ReportDetail {
+  id: string;
+  reason: ReportReason;
+  status: ReportStatus;
+  details: string | null;
+  messageId: string | null;
+  messageExcerpt: string | null;
+  resolutionNotes: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  reporter: ReportPerson | null;
+  reported: ReportPerson | null;
+  reportsAgainstUser: { total: number; open: number };
+}
+
+/** Reports of chat messages and people from the app. */
+export const reportService = {
+  list: (params: { status?: ReportStatus; page?: number; limit?: number }) =>
+    adminApi.get<ApiResponse<{ reports: ReportSummary[]; openCount: number; pagination: { page: number; limit: number; total: number; totalPages: number } }>>('/reports', { params }),
+  get: (id: string) => adminApi.get<ApiResponse<{ report: ReportDetail }>>(`/reports/${id}`),
+  resolve: (id: string, body: { outcome: 'actioned' | 'dismissed'; notes: string }) =>
+    adminApi.post<ApiResponse<{ id: string; status: ReportStatus }>>(`/reports/${id}/resolve`, body),
 };
 
 export const cashDisputeService = {

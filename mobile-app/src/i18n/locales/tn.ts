@@ -1858,4 +1858,17 @@ export const tn: Record<TranslationKey, string> = {
 
   // Profile: demand for drivers
   'profile.demandSub': 'Gore mesepele e tshwaregile jang gaufi le wena, le gore batho ba tsamaya leng',
+
+  // Reporting
+  'rp.whyTitle': 'Go Phoso Eng?',
+  'rp.whyBody': 'Setlhopha sa ARYV se tla sekaseka pego ya gago. Motho yo mongwe ga a bolelelwe gore ke mang yo o mo begileng.',
+  'rp.reason.harassment': 'Tshotlo kgotsa ditshosetso',
+  'rp.reason.scam': 'Tsietso kgotsa bofora',
+  'rp.reason.inappropriate': 'Diteng tse di sa tshwanelang',
+  'rp.reason.safety': 'Ga ke ikutlwe ke babalesegile',
+  'rp.reason.spam': 'Melaetsa e e sa batlweng',
+  'rp.sentTitle': 'Pego e Rometswe',
+  'rp.sentBody': 'Re a leboga. Setlhopha sa ARYV se tla e sekaseka mme se dire se se tlhokegang. Fa o le mo kotsing, leletsa 999.',
+  'rp.alreadySent': 'O setse o begile se. Setlhopha sa ARYV se a se sekaseka.',
+  'rp.failed': 'Ga re a kgona go romela pego ya gago. Leka gape.',
 };

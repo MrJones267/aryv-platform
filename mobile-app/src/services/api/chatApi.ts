@@ -44,6 +44,8 @@ export interface GetMessagesParams {
   beforeDate?: string;
 }
 
+export type ReportReason = 'harassment' | 'inappropriate' | 'spam' | 'scam' | 'safety' | 'other';
+
 class ChatApiService extends BaseApiService {
   /**
    * Get messages for a group chat
@@ -69,7 +71,14 @@ class ChatApiService extends BaseApiService {
   /**
    * Mark messages in a group chat as read
    */
-  async markAsRead(groupChatId: string): Promise<ApiResponse<{ updatedCount: number }>> {
+  /**
+   * Report a message (messageId) or a person (reportedUserId) to ARYV
+   */
+  async report(body: { messageId?: string; reportedUserId?: string; reason: ReportReason; details?: string }): Promise<ApiResponse<{ reportId: string; duplicate: boolean }>> {
+    return this.post<{ reportId: string; duplicate: boolean }>('/reports', body);
+  }
+
+    async markAsRead(groupChatId: string): Promise<ApiResponse<{ updatedCount: number }>> {
     return this.post(`/group-chats/${groupChatId}/read`, {});
   }
 }

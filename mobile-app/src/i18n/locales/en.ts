@@ -1857,6 +1857,19 @@ export const en = {
 
   // Profile: demand for drivers
   'profile.demandSub': 'How busy rides are near you, and when people travel',
+
+  // Reporting
+  'rp.whyTitle': 'What\'s wrong?',
+  'rp.whyBody': 'ARYV\'s team will review your report. The other person is not told who reported them.',
+  'rp.reason.harassment': 'Harassment or threats',
+  'rp.reason.scam': 'Scam or fraud',
+  'rp.reason.inappropriate': 'Inappropriate content',
+  'rp.reason.safety': 'I feel unsafe',
+  'rp.reason.spam': 'Spam',
+  'rp.sentTitle': 'Report sent',
+  'rp.sentBody': 'Thank you. ARYV\'s team will review it and act where needed. If you are in danger, call 999.',
+  'rp.alreadySent': 'You have already reported this. ARYV\'s team is reviewing it.',
+  'rp.failed': 'Could not send your report. Try again.',
 };
 
 export type TranslationKey = keyof typeof en;

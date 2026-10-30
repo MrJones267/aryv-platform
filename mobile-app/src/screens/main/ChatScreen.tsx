@@ -28,7 +28,7 @@ import { ChatScreenProps } from '../../navigation/types';
 import { useSocket, useSocketEvent, useChatMessages } from '../../hooks/useSocket';
 import locationService from '../../services/LocationService';
 import logger from '../../services/LoggingService';
-import chatApi from '../../services/api/chatApi';
+import chatApi, { ReportReason } from '../../services/api/chatApi';
 import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ChatScreen');
@@ -53,6 +53,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const { chatId, recipientName } = route.params;
   const rideId = (route.params as Record<string, unknown>)?.rideId as string | undefined;
   const bookingId = (route.params as Record<string, unknown>)?.bookingId as string | undefined;
+  const otherUserId = (route.params as Record<string, unknown>)?.recipientId as string | undefined;
   const { profile: user } = useAppSelector((state) => state.user);
 
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -283,8 +284,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string): Promise<void> => {
-    setLocalMessages(prev => prev.filter(msg => msg.id !== messageId));
+  // Reporting goes to ARYV's admins (POST /api/reports). "Report message"
+  // used to thank the person and send nothing, and "Report user" told them
+  // to contact support. Delete, clear history and block only changed this
+  // phone's screen, so they are gone until they exist on the server.
+  const chooseReason = (then: (reason: ReportReason) => void): void => {
+    Alert.alert(t('rp.whyTitle'), t('rp.whyBody'), [
+      { text: t('rp.reason.harassment'), onPress: () => then('harassment') },
+      { text: t('rp.reason.scam'), onPress: () => then('scam') },
+      { text: t('rp.reason.inappropriate'), onPress: () => then('inappropriate') },
+      { text: t('rp.reason.safety'), onPress: () => then('safety') },
+      { text: t('rp.reason.spam'), onPress: () => then('spam') },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const sendReport = async (body: { messageId?: string; reportedUserId?: string; reason: ReportReason }): Promise<void> => {
+    try {
+      const res = await chatApi.report(body);
+      if (!res.success) {
+        Alert.alert(t('common.error'), res.error || t('rp.failed'));
+        return;
+      }
+      Alert.alert(t('rp.sentTitle'), res.data?.duplicate ? t('rp.alreadySent') : t('rp.sentBody'));
+    } catch {
+      Alert.alert(t('common.error'), t('rp.failed'));
+    }
   };
 
   const handleMessageLongPress = (message: ChatMessage): void => {
@@ -295,27 +320,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
     const actions: Array<{ text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }> = [];
 
-    if (isCurrentUser) {
-      actions.push({
-        text: t('ui.deleteMessage'),
-        style: 'destructive' as const,
-        onPress: () => {
-          Alert.alert(
-            t('ui.deleteMessage'),
-            t('ui.areYouSureYouWant'),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              {
-                text: t('common.delete'),
-                style: 'destructive',
-                onPress: () => handleDeleteMessage(message.id),
-              },
-            ],
-          );
-        },
-      });
-    }
-
     actions.push(
       {
         text: t('ui.copyMessage'),
@@ -324,15 +328,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
           Alert.alert(t('ui.copied'), t('ui.messageCopiedToClipboard'));
         },
       },
-      {
-        text: t('ui.reportMessage'),
-        style: 'destructive' as const,
-        onPress: () => {
-          Alert.alert(t('ui.reportMessage'), t('ui.thankYouForReportingWe'));
-        },
-      },
       { text: t('common.cancel'), style: 'cancel' },
     );
+    // You can report other people's messages, not your own.
+    if (!isCurrentUser) {
+      actions.splice(actions.length - 1, 0, {
+        text: t('ui.reportMessage'),
+        style: 'destructive' as const,
+        onPress: () => chooseReason(reason => sendReport({ messageId: message.id, reason })),
+      });
+    }
 
     Alert.alert(t('messagesList.options'), t('messagesList.chooseAction'), actions);
   };
@@ -343,44 +348,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       t('messagesList.chooseAction'),
       [
         { text: t('ui.shareLocation'), onPress: handleShareLocation },
-        { text: t('ui.clearChatHistory'), onPress: handleClearChat, style: 'destructive' },
-        { text: t('ui.reportUser'), onPress: handleReportUser, style: 'destructive' },
-        { text: t('ui.blockUser'), onPress: handleBlockUser, style: 'destructive' },
-        { text: t('common.cancel'), style: 'cancel' },
-      ],
-    );
-  };
-
-  const handleClearChat = (): void => {
-    Alert.alert(
-      t('ui.clearChatHistory'),
-      t('ui.areYouSureYouWant2'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('ui.clearAll'),
-          style: 'destructive',
-          onPress: () => {
-            setLocalMessages([]);
-          },
-        },
+        ...(otherUserId ? [{ text: t('ui.reportUser'), onPress: handleReportUser, style: 'destructive' as const }] : []),
+        { text: t('common.cancel'), style: 'cancel' as const },
       ],
     );
   };
 
   const handleReportUser = (): void => {
-    Alert.alert(t('ui.reportUser'), t('ui.pleaseContactSupportToReport'));
-  };
-
-  const handleBlockUser = (): void => {
-    Alert.alert(
-      t('ui.blockUser'),
-      t('ui.areYouSureYouWant3'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('ui.block'), style: 'destructive', onPress: () => navigation.goBack() },
-      ],
-    );
+    if (otherUserId) {chooseReason(reason => sendReport({ reportedUserId: otherUserId, reason }));}
   };
 
   const scrollToBottom = (): void => {
