@@ -4,7 +4,7 @@
  * @created 2025-01-24
  */
 
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { courierService, CourierPackageRow, CourierPackageState } from '../../services/api';
 
 export interface CourierPackage {
@@ -62,42 +62,12 @@ export interface DeliveryAgreement {
   };
 }
 
-export interface Dispute {
-  id: string;
-  deliveryAgreementId: string;
-  raisedBy: 'sender' | 'courier';
-  raisedById: string;
-  reason: string;
-  description: string;
-  status: 'open' | 'under_review' | 'resolved' | 'closed'; // the server's DisputeStatus
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  resolution?: string;
-  resolvedBy?: string;
-  resolvedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-  deliveryAgreement: DeliveryAgreement;
-  raisedByUser: {
-    firstName: string;
-    lastName: string;
-    email: string;
-  };
-}
-
 interface CourierState {
   packages: CourierPackageRow[];
   agreements: DeliveryAgreement[];
-  disputes: Dispute[];
-  selectedDispute: Dispute | null;
   loading: boolean;
   error: string | null;
   packagesPagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  disputesPagination: {
     page: number;
     limit: number;
     total: number;
@@ -116,17 +86,9 @@ interface CourierState {
 const initialState: CourierState = {
   packages: [],
   agreements: [],
-  disputes: [],
-  selectedDispute: null,
   loading: false,
   error: null,
   packagesPagination: {
-    page: 1,
-    limit: 25,
-    total: 0,
-    totalPages: 0,
-  },
-  disputesPagination: {
     page: 1,
     limit: 25,
     total: 0,
@@ -181,50 +143,6 @@ export const fetchDeliveryAgreements = createAsyncThunk(
   }
 );
 
-export const fetchDisputes = createAsyncThunk(
-  'courier/fetchDisputes',
-  async (
-    params: {
-      page?: number;
-      limit?: number;
-      status?: string;
-    } = {},
-    { rejectWithValue }
-  ) => {
-    try {
-      const response = await courierService.getDisputes(params);
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to fetch disputes');
-    }
-  }
-);
-
-export const resolveDispute = createAsyncThunk(
-  'courier/resolveDispute',
-  async (
-    {
-      id,
-      resolution,
-    }: {
-      id: string;
-      resolution: {
-        decision: 'release_payment' | 'refund_sender' | 'partial_refund';
-        reason: string;
-        amount?: number;
-      };
-    },
-    { rejectWithValue }
-  ) => {
-    try {
-      await courierService.resolveDispute(id, resolution);
-      return { id, ...resolution };
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to resolve dispute');
-    }
-  }
-);
-
 export const manualPaymentRelease = createAsyncThunk(
   'courier/manualPaymentRelease',
   async ({ agreementId, reason }: { agreementId: string; reason: string }, { rejectWithValue }) => {
@@ -243,15 +161,6 @@ const courierSlice = createSlice({
   reducers: {
     clearError: state => {
       state.error = null;
-    },
-    setSelectedDispute: (state, action: PayloadAction<Dispute | null>) => {
-      state.selectedDispute = action.payload;
-    },
-    updateDisputeInList: (state, action: PayloadAction<Partial<Dispute> & { id: string }>) => {
-      const index = state.disputes.findIndex(dispute => dispute.id === action.payload.id);
-      if (index !== -1) {
-        state.disputes[index] = { ...state.disputes[index], ...action.payload };
-      }
     },
   },
   extraReducers: builder => {
@@ -299,40 +208,6 @@ const courierSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // Fetch disputes
-      .addCase(fetchDisputes.pending, state => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(fetchDisputes.fulfilled, (state, action) => {
-        state.loading = false;
-        state.disputes = action.payload.data;
-        state.disputesPagination = action.payload.pagination;
-
-        state.stats.openDisputes = action.payload.data.filter((d: Dispute) => d.status === 'open').length;
-      })
-      .addCase(fetchDisputes.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-
-      // Resolve dispute
-      .addCase(resolveDispute.fulfilled, (state, action) => {
-        const { id } = action.payload;
-        const index = state.disputes.findIndex(dispute => dispute.id === id);
-        if (index !== -1) {
-          state.disputes[index].status = 'resolved';
-          state.disputes[index].resolvedAt = new Date().toISOString();
-        }
-        if (state.selectedDispute?.id === id) {
-          state.selectedDispute.status = 'resolved';
-          state.selectedDispute.resolvedAt = new Date().toISOString();
-        }
-      })
-      .addCase(resolveDispute.rejected, (state, action) => {
-        state.error = action.payload as string;
-      })
-
       // Manual payment release
       .addCase(manualPaymentRelease.fulfilled, (state, action) => {
         const { agreementId } = action.payload;
@@ -348,16 +223,13 @@ const courierSlice = createSlice({
   },
 });
 
-export const { clearError, setSelectedDispute, updateDisputeInList } = courierSlice.actions;
+export const { clearError } = courierSlice.actions;
 export default courierSlice.reducer;
 
 // Selectors
 export const selectPackages = (state: { courier: CourierState }) => state.courier.packages;
 export const selectAgreements = (state: { courier: CourierState }) => state.courier.agreements;
-export const selectDisputes = (state: { courier: CourierState }) => state.courier.disputes;
-export const selectSelectedDispute = (state: { courier: CourierState }) => state.courier.selectedDispute;
 export const selectCourierLoading = (state: { courier: CourierState }) => state.courier.loading;
 export const selectCourierError = (state: { courier: CourierState }) => state.courier.error;
 export const selectCourierStats = (state: { courier: CourierState }) => state.courier.stats;
 export const selectPackagesPagination = (state: { courier: CourierState }) => state.courier.packagesPagination;
-export const selectDisputesPagination = (state: { courier: CourierState }) => state.courier.disputesPagination;

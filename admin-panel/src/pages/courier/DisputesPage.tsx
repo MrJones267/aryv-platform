@@ -1,553 +1,417 @@
 /**
- * @fileoverview Courier Disputes Management Page for Hitch Admin Panel
+ * @fileoverview Delivery disputes raised by senders and couriers
  * @author Oabona-Majoko
  * @created 2025-01-24
+ * @lastModified 2026-10-30
+ *
+ * This page was built against invented data: it expected each dispute to
+ * carry its package, people, escrow amount and a priority, none of which the
+ * server sent, and its resolve form sent a decision the server ignored. It
+ * now reads the real dispute and records what the courier earned; the
+ * delivery's status and the courier's commission follow, and both people are
+ * told. Moderators can read; admins resolve.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  TextField,
-  MenuItem,
-  Button,
-  Chip,
-  IconButton,
-  Menu,
-  ListItemIcon,
-  ListItemText,
   Alert,
-  Grid,
-  Paper,
-  InputAdornment,
-  Tooltip,
-  Badge,
-  Avatar,
-  Stack,
+  Box,
+  Button,
+  Card,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  FormControlLabel,
+  Grid,
+  Link,
+  Radio,
+  RadioGroup,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
+  TextField,
+  Typography,
 } from '@mui/material';
-import { DataGrid, GridColDef, GridRenderCellParams, GridPaginationModel } from '@mui/x-data-grid';
-import {
-  Search,
-  FilterList,
-  MoreVert,
-  Gavel,
-  AttachMoney,
-  Visibility,
-  Schedule,
-  Person,
-  LocalShipping,
-  Flag,
-  Refresh,
-  Download,
-  Warning,
-  CheckCircle,
-  Cancel,
-  Info,
-} from '@mui/icons-material';
-
+import { Refresh } from '@mui/icons-material';
+import { Link as RouterLink } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import {
-  fetchDisputes,
-  resolveDispute,
-  setSelectedDispute,
-  clearError,
-  selectDisputes,
-  selectCourierLoading,
-  selectCourierError,
-  selectDisputesPagination,
-  selectCourierStats,
-  selectSelectedDispute,
-  Dispute,
-} from '../../store/slices/courierSlice';
-import DisputeDetailsModal from '../../components/courier/DisputeDetailsModal';
+import { selectAdminUser } from '../../store/slices/authSlice';
+import { fetchCurrencies, selectCurrencies } from '../../store/slices/settingsSlice';
+import { deliveryDisputeService, DeliveryDispute, DeliveryDisputeOutcome } from '../../services/api';
+import { formatMoney } from '../../utils/currency';
+
+// Constants
+const REASON_MIN = 5;
+const REASON_MAX = 1000;
+
+const TYPES: Record<string, string> = {
+  package_not_delivered: 'Package not delivered',
+  package_damaged: 'Package damaged',
+  incorrect_location: 'Delivered to the wrong place',
+  wrong_recipient: 'Wrong recipient',
+  late_delivery: 'Late delivery',
+  courier_no_show: 'Courier did not show up',
+  other: 'Other',
+};
+
+const OUTCOMES: Record<DeliveryDisputeOutcome, { label: string; help: string }> = {
+  delivered: {
+    label: 'Delivered as agreed',
+    help: 'The delivery completes and the courier owes commission on the whole price.',
+  },
+  part: {
+    label: 'The courier earned part of the price',
+    help: 'The delivery completes and the courier owes commission on the part earned. Settle the rest with them directly.',
+  },
+  not_delivered: {
+    label: 'Not delivered',
+    help: 'The delivery is cancelled and the courier owes no commission on it. Any cash they collected must go back to the sender.',
+  },
+};
+
+const EVENTS: Record<string, string> = {
+  status_transition: 'Status changed',
+  dispute_raised: 'Problem reported',
+  dispute_resolved: 'Dispute resolved',
+  pickup_confirmed: 'Picked up',
+  delivery_completed: 'Delivered',
+  qr_code_generated: 'Handover code issued',
+  location_update: 'Location update',
+};
+
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : '—');
+const humanise = (value: string) => value.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+const isOpen = (d: DeliveryDispute) => d.status === 'open' || d.status === 'under_review';
 
 const DisputesPage: React.FC = () => {
   const dispatch = useAppDispatch();
-  const disputes = useAppSelector(selectDisputes);
-  const loading = useAppSelector(selectCourierLoading);
-  const error = useAppSelector(selectCourierError);
-  const pagination = useAppSelector(selectDisputesPagination);
-  const stats = useAppSelector(selectCourierStats);
-  const selectedDisputeFromStore = useAppSelector(selectSelectedDispute);
+  const currencies = useAppSelector(selectCurrencies);
+  const admin = useAppSelector(selectAdminUser);
+  const canResolve = admin?.role === 'super_admin' || admin?.role === 'admin';
 
-  const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(null);
-  const [selectedDispute, setSelectedDisputeState] = useState<Dispute | null>(null);
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    search: '',
-    status: 'all',
-    priority: 'all',
-    raisedBy: 'all',
-  });
+  const [tab, setTab] = useState<'open' | 'resolved'>('open');
+  const [disputes, setDisputes] = useState<DeliveryDispute[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DeliveryDispute | null>(null);
+
+  const [outcome, setOutcome] = useState<DeliveryDisputeOutcome | ''>('');
+  const [earned, setEarned] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const money = (amount: number | null | undefined, code: string) => formatMoney(amount, code, currencies);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const response = await deliveryDisputeService.list({ status: tab, limit: 100 });
+      setDisputes(response.data.data.disputes);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Could not load delivery disputes');
+      setDisputes([]);
+    }
+  }, [tab]);
 
   useEffect(() => {
-    dispatch(
-      fetchDisputes({
-        page: pagination.page,
-        limit: pagination.limit,
-        status: filters.status !== 'all' ? filters.status : undefined,
-      })
-    );
-  }, [dispatch, pagination.page, pagination.limit, filters.status]);
+    dispatch(fetchCurrencies());
+  }, [dispatch]);
 
-  const handleActionClick = (event: React.MouseEvent<HTMLElement>, dispute: Dispute) => {
-    setActionMenuAnchor(event.currentTarget);
-    setSelectedDisputeState(dispute);
-  };
+  useEffect(() => {
+    setDisputes(null);
+    load();
+  }, [load]);
 
-  const handleActionClose = () => {
-    setActionMenuAnchor(null);
-    setSelectedDisputeState(null);
-  };
-
-  const handlePaginationChange = (model: GridPaginationModel) => {
-    // Dispatch pagination change action when implemented
-  };
-
-  const handleViewDispute = () => {
-    if (selectedDispute) {
-      dispatch(setSelectedDispute(selectedDispute));
-      setDetailsModalOpen(true);
-    }
-    handleActionClose();
-  };
-
-  const handleResolveDispute = async (decision: 'release_payment' | 'refund_sender' | 'partial_refund') => {
-    if (selectedDispute) {
-      const resolution = {
-        decision,
-        reason: 'Admin resolution',
-        amount: decision === 'partial_refund' ? selectedDispute.deliveryAgreement.escrowAmount * 0.5 : undefined,
-      };
-
-      await dispatch(resolveDispute({ id: selectedDispute.id, resolution }));
-      handleActionClose();
+  const open = async (row: DeliveryDispute) => {
+    setSelected(row);
+    setOutcome('');
+    setEarned('');
+    setReason('');
+    setResolveError(null);
+    try {
+      // The single read adds the delivery's timeline and the commission charged.
+      const response = await deliveryDisputeService.get(row.id);
+      setSelected(response.data.data.dispute);
+    } catch {
+      // The row from the list is enough to read; resolving re-checks on the server.
     }
   };
 
-  const handleModalResolve = async (
-    decision: 'release_payment' | 'refund_sender' | 'partial_refund',
-    reason: string,
-    amount?: number
-  ) => {
-    if (selectedDisputeFromStore) {
-      const resolution = {
-        decision,
-        reason,
-        amount,
-      };
+  const reasonValid = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX;
+  const earnedValid =
+    outcome !== 'part' || (Number(earned) > 0 && selected !== null && Number(earned) < selected.price);
 
-      await dispatch(resolveDispute({ id: selectedDisputeFromStore.id, resolution }));
-      setDetailsModalOpen(false);
-      dispatch(setSelectedDispute(null));
+  const resolve = async () => {
+    if (!selected || !outcome) return;
+    setBusy(true);
+    setResolveError(null);
+    try {
+      await deliveryDisputeService.resolve(selected.id, {
+        outcome,
+        reason: reason.trim(),
+        ...(outcome === 'part' ? { courierEarned: Number(earned) } : {}),
+      });
+      setSelected(null);
+      load();
+    } catch (err: any) {
+      setResolveError(err?.response?.data?.error || 'Could not resolve the dispute');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleRefresh = () => {
-    dispatch(
-      fetchDisputes({
-        page: pagination.page,
-        limit: pagination.limit,
-        status: filters.status !== 'all' ? filters.status : undefined,
-      })
-    );
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return 'error';
-      case 'high':
-        return 'warning';
-      case 'medium':
-        return 'info';
-      case 'low':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'open':
-        return 'error';
-      case 'under_review':
-        return 'warning';
-      case 'resolved':
-        return 'success';
-      case 'closed':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'open':
-        return <Warning fontSize="small" />;
-      case 'under_review':
-        return <Schedule fontSize="small" />;
-      case 'resolved':
-        return <CheckCircle fontSize="small" />;
-      case 'closed':
-        return <Cancel fontSize="small" />;
-      default:
-        return <Info fontSize="small" />;
-    }
-  };
-
-  const columns: GridColDef[] = [
-    {
-      field: 'id',
-      headerName: 'Dispute ID',
-      width: 120,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Typography variant="body2" fontWeight="medium">
-          #{params.row.id.slice(-6)}
-        </Typography>
-      ),
-    },
-    {
-      field: 'package',
-      headerName: 'Package',
-      flex: 1,
-      minWidth: 200,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Box>
-          <Typography variant="body2" fontWeight="medium">
-            {params.row.deliveryAgreement.package.title}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {params.row.deliveryAgreement.package.pickupAddress} → {params.row.deliveryAgreement.package.dropoffAddress}
-          </Typography>
-        </Box>
-      ),
-    },
-    {
-      field: 'raisedBy',
-      headerName: 'Raised By',
-      width: 150,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Box display="flex" alignItems="center" gap={1}>
-          <Avatar sx={{ width: 24, height: 24 }}>{params.row.raisedByUser.firstName[0]}</Avatar>
-          <Box>
-            <Typography variant="body2">
-              {params.row.raisedByUser.firstName} {params.row.raisedByUser.lastName}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              ({params.row.raisedBy})
-            </Typography>
-          </Box>
-        </Box>
-      ),
-    },
-    {
-      field: 'reason',
-      headerName: 'Reason',
-      width: 150,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Typography variant="body2">{params.row.reason}</Typography>
-      ),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      width: 100,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Chip
-          label={params.row.priority}
-          size="small"
-          color={getPriorityColor(params.row.priority)}
-          icon={<Flag fontSize="small" />}
-        />
-      ),
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 120,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Chip
-          label={params.row.status}
-          size="small"
-          color={getStatusColor(params.row.status)}
-          icon={getStatusIcon(params.row.status)}
-        />
-      ),
-    },
-    {
-      field: 'amount',
-      headerName: 'Amount',
-      width: 100,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Typography variant="body2" fontWeight="medium">
-          ${params.row.deliveryAgreement.escrowAmount.toFixed(2)}
-        </Typography>
-      ),
-    },
-    {
-      field: 'createdAt',
-      headerName: 'Created',
-      width: 110,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <Typography variant="body2">{new Date(params.row.createdAt).toLocaleDateString()}</Typography>
-      ),
-    },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      width: 80,
-      sortable: false,
-      renderCell: (params: GridRenderCellParams<Dispute>) => (
-        <IconButton size="small" onClick={e => handleActionClick(e, params.row)}>
-          <MoreVert />
-        </IconButton>
-      ),
-    },
-  ];
-
-  // Filter disputes based on local filters
-  const filteredDisputes = disputes.filter(dispute => {
-    const matchesSearch =
-      filters.search === '' ||
-      dispute.deliveryAgreement.package.title.toLowerCase().includes(filters.search.toLowerCase()) ||
-      dispute.reason.toLowerCase().includes(filters.search.toLowerCase()) ||
-      dispute.raisedByUser.firstName.toLowerCase().includes(filters.search.toLowerCase()) ||
-      dispute.raisedByUser.lastName.toLowerCase().includes(filters.search.toLowerCase());
-
-    const matchesPriority = filters.priority === 'all' || dispute.priority === filters.priority;
-    const matchesRaisedBy = filters.raisedBy === 'all' || dispute.raisedBy === filters.raisedBy;
-
-    return matchesSearch && matchesPriority && matchesRaisedBy;
-  });
+  const outcomeOf = (d: DeliveryDispute) =>
+    d.courierEarned === null
+      ? '—'
+      : d.courierEarned >= d.price
+        ? OUTCOMES.delivered.label
+        : d.courierEarned <= 0
+          ? OUTCOMES.not_delivered.label
+          : `Part: ${money(d.courierEarned, d.currency)}`;
 
   return (
-    <Box p={3}>
-      {/* Page Header */}
-      <Box mb={3} display="flex" alignItems="center" justifyContent="between">
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Box>
-          <Typography variant="h4" gutterBottom>
-            Courier Disputes
-          </Typography>
+          <Typography variant="h4">Delivery disputes</Typography>
           <Typography variant="body2" color="text.secondary">
-            Manage and resolve delivery disputes through the automated agreement system
+            Problems senders and couriers reported with a delivery. Deliveries are paid in cash at the door, so ARYV holds
+            no money: you record what the courier earned, and the delivery and their commission follow. Both are told.
           </Typography>
         </Box>
-        <Box display="flex" gap={1}>
-          <Tooltip title="Refresh">
-            <IconButton onClick={handleRefresh}>
-              <Refresh />
-            </IconButton>
-          </Tooltip>
-          <Button variant="outlined" startIcon={<Download />} size="small">
-            Export
-          </Button>
-        </Box>
+        <Button startIcon={<Refresh />} onClick={load}>
+          Refresh
+        </Button>
       </Box>
 
-      {/* Error Alert */}
+      <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tab value="open" label="Open" />
+        <Tab value="resolved" label="Resolved" />
+      </Tabs>
+
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => dispatch(clearError())}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
-      {/* Stats Cards */}
-      <Grid container spacing={3} mb={3}>
-        <Grid item xs={12} sm={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Badge badgeContent={stats.openDisputes} color="error">
-              <Warning color="error" sx={{ fontSize: 40 }} />
-            </Badge>
-            <Typography variant="h4" color="error.main" sx={{ mt: 1 }}>
-              {disputes.filter(d => d.status === 'open').length}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Open Disputes
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Schedule color="warning" sx={{ fontSize: 40 }} />
-            <Typography variant="h4" color="warning.main" sx={{ mt: 1 }}>
-              {disputes.filter(d => d.status === 'under_review').length}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Under review
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <CheckCircle color="success" sx={{ fontSize: 40 }} />
-            <Typography variant="h4" color="success.main" sx={{ mt: 1 }}>
-              {disputes.filter(d => d.status === 'resolved').length}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Resolved
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={3}>
-          <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <AttachMoney color="primary" sx={{ fontSize: 40 }} />
-            <Typography variant="h4" color="primary.main" sx={{ mt: 1 }}>
-              ${disputes.reduce((sum, d) => sum + d.deliveryAgreement.escrowAmount, 0).toFixed(0)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Total in Escrow
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* Filters */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
-            <TextField
-              size="small"
-              placeholder="Search disputes..."
-              value={filters.search}
-              onChange={e => setFilters({ ...filters, search: e.target.value })}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search fontSize="small" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ minWidth: 250 }}
-            />
-
-            <TextField
-              select
-              size="small"
-              label="Status"
-              value={filters.status}
-              onChange={e => setFilters({ ...filters, status: e.target.value })}
-              sx={{ minWidth: 120 }}
-            >
-              <MenuItem value="all">All Status</MenuItem>
-              <MenuItem value="open">Open</MenuItem>
-              <MenuItem value="under_review">Under review</MenuItem>
-              <MenuItem value="resolved">Resolved</MenuItem>
-              <MenuItem value="closed">Closed</MenuItem>
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label="Priority"
-              value={filters.priority}
-              onChange={e => setFilters({ ...filters, priority: e.target.value })}
-              sx={{ minWidth: 120 }}
-            >
-              <MenuItem value="all">All Priority</MenuItem>
-              <MenuItem value="urgent">Urgent</MenuItem>
-              <MenuItem value="high">High</MenuItem>
-              <MenuItem value="medium">Medium</MenuItem>
-              <MenuItem value="low">Low</MenuItem>
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label="Raised By"
-              value={filters.raisedBy}
-              onChange={e => setFilters({ ...filters, raisedBy: e.target.value })}
-              sx={{ minWidth: 120 }}
-            >
-              <MenuItem value="all">All Users</MenuItem>
-              <MenuItem value="sender">Sender</MenuItem>
-              <MenuItem value="courier">Courier</MenuItem>
-            </TextField>
-
-            <Button variant="outlined" startIcon={<FilterList />} size="small">
-              Advanced
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* Disputes Table */}
       <Card>
-        <DataGrid
-          rows={filteredDisputes}
-          columns={columns}
-          loading={loading}
-          paginationMode="client"
-          pageSizeOptions={[10, 25, 50, 100]}
-          initialState={{
-            pagination: { paginationModel: { pageSize: 25 } },
-          }}
-          disableRowSelectionOnClick
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-cell': {
-              borderBottom: '1px solid',
-              borderColor: 'divider',
-            },
-          }}
-        />
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Reported</TableCell>
+                <TableCell>Problem</TableCell>
+                <TableCell>Package</TableCell>
+                <TableCell>By</TableCell>
+                <TableCell>Sender</TableCell>
+                <TableCell>Courier</TableCell>
+                <TableCell align="right">Price</TableCell>
+                {tab === 'resolved' && <TableCell>Outcome</TableCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {!disputes ? (
+                <TableRow>
+                  <TableCell colSpan={8}>Loading…</TableCell>
+                </TableRow>
+              ) : disputes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8}>
+                    {tab === 'open' ? 'No open delivery disputes.' : 'No resolved delivery disputes yet.'}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                disputes.map(d => (
+                  <TableRow key={d.id} hover sx={{ cursor: 'pointer' }} onClick={() => open(d)}>
+                    <TableCell>{when(d.createdAt)}</TableCell>
+                    <TableCell>{TYPES[d.disputeType] ?? humanise(d.disputeType)}</TableCell>
+                    <TableCell>{d.packageTitle}</TableCell>
+                    <TableCell>{d.raisedBy === 'courier' ? 'Courier' : 'Sender'}</TableCell>
+                    <TableCell>{d.senderName ?? '—'}</TableCell>
+                    <TableCell>{d.courierName ?? '—'}</TableCell>
+                    <TableCell align="right">{money(d.price, d.currency)}</TableCell>
+                    {tab === 'resolved' && <TableCell>{outcomeOf(d)}</TableCell>}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Card>
 
-      {/* Action Menu */}
-      <Menu anchorEl={actionMenuAnchor} open={Boolean(actionMenuAnchor)} onClose={handleActionClose}>
-        <MenuItem onClick={handleViewDispute}>
-          <ListItemIcon>
-            <Visibility fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>View Details</ListItemText>
-        </MenuItem>
-
-        <Divider />
-
-        {selectedDispute && selectedDispute.status === 'open' && (
+      <Dialog open={!!selected} onClose={busy ? undefined : () => setSelected(null)} maxWidth="md" fullWidth>
+        {selected && (
           <>
-            <MenuItem onClick={() => handleResolveDispute('release_payment')}>
-              <ListItemIcon>
-                <AttachMoney fontSize="small" color="success" />
-              </ListItemIcon>
-              <ListItemText>Release Payment to Courier</ListItemText>
-            </MenuItem>
+            <DialogTitle>
+              {TYPES[selected.disputeType] ?? humanise(selected.disputeType)} · {selected.packageTitle}
+            </DialogTitle>
+            <DialogContent dividers>
+              <Typography variant="body2" gutterBottom>
+                Reported by the {selected.raisedBy} ({selected.raisedByName ?? 'unknown'}) on {when(selected.createdAt)}
+              </Typography>
+              <Alert severity="info" icon={false} sx={{ mb: 2 }}>
+                “{selected.description}”
+              </Alert>
+              {selected.evidenceImages && selected.evidenceImages.length > 0 && (
+                <Typography variant="body2" gutterBottom>
+                  Evidence:{' '}
+                  {selected.evidenceImages.map((url, i) => (
+                    <Link key={url} href={url} target="_blank" rel="noopener noreferrer" sx={{ mr: 1 }}>
+                      photo {i + 1}
+                    </Link>
+                  ))}
+                </Typography>
+              )}
 
-            <MenuItem onClick={() => handleResolveDispute('refund_sender')}>
-              <ListItemIcon>
-                <Cancel fontSize="small" color="error" />
-              </ListItemIcon>
-              <ListItemText>Refund to Sender</ListItemText>
-            </MenuItem>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2">Sender</Typography>
+                  <Link component={RouterLink} to={`/users/${selected.senderId}`}>
+                    {selected.senderName ?? 'Unknown'}
+                  </Link>
+                  <Typography variant="body2" color="text.secondary">
+                    {selected.senderPhone ?? 'No phone number'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2">Courier</Typography>
+                  <Link component={RouterLink} to={`/users/${selected.courierId}`}>
+                    {selected.courierName ?? 'Unknown'}
+                  </Link>
+                  <Typography variant="body2" color="text.secondary">
+                    {selected.courierPhone ?? 'No phone number'}
+                  </Typography>
+                </Grid>
+              </Grid>
 
-            <MenuItem onClick={() => handleResolveDispute('partial_refund')}>
-              <ListItemIcon>
-                <Gavel fontSize="small" color="warning" />
-              </ListItemIcon>
-              <ListItemText>Partial Refund (50/50)</ListItemText>
-            </MenuItem>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle2">Delivery</Typography>
+              <Typography variant="body2">
+                {selected.pickupAddress} → {selected.dropoffAddress}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {money(selected.price, selected.currency)},{' '}
+                {selected.paymentMethod === 'escrow' ? 'paid through escrow' : 'cash on delivery'} · accepted{' '}
+                {when(selected.acceptedAt)} · picked up {when(selected.pickedUpAt)} · delivered{' '}
+                {when(selected.deliveredAt)}
+                {selected.cashCollectedAt ? ` · cash collected ${when(selected.cashCollectedAt)}` : ''}
+              </Typography>
+
+              {selected.timeline && selected.timeline.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 2 }}>
+                    Timeline
+                  </Typography>
+                  {selected.timeline.map((e, i) => (
+                    <Typography key={i} variant="body2">
+                      {when(e.timestamp)} · {EVENTS[e.type] ?? humanise(e.type)}
+                      {e.byUserId === selected.senderId ? ' (sender)' : e.byUserId === selected.courierId ? ' (courier)' : ''}
+                    </Typography>
+                  ))}
+                </>
+              )}
+
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle2">Commission on this delivery</Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Full commission: {money(selected.platformFee, selected.currency)}.
+              </Typography>
+              {selected.commission && selected.commission.length > 0 ? (
+                selected.commission.map((c, i) => (
+                  <Typography key={i} variant="body2">
+                    {when(c.createdAt)} · {c.entryType === 'accrual' ? 'charged' : 'reversed'}{' '}
+                    {money(c.amount, selected.currency)} · {c.description}
+                  </Typography>
+                ))
+              ) : (
+                <Typography variant="body2">None charged yet.</Typography>
+              )}
+
+              <Divider sx={{ my: 2 }} />
+              {!isOpen(selected) ? (
+                <Alert severity="success">
+                  {outcomeOf(selected)} · {selected.resolvedByName ?? selected.resolvedByEmail ?? 'an admin'},{' '}
+                  {when(selected.resolvedAt)}
+                  <br />
+                  Reason: {selected.resolutionNotes}
+                </Alert>
+              ) : !canResolve ? (
+                <Alert severity="info">Only an admin can resolve a delivery dispute.</Alert>
+              ) : selected.paymentMethod === 'escrow' ? (
+                <Alert severity="warning">
+                  This delivery was paid through escrow. Refunding or releasing it needs a payment provider, which is
+                  not set up, so it cannot be resolved here.
+                </Alert>
+              ) : (
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    What did the courier earn?
+                  </Typography>
+                  <RadioGroup value={outcome} onChange={e => setOutcome(e.target.value as DeliveryDisputeOutcome)}>
+                    {(Object.keys(OUTCOMES) as DeliveryDisputeOutcome[]).map(key => (
+                      <Box key={key} mb={1}>
+                        <FormControlLabel value={key} control={<Radio />} label={OUTCOMES[key].label} />
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ ml: 4 }}>
+                          {OUTCOMES[key].help}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </RadioGroup>
+                  {outcome === 'part' && (
+                    <TextField
+                      label={`Courier earned (${selected.currency})`}
+                      type="number"
+                      value={earned}
+                      onChange={e => setEarned(e.target.value)}
+                      error={earned !== '' && !earnedValid}
+                      helperText={`More than 0 and less than ${money(selected.price, selected.currency)}`}
+                      sx={{ mt: 1, mb: 2 }}
+                    />
+                  )}
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    label="Why? What did you check?"
+                    value={reason}
+                    onChange={e => setReason(e.target.value)}
+                    inputProps={{ maxLength: REASON_MAX }}
+                    helperText={`${REASON_MIN} to ${REASON_MAX} characters. Sent to the sender and the courier, and kept in the audit log.`}
+                    sx={{ mt: 1 }}
+                  />
+                  {resolveError && (
+                    <Alert severity="error" sx={{ mt: 2 }}>
+                      {resolveError}
+                    </Alert>
+                  )}
+                </Box>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelected(null)} disabled={busy}>
+                Close
+              </Button>
+              {isOpen(selected) && canResolve && selected.paymentMethod !== 'escrow' && (
+                <Button
+                  variant="contained"
+                  onClick={resolve}
+                  disabled={busy || !outcome || !reasonValid || !earnedValid}
+                >
+                  {busy ? 'Saving…' : 'Resolve dispute'}
+                </Button>
+              )}
+            </DialogActions>
           </>
         )}
-      </Menu>
-
-      {/* Dispute Details Modal */}
-      <DisputeDetailsModal
-        open={detailsModalOpen}
-        onClose={() => {
-          setDetailsModalOpen(false);
-          dispatch(setSelectedDispute(null));
-        }}
-        dispute={selectedDisputeFromStore}
-        onResolve={handleModalResolve}
-      />
+      </Dialog>
     </Box>
   );
 };

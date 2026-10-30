@@ -23,6 +23,7 @@ import { colors } from '../../theme';
 import PackageService, { DeliveryAgreement } from '../../services/PackageService';
 import locationService from '../../services/LocationService';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import logger from '../../services/LoggingService';
 
@@ -407,6 +408,12 @@ const DeliveryDetailsScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        <ReportDeliveryProblem
+          agreementId={delivery.id}
+          deliveryStatus={delivery.status}
+          onReported={loadDeliveryDetails}
+        />
       </ScrollView>
 
       {/* Action Button */}
