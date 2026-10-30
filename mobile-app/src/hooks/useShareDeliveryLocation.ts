@@ -4,18 +4,20 @@
  * @created 2026-10-30
  * @lastModified 2026-10-30
  *
- * While a delivery is in transit and the courier has it open, the phone's
- * position is sent to the server at most every SEND_INTERVAL_MS, so the
- * sender's tracking map can show where the package is. Nothing was sending
- * it before: the sender's map had nothing to show.
+ * While a delivery is in transit, the phone's position is sent to the server
+ * about every 20 seconds so the sender's tracking map can show where the
+ * package is.
  *
- * Foreground only: it stops when the courier leaves the screen or the app.
+ * On Android it keeps going in the background (DeliveryLocationService runs
+ * a foreground service with an ongoing notification) until the delivery is
+ * no longer in transit. Elsewhere it shares only while this screen is open.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import PackageService from '../services/PackageService';
+import DeliveryLocationService, { SharingState } from '../services/DeliveryLocationService';
 import logger from '../services/LoggingService';
 
 const log = logger.createLogger('useShareDeliveryLocation');
@@ -25,7 +27,7 @@ const CONSTANTS = {
   DISTANCE_FILTER_M: 25,
 };
 
-export type LocationSharingState = 'off' | 'sharing' | 'no_permission' | 'unavailable';
+export type LocationSharingState = SharingState;
 
 async function hasPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') {return true;}
@@ -38,7 +40,28 @@ async function hasPermission(): Promise<boolean> {
   return granted === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-export function useShareDeliveryLocation(agreementId: string | undefined, active: boolean): LocationSharingState {
+/** Android: background sharing through the foreground service. */
+function useBackgroundSharing(agreementId: string | undefined, active: boolean): LocationSharingState {
+  const [state, setState] = useState<LocationSharingState>(DeliveryLocationService.getState());
+
+  useEffect(() => DeliveryLocationService.subscribe(setState), []);
+
+  useEffect(() => {
+    if (!agreementId) {return;}
+    if (active) {
+      DeliveryLocationService.start(agreementId).then(setState).catch(error => log.warn('Could not share location', error));
+    } else {
+      // Delivered, cancelled or disputed: stop sending for this one. Leaving
+      // the screen does not stop it; that is the point.
+      DeliveryLocationService.stop(agreementId);
+    }
+  }, [agreementId, active]);
+
+  return active ? state : 'off';
+}
+
+/** Elsewhere: share only while the screen is open. */
+function useForegroundSharing(agreementId: string | undefined, active: boolean): LocationSharingState {
   const [state, setState] = useState<LocationSharingState>('off');
   const lastSentRef = useRef(0);
 
@@ -89,5 +112,7 @@ export function useShareDeliveryLocation(agreementId: string | undefined, active
 
   return state;
 }
+
+export const useShareDeliveryLocation = DeliveryLocationService.supported ? useBackgroundSharing : useForegroundSharing;
 
 export default useShareDeliveryLocation;
