@@ -2,7 +2,7 @@
  * @fileoverview Help & Support screen component
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-10-30
  */
 
 import React, { useState } from 'react';
@@ -78,6 +78,9 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
     },
   ]);
 
+  // Email is the one support channel staffed today. Phone and WhatsApp used a
+  // made-up number (+256 700 000 000) and Live Chat said "coming soon"; add
+  // them back here once there is a real number or a chat service.
   const contactMethods: ContactMethod[] = [
     {
       id: 'email',
@@ -85,27 +88,6 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
       subtitle: 'support@aryv-app.com',
       icon: 'email',
       action: () => handleContactMethod('email'),
-    },
-    {
-      id: 'phone',
-      title: 'Phone Support',
-      subtitle: '+256 700 000 000',
-      icon: 'phone',
-      action: () => handleContactMethod('phone'),
-    },
-    {
-      id: 'chat',
-      title: 'Live Chat',
-      subtitle: 'Chat with our support team',
-      icon: 'chat',
-      action: () => handleContactMethod('chat'),
-    },
-    {
-      id: 'whatsapp',
-      title: 'WhatsApp',
-      subtitle: 'Message us on WhatsApp',
-      icon: 'message',
-      action: () => handleContactMethod('whatsapp'),
     },
   ];
 
@@ -122,19 +104,6 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
       case 'email':
         Linking.openURL('mailto:support@aryv-app.com?subject=Support Request')
           .catch(() => Alert.alert('Error', 'Unable to open email app'));
-        break;
-      case 'phone':
-        Linking.openURL('tel:+256700000000')
-          .catch(() => Alert.alert('Error', 'Unable to make phone call'));
-        break;
-      case 'chat':
-        Alert.alert('Live Chat', 'Live chat feature coming soon!');
-        break;
-      case 'whatsapp':
-        Linking.openURL('whatsapp://send?phone=256700000000&text=Hi, I need help with ARYV')
-          .catch(() => {
-            Linking.openURL('https://wa.me/256700000000?text=Hi, I need help with ARYV');
-          });
         break;
     }
   };
