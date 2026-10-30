@@ -72,6 +72,10 @@ export interface DemandInfo {
 export interface PackageTrackingData {
   package: Package;
   deliveryAgreement?: DeliveryAgreement;
+  /** [lng, lat] */
+  pickupLocation?: [number, number] | null;
+  /** [lng, lat] */
+  dropoffLocation?: [number, number] | null;
   courierLocations?: {
     location: [number, number];
     timestamp: string;
