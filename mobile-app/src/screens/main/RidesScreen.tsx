@@ -22,6 +22,8 @@ import { fetchMyRides } from '../../store/slices/ridesSlice';
 import { ridesApi } from '../../services/api';
 import { RidesScreenProps } from '../../navigation/types';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
+import type { TranslationKey } from '../../i18n/translations';
 
 const log = logger.createLogger('RidesScreen');
 
@@ -73,6 +75,7 @@ interface BookingRecord {
 }
 
 const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const nav = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void };
   const dispatch = useAppDispatch();
   const { myRides, isLoading } = useAppSelector((state) => state.rides);
@@ -110,25 +113,25 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
 
   const handleCancelRide = async (rideId: string): Promise<void> => {
     Alert.alert(
-      'Cancel Ride',
-      'Are you sure you want to cancel this ride? This action cannot be undone.',
+      t('myRides.cancelRideTitle'),
+      t('myRides.cancelRideBody'),
       [
-        { text: 'No', style: 'cancel' },
+        { text: t('myRides.no'), style: 'cancel' },
         {
-          text: 'Yes, Cancel',
+          text: t('myRides.yesCancel'),
           style: 'destructive',
           onPress: async () => {
             try {
               const response = await ridesApi.cancelRide(rideId);
               if (response.success) {
-                Alert.alert('Success', 'Ride cancelled successfully');
+                Alert.alert(t('common.success'), t('myRides.rideCancelled'));
                 await loadData();
               } else {
-                Alert.alert('Error', response.error || 'Failed to cancel ride');
+                Alert.alert(t('common.error'), response.error || t('myRides.cancelRideFailed'));
               }
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              Alert.alert('Error', errMsg || 'Failed to cancel ride');
+              Alert.alert(t('common.error'), errMsg || t('myRides.cancelRideFailed'));
             }
           },
         },
@@ -138,25 +141,25 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
 
   const handleCancelBooking = async (bookingId: string): Promise<void> => {
     Alert.alert(
-      'Cancel Booking',
-      'Are you sure you want to cancel this booking?',
+      t('myRides.cancelBookingTitle'),
+      t('myRides.cancelBookingBody'),
       [
-        { text: 'No', style: 'cancel' },
+        { text: t('myRides.no'), style: 'cancel' },
         {
-          text: 'Yes, Cancel',
+          text: t('myRides.yesCancel'),
           style: 'destructive',
           onPress: async () => {
             try {
               const response = await ridesApi.cancelBooking(bookingId);
               if (response.success) {
-                Alert.alert('Success', 'Booking cancelled successfully');
+                Alert.alert(t('common.success'), t('myRides.bookingCancelled'));
                 await loadData();
               } else {
-                Alert.alert('Error', response.error || 'Failed to cancel booking');
+                Alert.alert(t('common.error'), response.error || t('myRides.cancelBookingFailed'));
               }
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              Alert.alert('Error', errMsg || 'Failed to cancel booking');
+              Alert.alert(t('common.error'), errMsg || t('myRides.cancelBookingFailed'));
             }
           },
         },
@@ -209,7 +212,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
           styles.tabText,
           activeTab === 'driving' && styles.activeTabText
         ]}>
-          Driving ({myRides.length})
+          {t('myRides.driving', { count: myRides.length })}
         </Text>
       </TouchableOpacity>
 
@@ -226,7 +229,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
           styles.tabText,
           activeTab === 'riding' && styles.activeTabText
         ]}>
-          Riding ({bookings.length})
+          {t('myRides.riding', { count: bookings.length })}
         </Text>
       </TouchableOpacity>
     </View>
@@ -252,7 +255,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             styles.filterChipText,
             filterStatus === status && styles.activeFilterChipText
           ]}>
-            {status === 'all' ? 'All' : status.replace('_', ' ')}
+            {t(`status.${status}` as TranslationKey)}
           </Text>
         </TouchableOpacity>
       ))}
@@ -273,7 +276,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             styles.statusText,
             { color: getStatusColor(ride.status) }
           ]}>
-            {ride.status.replace('_', ' ').toUpperCase()}
+            {t(`status.${ride.status}` as TranslationKey).toUpperCase()}
           </Text>
         </View>
         <Text style={styles.rideDate}>
@@ -296,14 +299,14 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
           <View style={styles.routePoint}>
             <Icon name="radio-button-checked" size={12} color="#4CAF50" />
             <Text style={styles.routeText} numberOfLines={1}>
-              {ride.origin?.address || 'Origin'}
+              {ride.origin?.address || t('home.origin')}
             </Text>
           </View>
           <View style={styles.routeLine} />
           <View style={styles.routePoint}>
             <Icon name="location-on" size={12} color="#F44336" />
             <Text style={styles.routeText} numberOfLines={1}>
-              {ride.destination?.address || 'Destination'}
+              {ride.destination?.address || t('home.destination')}
             </Text>
           </View>
         </View>
@@ -314,20 +317,20 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.detailItem}>
           <Icon name="person" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            {ride.availableSeats} seats available
+            {t('myRides.seatsAvailable', { count: ride.availableSeats })}
           </Text>
         </View>
         <View style={styles.detailItem}>
           <Icon name="attach-money" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            P{ride.pricePerSeat} per seat
+            {t('myRides.pricePerSeat', { price: ride.pricePerSeat })}
           </Text>
         </View>
         {ride.bookings && ride.bookings.length > 0 && (
           <View style={styles.detailItem}>
             <Icon name="people" size={14} color="#666666" />
             <Text style={styles.detailText}>
-              {ride.bookings.length} booking{ride.bookings.length !== 1 ? 's' : ''}
+              {ride.bookings.length === 1 ? t('myRides.bookingsOne') : t('myRides.bookingsMany', { count: ride.bookings.length })}
             </Text>
           </View>
         )}
@@ -340,14 +343,14 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             style={styles.secondaryButton}
             onPress={() => handleCancelRide(ride.id)}
           >
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={() => nav.navigate('RideDetails', { rideId: ride.id })}
           >
-            <Text style={styles.primaryButtonText}>View Details</Text>
+            <Text style={styles.primaryButtonText}>{t('home.viewDetails')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -359,7 +362,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             style={styles.primaryButton}
             onPress={() => nav.navigate('RideDetails', { rideId: ride.id })}
           >
-            <Text style={styles.primaryButtonText}>View Active Ride</Text>
+            <Text style={styles.primaryButtonText}>{t('myRides.viewActive')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -378,7 +381,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               role: 'driver',
             })}
           >
-            <Text style={styles.primaryButtonText}>Rate Passengers</Text>
+            <Text style={styles.primaryButtonText}>{t('myRides.ratePassengers')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -399,7 +402,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             styles.statusText,
             { color: getStatusColor(booking.status) }
           ]}>
-            {booking.status.replace('_', ' ').toUpperCase()}
+            {t(`status.${booking.status}` as TranslationKey).toUpperCase()}
           </Text>
         </View>
         <Text style={styles.rideDate}>
@@ -442,14 +445,14 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
           <View style={styles.routePoint}>
             <Icon name="radio-button-checked" size={12} color="#4CAF50" />
             <Text style={styles.routeText} numberOfLines={1}>
-              {booking.ride.origin?.address || 'Origin'}
+              {booking.ride.origin?.address || t('home.origin')}
             </Text>
           </View>
           <View style={styles.routeLine} />
           <View style={styles.routePoint}>
             <Icon name="location-on" size={12} color="#F44336" />
             <Text style={styles.routeText} numberOfLines={1}>
-              {booking.ride.destination?.address || 'Destination'}
+              {booking.ride.destination?.address || t('home.destination')}
             </Text>
           </View>
         </View>
@@ -460,13 +463,13 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.detailItem}>
           <Icon name="person" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            {booking.seatsBooked} seat{booking.seatsBooked !== 1 ? 's' : ''}
+            {booking.seatsBooked === 1 ? t('myRides.seatOne') : t('myRides.seatMany', { count: booking.seatsBooked })}
           </Text>
         </View>
         <View style={styles.detailItem}>
           <Icon name="attach-money" size={14} color="#666666" />
           <Text style={styles.detailText}>
-            P{booking.totalAmount} total
+            {t('myRides.total', { amount: booking.totalAmount })}
           </Text>
         </View>
       </View>
@@ -478,7 +481,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             style={styles.secondaryButton}
             onPress={() => handleCancelBooking(booking.id)}
           >
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -496,7 +499,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               });
             }}
           >
-            <Text style={styles.primaryButtonText}>Contact Driver</Text>
+            <Text style={styles.primaryButtonText}>{t('myRides.contactDriver')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -508,7 +511,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             style={styles.primaryButton}
             onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
           >
-            <Text style={styles.primaryButtonText}>Track Ride</Text>
+            <Text style={styles.primaryButtonText}>{t('myRides.trackRide')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -520,7 +523,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
             style={styles.secondaryButton}
             onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
           >
-            <Text style={styles.secondaryButtonText}>View Details</Text>
+            <Text style={styles.secondaryButtonText}>{t('home.viewDetails')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: '#F59E0B' }]}
@@ -535,7 +538,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               role: 'passenger',
             })}
           >
-            <Text style={styles.primaryButtonText}>Rate Ride</Text>
+            <Text style={styles.primaryButtonText}>{t('myRides.rateRide')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -550,12 +553,12 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         color="#CCCCCC" 
       />
       <Text style={styles.emptyStateText}>
-        No {activeTab === 'driving' ? 'rides offered' : 'bookings'} yet
+        {activeTab === 'driving' ? t('myRides.noRidesOffered') : t('myRides.noBookings')}
       </Text>
       <Text style={styles.emptyStateSubtext}>
         {activeTab === 'driving' 
-          ? 'Start offering rides to help others get around'
-          : 'Search for rides to book your first trip'
+          ? t('myRides.noRidesOfferedBody')
+          : t('myRides.noBookingsBody')
         }
       </Text>
     </View>

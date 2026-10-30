@@ -28,7 +28,7 @@ interface LanguageSettingsScreenProps {
 const allLanguages = supportedLanguages;
 
 const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigation }) => {
-  const { language: selectedLanguage, setLanguage } = useI18n();
+  const { language: selectedLanguage, setLanguage, t } = useI18n();
 
   const handleSelectLanguage = (code: string): void => {
     setLanguage(code);
@@ -39,7 +39,7 @@ const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigat
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Language</Text>
+      <Text style={styles.headerTitle}>{t('language.title')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -73,9 +73,9 @@ const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigat
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Language</Text>
+          <Text style={styles.sectionTitle}>{t('language.appLanguage')}</Text>
           <Text style={styles.sectionDescription}>
-            Select your preferred language for the app interface.
+            {t('language.choose')}
           </Text>
 
           <View style={styles.languageList}>
@@ -87,7 +87,7 @@ const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigat
           <View style={styles.infoCard}>
             <Icon name="translate" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              Parts of the app are still shown in English while translation is finished.
+              {t('language.partial')}
             </Text>
           </View>
         </View>

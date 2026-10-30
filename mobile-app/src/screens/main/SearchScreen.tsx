@@ -34,13 +34,15 @@ type RideSegment = NonNullable<Ride['segment']>;
 
 type RideTier = NonNullable<Ride['tier']>;
 
-const TIER_LABELS: Record<RideTier, string> = {
-  shared: 'Shared',
-  standard: 'Standard',
-  comfort: 'Comfort',
-  premium: 'Premium',
+const TIER_LABELS: Record<RideTier, TranslationKey> = {
+  shared: 'search.tier.shared',
+  standard: 'search.tier.standard',
+  comfort: 'search.tier.comfort',
+  premium: 'search.tier.premium',
 };
 import logger from '../../services/LoggingService';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('SearchScreen');
 
@@ -54,6 +56,7 @@ interface PopularRoute {
 }
 
 const SearchScreen: React.FC = () => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<{ navigate: (screen: string, params?: Record<string, unknown>) => void }>();
   const { searchResults, searchLoading, searchFilters } = useAppSelector((state) => state.rides);
@@ -128,8 +131,8 @@ const SearchScreen: React.FC = () => {
       setFormData(prev => ({ ...prev, origin: currentLocation.address || '' }));
     } else {
       Alert.alert(
-        'Location Not Available',
-        'Unable to get your current location. Please enter manually.'
+        t('search.locationUnavailable'),
+        t('search.locationUnavailableBody')
       );
     }
   };
@@ -207,7 +210,7 @@ const SearchScreen: React.FC = () => {
     } catch (error: unknown) {
       setIsGeocoding(false);
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Search Failed', errMsg || 'Unable to search for rides');
+      Alert.alert(t('search.failed'), errMsg || t('search.failedBody'));
     }
   };
 
@@ -255,7 +258,7 @@ const SearchScreen: React.FC = () => {
               styles.filterChipText,
               selectedVehicleType === type && styles.filterChipTextActive,
             ]}>
-              {type}
+              {t(`search.vehicle.${type}` as TranslationKey)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -283,7 +286,7 @@ const SearchScreen: React.FC = () => {
 
   const renderPassengerSelector = (): React.ReactNode => (
     <View style={styles.passengerSelector}>
-      <Text style={styles.inputLabel}>Passengers</Text>
+      <Text style={styles.inputLabel}>{t('search.passengers')}</Text>
       <View style={styles.passengerControls}>
         <TouchableOpacity
           style={[
@@ -317,7 +320,7 @@ const SearchScreen: React.FC = () => {
 
     return (
       <View style={styles.popularSection}>
-        <Text style={styles.sectionTitle}>Popular Routes</Text>
+        <Text style={styles.sectionTitle}>{t('search.popularRoutes')}</Text>
         {loadingRoutes ? (
           <ActivityIndicator size="small" color="#3B82F6" style={{ marginVertical: 12 }} />
         ) : (
@@ -358,7 +361,7 @@ const SearchScreen: React.FC = () => {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Finding location...</Text>
+          <Text style={styles.loadingText}>{t('search.findingLocation')}</Text>
         </View>
       );
     }
@@ -367,7 +370,7 @@ const SearchScreen: React.FC = () => {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={styles.loadingText}>Searching for rides...</Text>
+          <Text style={styles.loadingText}>{t('search.searching')}</Text>
         </View>
       );
     }
@@ -378,9 +381,9 @@ const SearchScreen: React.FC = () => {
       return (
         <View style={styles.emptyState}>
           <Icon name="search-off" size={48} color="#CCCCCC" />
-          <Text style={styles.emptyStateText}>No rides found</Text>
+          <Text style={styles.emptyStateText}>{t('search.noResults')}</Text>
           <Text style={styles.emptyStateSubtext}>
-            Try adjusting your search criteria, or post a ride request so drivers can find you
+            {t('search.noResultsBody')}
           </Text>
           <TouchableOpacity
             style={styles.requestRideButton}
@@ -390,7 +393,7 @@ const SearchScreen: React.FC = () => {
             })}
           >
             <Icon name="add-circle-outline" size={18} color="#3B82F6" />
-            <Text style={styles.requestRideText}>Post a Ride Request</Text>
+            <Text style={styles.requestRideText}>{t('search.postRequest')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -453,12 +456,12 @@ const SearchScreen: React.FC = () => {
                 <Text style={styles.price}>
                   {formatPrice(ride.segment?.pricePerSeat ?? ride.pricePerSeat)}
                 </Text>
-                <Text style={styles.priceLabel}>per seat</Text>
+                <Text style={styles.priceLabel}>{t('rides.pricePerSeat')}</Text>
                 {/* What kind of vehicle it is. Shown, not chosen — the
                     passenger is booking this specific car. */}
                 {ride.tier && ride.tier !== 'standard' && (
                   <View style={styles.tierBadge}>
-                    <Text style={styles.tierBadgeText}>{TIER_LABELS[ride.tier]}</Text>
+                    <Text style={styles.tierBadgeText}>{t(TIER_LABELS[ride.tier])}</Text>
                   </View>
                 )}
               </View>
@@ -504,7 +507,7 @@ const SearchScreen: React.FC = () => {
                 <View style={styles.detailItem}>
                   <Icon name="event-seat" size={14} color="#666666" />
                   <Text style={styles.detailText}>
-                    {ride.segment?.seatsAvailable ?? ride.availableSeats} left
+                    {t('search.seatsLeft', { count: ride.segment?.seatsAvailable ?? ride.availableSeats ?? 0 })}
                   </Text>
                 </View>
                 {ride.distance && (
@@ -537,7 +540,7 @@ const SearchScreen: React.FC = () => {
                 style={styles.bookButton}
                 onPress={() => handleBookPress(ride.id, ride.segment)}
               >
-                <Text style={styles.bookButtonText}>Book</Text>
+                <Text style={styles.bookButtonText}>{t('search.book')}</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -553,12 +556,12 @@ const SearchScreen: React.FC = () => {
         <View style={styles.searchForm}>
           {/* Origin Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>From</Text>
+            <Text style={styles.inputLabel}>{t('rides.from')}</Text>
             <View style={styles.inputWrapper}>
               <Icon name="radio-button-checked" size={16} color="#10B981" style={styles.inputIcon} />
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. Gaborone"
+                placeholder={t('search.fromPlaceholder')}
                 placeholderTextColor="#999999"
                 value={formData.origin}
                 onChangeText={(text) => handleInputChange('origin', text)}
@@ -582,12 +585,12 @@ const SearchScreen: React.FC = () => {
 
           {/* Destination Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>To</Text>
+            <Text style={styles.inputLabel}>{t('rides.to')}</Text>
             <View style={styles.inputWrapper}>
               <Icon name="location-on" size={16} color="#EF4444" style={styles.inputIcon} />
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. Francistown"
+                placeholder={t('search.toPlaceholder')}
                 placeholderTextColor="#999999"
                 value={formData.destination}
                 onChangeText={(text) => handleInputChange('destination', text)}
@@ -599,7 +602,7 @@ const SearchScreen: React.FC = () => {
           {/* Date and Passenger Row */}
           <View style={styles.rowInputs}>
             <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.inputLabel}>Date</Text>
+              <Text style={styles.inputLabel}>{t('search.date')}</Text>
               <TouchableOpacity
                 style={styles.dateInput}
                 onPress={() => setShowDatePicker(true)}
@@ -622,12 +625,12 @@ const SearchScreen: React.FC = () => {
 
           {/* Max Price Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Max Price in BWP (Optional)</Text>
+            <Text style={styles.inputLabel}>{t('search.maxPrice')}</Text>
             <View style={styles.inputWrapper}>
               <Text style={styles.currencyPrefix}>P</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Maximum price per seat"
+                placeholder={t('search.maxPricePlaceholder')}
                 placeholderTextColor="#999999"
                 value={formData.maxPrice}
                 onChangeText={(text) => handleInputChange('maxPrice', text)}
@@ -653,7 +656,7 @@ const SearchScreen: React.FC = () => {
           >
             <Icon name="search" size={20} color="#FFFFFF" />
             <Text style={styles.searchButtonText}>
-              {isGeocoding ? 'Locating...' : searchLoading ? 'Searching...' : 'Search Rides'}
+              {isGeocoding ? t('search.locating') : searchLoading ? t('search.searchingShort') : t('rides.searchRides')}
             </Text>
           </TouchableOpacity>
         </View>

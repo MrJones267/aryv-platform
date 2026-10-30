@@ -22,6 +22,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import notificationsApi, { NotificationRecord } from '../../services/api/notificationsApi';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 type NotificationsScreenProps = {
   navigation: StackNavigationProp<any>;
@@ -36,6 +37,7 @@ const NOTIFICATION_ICONS: Record<string, string> = {
 };
 
 const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -70,7 +72,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
         setPage(pageNum);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load notifications.');
+      Alert.alert(t('common.error'), t('notifs.loadFailed'));
     }
   }, []);
 
@@ -101,7 +103,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
       setNotifications((prev) => prev.map((n) => ({ ...n, readAt: new Date().toISOString() })));
       setUnreadCount(0);
     } catch {
-      Alert.alert('Error', 'Failed to mark notifications as read.');
+      Alert.alert(t('common.error'), t('notifs.markFailed'));
     }
   };
 
@@ -119,9 +121,9 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
     const d = new Date(iso);
     const now = Date.now();
     const diff = now - d.getTime();
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 60000) {return t('notifs.justNow');}
+    if (diff < 3600000) {return t('notifs.minutesAgo', { count: Math.floor(diff / 60000) });}
+    if (diff < 86400000) {return t('notifs.hoursAgo', { count: Math.floor(diff / 3600000) });}
     return d.toLocaleDateString();
   };
 
@@ -155,7 +157,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
     <View style={styles.listHeader}>
       {unreadCount > 0 && (
         <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllButton}>
-          <Text style={styles.markAllText}>Mark all as read ({unreadCount})</Text>
+          <Text style={styles.markAllText}>{t('notifs.markAll', { count: unreadCount })}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -164,8 +166,8 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Icon name="notifications-none" size={64} color={colors.text.secondary} />
-      <Text style={styles.emptyTitle}>No notifications yet</Text>
-      <Text style={styles.emptySubtitle}>You'll see ride updates, booking confirmations, and more here.</Text>
+      <Text style={styles.emptyTitle}>{t('notifs.empty')}</Text>
+      <Text style={styles.emptySubtitle}>{t('notifs.emptyBody')}</Text>
     </View>
   );
 
@@ -183,7 +185,7 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <Text style={styles.headerTitle}>{t('nav.notifications')}</Text>
         <View style={styles.headerSpacer} />
       </View>
       <FlatList
