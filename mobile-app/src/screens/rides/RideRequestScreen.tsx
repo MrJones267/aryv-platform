@@ -31,6 +31,7 @@ import AIMatchingService, {
 } from '../../services/AIMatchingService';
 import DriverMatchCard from '../../components/matching/DriverMatchCard';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('RideRequestScreen');
 
@@ -40,6 +41,7 @@ interface RideRequestScreenProps {
 }
 
 const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -94,7 +96,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
 
   const handleSearchRides = async () => {
     if (!origin || !destination) {
-      Alert.alert('Missing Information', 'Please select both pickup and destination locations.');
+      Alert.alert(t('rf.missingInformation'), t('rf.pleaseSelectBothPickupAnd'));
       return;
     }
 
@@ -124,17 +126,17 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
       
       if (results.matches.length === 0) {
         Alert.alert(
-          'No Matches Found',
-          'No compatible drivers found for your request. Try adjusting your preferences or expanding your search area.',
+          t('rf.noMatchesFound'),
+          t('rf.noCompatibleDriversFoundFor'),
           [
-            { text: 'Adjust Preferences', onPress: () => setShowPreferences(true) },
+            { text: t('rf.adjustPreferences'), onPress: () => setShowPreferences(true) },
             { text: 'OK' },
           ]
         );
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Search Error', errMsg || 'Failed to find matching rides');
+      Alert.alert(t('rf.searchError'), errMsg || t('rf.failedToFindMatchingRides'));
     } finally {
       setIsSearching(false);
     }
@@ -144,12 +146,12 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
     setSelectedMatch(match);
     
     Alert.alert(
-      'Request Ride?',
-      `Send ride request to ${match.driver.firstName} ${match.driver.lastName}?`,
+      t('rf.requestRide'),
+      t('rf.sendRequestTo', { name: `${match.driver.firstName} ${match.driver.lastName}` }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Request Ride',
+          text: t('nav.requestRide'),
           onPress: () => handleRequestRide(match),
         },
       ]
@@ -162,11 +164,11 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
       log.info('Sending ride request to driver:', match.driver.id);
       
       Alert.alert(
-        'Request Sent!',
-        `Your ride request has been sent to ${match.driver.firstName}. They will be notified and can accept or decline your request.`,
+        t('rf.requestSent'),
+        t('rf.requestSentTo', { name: match.driver.firstName }),
         [
           {
-            text: 'Track Request',
+            text: t('rf.trackRequest'),
             onPress: () => {
               // Navigate to request tracking screen
               navigation?.navigate('RideTracking', { 
@@ -180,7 +182,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
       );
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Request Error', errMsg || 'Failed to send ride request');
+      Alert.alert(t('rf.requestError'), errMsg || t('rf.failedToSendRideRequest'));
     }
   };
 
@@ -197,14 +199,14 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
 
   const renderLocationPicker = () => (
     <Card style={styles.locationCard}>
-      <Text style={styles.sectionTitle}>Trip Details</Text>
+      <Text style={styles.sectionTitle}>{t('cf.tripDetails')}</Text>
       
       <View style={styles.locationPickers}>
         <LocationPicker
           visible={false}
           onClose={() => {}}
           onLocationSelect={setOrigin}
-          placeholder="Pickup location"
+          placeholder={t('rf.pickupLocation')}
         />
         
         <View style={styles.locationDivider}>
@@ -215,7 +217,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
           visible={false}
           onClose={() => {}}
           onLocationSelect={setDestination}
-          placeholder="Where to?"
+          placeholder={t('rf.whereTo')}
         />
       </View>
     </Card>
@@ -223,14 +225,14 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
 
   const renderRideTypeSelector = () => (
     <Card style={styles.rideTypeCard}>
-      <Text style={styles.sectionTitle}>Ride Type</Text>
+      <Text style={styles.sectionTitle}>{t('rf.rideType')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={styles.rideTypeList}>
           {[
-            { id: 'economy', name: 'Economy', icon: 'directions-car', description: 'Affordable rides' },
-            { id: 'comfort', name: 'Comfort', icon: 'airline-seat-recline-extra', description: 'Extra legroom' },
-            { id: 'premium', name: 'Premium', icon: 'star', description: 'Luxury vehicles' },
-            { id: 'shared', name: 'Shared', icon: 'people', description: 'Split the cost' },
+            { id: 'economy', name: t('rf.economy'), icon: 'directions-car', description: t('rf.affordableRides') },
+            { id: 'comfort', name: t('search.tier.comfort'), icon: 'airline-seat-recline-extra', description: t('rf.extraLegroom') },
+            { id: 'premium', name: t('search.tier.premium'), icon: 'star', description: t('rf.luxuryVehicles') },
+            { id: 'shared', name: t('search.tier.shared'), icon: 'people', description: t('rf.splitTheCost') },
           ].map((type) => (
             <TouchableOpacity
               key={type.id}
@@ -267,19 +269,19 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
   const renderQuickPreferences = () => (
     <Card style={styles.preferencesCard}>
       <View style={styles.preferencesHeader}>
-        <Text style={styles.sectionTitle}>Quick Preferences</Text>
+        <Text style={styles.sectionTitle}>{t('rf.quickPreferences')}</Text>
         <TouchableOpacity 
           style={styles.morePreferencesButton}
           onPress={() => setShowPreferences(true)}
         >
-          <Text style={styles.morePreferencesText}>More Options</Text>
+          <Text style={styles.morePreferencesText}>{t('rf.moreOptions')}</Text>
           <Icon name="chevron-right" size={16} color="#2196F3" />
         </TouchableOpacity>
       </View>
       
       <View style={styles.quickPreferences}>
         <View style={styles.preferenceItem}>
-          <Text style={styles.preferenceLabel}>Max Wait Time</Text>
+          <Text style={styles.preferenceLabel}>{t('rf.maxWaitTime')}</Text>
           <View style={styles.preferenceButtons}>
             {[5, 10, 15].map(time => (
               <TouchableOpacity
@@ -297,12 +299,12 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
         </View>
         
         <View style={styles.preferenceItem}>
-          <Text style={styles.preferenceLabel}>Priority</Text>
+          <Text style={styles.preferenceLabel}>{t('rf.priority')}</Text>
           <View style={styles.preferenceButtons}>
             {[
-              { id: 'time', label: 'Speed' },
-              { id: 'price', label: 'Price' },
-              { id: 'rating', label: 'Rating' },
+              { id: 'time', label: t('cf.speed') },
+              { id: 'price', label: t('rideDetails.price') },
+              { id: 'rating', label: t('rf.rating') },
             ].map(priority => (
               <TouchableOpacity
                 key={priority.id}
@@ -329,7 +331,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
   const renderSearchButton = () => (
     <View style={styles.searchButtonContainer}>
       <Button
-        title={isSearching ? 'Finding Matches...' : 'Find Matching Drivers'}
+        title={isSearching ? t('rf.findingMatches') : t('rf.findMatchingDrivers')}
         onPress={handleSearchRides}
         disabled={isSearching || !origin || !destination}
         loading={isSearching}
@@ -377,7 +379,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
           
           {matchingResults.recommendations.length > 0 && (
             <Card style={styles.recommendationsCard}>
-              <Text style={styles.recommendationsTitle}>Suggestions</Text>
+              <Text style={styles.recommendationsTitle}>{t('rf.suggestions')}</Text>
               {matchingResults.recommendations.map((rec, index) => (
                 <TouchableOpacity key={index} style={styles.recommendationItem}>
                   <Icon 
@@ -404,7 +406,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          <Text style={styles.screenTitle}>Request a Ride</Text>
+          <Text style={styles.screenTitle}>{t('rf.requestARide')}</Text>
           
           {!matchingResults ? (
             <>
@@ -423,7 +425,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
                 }}
               >
                 <Icon name="arrow-back" size={20} color="#2196F3" />
-                <Text style={styles.newSearchText}>New Search</Text>
+                <Text style={styles.newSearchText}>{t('rf.newSearch')}</Text>
               </TouchableOpacity>
               {renderMatchingResults()}
             </>

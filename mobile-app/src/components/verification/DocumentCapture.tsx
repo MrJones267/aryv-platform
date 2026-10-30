@@ -22,6 +22,7 @@ import { launchCamera, launchImageLibrary, CameraOptions } from 'react-native-im
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { DocumentType, DocumentMetadata } from '../../services/DocumentVerificationService';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface DocumentCaptureProps {
   documentType: DocumentType;
@@ -46,6 +47,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
   visible,
   guidelines = [],
 }) => {
+  const { t } = useI18n();
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [quality, setQuality] = useState<CaptureQuality | null>(null);
@@ -61,53 +63,53 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
 
   const getDocumentGuidelines = (): string[] => {
     const baseGuidelines = [
-      'Place document on a flat, dark surface',
-      'Ensure good lighting without shadows',
-      'Keep camera steady and parallel to document',
-      'Make sure all corners are visible',
-      'Avoid glare and reflections',
+      t('rf2.placeDocumentOnAFlat'),
+      t('rf.ensureGoodLightingWithoutShadows'),
+      t('rf.keepCameraSteadyAndParallel'),
+      t('rf.makeSureAllCornersAre'),
+      t('rf.avoidGlareAndReflections'),
     ];
 
     const specificGuidelines: Record<DocumentType, string[]> = {
       drivers_license: [
-        'Capture both front and back sides',
-        'Ensure license is not expired',
-        'Make sure photo and text are clearly visible',
+        t('rf2.captureBothFrontAndBack'),
+        t('rf.ensureLicenseIsNotExpired'),
+        t('rf.makeSurePhotoAndText'),
       ],
       passport: [
-        'Capture the photo page only',
-        'Ensure passport is open flat',
-        'Make sure the photo and all text are clear',
+        t('rf2.captureThePhotoPageOnly'),
+        t('rf.ensurePassportIsOpenFlat'),
+        t('rf.makeSureThePhotoAnd'),
       ],
       vehicle_registration: [
-        'Capture the main information page',
-        'Ensure all vehicle details are visible',
-        'Make sure document is current',
+        t('rf2.captureTheMainInformationPage'),
+        t('rf.ensureAllVehicleDetailsAre'),
+        t('rf.makeSureDocumentIsCurrent'),
       ],
       insurance_card: [
-        'Capture both sides if applicable',
-        'Ensure policy dates are clearly visible',
-        'Make sure coverage information is readable',
+        t('rf2.captureBothSidesIfApplicable'),
+        t('rf.ensurePolicyDatesAreClearly'),
+        t('rf.makeSureCoverageInformationIs'),
       ],
       national_id: [
-        'Capture both front and back',
-        'Ensure ID number is clearly visible',
-        'Make sure photo and text are not blurred',
+        t('rf2.captureBothFrontAndBack2'),
+        t('rf.ensureIdNumberIsClearly'),
+        t('rf.makeSurePhotoAndText2'),
       ],
       background_check: [
-        'Capture all pages of the report',
-        'Ensure document is from approved provider',
-        'Make sure all text is clearly readable',
+        t('rf2.captureAllPagesOfThe'),
+        t('rf.ensureDocumentIsFromApproved'),
+        t('rf.makeSureAllTextIs'),
       ],
       bank_statement: [
-        'Capture the first page with account details',
-        'Ensure statement is recent (within 3 months)',
-        'Account holder name must be visible',
+        t('rf2.captureTheFirstPageWith'),
+        t('rf.ensureStatementIsRecentWithin'),
+        t('rf.accountHolderNameMustBe'),
       ],
       utility_bill: [
-        'Capture the page showing account details',
-        'Ensure bill is recent (within 3 months)',
-        'Service address must be clearly visible',
+        t('rf2.captureThePageShowingAccount'),
+        t('rf.ensureBillIsRecentWithin'),
+        t('rf.serviceAddressMustBeClearly'),
       ],
     };
 
@@ -147,7 +149,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       }
 
       if (result.errorCode) {
-        Alert.alert('Error', result.errorMessage || 'Failed to capture image');
+        Alert.alert(t('common.error'), result.errorMessage || t('rf.failedToCaptureImage'));
         setIsCapturing(false);
         return;
       }
@@ -159,7 +161,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
         setQuality(imageQuality);
       }
     } catch (error: unknown) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to capture image');
+      Alert.alert(t('common.error'), error instanceof Error ? error.message: t('rf.failedToCaptureImage'));
     } finally {
       setIsCapturing(false);
     }
@@ -188,7 +190,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       </Text>
 
       <Text style={styles.subtitle}>
-        Choose how to capture your document
+        {t('rf.chooseHowToCaptureYour')}
       </Text>
 
       <TouchableOpacity
@@ -200,8 +202,8 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
           <Icon name="camera-alt" size={32} color={colors.primary} />
         </View>
         <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Take Photo</Text>
-          <Text style={styles.optionDescription}>Use your camera to capture the document</Text>
+          <Text style={styles.optionTitle}>{t('rf.takePhoto')}</Text>
+          <Text style={styles.optionDescription}>{t('rf.useYourCameraToCapture')}</Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
       </TouchableOpacity>
@@ -215,8 +217,8 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
           <Icon name="photo-library" size={32} color={colors.primary} />
         </View>
         <View style={styles.optionContent}>
-          <Text style={styles.optionTitle}>Choose from Gallery</Text>
-          <Text style={styles.optionDescription}>Select an existing photo</Text>
+          <Text style={styles.optionTitle}>{t('rf.chooseFromGallery')}</Text>
+          <Text style={styles.optionDescription}>{t('rf.selectAnExistingPhoto')}</Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
       </TouchableOpacity>
@@ -231,7 +233,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
 
   const renderGuidelines = () => (
     <View style={styles.guidelinesContainer}>
-      <Text style={styles.guidelinesTitle}>Tips for best results</Text>
+      <Text style={styles.guidelinesTitle}>{t('rf.tipsForBestResults')}</Text>
       <ScrollView style={styles.guidelinesList}>
         {getDocumentGuidelines().map((guideline, index) => (
           <View key={index} style={styles.guidelineItem}>
@@ -244,7 +246,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
         style={styles.gotItButton}
         onPress={() => setShowGuidelines(false)}
       >
-        <Text style={styles.gotItText}>Got It</Text>
+        <Text style={styles.gotItText}>{t('rf.gotIt2')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -272,7 +274,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
           onPress={() => setCapturedImage(null)}
         >
           <Icon name="refresh" size={20} color={colors.text.secondary} />
-          <Text style={styles.retakeText}>Retake</Text>
+          <Text style={styles.retakeText}>{t('rf.retake')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -280,7 +282,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
           onPress={handleConfirmCapture}
         >
           <Icon name="check" size={20} color={colors.text.inverse} />
-          <Text style={styles.useText}>Use Photo</Text>
+          <Text style={styles.useText}>{t('rf.usePhoto')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -295,7 +297,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
           <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
             <Icon name="close" size={24} color={colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Document Capture</Text>
+          <Text style={styles.headerTitle}>{t('rf.documentCapture')}</Text>
           <TouchableOpacity
             style={styles.helpButton}
             onPress={() => setShowGuidelines(true)}

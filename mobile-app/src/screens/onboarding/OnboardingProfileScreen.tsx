@@ -21,6 +21,8 @@ import { Button, Input, Card, Avatar } from '../../components/ui';
 import PhoneInput from '../../components/ui/PhoneInput';
 import { updateUserProfile } from '../../store/slices/userSlice';
 import { updateOnboardingProgress, completeOnboardingStep } from '../../store/slices/appSlice';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
   code: string;
@@ -54,7 +56,24 @@ interface ProfileFormData {
   };
 }
 
+// Interests are saved in English; only what is shown is translated.
+const INTEREST_LABELS: Record<string, TranslationKey> = {
+  'Music': 'interest.music',
+  'Sports': 'interest.sports',
+  'Travel': 'interest.travel',
+  'Technology': 'interest.technology',
+  'Food': 'interest.food',
+  'Movies': 'interest.movies',
+  'Books': 'interest.books',
+  'Fitness': 'interest.fitness',
+  'Art': 'interest.art',
+  'Photography': 'interest.photography',
+  'Gaming': 'interest.gaming',
+  'Outdoor Activities': 'interest.outdoorActivities',
+};
+
 const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { onboardingProgress } = useAppSelector((state) => state.app);
@@ -92,43 +111,43 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
     const newErrors: Record<string, string> = {};
 
     if (!formData.firstName.trim()) {
-      newErrors.firstName = 'First name is required';
+      newErrors.firstName = t('register.firstNameRequired');
     }
 
     if (!formData.lastName.trim()) {
-      newErrors.lastName = 'Last name is required';
+      newErrors.lastName = t('register.lastNameRequired');
     }
 
     // Phone validation (simplified since PhoneInput handles country code)
     if (!formData.phone) {
-      newErrors.phone = 'Phone number is required';
+      newErrors.phone = t('register.phoneRequired');
     } else if (formData.phone.replace(/\s/g, '').length < 6) {
-      newErrors.phone = 'Phone number must be at least 6 digits';
+      newErrors.phone = t('register.phoneShort');
     } else if (!/^\d+$/.test(formData.phone.replace(/[\s\-]/g, ''))) {
-      newErrors.phone = 'Phone number can only contain digits, spaces, and dashes';
+      newErrors.phone = t('register.phoneDigits');
     }
 
     if (formData.bio.length > 500) {
-      newErrors.bio = 'Bio must be less than 500 characters';
+      newErrors.bio = t('rf.bioMustBeLessThan');
     }
 
     if (showVehicleForm && formData.vehicleInfo) {
       if (!formData.vehicleInfo.make.trim()) {
-        newErrors.vehicleMake = 'Vehicle make is required';
+        newErrors.vehicleMake = t('rf.vehicleMakeIsRequired');
       }
       if (!formData.vehicleInfo.model.trim()) {
-        newErrors.vehicleModel = 'Vehicle model is required';
+        newErrors.vehicleModel = t('rf.vehicleModelIsRequired');
       }
       if (!formData.vehicleInfo.year.trim()) {
-        newErrors.vehicleYear = 'Vehicle year is required';
+        newErrors.vehicleYear = t('rf.vehicleYearIsRequired');
       } else if (!/^\d{4}$/.test(formData.vehicleInfo.year)) {
-        newErrors.vehicleYear = 'Invalid year format';
+        newErrors.vehicleYear = t('rf.invalidYearFormat');
       }
       if (!formData.vehicleInfo.color.trim()) {
-        newErrors.vehicleColor = 'Vehicle color is required';
+        newErrors.vehicleColor = t('rf.vehicleColorIsRequired');
       }
       if (!formData.vehicleInfo.licensePlate.trim()) {
-        newErrors.licensePlate = 'License plate is required';
+        newErrors.licensePlate = t('rf.licensePlateIsRequired');
       }
     }
 
@@ -199,7 +218,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
   const handleCompleteProfile = async () => {
     if (!isFormValid()) {
-      Alert.alert('Form Error', 'Please fix all errors before continuing');
+      Alert.alert(t('rf.formError'), t('rf.pleaseFixAllErrorsBefore2'));
       return;
     }
 
@@ -226,7 +245,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       });
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Failed to update profile');
+      Alert.alert(t('common.error'), errMsg || t('rf.failedToUpdateProfile'));
     } finally {
       setIsUpdating(false);
     }
@@ -234,12 +253,12 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
   const handleSkip = () => {
     Alert.alert(
-      'Skip Profile Setup?',
-      'You can complete your profile later in the settings. Some features may be limited without a complete profile.',
+      t('rf.skipProfileSetup'),
+      t('rf.youCanCompleteYourProfile'),
       [
-        { text: 'Go Back', style: 'cancel' },
+        { text: t('rideDetails.goBack'), style: 'cancel' },
         { 
-          text: 'Skip', 
+          text: t('common.skip'), 
           onPress: () => {
             dispatch(updateOnboardingProgress({
               profileCompleted: false,
@@ -259,7 +278,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
   const renderBasicInfoSection = () => (
     <Card style={styles.section}>
-      <Text style={styles.sectionTitle}>Basic Information</Text>
+      <Text style={styles.sectionTitle}>{t('rf.basicInformation')}</Text>
       
       <View style={styles.avatarSection}>
         <Avatar
@@ -269,14 +288,14 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         />
         <TouchableOpacity style={styles.changePhotoButton}>
           <Icon name="camera-alt" size={16} color="#2196F3" />
-          <Text style={styles.changePhotoText}>Change Photo</Text>
+          <Text style={styles.changePhotoText}>{t('rf.changePhoto')}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.nameRow}>
         <Input
-          label="First Name"
-          placeholder="John"
+          label={t('register.firstName')}
+          placeholder={t('rf.john')}
           value={formData.firstName}
           onChangeText={(text) => handleInputChange('firstName', text)}
           error={errors.firstName}
@@ -284,8 +303,8 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
           required
         />
         <Input
-          label="Last Name"
-          placeholder="Doe"
+          label={t('register.lastName')}
+          placeholder={t('rf.doe')}
           value={formData.lastName}
           onChangeText={(text) => handleInputChange('lastName', text)}
           error={errors.lastName}
@@ -298,15 +317,15 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         value={formData.phone}
         onChangeText={(text) => handleInputChange('phone', text)}
         onCountryChange={handleCountryChange}
-        label="Phone Number"
-        placeholder="Enter phone number"
+        label={t('rf.phoneNumber')}
+        placeholder={t('rf.enterPhoneNumber')}
         error={errors.phone}
         defaultCountry="BW"
       />
 
       <Input
-        label="Bio (Optional)"
-        placeholder="Tell others about yourself..."
+        label={t('rf.bioOptional')}
+        placeholder={t('rf.tellOthersAboutYourself')}
         value={formData.bio}
         onChangeText={(text) => handleInputChange('bio', text)}
         multiline
@@ -320,9 +339,9 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
   const renderInterestsSection = () => (
     <Card style={styles.section}>
-      <Text style={styles.sectionTitle}>Interests (Optional)</Text>
+      <Text style={styles.sectionTitle}>{t('rf.interestsOptional')}</Text>
       <Text style={styles.sectionSubtitle}>
-        Select your interests to connect with like-minded people
+        {t('rf.selectYourInterestsToConnect')}
       </Text>
       
       <View style={styles.interestsGrid}>
@@ -339,7 +358,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
               styles.interestText,
               formData.interests.includes(interest) && styles.interestTextSelected,
             ]}>
-              {interest}
+              {INTEREST_LABELS[interest] ? t(INTEREST_LABELS[interest]!) : interest}
             </Text>
           </TouchableOpacity>
         ))}
@@ -350,14 +369,14 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
   const renderVehicleSection = () => (
     <Card style={styles.section}>
       <View style={styles.vehicleHeader}>
-        <Text style={styles.sectionTitle}>Vehicle Information</Text>
+        <Text style={styles.sectionTitle}>{t('rf.vehicleInformation')}</Text>
         <Text style={styles.sectionSubtitle}>
-          Add your vehicle to offer rides to others
+          {t('rf.addYourVehicleToOffer')}
         </Text>
       </View>
 
       <Button
-        title={showVehicleForm ? 'Remove Vehicle' : 'Add Vehicle'}
+        title={showVehicleForm ? t('rf.removeVehicle') : t('profile.addVehicle')}
         onPress={handleAddVehicle}
         variant={showVehicleForm ? 'outline' : 'primary'}
         size="medium"
@@ -369,16 +388,16 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         <View style={styles.vehicleForm}>
           <View style={styles.vehicleRow}>
             <Input
-              label="Make"
-              placeholder="Toyota"
+              label={t('rf.make')}
+              placeholder={t('rf.toyota')}
               value={formData.vehicleInfo.make}
               onChangeText={(text) => handleVehicleInputChange('make', text)}
               error={errors.vehicleMake}
               containerStyle={styles.vehicleInput}
             />
             <Input
-              label="Model"
-              placeholder="Camry"
+              label={t('rf.model')}
+              placeholder={t('rf.camry')}
               value={formData.vehicleInfo.model}
               onChangeText={(text) => handleVehicleInputChange('model', text)}
               error={errors.vehicleModel}
@@ -388,7 +407,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
           <View style={styles.vehicleRow}>
             <Input
-              label="Year"
+              label={t('rf.year')}
               placeholder="2020"
               value={formData.vehicleInfo.year}
               onChangeText={(text) => handleVehicleInputChange('year', text)}
@@ -398,8 +417,8 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
               containerStyle={styles.vehicleInput}
             />
             <Input
-              label="Color"
-              placeholder="Silver"
+              label={t('rf.color')}
+              placeholder={t('rf.silver')}
               value={formData.vehicleInfo.color}
               onChangeText={(text) => handleVehicleInputChange('color', text)}
               error={errors.vehicleColor}
@@ -408,7 +427,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
           </View>
 
           <Input
-            label="License Plate"
+            label={t('rf.licensePlate')}
             placeholder="ABC123"
             value={formData.vehicleInfo.licensePlate}
             onChangeText={(text) => handleVehicleInputChange('licensePlate', text.toUpperCase())}
@@ -422,21 +441,21 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
   const renderEmergencyContactSection = () => (
     <Card style={styles.section}>
-      <Text style={styles.sectionTitle}>Emergency Contact (Optional)</Text>
+      <Text style={styles.sectionTitle}>{t('rf.emergencyContactOptional')}</Text>
       <Text style={styles.sectionSubtitle}>
-        For your safety, we recommend adding an emergency contact
+        {t('rf.forYourSafetyWeRecommend')}
       </Text>
 
       <Input
-        label="Contact Name"
-        placeholder="Jane Doe"
+        label={t('cf.contactName')}
+        placeholder={t('rf.janeDoe')}
         value={formData.emergencyContact.name}
         onChangeText={(text) => handleEmergencyContactChange('name', text)}
         leftIcon="person"
       />
 
       <Input
-        label="Phone Number"
+        label={t('rf.phoneNumber')}
         placeholder="+1 (555) 987-6543"
         value={formData.emergencyContact.phone}
         onChangeText={(text) => handleEmergencyContactChange('phone', text)}
@@ -445,8 +464,8 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       />
 
       <Input
-        label="Relationship"
-        placeholder="Sister, Friend, etc."
+        label={t('rf.relationship')}
+        placeholder={t('rf.sisterFriendEtc')}
         value={formData.emergencyContact.relationship}
         onChangeText={(text) => handleEmergencyContactChange('relationship', text)}
         leftIcon="family-restroom"
@@ -459,9 +478,9 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>Complete Your Profile</Text>
+            <Text style={styles.title}>{t('rf.completeYourProfile')}</Text>
             <Text style={styles.subtitle}>
-              Help others get to know you better and build trust in the community
+              {t('rf.helpOthersGetToKnow')}
             </Text>
           </View>
 
@@ -474,7 +493,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
 
       <View style={styles.footer}>
         <Button
-          title={isUpdating ? 'Completing...' : 'Complete Profile'}
+          title={isUpdating ? 'Completing...' : t('rf.completeProfile')}
           onPress={handleCompleteProfile}
           disabled={!isFormValid() || isUpdating}
           loading={isUpdating}
@@ -486,7 +505,7 @@ const OnboardingProfileScreen: React.FC<OnboardingProfileScreenProps> = ({ navig
         />
         
         <Button
-          title="Skip for now"
+          title={t('verify.skipForNow')}
           onPress={handleSkip}
           variant="ghost"
           size="medium"

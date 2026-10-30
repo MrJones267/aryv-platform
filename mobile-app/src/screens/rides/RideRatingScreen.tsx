@@ -27,6 +27,8 @@ import TipSelector from '../../components/payment/TipSelector';
 import ReceiptService, { RideReceipt } from '../../services/ReceiptService';
 import RideReceiptCard from '../../components/payment/RideReceiptCard';
 import logger from '../../services/LoggingService';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('RideRatingScreen');
 
@@ -46,12 +48,27 @@ interface RideRatingScreenProps {
   };
 }
 
-const RATING_LABELS: Record<number, string> = {
-  1: 'Poor',
-  2: 'Below Average',
-  3: 'Good',
-  4: 'Great',
-  5: 'Excellent',
+// Tags are sent to the server in English; only what is shown is translated.
+const TAG_LABELS: Record<string, TranslationKey> = {
+  'Smooth ride': 'rateTag.smoothRide',
+  'Great conversation': 'rateTag.greatConversation',
+  'On time': 'rateTag.onTime',
+  'Clean vehicle': 'rateTag.cleanVehicle',
+  'Safe driving': 'rateTag.safeDriving',
+  'Helpful with luggage': 'rateTag.helpfulWithLuggage',
+  'Polite passenger': 'rateTag.politePassenger',
+  'Respectful': 'rateTag.respectful',
+  'Good communicator': 'rateTag.goodCommunicator',
+  'Clean': 'rateTag.clean',
+  'Easy pickup': 'rateTag.easyPickup',
+};
+
+const RATING_LABELS: Record<number, TranslationKey> = {
+  1: 'rating.poor',
+  2: 'rating.belowAverage',
+  3: 'rating.good',
+  4: 'rating.great',
+  5: 'rating.excellent',
 };
 
 const QUICK_TAGS = {
@@ -74,10 +91,11 @@ const QUICK_TAGS = {
 };
 
 const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const {
     rideId = '',
     driverId = '',
-    driverName = 'your travel companion',
+    driverName = t('rf.yourTravelCompanion'),
     origin = '',
     destination = '',
     rideFare = 0,
@@ -128,7 +146,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      Alert.alert('Rating Required', 'Please select a star rating before submitting.');
+      Alert.alert(t('rating.ratingRequired'), t('rating.selectStar'));
       return;
     }
 
@@ -146,7 +164,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
       if (rideFare > 0 && role === 'passenger') {
         await generateReceipt();
       } else {
-        Alert.alert('Thank You!', 'Your rating has been submitted.', [
+        Alert.alert(t('rating.thankYou'), t('rating.submitted'), [
           { text: 'OK', onPress: () => navigation?.popToTop() },
         ]);
       }
@@ -156,7 +174,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
       if (rideFare > 0 && role === 'passenger') {
         await generateReceipt();
       } else {
-        Alert.alert('Rating Saved', 'Your rating will be submitted when connected.', [
+        Alert.alert(t('rf.ratingSaved'), t('rf.yourRatingWillBeSubmitted'), [
           { text: 'OK', onPress: () => navigation?.popToTop() },
         ]);
       }
@@ -182,8 +200,8 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
             <View style={styles.receiptCheckCircle}>
               <Icon name="check" size={28} color="#FFFFFF" />
             </View>
-            <Text style={styles.receiptThankYou}>Thank you!</Text>
-            <Text style={styles.receiptSubtext}>Your rating has been submitted</Text>
+            <Text style={styles.receiptThankYou}>{t('tip.thankYou')}</Text>
+            <Text style={styles.receiptSubtext}>{t('rf.yourRatingHasBeenSubmitted')}</Text>
           </View>
           <RideReceiptCard receipt={receipt} />
         </ScrollView>
@@ -193,7 +211,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
             onPress={() => navigation?.popToTop()}
             activeOpacity={0.8}
           >
-            <Text style={styles.submitBtnText}>Done</Text>
+            <Text style={styles.submitBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -214,7 +232,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Rate Your Trip</Text>
+            <Text style={styles.headerTitle}>{t('rides.rateTrip')}</Text>
             {origin && destination ? (
               <View style={styles.routeRow}>
                 <Text style={styles.routeText} numberOfLines={1}>
@@ -256,13 +274,13 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
             ))}
           </View>
           {rating > 0 && (
-            <Text style={styles.ratingLabel}>{RATING_LABELS[rating]}</Text>
+            <Text style={styles.ratingLabel}>{RATING_LABELS[rating] ? t(RATING_LABELS[rating]!) : ''}</Text>
           )}
 
           {/* Quick tags */}
           {rating > 0 && (
             <View style={styles.tagsSection}>
-              <Text style={styles.tagsSectionTitle}>What went well?</Text>
+              <Text style={styles.tagsSectionTitle}>{t('rating.whatWentWell')}</Text>
               <View style={styles.tagsGrid}>
                 {tags.map((tag) => {
                   const isSelected = selectedTags.includes(tag);
@@ -274,7 +292,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
                       activeOpacity={0.7}
                     >
                       <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>
-                        {tag}
+                        {TAG_LABELS[tag] ? t(TAG_LABELS[tag]!) : tag}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -286,12 +304,12 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
           {/* Comment */}
           {rating > 0 && (
             <View style={styles.commentSection}>
-              <Text style={styles.commentLabel}>Additional comments (optional)</Text>
+              <Text style={styles.commentLabel}>{t('rating.additionalComments')}</Text>
               <TextInput
                 style={styles.commentInput}
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Share more details about your experience..."
+                placeholder={t('rf.shareMoreDetailsAboutYour')}
                 placeholderTextColor={colors.text.secondary}
                 multiline
                 maxLength={500}
@@ -342,7 +360,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
             activeOpacity={0.8}
           >
             <Text style={styles.submitBtnText}>
-              {isSubmitting ? 'Submitting...' : 'Submit Rating'}
+              {isSubmitting ? 'Submitting...' : t('rating.submitRating')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -350,7 +368,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
             onPress={handleSkip}
             activeOpacity={0.7}
           >
-            <Text style={styles.skipBtnText}>Skip</Text>
+            <Text style={styles.skipBtnText}>{t('common.skip')}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

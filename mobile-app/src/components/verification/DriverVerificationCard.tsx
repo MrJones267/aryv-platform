@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface DriverInfo {
   id: string;
@@ -55,6 +56,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
   onContactPress,
   onCallPress,
 }) => {
+  const { t } = useI18n();
   const renderStars = (rating: number) => {
     const stars = [];
     const fullStars = Math.floor(rating);
@@ -77,9 +79,9 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
 
     const level = driver.verificationLevel || 'basic';
     const badgeConfig = {
-      basic: { icon: 'verified-user', color: '#6B7280', label: 'ID Verified' },
-      enhanced: { icon: 'verified-user', color: '#2563EB', label: 'Enhanced Verified' },
-      full: { icon: 'verified-user', color: '#10B981', label: 'Fully Verified' },
+      basic: { icon: 'verified-user', color: '#6B7280', label: t('rf.idVerified') },
+      enhanced: { icon: 'verified-user', color: '#2563EB', label: t('rf.enhancedVerified') },
+      full: { icon: 'verified-user', color: '#10B981', label: t('rf.fullyVerified') },
     };
 
     const badge = badgeConfig[level];
@@ -214,7 +216,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
               <Text style={styles.vehicleColor}>{vehicle.color}</Text>
             </View>
             <View style={styles.plateContainer}>
-              <Text style={styles.plateLabel}>Plate</Text>
+              <Text style={styles.plateLabel}>{t('rf.plate')}</Text>
               <View style={styles.plateBadge}>
                 <Text style={styles.plateText}>{vehicle.licensePlate}</Text>
               </View>
@@ -225,7 +227,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
           {vehicle.isInspected && (
             <View style={styles.inspectionBadge}>
               <Icon name="check-circle" size={14} color="#10B981" />
-              <Text style={styles.inspectionText}>Vehicle inspected</Text>
+              <Text style={styles.inspectionText}>{t('rf.vehicleInspected')}</Text>
             </View>
           )}
         </View>
@@ -236,25 +238,25 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
         {driver.isVerified && (
           <View style={styles.safetyItem}>
             <Icon name="verified-user" size={14} color="#10B981" />
-            <Text style={styles.safetyText}>ID Checked</Text>
+            <Text style={styles.safetyText}>{t('rf.idChecked')}</Text>
           </View>
         )}
         {vehicle?.isInspected && (
           <View style={styles.safetyItem}>
             <Icon name="build" size={14} color="#2563EB" />
-            <Text style={styles.safetyText}>Inspected</Text>
+            <Text style={styles.safetyText}>{t('rf.inspected')}</Text>
           </View>
         )}
         {driver.totalRides > 50 && (
           <View style={styles.safetyItem}>
             <Icon name="emoji-events" size={14} color="#F59E0B" />
-            <Text style={styles.safetyText}>Experienced</Text>
+            <Text style={styles.safetyText}>{t('rf.experienced')}</Text>
           </View>
         )}
         {driver.rating >= 4.5 && (
           <View style={styles.safetyItem}>
             <Icon name="thumb-up" size={14} color="#8B5CF6" />
-            <Text style={styles.safetyText}>Top Rated</Text>
+            <Text style={styles.safetyText}>{t('rf.topRated')}</Text>
           </View>
         )}
       </View>
