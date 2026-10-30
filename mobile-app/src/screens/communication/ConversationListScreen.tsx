@@ -2,10 +2,10 @@
  * @fileoverview Conversation list screen showing all active chats
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-30
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   RefreshControl,
   Alert,
   Image,
+  TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -51,6 +52,22 @@ const ConversationListScreen: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+
+  // Search the loaded conversations by the other person's name or the last
+  // message. The icon used to say "Search functionality coming soon".
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {return conversations;}
+    return conversations.filter(c =>
+      c.otherUserName.toLowerCase().includes(q) || (c.lastMessage.text || '').toLowerCase().includes(q));
+  }, [conversations, query]);
+
+  const closeSearch = () => {
+    setSearching(false);
+    setQuery('');
+  };
 
   useEffect(() => {
     loadConversations();
@@ -280,9 +297,24 @@ const ConversationListScreen: React.FC = () => {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Messages</Text>
-      <TouchableOpacity onPress={() => Alert.alert('Search', 'Search functionality coming soon')}>
-        <Icon name="search" size={24} color={colors.text.primary} />
+      {searching ? (
+        <TextInput
+          style={styles.searchInput}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search by name or message"
+          placeholderTextColor={colors.text.secondary}
+          autoFocus
+          returnKeyType="search"
+        />
+      ) : (
+        <Text style={styles.headerTitle}>Messages</Text>
+      )}
+      <TouchableOpacity
+        onPress={() => (searching ? closeSearch() : setSearching(true))}
+        accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
+      >
+        <Icon name={searching ? 'close' : 'search'} size={24} color={colors.text.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -300,7 +332,7 @@ const ConversationListScreen: React.FC = () => {
       {renderHeader()}
       
       <FlatList
-        data={conversations}
+        data={shown}
         renderItem={renderConversationItem}
         keyExtractor={(item) => item.id}
         refreshControl={
@@ -311,7 +343,11 @@ const ConversationListScreen: React.FC = () => {
             tintColor={colors.primary}
           />
         }
-        ListEmptyComponent={renderEmptyState}
+        ListEmptyComponent={query.trim() ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptySubtitle}>No conversations match "{query.trim()}"</Text>
+          </View>
+        ) : renderEmptyState}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       />
@@ -333,6 +369,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
+  },
+  searchInput: {
+    flex: 1,
+    marginHorizontal: 12,
+    paddingVertical: 4,
+    fontSize: 16,
+    color: colors.text.primary,
   },
   headerTitle: {
     fontSize: 18,

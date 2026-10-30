@@ -2,7 +2,7 @@
  * @fileoverview Transaction history component with filtering and search
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-30
  */
 
 import React, { useState, useMemo } from 'react';
@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
@@ -46,6 +47,43 @@ interface FilterOptions {
     end?: Date;
   };
 }
+
+// The filter screen used to say "Coming Soon" over filtering that already
+// worked underneath; these are the choices it offers.
+type ChipFilterKey = 'type' | 'category' | 'status';
+const FILTER_GROUPS: Array<{ key: ChipFilterKey; title: string; options: Array<{ value: string; label: string }> }> = [
+  {
+    key: 'category',
+    title: 'Money',
+    options: [
+      { value: 'income', label: 'Money in' },
+      { value: 'expense', label: 'Money out' },
+    ],
+  },
+  {
+    key: 'type',
+    title: 'Type',
+    options: [
+      { value: 'ride', label: 'Rides' },
+      { value: 'delivery', label: 'Deliveries' },
+      { value: 'earning', label: 'Earnings' },
+      { value: 'fee', label: 'Fees' },
+      { value: 'refund', label: 'Refunds' },
+    ],
+  },
+  {
+    key: 'status',
+    title: 'Status',
+    options: [
+      { value: 'completed', label: 'Completed' },
+      { value: 'pending', label: 'Pending' },
+      { value: 'processing', label: 'Processing' },
+      { value: 'failed', label: 'Failed' },
+      { value: 'refunded', label: 'Refunded' },
+      { value: 'cancelled', label: 'Cancelled' },
+    ],
+  },
+];
 
 const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   transactions,
@@ -165,6 +203,13 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const getFilterCount = () => {
     return filters.status.length + filters.type.length + filters.category.length +
            (filters.dateRange.start || filters.dateRange.end ? 1 : 0);
+  };
+
+  const toggleFilter = (key: ChipFilterKey, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: prev[key].includes(value) ? prev[key].filter(v => v !== value) : [...prev[key], value],
+    }));
   };
 
   const clearFilters = () => {
@@ -338,12 +383,33 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             </TouchableOpacity>
           </View>
           
-          <View style={styles.modalContent}>
-            <Text style={styles.filterSectionTitle}>Coming Soon</Text>
-            <Text style={styles.filterSectionSubtitle}>
-              Advanced filtering options will be available in the next update.
-            </Text>
-          </View>
+          <ScrollView style={styles.modalContent}>
+            {FILTER_GROUPS.map(group => (
+              <View key={group.key} style={styles.filterGroup}>
+                <Text style={styles.filterSectionTitle}>{group.title}</Text>
+                <View style={styles.chipRow}>
+                  {group.options.map(option => {
+                    const selected = filters[group.key].includes(option.value);
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[styles.chip, selected && styles.chipSelected]}
+                        onPress={() => toggleFilter(group.key, option.value)}
+                        accessibilityState={{ selected }}
+                      >
+                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.applyButton} onPress={() => setFilterModalVisible(false)}>
+              <Text style={styles.applyButtonText}>
+                Show {filteredTransactions.length} transaction{filteredTransactions.length === 1 ? '' : 's'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -504,19 +570,52 @@ const styles = StyleSheet.create({
   modalContent: {
     flex: 1,
     padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  filterSectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
+  filterGroup: {
+    marginBottom: 20,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    marginRight: 8,
     marginBottom: 8,
   },
-  filterSectionSubtitle: {
+  chipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
     fontSize: 14,
-    color: colors.text.secondary,
-    textAlign: 'center',
+    color: colors.text.primary,
+  },
+  chipTextSelected: {
+    color: '#fff',
+  },
+  applyButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 32,
+  },
+  applyButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  filterSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    marginBottom: 10,
   },
 });
 

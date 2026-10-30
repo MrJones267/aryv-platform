@@ -2,7 +2,7 @@
  * @fileoverview Language Settings screen component
  * @author Oabona-Majoko
  * @created 2025-01-28
- * @lastModified 2025-01-28
+ * @lastModified 2026-10-30
  */
 
 import React from 'react';
@@ -23,18 +23,9 @@ interface LanguageSettingsScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
-// Supported languages that have translations + display-only languages
-const allLanguages = [
-  ...supportedLanguages,
-  { code: 'zu', name: 'Zulu', nativeName: 'isiZulu' },
-  { code: 'xh', name: 'Xhosa', nativeName: 'isiXhosa' },
-  { code: 'st', name: 'Sotho', nativeName: 'Sesotho' },
-  { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
-  { code: 'sw', name: 'Swahili', nativeName: 'Kiswahili' },
-  { code: 'fr', name: 'French', nativeName: 'Français' },
-];
-
-const supportedCodes: string[] = supportedLanguages.map((l) => l.code);
+// Only languages the app has translations for. Six more (Zulu, Xhosa, Sotho,
+// Portuguese, Swahili, French) used to be listed, greyed out as "coming soon".
+const allLanguages = supportedLanguages;
 
 const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigation }) => {
   const { language: selectedLanguage, setLanguage } = useI18n();
@@ -55,22 +46,19 @@ const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigat
 
   const renderLanguageItem = (language: { code: string; name: string; nativeName: string }): React.ReactNode => {
     const isSelected = selectedLanguage === language.code;
-    const isSupported = supportedCodes.includes(language.code);
 
     return (
       <TouchableOpacity
         key={language.code}
-        style={[styles.languageItem, !isSupported && styles.languageItemDisabled]}
-        onPress={() => isSupported && handleSelectLanguage(language.code)}
-        disabled={!isSupported}
+        style={styles.languageItem}
+        onPress={() => handleSelectLanguage(language.code)}
       >
         <View style={styles.languageContent}>
-          <Text style={[styles.languageName, !isSupported && styles.languageNameDisabled]}>
+          <Text style={styles.languageName}>
             {language.name}
           </Text>
           <Text style={styles.languageNative}>
             {language.nativeName}
-            {!isSupported ? ' (coming soon)' : ''}
           </Text>
         </View>
         {isSelected && (
@@ -99,7 +87,7 @@ const LanguageSettingsScreen: React.FC<LanguageSettingsScreenProps> = ({ navigat
           <View style={styles.infoCard}>
             <Icon name="translate" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              Language changes apply immediately. More languages will be added in future updates.
+              Parts of the app are still shown in English while translation is finished.
             </Text>
           </View>
         </View>
@@ -158,9 +146,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
-  languageItemDisabled: {
-    opacity: 0.5,
-  },
   languageContent: {
     flex: 1,
   },
@@ -169,9 +154,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text.primary,
     marginBottom: 2,
-  },
-  languageNameDisabled: {
-    color: colors.text.secondary,
   },
   languageNative: {
     fontSize: 14,
