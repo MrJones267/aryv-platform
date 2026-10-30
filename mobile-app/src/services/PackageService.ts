@@ -646,6 +646,66 @@ class PackageService {
       };
     }
   }
+
+  /**
+   * Report a problem with a delivery (sender or courier). ARYV reviews it and
+   * tells both people what was decided.
+   */
+  async reportDeliveryProblem(
+    agreementId: string,
+    problem: { disputeType: DeliveryProblemType; description: string; evidenceImages?: string[] },
+  ): Promise<{ success: boolean; data?: { disputeId: string; message: string }; error?: string }> {
+    try {
+      const authToken = await this.authService.getValidToken();
+      if (!authToken) {
+        throw new Error('Authentication required');
+      }
+      return await this.apiClient.post(`/courier/deliveries/${agreementId}/dispute`, problem, {
+        headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      log.error('Error reporting a delivery problem:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /** The latest reported problem on a delivery, and the decision once made. */
+  async getDeliveryProblem(agreementId: string): Promise<{ success: boolean; data?: { dispute: DeliveryProblem | null }; error?: string }> {
+    try {
+      const authToken = await this.authService.getValidToken();
+      if (!authToken) {
+        throw new Error('Authentication required');
+      }
+      return await this.apiClient.get(`/courier/deliveries/${agreementId}/dispute`, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+    } catch (error) {
+      log.error('Error loading a delivery problem:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+}
+
+export type DeliveryProblemType =
+  | 'package_not_delivered'
+  | 'package_damaged'
+  | 'incorrect_location'
+  | 'wrong_recipient'
+  | 'late_delivery'
+  | 'courier_no_show'
+  | 'other';
+
+export interface DeliveryProblem {
+  id: string;
+  disputeType: DeliveryProblemType;
+  description: string;
+  status: 'open' | 'under_review' | 'resolved' | 'closed';
+  resolutionNotes: string | null;
+  courierEarned: number | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  raisedBy: 'sender' | 'courier';
+  currency: string;
 }
 
 export { PackageService };

@@ -5,7 +5,7 @@
  * @lastModified 2025-01-25
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import PackageService from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 
 // Mock Map Component
@@ -109,6 +110,8 @@ const PackageTrackingScreen: React.FC = () => {
     courierLocations?: CourierLocationData[];
   }
   const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
+  // One alert per visit: the screen refreshes every 30 seconds.
+  const alertedRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -127,53 +130,14 @@ const PackageTrackingScreen: React.FC = () => {
       if (response.success && response.data) {
         setTrackingData(response.data);
       } else {
-        // Mock data for demonstration
-        setTrackingData({
-          package: {
-            id: packageId,
-            title: 'Sample Package',
-            pickupAddress: '123 Main St, New York, NY',
-            dropoffAddress: '456 Oak Ave, New York, NY',
-            packageSize: 'medium',
-            fragile: true,
-            valuable: false,
-            senderPriceOffer: 25.00,
-            createdAt: new Date().toISOString(),
-          },
-          deliveryAgreement: {
-            id: 'agreement_123',
-            status: 'in_transit',
-            courierId: 'courier_456',
-            agreedPrice: 25.00,
-            platformFee: 2.50,
-            courier: {
-              id: 'courier_456',
-              firstName: 'John',
-              lastName: 'Doe',
-              phone: '+1234567890',
-            },
-          },
-          courierLocations: [
-            {
-              location: [-74.0060, 40.7128],
-              timestamp: new Date(Date.now() - 300000).toISOString(),
-              accuracy: 5,
-              speed: 25,
-            },
-            {
-              location: [-74.0050, 40.7140],
-              timestamp: new Date(Date.now() - 180000).toISOString(),
-              accuracy: 3,
-              speed: 30,
-            },
-            {
-              location: [-74.0040, 40.7150],
-              timestamp: new Date().toISOString(),
-              accuracy: 4,
-              speed: 20,
-            },
-          ],
-        });
+        // This used to show an invented package and courier ("John Doe", in
+        // New York) whenever loading failed, which a sender could mistake
+        // for their real delivery. Now a failed first load shows the "not
+        // available" screen, and a failed refresh keeps what was shown.
+        if (!alertedRef.current) {
+          alertedRef.current = true;
+          Alert.alert('Error', response.error || 'Failed to load tracking information');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load tracking information');
@@ -464,6 +428,14 @@ const PackageTrackingScreen: React.FC = () => {
               </Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {deliveryAgreement?.id && (
+          <ReportDeliveryProblem
+            agreementId={deliveryAgreement.id}
+            deliveryStatus={deliveryAgreement.status as string}
+            onReported={loadTrackingData}
+          />
         )}
       </ScrollView>
     </View>

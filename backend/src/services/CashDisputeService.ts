@@ -31,7 +31,9 @@ import TrustHold from '../models/TrustHold';
 import UserWallet from '../models/UserWallet';
 import { CommissionService } from './CommissionService';
 import { round2 } from '../utils/fees';
-import { logInfo } from '../utils/logger';
+import { logInfo, logError } from '../utils/logger';
+import { notificationService } from './NotificationService';
+import { formatMoneyInCurrency } from '../utils/money';
 
 // Constants
 const REASON_MIN = 5;
@@ -144,11 +146,12 @@ class CashDisputeService {
       return fail(400, 'INVALID_OUTCOME', `outcome must be one of ${CASH_DISPUTE_OUTCOMES.join(', ')}`);
     }
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    let notify: { riderId: string; driverId: string; paid: number; fare: number; currency: string; reason: string } | null = null;
     if (reason.length < REASON_MIN || reason.length > REASON_MAX) {
       return fail(400, 'REASON_REQUIRED', `Give a reason of ${REASON_MIN} to ${REASON_MAX} characters`);
     }
 
-    return sequelize.transaction(async t => {
+    const result = await sequelize.transaction(async (t): Promise<ResolveResult> => {
       const dispute = await CashDispute.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
       if (!dispute) return fail(404, 'DISPUTE_NOT_FOUND', 'Dispute not found');
       if (dispute.status !== 'open') return fail(409, 'ALREADY_RESOLVED', 'This dispute has already been resolved');
@@ -215,8 +218,48 @@ class CashDisputeService {
       }, { transaction: t });
 
       logInfo('Cash payment dispute resolved', { disputeId: id, outcome, paid, commissionBefore: before, commissionAfter: target, adminId });
+      notify = { riderId: payment.riderId, driverId: payment.driverId, paid, fare, currency: payment.currency, reason };
       return { success: true as const, outcome, commissionBefore: before, commissionAfter: target };
     });
+
+    // After the commit, so a notification that fails cannot undo a decision.
+    if (result.success && notify) {
+      void this.notifyParties(id, outcome, notify);
+    }
+    return result;
+  }
+
+  /** Tell the rider and the driver what was decided, and why. */
+  private async notifyParties(
+    disputeId: string,
+    outcome: CashDisputeOutcome,
+    n: { riderId: string; driverId: string; paid: number; fare: number; currency: string; reason: string },
+  ): Promise<void> {
+    try {
+      const [paid, fare] = await Promise.all([
+        formatMoneyInCurrency(n.paid, n.currency),
+        formatMoneyInCurrency(n.fare, n.currency),
+      ]);
+      const decided = {
+        paid_in_full: `ARYV found the rider paid the full fare of ${fare}.`,
+        part_paid: `ARYV found ${paid} of the ${fare} fare was paid.`,
+        not_paid: `ARYV found no fare was paid, so this payment has been cancelled.`,
+      }[outcome];
+      const message = `${decided} Reason: ${n.reason}`;
+      const notification = {
+        type: 'cash_dispute_resolved',
+        title: 'Your payment dispute was resolved',
+        message,
+        data: { disputeId, outcome },
+        timestamp: new Date().toISOString(),
+      };
+      await Promise.all([
+        notificationService.sendToUser(n.riderId, notification),
+        notificationService.sendToUser(n.driverId, notification),
+      ]);
+    } catch (error) {
+      logError('Could not notify the parties to a resolved cash dispute', error as Error, { disputeId });
+    }
   }
 }
 

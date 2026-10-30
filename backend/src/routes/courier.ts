@@ -15,6 +15,7 @@ import { CourierProfile, User, Package, DeliveryAgreement } from '../models';
 import DriverDocument, { DocumentStatus, DocumentType } from '../models/DriverDocument';
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
+import { deliveryDisputeService } from '../services/DeliveryDisputeService';
 
 const router = Router();
 
@@ -653,6 +654,53 @@ router.put('/profile',
       });
     }
   },
+);
+
+/**
+ * POST /api/courier/deliveries/:agreementId/dispute
+ * The sender or the courier reports a problem with a delivery. Nobody could
+ * before: the controller for it was never mounted. See DeliveryDisputeService.
+ */
+router.post(
+  '/deliveries/:agreementId/dispute',
+  [param('agreementId').isUUID().withMessage('Delivery ID must be a valid UUID')],
+  validateInput,
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const result = await deliveryDisputeService.raise(req.user!.id, String(req.params['agreementId']), req.body ?? {});
+      if (!result.success) {
+        res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+        return;
+      }
+      res.status(201).json({
+        success: true,
+        data: { disputeId: result.disputeId, message: 'Reported. ARYV will review it and tell you both what was decided.' },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error(`Raising a delivery dispute failed: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Could not report the problem', code: 'DISPUTE_FAILED', timestamp: new Date().toISOString() });
+    }
+  }) as any,
+);
+
+/**
+ * GET /api/courier/deliveries/:agreementId/dispute
+ * The latest dispute on a delivery and its outcome, for the sender or courier.
+ */
+router.get(
+  '/deliveries/:agreementId/dispute',
+  [param('agreementId').isUUID().withMessage('Delivery ID must be a valid UUID')],
+  validateInput,
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const dispute = await deliveryDisputeService.forParticipant(req.user!.id, String(req.params['agreementId']));
+      res.json({ success: true, data: { dispute }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error(`Reading a delivery dispute failed: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Could not load the dispute', code: 'DISPUTE_READ_FAILED', timestamp: new Date().toISOString() });
+    }
+  }) as any,
 );
 
 /**

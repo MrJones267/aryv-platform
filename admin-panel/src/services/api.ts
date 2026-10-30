@@ -238,18 +238,6 @@ export const courierService = {
   getDeliveryAgreements: (params: { page?: number; limit?: number; status?: string }) =>
     adminApi.get<PaginatedResponse<any>>('/courier/agreements', { params }),
 
-  getDisputes: (params: { page?: number; limit?: number; status?: string }) =>
-    adminApi.get<PaginatedResponse<any>>('/courier/disputes', { params }),
-
-  resolveDispute: (
-    id: string,
-    resolution: {
-      decision: 'release_payment' | 'refund_sender' | 'partial_refund';
-      reason: string;
-      amount?: number;
-    }
-  ) => adminApi.post<ApiResponse<null>>(`/courier/disputes/${id}/resolve`, resolution),
-
   manualPaymentRelease: (agreementId: string, reason: string) =>
     adminApi.post<ApiResponse<null>>(`/courier/agreements/${agreementId}/release-payment`, { reason }),
 };
@@ -414,6 +402,65 @@ export interface CashDispute {
   /** Only on the single-dispute read. */
   commission?: { entryType: string; amount: number; balanceAfter: number; description: string | null; createdAt: string }[];
 }
+
+/** What the admin decided the courier earned. Commission follows it. */
+export type DeliveryDisputeOutcome = 'delivered' | 'part' | 'not_delivered';
+
+export interface DeliveryDispute {
+  id: string;
+  disputeType: string;
+  description: string;
+  evidenceImages: string[] | null;
+  status: 'open' | 'under_review' | 'resolved' | 'closed';
+  resolutionNotes: string | null;
+  courierEarned: number | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  resolvedByEmail: string | null;
+  resolvedByName: string | null;
+  raisedById: string;
+  raisedByName: string | null;
+  raisedBy: 'sender' | 'courier';
+  agreementId: string;
+  deliveryStatus: string;
+  paymentMethod: 'cash_on_delivery' | 'escrow';
+  price: number;
+  platformFee: number;
+  currency: string;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  cashCollectedAt: string | null;
+  acceptedAt: string;
+  packageId: string;
+  packageTitle: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  senderId: string;
+  senderName: string | null;
+  senderPhone: string | null;
+  courierId: string;
+  courierName: string | null;
+  courierPhone: string | null;
+  /** Only on the single-dispute read. */
+  timeline?: { timestamp: string; type: string; byUserId: string | null }[];
+  commission?: { entryType: string; amount: number; description: string | null; createdAt: string }[];
+}
+
+export const deliveryDisputeService = {
+  list: (params: { status?: 'open' | 'resolved'; page?: number; limit?: number }) =>
+    adminApi.get<
+      ApiResponse<{
+        disputes: DeliveryDispute[];
+        pagination: { page: number; limit: number; total: number; totalPages: number };
+      }>
+    >('/courier/disputes', { params }),
+  get: (id: string) => adminApi.get<ApiResponse<{ dispute: DeliveryDispute }>>(`/courier/disputes/${id}`),
+  resolve: (id: string, body: { outcome: DeliveryDisputeOutcome; reason: string; courierEarned?: number }) =>
+    adminApi.post<ApiResponse<{ outcome: DeliveryDisputeOutcome; commissionBefore: number; commissionAfter: number }>>(
+      `/courier/disputes/${id}/resolve`,
+      body
+    ),
+};
 
 export const cashDisputeService = {
   list: (params: { status?: 'open' | 'resolved'; page?: number; limit?: number }) =>
