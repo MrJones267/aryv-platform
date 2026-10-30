@@ -10,6 +10,8 @@ import { AuthController } from '../../controllers/AuthController';
 import { AppError } from '../../types';
 
 jest.mock('../../services/AuthService');
+// The erasure itself runs against a real database in accountClosure.test.ts.
+jest.mock('../../services/AccountClosureService', () => ({ eraseAccount: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../config/redis', () => ({
   redisClient: {
     connect: jest.fn(),
@@ -22,6 +24,7 @@ jest.mock('../../config/redis', () => ({
 
 import { AuthService } from '../../services/AuthService';
 import User from '../../models/User';
+import { eraseAccount } from '../../services/AccountClosureService';
 
 // User is not module-mocked: automocking AuthService still loads models/index,
 // and a stubbed User class breaks the association wiring that runs on import.
@@ -236,19 +239,7 @@ describe('AuthController', () => {
       await AuthController.deleteAccount(req, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
-
-      const written = user.update.mock.calls[0][0];
-      expect(written.email).toBe('deleted-u1@deleted.aryv-app.com');
-      expect(written.phone).toBeNull();
-      expect(written.firstName).toBe('Deleted');
-      expect(written.profilePicture).toBeNull();
-      expect(written.emergencyContactPhone).toBeNull();
-      expect(written.dateOfBirth).toBeNull();
-      expect(written.refreshToken).toBeNull();
-      expect(written.deactivationReason).toBe('account_deleted_by_user');
-      // The password is replaced, not left as the caller supplied it.
-      expect(written.password).not.toBe('correct');
-      expect(written.password).toHaveLength(128);
+      expect(eraseAccount).toHaveBeenCalledWith('u1', 'account_deleted_by_user');
     });
 
     it('accepts a Google token as re-authentication for federated accounts', async () => {
@@ -275,7 +266,7 @@ describe('AuthController', () => {
 
         expect(verifyIdToken).toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(user.update).toHaveBeenCalled();
+        expect(eraseAccount).toHaveBeenCalledWith('u1', 'account_deleted_by_user');
       } finally {
         OAuth2Client.prototype.verifyIdToken = original;
       }
@@ -299,7 +290,7 @@ describe('AuthController', () => {
         await AuthController.deleteAccount(req, res);
 
         expect(res.status).toHaveBeenCalledWith(403);
-        expect(user.update).not.toHaveBeenCalled();
+        expect(eraseAccount).not.toHaveBeenCalled();
       } finally {
         OAuth2Client.prototype.verifyIdToken = original;
       }

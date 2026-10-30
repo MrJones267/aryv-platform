@@ -39,6 +39,7 @@ import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
 import { cashDisputeService } from '../services/CashDisputeService';
+import { closureBlockers, eraseAccount } from '../services/AccountClosureService';
 import { UPLOADS_DIR } from '../middleware/upload';
 import {
   ADMIN_SESSION_HOURS,
@@ -144,6 +145,7 @@ const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> 
   'POST /users/:id/block': { action: 'user.block', resourceType: 'user' },
   'POST /users/:id/unblock': { action: 'user.unblock', resourceType: 'user' },
   'PUT /users/:id/verify': { action: 'user.verify', resourceType: 'user' },
+  'POST /users/:id/close': { action: 'user.close', resourceType: 'user' },
   'POST /rides/:id/cancel': { action: 'ride.cancel', resourceType: 'ride' },
   'PUT /rides/:id/status': { action: 'ride.status_change', resourceType: 'ride' },
   'POST /courier/disputes/:id/resolve': { action: 'dispute.resolve', resourceType: 'dispute' },
@@ -1770,6 +1772,69 @@ router.get('/cash-disputes/:id', authenticateAdminToken, async (req, res) => {
   } catch (error) {
     logger.error(`Cash dispute read failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to load the dispute', code: 'CASH_DISPUTE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/users/:id/closure-check
+ * @desc    What would stop this account being closed now
+ * @access  Private (any admin role)
+ */
+router.get('/users/:id/closure-check', authenticateAdminToken, async (req, res) => {
+  try {
+    const user = await User.findByPk(String(req.params['id']), { attributes: ['id', 'email'] });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    const blockers = await closureBlockers(user.id);
+    return res.json({ success: true, data: { blockers, closed: user.email.endsWith('@deleted.aryv-app.com') }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Closure check failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to check the account', code: 'CLOSURE_CHECK_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/users/:id/close
+ * @desc    Close an account for good: erase personal data, sign out every
+ *          device. Ride, booking and payment history stays, anonymised.
+ * @access  Private (Super Admin)
+ *
+ * The panel's "Delete User" called DELETE /users/:id, which never existed.
+ * This cannot be undone, so it needs a reason and the account's email typed
+ * back, and is refused while the account still has rides, bookings,
+ * deliveries, disputes or commission someone else depends on.
+ */
+router.post('/users/:id/close', authenticateAdminToken, requireSuperAdmin, async (req: any, res) => {
+  try {
+    const { reason, confirmEmail } = req.body ?? {};
+    // The audit trail keeps the request body; the email is what is being erased.
+    if (req.body) delete req.body.confirmEmail;
+
+    const trimmed = typeof reason === 'string' ? reason.trim() : '';
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      return res.status(400).json({ success: false, error: 'Give a reason of 5 to 500 characters', code: 'REASON_REQUIRED', timestamp: new Date().toISOString() });
+    }
+    const user = await User.findByPk(String(req.params['id']), { attributes: ['id', 'email', 'status'] });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    if (user.email.endsWith('@deleted.aryv-app.com')) {
+      return res.status(409).json({ success: false, error: 'This account is already closed', code: 'ALREADY_CLOSED', timestamp: new Date().toISOString() });
+    }
+    if (typeof confirmEmail !== 'string' || confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(400).json({ success: false, error: "Type the account's email address to confirm", code: 'CONFIRMATION_MISMATCH', timestamp: new Date().toISOString() });
+    }
+    const blockers = await closureBlockers(user.id);
+    if (blockers.length > 0) {
+      return res.status(409).json({ success: false, error: 'This account cannot be closed yet', code: 'ACCOUNT_BUSY', data: { blockers }, timestamp: new Date().toISOString() });
+    }
+
+    await eraseAccount(user.id, `closed_by_admin: ${trimmed}`);
+    return res.json({ success: true, data: { userId: user.id, closed: true }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Account closure failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to close the account', code: 'CLOSE_ACCOUNT_FAILED', timestamp: new Date().toISOString() });
   }
 });
 

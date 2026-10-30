@@ -13,9 +13,10 @@ import { Op } from 'sequelize';
 import { AuthService } from '../services/AuthService';
 import { redisClient } from '../config/redis';
 import User from '../models/User';
-import { AuthenticatedRequest, AppError, UserStatus } from '../types';
+import { AuthenticatedRequest, AppError } from '../types';
 import logger from '../utils/logger';
 import { toE164 } from '../utils/phone';
+import { eraseAccount } from '../services/AccountClosureService';
 import { validatePasswordStrength } from '../utils/password';
 import otpService, {
   OTP_PURPOSES,
@@ -417,34 +418,9 @@ export class AuthController {
         }
       }
 
-      // Erase personal data. The row is retained as an anonymous tombstone so
-      // that foreign keys from rides and bookings stay intact; nothing
-      // identifying the person survives on it.
-      const tombstone = `deleted-${user.id}@deleted.aryv-app.com`;
-      await user.update({
-        email: tombstone,
-        password: crypto.randomBytes(64).toString('hex').slice(0, 128),
-        phone: null,
-        firstName: 'Deleted',
-        lastName: 'User',
-        profilePicture: null,
-        dateOfBirth: null,
-        address: null,
-        emergencyContactName: null,
-        emergencyContactPhone: null,
-        preferences: null,
-        referralCode: null,
-        referredBy: null,
-        countryCode: null,
-        countryName: null,
-        timezone: null,
-        isEmailVerified: false,
-        isPhoneVerified: false,
-        refreshToken: null,
-        status: UserStatus.DEACTIVATED,
-        deactivatedAt: new Date(),
-        deactivationReason: 'account_deleted_by_user',
-      });
+      // Erase personal data and sign out every device; the row stays as an
+      // anonymous tombstone. Shared with an admin's closure of an account.
+      await eraseAccount(user.id, 'account_deleted_by_user');
 
       // Revoke current access token if possible
       const accessToken = req.headers.authorization?.split(' ')[1];
