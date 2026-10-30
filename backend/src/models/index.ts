@@ -31,6 +31,7 @@ import UserWallet from './UserWallet';
 import CommissionLedger from './CommissionLedger';
 import TrustHold from './TrustHold';
 import CashDispute from './CashDispute';
+import RideRequest from './RideRequest';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -534,6 +535,7 @@ export {
   CommissionLedger,
   TrustHold,
   CashDispute,
+  RideRequest,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -581,6 +583,7 @@ export default {
   CommissionLedger,
   TrustHold,
   CashDispute,
+  RideRequest,
   // Driver verification models
   DriverDocument,
   PromoRedemption,

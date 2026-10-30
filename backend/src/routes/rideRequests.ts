@@ -1,8 +1,8 @@
 /**
- * @fileoverview Ride request routes — passengers broadcast ride needs
+ * @fileoverview Ride request routes — passengers post ride needs, drivers see them
  * @author Oabona-Majoko
  * @created 2026-03-28
- * @lastModified 2026-03-28
+ * @lastModified 2026-10-30
  */
 
 import { Router } from 'express';
@@ -31,8 +31,10 @@ router.post(
   '/',
   rideRequestRateLimit,
   [
-    body('origin').notEmpty().withMessage('origin is required'),
-    body('destination').notEmpty().withMessage('destination is required'),
+    body('origin.latitude').isFloat({ min: -90, max: 90 }).withMessage('origin is required'),
+    body('origin.longitude').isFloat({ min: -180, max: 180 }).withMessage('origin is required'),
+    body('destination.latitude').isFloat({ min: -90, max: 90 }).withMessage('destination is required'),
+    body('destination.longitude').isFloat({ min: -180, max: 180 }).withMessage('destination is required'),
     body('departureTime').notEmpty().withMessage('departureTime is required'),
     body('passengers').isInt({ min: 1, max: 8 }).withMessage('passengers must be between 1 and 8'),
     body('maxPrice').optional().isFloat({ min: 0 }),
@@ -40,6 +42,19 @@ router.post(
   ],
   validateInput,
   controller.createRideRequest.bind(controller),
+);
+
+// Drivers: open requests near a point. Declared before '/:id/...' routes.
+router.get(
+  '/nearby',
+  rideRequestRateLimit,
+  [
+    query('latitude').isFloat({ min: -90, max: 90 }).withMessage('latitude is required'),
+    query('longitude').isFloat({ min: -180, max: 180 }).withMessage('longitude is required'),
+    query('radiusKm').optional().isFloat({ min: 1, max: 100 }),
+  ],
+  validateInput,
+  controller.getNearby.bind(controller),
 );
 
 router.get(

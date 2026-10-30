@@ -355,6 +355,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
   ];
 
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
+    // Ride requests drivers can see (replaced Redis-only requests).
+    { table: 'ride_requests', migration: '033_ride_requests.sql' },
     { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
     { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
     // Courier package creation prices through these two.
