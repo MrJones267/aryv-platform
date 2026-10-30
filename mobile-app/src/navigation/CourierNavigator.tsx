@@ -17,6 +17,7 @@ import DeliveryDetailsScreen from '../screens/courier/DeliveryDetailsScreen';
 import PackageTrackingScreen from '../screens/courier/PackageTrackingScreen';
 import QRScannerScreen from '../screens/courier/QRScannerScreen';
 import { colors } from '../theme';
+import { useI18n } from '../i18n/I18nContext';
 
 export type CourierStackParamList = {
   CourierHub: undefined;
@@ -33,6 +34,7 @@ const Stack = createStackNavigator<CourierStackParamList>();
 
 // Unified navigator: CourierHub is the landing page with Send/Deliver toggle
 export const CourierHubNavigator: React.FC = () => {
+  const { t } = useI18n();
   return (
     <Stack.Navigator
       screenOptions={{
@@ -68,22 +70,22 @@ export const CourierHubNavigator: React.FC = () => {
       <Stack.Screen
         name="PackageDetails"
         component={PackageDetailsScreen}
-        options={{ title: 'Package Details' }}
+        options={{ title: t('cf.packageDetails') }}
       />
       <Stack.Screen
         name="DeliveryDetails"
         component={DeliveryDetailsScreen}
-        options={{ title: 'Delivery Details' }}
+        options={{ title: t('cf.deliveryDetails') }}
       />
       <Stack.Screen
         name="PackageTracking"
         component={PackageTrackingScreen}
-        options={{ title: 'Track Package' }}
+        options={{ title: t('cf.trackPackage') }}
       />
       <Stack.Screen
         name="QRScanner"
         component={QRScannerScreen}
-        options={{ title: 'Scan QR Code' }}
+        options={{ title: t('cf.scanQrCode') }}
       />
     </Stack.Navigator>
   );

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface CourierHubScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
@@ -26,6 +27,7 @@ interface CourierHubScreenProps {
 type TabMode = 'send' | 'deliver';
 
 const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<TabMode>('send');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -46,9 +48,9 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
           <Icon name="add-circle-outline" size={28} color="#F59E0B" />
         </View>
         <View style={styles.actionCardContent}>
-          <Text style={styles.actionCardTitle}>Send a Parcel</Text>
+          <Text style={styles.actionCardTitle}>{t('cf.sendAParcel')}</Text>
           <Text style={styles.actionCardDesc}>
-            Create a delivery request for travellers heading your way
+            {t('cf.createADeliveryRequestFor')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -64,9 +66,9 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
           <Icon name="inventory-2" size={28} color={colors.primary} />
         </View>
         <View style={styles.actionCardContent}>
-          <Text style={styles.actionCardTitle}>My Packages</Text>
+          <Text style={styles.actionCardTitle}>{t('cf.myPackages')}</Text>
           <Text style={styles.actionCardDesc}>
-            Track and manage your sent parcels
+            {t('cf.trackAndManageYourSent')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -74,25 +76,25 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
 
       {/* How it works */}
       <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>How Sending Works</Text>
+        <Text style={styles.infoTitle}>{t('cf.howSendingWorks')}</Text>
         <View style={styles.infoSteps}>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>1</Text>
             </View>
-            <Text style={styles.infoStepText}>Describe your parcel and route</Text>
+            <Text style={styles.infoStepText}>{t('cf.describeYourParcelAndRoute')}</Text>
           </View>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>2</Text>
             </View>
-            <Text style={styles.infoStepText}>A traveller on that route accepts</Text>
+            <Text style={styles.infoStepText}>{t('cf.aTravellerOnThatRoute')}</Text>
           </View>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>3</Text>
             </View>
-            <Text style={styles.infoStepText}>Track delivery with QR verification</Text>
+            <Text style={styles.infoStepText}>{t('cf.trackDeliveryWithQrVerification')}</Text>
           </View>
         </View>
       </View>
@@ -111,9 +113,9 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
           <Icon name="local-shipping" size={28} color="#8B5CF6" />
         </View>
         <View style={styles.actionCardContent}>
-          <Text style={styles.actionCardTitle}>Browse Deliveries</Text>
+          <Text style={styles.actionCardTitle}>{t('cf.browseDeliveries')}</Text>
           <Text style={styles.actionCardDesc}>
-            Find parcels to deliver along your route and offset fuel costs
+            {t('cf.findParcelsToDeliverAlong')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -129,9 +131,9 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
           <Icon name="qr-code-scanner" size={28} color="#10B981" />
         </View>
         <View style={styles.actionCardContent}>
-          <Text style={styles.actionCardTitle}>Scan QR Code</Text>
+          <Text style={styles.actionCardTitle}>{t('cf.scanQrCode')}</Text>
           <Text style={styles.actionCardDesc}>
-            Confirm pickup or delivery of a package
+            {t('cf.confirmPickupOrDeliveryOf')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -139,25 +141,25 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
 
       {/* How it works */}
       <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>How Delivering Works</Text>
+        <Text style={styles.infoTitle}>{t('cf.howDeliveringWorks')}</Text>
         <View style={styles.infoSteps}>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>1</Text>
             </View>
-            <Text style={styles.infoStepText}>Browse parcels on your route</Text>
+            <Text style={styles.infoStepText}>{t('cf.browseParcelsOnYourRoute')}</Text>
           </View>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>2</Text>
             </View>
-            <Text style={styles.infoStepText}>Accept and collect with QR scan</Text>
+            <Text style={styles.infoStepText}>{t('cf.acceptAndCollectWithQr')}</Text>
           </View>
           <View style={styles.infoStep}>
             <View style={styles.infoStepNumber}>
               <Text style={styles.infoStepNumberText}>3</Text>
             </View>
-            <Text style={styles.infoStepText}>Deliver and get paid via escrow</Text>
+            <Text style={styles.infoStepText}>{t('cf.deliverAndGetPaidVia')}</Text>
           </View>
         </View>
       </View>
@@ -170,8 +172,8 @@ const CourierHubScreen: React.FC<CourierHubScreenProps> = ({ navigation }) => {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Courier</Text>
-        <Text style={styles.headerSubtitle}>Send or deliver parcels along travel routes</Text>
+        <Text style={styles.headerTitle}>{t('nav.courier')}</Text>
+        <Text style={styles.headerSubtitle}>{t('cf.sendOrDeliverParcelsAlong')}</Text>
       </View>
 
       {/* Tab toggle */}

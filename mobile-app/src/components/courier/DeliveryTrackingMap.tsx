@@ -13,6 +13,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 // Constants
 const CONSTANTS = {
@@ -34,6 +35,7 @@ export interface DeliveryTrackingMapProps {
 const toLatLng = ([longitude, latitude]: LngLat) => ({ latitude, longitude });
 
 const DeliveryTrackingMap: React.FC<DeliveryTrackingMapProps> = ({ pickup, dropoff, courierTrail = [], inTransit }) => {
+  const { t } = useI18n();
   const mapRef = useRef<MapView>(null);
   const trail = useMemo(() => courierTrail.map(p => toLatLng(p.location)), [courierTrail]);
   const latest = courierTrail.length > 0 ? courierTrail[courierTrail.length - 1] : undefined;
@@ -57,16 +59,16 @@ const DeliveryTrackingMap: React.FC<DeliveryTrackingMapProps> = ({ pickup, dropo
     return (
       <View style={[styles.container, styles.empty]}>
         <Icon name="map" size={48} color={colors.text.secondary} />
-        <Text style={styles.emptyText}>The map is not available for this delivery.</Text>
+        <Text style={styles.emptyText}>{t('cf.theMapIsNotAvailable')}</Text>
       </View>
     );
   }
 
   const first = points[0]!;
   let caption: string | null = null;
-  if (inTransit && !latest) {caption = 'Waiting for the courier\'s location…';}
+  if (inTransit && !latest) {caption = t('cf.waitingCourierLocation');}
   else if (inTransit && latest && stale) {
-    caption = `Courier last seen at ${new Date(latest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    caption = t('cf.courierLastSeen', { time: new Date(latest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
   }
 
   return (
@@ -82,11 +84,11 @@ const DeliveryTrackingMap: React.FC<DeliveryTrackingMapProps> = ({ pickup, dropo
           }
         }}
       >
-        {pickup && <Marker coordinate={toLatLng(pickup)} title="Pickup" pinColor={colors.primary} />}
-        {dropoff && <Marker coordinate={toLatLng(dropoff)} title="Drop-off" pinColor={colors.success} />}
+        {pickup && <Marker coordinate={toLatLng(pickup)} title={t('cf.pickup')} pinColor={colors.primary} />}
+        {dropoff && <Marker coordinate={toLatLng(dropoff)} title={t('cf.dropOff')} pinColor={colors.success} />}
         {trail.length > 1 && <Polyline coordinates={trail} strokeColor={colors.primary} strokeWidth={4} />}
         {latest && (
-          <Marker coordinate={toLatLng(latest.location)} title="Courier" anchor={{ x: 0.5, y: 0.5 }}>
+          <Marker coordinate={toLatLng(latest.location)} title={t('nav.courier')} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={[styles.courierDot, stale && styles.courierDotStale]}>
               <Icon name="local-shipping" size={16} color="#fff" />
             </View>

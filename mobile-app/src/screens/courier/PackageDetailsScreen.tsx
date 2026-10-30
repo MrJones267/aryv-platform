@@ -24,10 +24,12 @@ import PackageService, { Package } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import CurrencyService from '../../services/CurrencyService';
+import { useI18n } from '../../i18n/I18nContext';
 
 type PackageDetailsRouteProp = RouteProp<CourierStackParamList, 'PackageDetails'>;
 
 const PackageDetailsScreen: React.FC = () => {
+  const { t } = useI18n();
   const route = useRoute<PackageDetailsRouteProp>();
   const navigation = useNavigation();
   const { packageId } = route.params;
@@ -45,11 +47,11 @@ const PackageDetailsScreen: React.FC = () => {
       if (response.success && response.data) {
         setPackage(response.data);
       } else {
-        Alert.alert('Error', response.error || 'Package not found');
+        Alert.alert(t('common.error'), response.error || t('cf.packageNotFound'));
         navigation.goBack();
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load package details');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadPackageDetails'));
     } finally {
       setLoading(false);
     }
@@ -59,31 +61,31 @@ const PackageDetailsScreen: React.FC = () => {
     if (!package_) return;
 
     Alert.alert(
-      'Accept Delivery',
-      `Accept this package delivery for P${(package_.senderPriceOffer ?? 0).toFixed(2)}?`,
+      t('cf.acceptDelivery'),
+      t('cf.acceptFor', { price: (package_.senderPriceOffer ?? 0).toFixed(2) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Accept',
+          text: t('cf.accept'),
           onPress: async () => {
             try {
               const response = await PackageService.acceptPackage(package_.id);
               if (response.success) {
                 Alert.alert(
-                  'Success!',
-                  'Package accepted! Check your active deliveries.',
+                  t('cf3.success'),
+                  t('cf2.packageAcceptedCheckYourActive'),
                   [
                     {
-                      text: 'OK',
+                      text: t('common.ok'),
                       onPress: () => navigation.goBack(),
                     },
                   ]
                 );
               } else {
-                Alert.alert('Error', response.error || 'Failed to accept package');
+                Alert.alert(t('common.error'), response.error || t('cf2.failedToAcceptPackage'));
               }
             } catch (error) {
-              Alert.alert('Error', 'Failed to accept package');
+              Alert.alert(t('common.error'), t('cf2.failedToAcceptPackage'));
             }
           },
         },
@@ -110,14 +112,14 @@ const PackageDetailsScreen: React.FC = () => {
   };
 
   if (loading) {
-    return <LoadingScreen message="Loading package details..." />;
+    return <LoadingScreen message={t('cf.loadingPackageDetails')} />;
   }
 
   if (!package_) {
     return (
       <View style={styles.errorContainer}>
         <Icon name="error" size={80} color={colors.error} />
-        <Text style={styles.errorText}>Package not found</Text>
+        <Text style={styles.errorText}>{t('cf.packageNotFound')}</Text>
       </View>
     );
   }
@@ -133,13 +135,13 @@ const PackageDetailsScreen: React.FC = () => {
           </View>
           
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Offered Amount</Text>
+            <Text style={styles.priceLabel}>{t('cf.offeredAmount')}</Text>
             <Text style={styles.priceValue}>P{(package_.senderPriceOffer ?? 0).toFixed(2)}</Text>
           </View>
 
           {package_.systemSuggestedPrice && (
             <View style={styles.suggestionRow}>
-              <Text style={styles.suggestionLabel}>Suggested Price</Text>
+              <Text style={styles.suggestionLabel}>{t('cf.suggestedPrice')}</Text>
               <Text style={styles.suggestionValue}>P{(package_.systemSuggestedPrice ?? 0).toFixed(2)}</Text>
             </View>
           )}
@@ -147,12 +149,12 @@ const PackageDetailsScreen: React.FC = () => {
 
         {/* Package Info */}
         <View style={styles.infoCard}>
-          <Text style={styles.cardTitle}>Package Information</Text>
+          <Text style={styles.cardTitle}>{t('cf.packageInformation')}</Text>
           
           <View style={styles.infoRow}>
             <Icon name="category" size={20} color={colors.text.secondary} />
             <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Size</Text>
+              <Text style={styles.infoLabel}>{t('cf.size2')}</Text>
               <Text style={styles.infoValue}>{package_.packageSize}</Text>
             </View>
           </View>
@@ -161,7 +163,7 @@ const PackageDetailsScreen: React.FC = () => {
             <View style={styles.infoRow}>
               <Icon name="description" size={20} color={colors.text.secondary} />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Description</Text>
+                <Text style={styles.infoLabel}>{t('cf.description3')}</Text>
                 <Text style={styles.infoValue}>{package_.description}</Text>
               </View>
             </View>
@@ -171,13 +173,13 @@ const PackageDetailsScreen: React.FC = () => {
             {package_.fragile && (
               <View style={styles.fragileTag}>
                 <Icon name="warning" size={16} color={colors.warning} />
-                <Text style={styles.fragileText}>Fragile</Text>
+                <Text style={styles.fragileText}>{t('cf.fragile')}</Text>
               </View>
             )}
             {package_.valuable && (
               <View style={styles.valuableTag}>
                 <Icon name="diamond" size={16} color={colors.primary} />
-                <Text style={styles.valuableText}>Valuable</Text>
+                <Text style={styles.valuableText}>{t('cf.valuable')}</Text>
               </View>
             )}
           </View>
@@ -187,7 +189,7 @@ const PackageDetailsScreen: React.FC = () => {
         <View style={styles.locationCard}>
           <View style={styles.locationHeader}>
             <Icon name="place" size={24} color={colors.primary} />
-            <Text style={styles.locationTitle}>Pickup Location</Text>
+            <Text style={styles.locationTitle}>{t('cf.pickupLocation')}</Text>
           </View>
           
           <Text style={styles.address}>{package_.pickupAddress}</Text>
@@ -198,7 +200,7 @@ const PackageDetailsScreen: React.FC = () => {
               onPress={() => handleOpenMaps(package_.pickupAddress)}
             >
               <Icon name="directions" size={20} color={colors.primary} />
-              <Text style={styles.actionText}>Directions</Text>
+              <Text style={styles.actionText}>{t('cf.directions')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -207,7 +209,7 @@ const PackageDetailsScreen: React.FC = () => {
         <View style={styles.locationCard}>
           <View style={styles.locationHeader}>
             <Icon name="flag" size={24} color={colors.success} />
-            <Text style={styles.locationTitle}>Delivery Location</Text>
+            <Text style={styles.locationTitle}>{t('cf.deliveryLocation')}</Text>
           </View>
           
           <Text style={styles.address}>{package_.dropoffAddress}</Text>
@@ -218,7 +220,7 @@ const PackageDetailsScreen: React.FC = () => {
               onPress={() => handleOpenMaps(package_.dropoffAddress)}
             >
               <Icon name="directions" size={20} color={colors.primary} />
-              <Text style={styles.actionText}>Directions</Text>
+              <Text style={styles.actionText}>{t('cf.directions')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -226,33 +228,33 @@ const PackageDetailsScreen: React.FC = () => {
         {/* Distance & Earnings */}
         {package_.distance && (
           <View style={styles.earningsCard}>
-            <Text style={styles.cardTitle}>Trip Details</Text>
+            <Text style={styles.cardTitle}>{t('cf.tripDetails')}</Text>
             
             <View style={styles.tripRow}>
               <View style={styles.tripItem}>
                 <Icon name="straighten" size={20} color={colors.text.secondary} />
-                <Text style={styles.tripLabel}>Distance</Text>
+                <Text style={styles.tripLabel}>{t('cf.distance')}</Text>
                 <Text style={styles.tripValue}>{package_.distance.toFixed(1)} km</Text>
               </View>
               
               <View style={styles.tripItem}>
                 <Icon name="attach-money" size={20} color={colors.success} />
-                <Text style={styles.tripLabel}>Earnings</Text>
+                <Text style={styles.tripLabel}>{t('cf.earnings')}</Text>
                 <Text style={styles.tripValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
               </View>
             </View>
             
             <View style={styles.feeBreakdown}>
               <View style={styles.feeRow}>
-                <Text style={styles.feeLabel}>Package Price</Text>
+                <Text style={styles.feeLabel}>{t('cf.packagePrice')}</Text>
                 <Text style={styles.feeValue}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
               </View>
               <View style={styles.feeRow}>
-                <Text style={styles.feeLabel}>Platform Fee (10%)</Text>
+                <Text style={styles.feeLabel}>{t('cf.platformFee10')}</Text>
                 <Text style={styles.feeValue}>-P{(package_.senderPriceOffer * 0.1).toFixed(2)}</Text>
               </View>
               <View style={[styles.feeRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Your Earnings</Text>
+                <Text style={styles.totalLabel}>{t('cf.yourEarnings')}</Text>
                 <Text style={styles.totalValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
               </View>
             </View>
@@ -274,7 +276,7 @@ const PackageDetailsScreen: React.FC = () => {
           onPress={handleAcceptPackage}
         >
           <Icon name="check" size={24} color={colors.text.inverse} />
-          <Text style={styles.acceptButtonText}>Accept Delivery</Text>
+          <Text style={styles.acceptButtonText}>{t('cf.acceptDelivery')}</Text>
         </TouchableOpacity>
       </View>
     </View>

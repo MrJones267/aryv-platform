@@ -22,8 +22,10 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import PackageService, { Package, DeliveryAgreement } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import { useI18n } from '../../i18n/I18nContext';
 
 const CourierScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const [availablePackages, setAvailablePackages] = useState<Package[]>([]);
   const [activeDeliveries, setActiveDeliveries] = useState<DeliveryAgreement[]>([]);
@@ -51,7 +53,7 @@ const CourierScreen: React.FC = () => {
         setActiveDeliveries(deliveriesResponse.data);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load courier data');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadCourierData'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -67,13 +69,13 @@ const CourierScreen: React.FC = () => {
     try {
       const response = await PackageService.acceptPackage(packageId);
       if (response.success) {
-        Alert.alert('Success', 'Package accepted! Check your active deliveries.');
+        Alert.alert(t('common.success'), t('cf2.packageAcceptedCheckYourActive'));
         loadData(); // Refresh data
       } else {
-        Alert.alert('Error', response.error || 'Failed to accept package');
+        Alert.alert(t('common.error'), response.error || t('cf2.failedToAcceptPackage'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to accept package');
+      Alert.alert(t('common.error'), t('cf2.failedToAcceptPackage'));
     }
   };
 
@@ -123,13 +125,13 @@ const CourierScreen: React.FC = () => {
           {package_.fragile && (
             <View style={styles.fragileTag}>
               <Icon name="warning" size={12} color={colors.warning} />
-              <Text style={styles.fragileText}>Fragile</Text>
+              <Text style={styles.fragileText}>{t('cf.fragile')}</Text>
             </View>
           )}
           {package_.valuable && (
             <View style={styles.valuableTag}>
               <Icon name="diamond" size={12} color={colors.primary} />
-              <Text style={styles.valuableText}>Valuable</Text>
+              <Text style={styles.valuableText}>{t('cf.valuable')}</Text>
             </View>
           )}
         </View>
@@ -140,13 +142,13 @@ const CourierScreen: React.FC = () => {
           style={styles.detailsButton}
           onPress={() => navigateToPackageDetails(package_.id)}
         >
-          <Text style={styles.detailsButtonText}>Details</Text>
+          <Text style={styles.detailsButtonText}>{t('cf.details')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.acceptButton}
           onPress={() => handleAcceptPackage(package_.id)}
         >
-          <Text style={styles.acceptButtonText}>Accept</Text>
+          <Text style={styles.acceptButtonText}>{t('cf.accept')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -177,7 +179,7 @@ const CourierScreen: React.FC = () => {
         <View style={styles.packageTitleRow}>
           <Icon name="local-shipping" size={20} color={colors.primary} />
           <Text style={styles.packageTitle}>
-            {delivery.package?.title || 'Package'}
+            {delivery.package?.title || t('cf2.package')}
           </Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: getDeliveryStatusColor(delivery.status) }]}>
@@ -209,7 +211,7 @@ const CourierScreen: React.FC = () => {
         {delivery.qrCodeToken && (
           <View style={styles.qrInfo}>
             <Icon name="qr-code" size={16} color={colors.success} />
-            <Text style={styles.qrText}>QR Ready</Text>
+            <Text style={styles.qrText}>{t('cf.qrReady')}</Text>
           </View>
         )}
       </View>
@@ -217,7 +219,7 @@ const CourierScreen: React.FC = () => {
   );
 
   if (loading) {
-    return <LoadingScreen message="Loading courier dashboard..." />;
+    return <LoadingScreen message={t('cf.loadingCourierDashboard')} />;
   }
 
   return (
@@ -225,7 +227,7 @@ const CourierScreen: React.FC = () => {
       {/* Status Header */}
       <View style={styles.statusHeader}>
         <View style={styles.onlineToggle}>
-          <Text style={styles.statusLabel}>Available for deliveries</Text>
+          <Text style={styles.statusLabel}>{t('cf.availableForDeliveries')}</Text>
           <Switch
             value={isOnline}
             onValueChange={setIsOnline}
@@ -237,11 +239,11 @@ const CourierScreen: React.FC = () => {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{activeDeliveries.length}</Text>
-            <Text style={styles.statLabel}>Active</Text>
+            <Text style={styles.statLabel}>{t('cf.active')}</Text>
           </View>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{availablePackages.length}</Text>
-            <Text style={styles.statLabel}>Available</Text>
+            <Text style={styles.statLabel}>{t('cf.available')}</Text>
           </View>
         </View>
       </View>
@@ -279,7 +281,7 @@ const CourierScreen: React.FC = () => {
               <View style={styles.offlineNotice}>
                 <Icon name="info" size={20} color={colors.warning} />
                 <Text style={styles.offlineText}>
-                  Turn on availability to see delivery requests
+                  {t('cf.turnOnAvailabilityToSee')}
                 </Text>
               </View>
             )}
@@ -287,9 +289,9 @@ const CourierScreen: React.FC = () => {
             {availablePackages.length === 0 ? (
               <View style={styles.emptyState}>
                 <Icon name="local-shipping" size={80} color={colors.text.secondary} />
-                <Text style={styles.emptyTitle}>No packages available</Text>
+                <Text style={styles.emptyTitle}>{t('cf.noPackagesAvailable')}</Text>
                 <Text style={styles.emptyDescription}>
-                  Check back later for new delivery opportunities
+                  {t('cf.checkBackLaterForNew')}
                 </Text>
               </View>
             ) : (
@@ -303,9 +305,9 @@ const CourierScreen: React.FC = () => {
             {activeDeliveries.length === 0 ? (
               <View style={styles.emptyState}>
                 <Icon name="delivery-dining" size={80} color={colors.text.secondary} />
-                <Text style={styles.emptyTitle}>No active deliveries</Text>
+                <Text style={styles.emptyTitle}>{t('cf.noActiveDeliveries')}</Text>
                 <Text style={styles.emptyDescription}>
-                  Accept packages from the Available tab to start earning
+                  {t('cf.acceptPackagesFromTheAvailable')}
                 </Text>
               </View>
             ) : (

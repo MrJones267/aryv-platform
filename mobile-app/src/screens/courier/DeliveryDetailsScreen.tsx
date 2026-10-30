@@ -28,12 +28,14 @@ import useShareDeliveryLocation from '../../hooks/useShareDeliveryLocation';
 import DeliveryLocationService from '../../services/DeliveryLocationService';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('DeliveryDetailsScreen');
 
 type DeliveryDetailsRouteProp = RouteProp<CourierStackParamList, 'DeliveryDetails'>;
 
 const DeliveryDetailsScreen: React.FC = () => {
+  const { t } = useI18n();
   const route = useRoute<DeliveryDetailsRouteProp>();
   const navigation = useNavigation();
   const { agreementId } = route.params;
@@ -54,14 +56,14 @@ const DeliveryDetailsScreen: React.FC = () => {
         if (foundDelivery) {
           setDelivery(foundDelivery);
         } else {
-          Alert.alert('Error', 'Delivery not found');
+          Alert.alert(t('common.error'), t('cf.deliveryNotFound'));
           navigation.goBack();
         }
       } else {
-        Alert.alert('Error', response.error || 'Failed to load delivery details');
+        Alert.alert(t('common.error'), response.error || t('cf2.failedToLoadDeliveryDetails'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load delivery details');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadDeliveryDetails'));
     } finally {
       setLoading(false);
     }
@@ -71,12 +73,12 @@ const DeliveryDetailsScreen: React.FC = () => {
     if (!delivery) return;
 
     Alert.alert(
-      'Confirm Pickup',
-      'Have you picked up the package from the sender?',
+      t('cf.confirmPickup'),
+      t('cf3.haveYouPickedUpThe'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Confirm',
+          text: t('common.confirm'),
           onPress: async () => {
             try {
               // Get current location for pickup confirmation
@@ -92,13 +94,13 @@ const DeliveryDetailsScreen: React.FC = () => {
 
               const response = await PackageService.confirmPickup(delivery.id, location);
               if (response.success) {
-                Alert.alert('Success', 'Pickup confirmed! You can now proceed to delivery.');
+                Alert.alert(t('common.success'), t('cf2.pickupConfirmedYouCanNow'));
                 loadDeliveryDetails(); // Refresh data
               } else {
-                Alert.alert('Error', response.error || 'Failed to confirm pickup');
+                Alert.alert(t('common.error'), response.error || t('cf2.failedToConfirmPickup'));
               }
             } catch (error) {
-              Alert.alert('Error', 'Failed to confirm pickup');
+              Alert.alert(t('common.error'), t('cf2.failedToConfirmPickup'));
             }
           },
         },
@@ -146,13 +148,13 @@ const DeliveryDetailsScreen: React.FC = () => {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'pending_pickup':
-        return 'Waiting for Pickup';
+        return t('cf2.waitingForPickup');
       case 'in_transit':
-        return 'In Transit';
+        return t('cf.inTransit');
       case 'completed':
-        return 'Delivered';
+        return t('cf2.delivered');
       case 'disputed':
-        return 'Disputed';
+        return t('cf2.disputed');
       default:
         return status;
     }
@@ -164,14 +166,14 @@ const DeliveryDetailsScreen: React.FC = () => {
     switch (delivery.status) {
       case 'pending_pickup':
         return {
-          text: 'Confirm Pickup',
+          text: t('cf.confirmPickup'),
           action: handleConfirmPickup,
           icon: 'check-circle',
           color: colors.warning,
         };
       case 'in_transit':
         return {
-          text: 'Scan QR Code',
+          text: t('cf.scanQrCode'),
           action: handleOpenQRScanner,
           icon: 'qr-code-scanner',
           color: colors.primary,
@@ -182,14 +184,14 @@ const DeliveryDetailsScreen: React.FC = () => {
   };
 
   if (loading) {
-    return <LoadingScreen message="Loading delivery details..." />;
+    return <LoadingScreen message={t('cf.loadingDeliveryDetails')} />;
   }
 
   if (!delivery) {
     return (
       <View style={styles.errorContainer}>
         <Icon name="error" size={80} color={colors.error} />
-        <Text style={styles.errorText}>Delivery not found</Text>
+        <Text style={styles.errorText}>{t('cf.deliveryNotFound')}</Text>
       </View>
     );
   }
@@ -209,11 +211,11 @@ const DeliveryDetailsScreen: React.FC = () => {
           </View>
           
           <Text style={styles.packageTitle}>
-            {delivery.package?.title || 'Package Delivery'}
+            {delivery.package?.title || t('cf2.packageDelivery')}
           </Text>
           
           <View style={styles.earningsRow}>
-            <Text style={styles.earningsLabel}>Your Earnings</Text>
+            <Text style={styles.earningsLabel}>{t('cf.yourEarnings')}</Text>
             <Text style={styles.earningsValue}>
               P{(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
             </Text>
@@ -223,12 +225,12 @@ const DeliveryDetailsScreen: React.FC = () => {
         {/* Package Information */}
         {delivery.package && (
           <View style={styles.infoCard}>
-            <Text style={styles.cardTitle}>Package Information</Text>
+            <Text style={styles.cardTitle}>{t('cf.packageInformation')}</Text>
             
             <View style={styles.infoRow}>
               <Icon name="category" size={20} color={colors.text.secondary} />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Size</Text>
+                <Text style={styles.infoLabel}>{t('cf.size2')}</Text>
                 <Text style={styles.infoValue}>{delivery.package.packageSize}</Text>
               </View>
             </View>
@@ -237,7 +239,7 @@ const DeliveryDetailsScreen: React.FC = () => {
               <View style={styles.infoRow}>
                 <Icon name="description" size={20} color={colors.text.secondary} />
                 <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Description</Text>
+                  <Text style={styles.infoLabel}>{t('cf.description3')}</Text>
                   <Text style={styles.infoValue}>{delivery.package.description}</Text>
                 </View>
               </View>
@@ -247,13 +249,13 @@ const DeliveryDetailsScreen: React.FC = () => {
               {delivery.package.fragile && (
                 <View style={styles.fragileTag}>
                   <Icon name="warning" size={16} color={colors.warning} />
-                  <Text style={styles.fragileText}>Fragile</Text>
+                  <Text style={styles.fragileText}>{t('cf.fragile')}</Text>
                 </View>
               )}
               {delivery.package.valuable && (
                 <View style={styles.valuableTag}>
                   <Icon name="diamond" size={16} color={colors.primary} />
-                  <Text style={styles.valuableText}>Valuable</Text>
+                  <Text style={styles.valuableText}>{t('cf.valuable')}</Text>
                 </View>
               )}
             </View>
@@ -264,7 +266,7 @@ const DeliveryDetailsScreen: React.FC = () => {
         <View style={styles.locationCard}>
           <View style={styles.locationHeader}>
             <Icon name="place" size={24} color={colors.primary} />
-            <Text style={styles.locationTitle}>Pickup Location</Text>
+            <Text style={styles.locationTitle}>{t('cf.pickupLocation')}</Text>
             {delivery.status === 'pending_pickup' && (
               <View style={styles.activeIndicator}>
                 <Icon name="radio-button-checked" size={16} color={colors.warning} />
@@ -280,7 +282,7 @@ const DeliveryDetailsScreen: React.FC = () => {
               onPress={() => handleOpenMaps(delivery.package?.pickupAddress || '')}
             >
               <Icon name="directions" size={20} color={colors.primary} />
-              <Text style={styles.actionText}>Directions</Text>
+              <Text style={styles.actionText}>{t('cf.directions')}</Text>
             </TouchableOpacity>
             
             {!!(delivery.package as unknown as Record<string, unknown>)?.pickupContactPhone && (
@@ -289,7 +291,7 @@ const DeliveryDetailsScreen: React.FC = () => {
                 onPress={() => handleCallContact((delivery.package as unknown as Record<string, unknown>)?.pickupContactPhone as string || '')}
               >
                 <Icon name="phone" size={20} color={colors.primary} />
-                <Text style={styles.actionText}>Call</Text>
+                <Text style={styles.actionText}>{t('cf.call')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -299,7 +301,7 @@ const DeliveryDetailsScreen: React.FC = () => {
         <View style={styles.locationCard}>
           <View style={styles.locationHeader}>
             <Icon name="flag" size={24} color={colors.success} />
-            <Text style={styles.locationTitle}>Delivery Location</Text>
+            <Text style={styles.locationTitle}>{t('cf.deliveryLocation')}</Text>
             {delivery.status === 'in_transit' && (
               <View style={styles.activeIndicator}>
                 <Icon name="radio-button-checked" size={16} color={colors.primary} />
@@ -313,13 +315,13 @@ const DeliveryDetailsScreen: React.FC = () => {
             <Text style={styles.sharingText}>
               {sharing === 'sharing'
                 ? (DeliveryLocationService.supported
-                  ? 'Sharing your location with the sender until you hand the package over, even in other apps.'
-                  : 'Sharing your location with the sender while this screen is open.')
+                  ? t('cf2.sharingYourLocationWithThe')
+                  : t('cf2.sharingYourLocationWithThe2'))
                 : sharing === 'no_permission'
-                  ? 'Allow location access so the sender can follow the delivery.'
+                  ? t('cf2.allowLocationAccessSoThe')
                   : sharing === 'unavailable'
-                    ? 'Your location is unavailable, so the sender cannot see the delivery on the map.'
-                    : 'Finding your location…'}
+                    ? t('cf2.yourLocationIsUnavailableSo')
+                    : t('cf2.findingYourLocation')}
             </Text>
           )}
           
@@ -329,7 +331,7 @@ const DeliveryDetailsScreen: React.FC = () => {
               onPress={() => handleOpenMaps(delivery.package?.dropoffAddress || '')}
             >
               <Icon name="directions" size={20} color={colors.primary} />
-              <Text style={styles.actionText}>Directions</Text>
+              <Text style={styles.actionText}>{t('cf.directions')}</Text>
             </TouchableOpacity>
             
             {!!(delivery.package as unknown as Record<string, unknown>)?.dropoffContactPhone && (
@@ -338,7 +340,7 @@ const DeliveryDetailsScreen: React.FC = () => {
                 onPress={() => handleCallContact((delivery.package as unknown as Record<string, unknown>)?.dropoffContactPhone as string || '')}
               >
                 <Icon name="phone" size={20} color={colors.primary} />
-                <Text style={styles.actionText}>Call</Text>
+                <Text style={styles.actionText}>{t('cf.call')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -346,20 +348,20 @@ const DeliveryDetailsScreen: React.FC = () => {
 
         {/* Payment Information */}
         <View style={styles.paymentCard}>
-          <Text style={styles.cardTitle}>Payment Details</Text>
+          <Text style={styles.cardTitle}>{t('cf.paymentDetails')}</Text>
           
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Package Price</Text>
+            <Text style={styles.paymentLabel}>{t('cf.packagePrice')}</Text>
             <Text style={styles.paymentValue}>P{(delivery.agreedPrice ?? 0).toFixed(2)}</Text>
           </View>
 
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Platform Fee</Text>
+            <Text style={styles.paymentLabel}>{t('cf.platformFee')}</Text>
             <Text style={styles.paymentValue}>-P{(delivery.platformFee ?? 0).toFixed(2)}</Text>
           </View>
 
           <View style={[styles.paymentRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Your Earnings</Text>
+            <Text style={styles.totalLabel}>{t('cf.yourEarnings')}</Text>
             <Text style={styles.totalValue}>
               P{((delivery.agreedPrice ?? 0) - (delivery.platformFee ?? 0)).toFixed(2)}
             </Text>
@@ -368,7 +370,7 @@ const DeliveryDetailsScreen: React.FC = () => {
           <View style={styles.escrowInfo}>
             <Icon name="security" size={16} color={colors.success} />
             <Text style={styles.escrowText}>
-              Payment secured in escrow - released upon delivery
+              {t('cf.paymentSecuredInEscrowReleased')}
             </Text>
           </View>
         </View>
@@ -378,24 +380,24 @@ const DeliveryDetailsScreen: React.FC = () => {
           <View style={styles.qrCard}>
             <View style={styles.qrHeader}>
               <Icon name="qr-code" size={24} color={colors.success} />
-              <Text style={styles.qrTitle}>Delivery Verification</Text>
+              <Text style={styles.qrTitle}>{t('cf.deliveryVerification')}</Text>
             </View>
             <Text style={styles.qrDescription}>
-              Scan the QR code with the recipient to complete delivery and release payment.
+              {t('cf.scanTheQrCodeWith')}
             </Text>
           </View>
         )}
 
         {/* Timeline */}
         <View style={styles.timelineCard}>
-          <Text style={styles.cardTitle}>Delivery Timeline</Text>
+          <Text style={styles.cardTitle}>{t('cf.deliveryTimeline')}</Text>
           
           <View style={styles.timelineItem}>
             <View style={[styles.timelineIcon, { backgroundColor: colors.success }]}>
               <Icon name="check" size={16} color={colors.text.inverse} />
             </View>
             <View style={styles.timelineContent}>
-              <Text style={styles.timelineTitle}>Delivery Accepted</Text>
+              <Text style={styles.timelineTitle}>{t('cf.deliveryAccepted')}</Text>
               <Text style={styles.timelineTime}>
                 {new Date(delivery.createdAt).toLocaleString()}
               </Text>
@@ -408,8 +410,8 @@ const DeliveryDetailsScreen: React.FC = () => {
                 <Icon name="check" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>Package Picked Up</Text>
-                <Text style={styles.timelineTime}>Confirmed</Text>
+                <Text style={styles.timelineTitle}>{t('cf.packagePickedUp')}</Text>
+                <Text style={styles.timelineTime}>{t('cf.confirmed')}</Text>
               </View>
             </View>
           )}
@@ -420,8 +422,8 @@ const DeliveryDetailsScreen: React.FC = () => {
                 <Icon name="check" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>Package Delivered</Text>
-                <Text style={styles.timelineTime}>Completed</Text>
+                <Text style={styles.timelineTitle}>{t('cf.packageDelivered')}</Text>
+                <Text style={styles.timelineTime}>{t('cf.completed')}</Text>
               </View>
             </View>
           )}
