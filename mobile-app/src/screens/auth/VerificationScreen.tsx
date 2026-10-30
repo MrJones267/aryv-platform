@@ -22,10 +22,12 @@ import { VerificationScreenProps } from '../../navigation/types';
 import { authApi } from '../../services/api';
 import OTPService from '../../services/OTPService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('VerificationScreen');
 
 const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const routeParams = route.params as Record<string, unknown>;
   const email = routeParams.email as string;
   const type = routeParams.type as 'email' | 'sms' | 'phone';
@@ -103,7 +105,7 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
   const handleVerifyCode = async (): Promise<void> => {
     const verificationCode = code.join('');
     if (verificationCode.length !== 6) {
-      Alert.alert('Invalid Code', 'Please enter all 6 digits');
+      Alert.alert(t('verify.invalidCode'), t('verify.enterAllDigits'));
       return;
     }
 
@@ -121,11 +123,11 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
 
       if (response.success) {
         Alert.alert(
-          'Verification Successful!',
-          `Your ${type} has been verified successfully.`,
+          t('verify.success'),
+          t(type === 'email' ? 'verify.emailVerified' : 'verify.phoneVerified'),
           [
             {
-              text: 'Continue',
+              text: t('verify.continue'),
               // Always back to sign-in. This screen confirms an email address
               // or phone number and nothing more — it never receives session
               // tokens. Sending the user to Main after a successful check
@@ -137,7 +139,7 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
           ]
         );
       } else {
-        Alert.alert('Verification Failed', response.message || 'Invalid verification code');
+        Alert.alert(t('verify.failed'), response.message || t('verify.invalidVerificationCode'));
         // Clear the code and update status
         setCode(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
@@ -145,7 +147,7 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Verification failed');
+      Alert.alert(t('common.error'), errMsg || t('verify.verificationFailed'));
       // Clear the code
       setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
@@ -175,8 +177,8 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
 
       if (response.success) {
         Alert.alert(
-          'Code Resent',
-          response.message || `A new verification code has been sent to your ${type}.`
+          t('verify.codeResent'),
+          t(type === 'email' ? 'verify.newCodeEmail' : 'verify.newCodePhone')
         );
 
         // Update OTP status and countdown
@@ -184,11 +186,11 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
         setCode(['', '', '', '', '', '']); // Clear current code
         inputRefs.current[0]?.focus();
       } else {
-        Alert.alert('Error', response.message || 'Failed to resend code');
+        Alert.alert(t('common.error'), response.message || t('verify.resendFailed'));
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Failed to resend code');
+      Alert.alert(t('common.error'), errMsg || t('verify.resendFailed'));
     } finally {
       setIsResending(false);
     }
@@ -200,12 +202,12 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
 
   const handleSkipVerification = (): void => {
     Alert.alert(
-      'Skip Verification?',
-      'You can verify your account later in your profile settings. Continue without verification?',
+      t('verify.skipTitle'),
+      t('verify.skipBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Skip',
+          text: t('common.skip'),
           onPress: () => navigation.navigate('Login' as never),
         },
       ]
@@ -243,9 +245,9 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
               />
             </View>
             
-            <Text style={styles.title}>Verify Your {type === 'email' ? 'Email' : 'Phone'}</Text>
+            <Text style={styles.title}>{t(type === 'email' ? 'verify.titleEmail' : 'verify.titlePhone')}</Text>
             <Text style={styles.subtitle}>
-              We've sent a 6-digit verification code to{'\n'}
+              {t('verify.sentTo')}{'\n'}
               <Text style={styles.contactInfo}>{formatContactInfo(email as string)}</Text>
             </Text>
           </View>
@@ -278,17 +280,17 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
           {/* Loading State */}
           {isLoading && (
             <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Verifying code...</Text>
+              <Text style={styles.loadingText}>{t('verify.verifying')}</Text>
             </View>
           )}
 
           {/* Resend Section */}
           <View style={styles.resendSection}>
             <Text style={styles.resendText}>
-              Didn't receive the code?
+              {t('verify.notReceived')}
               {otpStatus.attemptsRemaining < 3 && (
                 <Text style={styles.attemptsText}>
-                  {'\n'}{otpStatus.attemptsRemaining} attempts remaining
+                  {'\n'}{t('verify.attemptsRemaining', { count: otpStatus.attemptsRemaining })}
                 </Text>
               )}
             </Text>
@@ -304,12 +306,12 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
                 ]}
               >
                 {isResending
-                  ? 'Sending...'
+                  ? t('forgot.sending')
                   : !otpStatus.canSend && otpStatus.cooldownRemaining > 0
-                  ? `Resend in ${otpStatus.cooldownRemaining}s`
+                  ? t('verify.resendIn', { seconds: otpStatus.cooldownRemaining })
                   : otpStatus.attemptsRemaining === 0
-                  ? 'No attempts remaining'
-                  : 'Resend Code'}
+                  ? t('verify.noAttempts')
+                  : t('verify.resend')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -325,13 +327,13 @@ const VerificationScreen: React.FC<VerificationScreenProps> = ({ navigation, rou
               disabled={code.join('').length !== 6 || isLoading}
               activeOpacity={0.8}
             >
-              <Text style={styles.verifyButtonText}>Verify Code</Text>
+              <Text style={styles.verifyButtonText}>{t('verify.verify')}</Text>
             </TouchableOpacity>
           )}
 
           {/* Skip Button */}
           <TouchableOpacity style={styles.skipButton} onPress={handleSkipVerification}>
-            <Text style={styles.skipButtonText}>Skip for now</Text>
+            <Text style={styles.skipButtonText}>{t('verify.skipForNow')}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

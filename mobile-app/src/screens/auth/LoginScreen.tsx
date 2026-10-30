@@ -24,10 +24,12 @@ import { loginUser, clearAuthError, googleLogin } from '../../store/slices/authS
 import { LoginScreenProps } from '../../navigation/types';
 import GoogleSignInButton from '../../components/auth/GoogleSignInButton';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('LoginScreen');
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { isLoading, error, loginAttempts, lastLoginAttempt } = useAppSelector(
     (state) => state.auth
@@ -55,8 +57,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   useEffect(() => {
     // Show error alert if login fails
     if (error) {
-      Alert.alert('Login Failed', error, [
-        { text: 'OK', onPress: () => dispatch(clearAuthError()) },
+      Alert.alert(t('login.failed'), error, [
+        { text: t('common.ok'), onPress: () => dispatch(clearAuthError()) },
       ]);
     }
   }, [error, dispatch]);
@@ -76,8 +78,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
       if (timeElapsed < waitTime) {
         const remainingMinutes = Math.ceil((waitTime - timeElapsed) / (60 * 1000));
         Alert.alert(
-          'Too Many Attempts',
-          `Please wait ${remainingMinutes} minutes before trying again.`
+          t('login.tooManyAttempts'),
+          t('login.waitMinutes', { minutes: remainingMinutes })
         );
         return;
       }
@@ -118,9 +120,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     } catch (error) {
       log.error('❌ Google login failed:', error);
       Alert.alert(
-        'Login Failed', 
-        'Unable to complete Google sign-in. Please try again.',
-        [{ text: 'OK' }]
+        t('login.failed'),
+        t('login.googleFailedBody'),
+        [{ text: t('common.ok') }]
       );
     }
   };
@@ -128,9 +130,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const handleGoogleError = (error: string): void => {
     log.error('Google Sign-In Error:', error);
     Alert.alert(
-      'Google Sign-In Failed',
+      t('login.googleFailed'),
       error,
-      [{ text: 'OK' }]
+      [{ text: t('common.ok') }]
     );
   };
 
@@ -150,20 +152,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
             <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
               <Icon name="arrow-back" size={24} color="#333333" />
             </TouchableOpacity>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to continue your journey</Text>
+            <Text style={styles.title}>{t('login.welcomeBack')}</Text>
+            <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
           </View>
 
           {/* Form */}
           <View style={styles.form}>
             {/* Email Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
+              <Text style={styles.inputLabel}>{t('login.emailLabel')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="email" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter your email"
+                  placeholder={t('login.emailPlaceholder')}
                   placeholderTextColor="#999999"
                   value={formData.email}
                   onChangeText={(text) => handleInputChange('email', text)}
@@ -177,12 +179,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
             {/* Password Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
+              <Text style={styles.inputLabel}>{t('auth.password')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="lock" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={[styles.textInput, { paddingRight: 48 }]}
-                  placeholder="Enter your password"
+                  placeholder={t('login.passwordPlaceholder')}
                   placeholderTextColor="#999999"
                   value={formData.password}
                   onChangeText={(text) => handleInputChange('password', text)}
@@ -207,7 +209,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
             {/* Forgot Password Link */}
             <TouchableOpacity style={styles.forgotPassword} onPress={handleForgotPassword}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              <Text style={styles.forgotPasswordText}>{t('auth.forgotPassword')}</Text>
             </TouchableOpacity>
 
             {/* Login Button */}
@@ -221,14 +223,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               activeOpacity={0.8}
             >
               <Text style={styles.loginButtonText}>
-                {isLoading ? 'Signing In...' : 'Sign In'}
+                {isLoading ? t('login.signingIn') : t('login.signIn')}
               </Text>
             </TouchableOpacity>
 
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>{t('login.or')}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -244,9 +246,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
             {/* Register Link */}
             <View style={styles.registerSection}>
-              <Text style={styles.registerText}>Don't have an account? </Text>
+              <Text style={styles.registerText}>{t('login.noAccount')}</Text>
               <TouchableOpacity onPress={handleRegister}>
-                <Text style={styles.registerLink}>Sign Up</Text>
+                <Text style={styles.registerLink}>{t('login.signUp')}</Text>
               </TouchableOpacity>
             </View>
 
