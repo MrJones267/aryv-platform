@@ -177,18 +177,39 @@ export interface Booking {
   };
 }
 
+export interface RideRequestPlace {
+  address: string;
+  /** [lng, lat] */
+  coordinates: [number, number] | null;
+}
+
+/** A passenger's own ride request. */
 export interface RideRequest {
   id: string;
-  passengerId: string;
-  origin: Location;
-  destination: Location;
+  origin: RideRequestPlace;
+  destination: RideRequestPlace;
   departureTime: string;
   passengers: number;
-  maxPrice: number;
-  description?: string;
-  status: 'active' | 'matched' | 'expired' | 'cancelled';
+  maxPrice: number | null;
+  currency: string;
+  description?: string | null;
+  status: 'active' | 'expired' | 'cancelled';
+  expiresAt: string;
   createdAt: string;
-  matches?: Ride[];
+}
+
+/** An open request as a driver sees it: rough location, first name only. */
+export interface NearbyRideRequest {
+  id: string;
+  passengerFirstName: string;
+  origin: RideRequestPlace;
+  destination: RideRequestPlace;
+  departureTime: string;
+  passengers: number;
+  maxPrice: number | null;
+  currency: string;
+  description?: string | null;
+  distanceKm: number;
 }
 
 class RidesApiService extends BaseApiService {
@@ -397,7 +418,7 @@ class RidesApiService extends BaseApiService {
     destination: Location;
     departureTime: string;
     passengers: number;
-    maxPrice: number;
+    maxPrice?: number | null;
     description?: string;
   }): Promise<ApiResponse<RideRequest>> {
     return this.post<RideRequest>('/ride-requests', requestData);
@@ -407,7 +428,7 @@ class RidesApiService extends BaseApiService {
    * Get user's ride requests
    */
   async getMyRideRequests(
-    status?: 'active' | 'matched' | 'expired' | 'cancelled',
+    status?: 'active' | 'expired' | 'cancelled',
     page = 1,
     limit = 20
   ): Promise<ApiResponse<{
@@ -436,6 +457,13 @@ class RidesApiService extends BaseApiService {
    */
   async getRideMatches(requestId: string): Promise<ApiResponse<Ride[]>> {
     return this.get<Ride[]>(`/ride-requests/${requestId}/matches`);
+  }
+
+  /**
+   * Open ride requests near a point, for drivers with approved documents
+   */
+  async getNearbyRideRequests(latitude: number, longitude: number, radiusKm?: number): Promise<ApiResponse<NearbyRideRequest[]>> {
+    return this.get<NearbyRideRequest[]>('/ride-requests/nearby', { params: { latitude, longitude, radiusKm } });
   }
 
   /**

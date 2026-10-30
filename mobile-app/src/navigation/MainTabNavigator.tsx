@@ -16,6 +16,7 @@ import RideDetailsScreen from '../screens/main/RideDetailsScreen';
 import CreateRideScreen from '../screens/rides/CreateRideScreen';
 import BookingScreen from '../screens/rides/BookingScreen';
 import RideRequestScreen from '../screens/rides/RideRequestScreen';
+import RideRequestsNearbyScreen from '../screens/rides/RideRequestsNearbyScreen';
 import RideRatingScreen from '../screens/rides/RideRatingScreen';
 import RecommendationsScreen from '../screens/ai/RecommendationsScreen';
 import DriverOnboardingScreen from '../screens/onboarding/DriverOnboardingScreen';
@@ -60,6 +61,7 @@ export type HomeStackParamList = {
   CreateRide: undefined;
   Booking: { rideId: string };
   RideRequest: { origin?: any; destination?: any };
+  RideRequestsNearby: undefined;
   RideRating: { rideId: string; driverName?: string; origin?: string; destination?: string; role?: 'passenger' | 'driver' };
   AIRecommendations: undefined;
   DriverOnboarding: undefined;
@@ -142,6 +144,11 @@ const HomeNavigator: React.FC = () => {
       name="RideRequest"
       component={RideRequestScreen}
       options={{ title: t('nav.requestRide'), headerShown: false }}
+    />
+    <HomeStack.Screen
+      name="RideRequestsNearby"
+      component={RideRequestsNearbyScreen}
+      options={{ title: t('rq.nearbyTitle'), headerShown: false }}
     />
     <HomeStack.Screen
       name="RideRating"

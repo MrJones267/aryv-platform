@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useRoute } from '@react-navigation/native';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Input, Card } from '../../components/ui';
 import { LocationPicker } from '../../components/maps';
@@ -54,21 +55,35 @@ interface CreateRideFormData {
   vehicleId?: string;
 }
 
+/** From "Offer this ride" on a passenger's ride request. */
+interface CreateRidePrefill {
+  origin?: { latitude: number; longitude: number; address?: string } | null;
+  destination?: { latitude: number; longitude: number; address?: string } | null;
+  departureTime?: string;
+  seats?: number;
+}
+
 interface CreateRideScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void; replace: (screen: string, params?: Record<string, unknown>) => void };
 }
 
+const toLocation = (p?: CreateRidePrefill['origin']): LocationData | null =>
+  p ? { latitude: p.latitude, longitude: p.longitude, address: p.address ? { fullAddress: p.address } : undefined } : null;
+
 const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
+  const prefill = (useRoute().params as { prefill?: CreateRidePrefill } | undefined)?.prefill;
   const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
   const [formData, setFormData] = useState<CreateRideFormData>({
-    origin: null,
-    destination: null,
-    departureDateTime: new Date(Date.now() + 3600000), // 1 hour from now
+    origin: toLocation(prefill?.origin),
+    destination: toLocation(prefill?.destination),
+    departureDateTime: prefill?.departureTime && new Date(prefill.departureTime).getTime() > Date.now()
+      ? new Date(prefill.departureTime)
+      : new Date(Date.now() + 3600000), // 1 hour from now
     stops: [],
-    availableSeats: 3,
+    availableSeats: Math.max(3, Math.min(7, prefill?.seats ?? 3)),
     tier: 'standard',
     pricePerSeat: '',
     description: '',

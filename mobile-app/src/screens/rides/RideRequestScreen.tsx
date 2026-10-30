@@ -1,639 +1,333 @@
 /**
- * @fileoverview Ride request screen with AI matching for passengers
+ * @fileoverview Post a ride request, and follow the ones already posted
  * @author Oabona-Majoko
- * @created 2025-09-07
- * @lastModified 2025-09-07
+ * @created 2025-01-25
+ * @lastModified 2026-10-30
+ *
+ * Reached from Search when no ride fits. The passenger says where from,
+ * where to, when, how many seats and what they will pay; drivers near the
+ * pickup see the request, and the passenger is told when a fitting ride is
+ * published. Matching rides are booked through the normal booking screen.
+ *
+ * This replaces an "AI matching" screen that scored rides on driver
+ * details the server never sends, and whose "Request Sent!" sent nothing.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
+  ActivityIndicator,
   Alert,
   RefreshControl,
-  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { Button, Card, Input } from '../../components/ui';
+import { Button, Card } from '../../components/ui';
 import { LocationPicker } from '../../components/maps';
-import { LocationData } from '../../services/LocationService';
-import AIMatchingService, { 
-  MatchingRequest, 
-  MatchingResponse, 
-  DriverMatch, 
-  PassengerProfile, 
-  RidePreferences 
-} from '../../services/AIMatchingService';
-import DriverMatchCard from '../../components/matching/DriverMatchCard';
+import locationService, { LocationData } from '../../services/LocationService';
+import { ridesApi } from '../../services/api';
+import type { RideRequest } from '../../services/api/ridesApi';
+import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('RideRequestScreen');
 
+// Constants
+const CONSTANTS = {
+  MAX_SEATS: 8,
+  DEFAULT_LEAD_MS: 60 * 60 * 1000,
+};
+
 interface RideRequestScreenProps {
   navigation?: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  /** origin and destination: what was typed on Search. */
   route?: { params?: Record<string, unknown> };
 }
 
+type MatchRide = { id: string; departureTime: string; pricePerSeat: number; availableSeats: number; originAddress?: string; destinationAddress?: string; driver?: { firstName?: string } };
+
+const addressOf = (l: LocationData | null) => l?.address?.fullAddress || l?.address?.formatted || '';
+
 const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route }) => {
   const { t } = useI18n();
-  const dispatch = useAppDispatch();
-  const { profile: user } = useAppSelector((state) => state.user);
-  
+  const typedOrigin = typeof route?.params?.['origin'] === 'string' ? route.params['origin'] as string : undefined;
+  const typedDestination = typeof route?.params?.['destination'] === 'string' ? route.params['destination'] as string : undefined;
   const [origin, setOrigin] = useState<LocationData | null>(null);
   const [destination, setDestination] = useState<LocationData | null>(null);
-  const [preferences, setPreferences] = useState<RidePreferences>({
-    rideType: 'economy',
-    maxPassengers: 4,
-    amenities: [],
-    requiredFeatures: [],
-    avoidFeatures: [],
-    preferredDriverRating: 4.0,
-    prioritizeBy: 'time',
-  });
-  
-  const [isSearching, setIsSearching] = useState(false);
-  const [matchingResults, setMatchingResults] = useState<MatchingResponse | null>(null);
-  const [selectedMatch, setSelectedMatch] = useState<DriverMatch | null>(null);
-  const [showPreferences, setShowPreferences] = useState(false);
-  
-  // Build passenger profile from real user data; stats are fetched from userStats in Redux if available
-  const userStats = useAppSelector((state) => (state.user as any).stats);
-  const passengerProfile: PassengerProfile = {
-    id: user?.id || '',
-    rating: userStats?.rating ?? 5.0,
-    totalRides: userStats?.ridesCompleted ?? 0,
-    preferences: {
-      smokingTolerance: 'none',
-      musicPreference: 'moderate',
-      conversationLevel: 'friendly',
-      petsComfort: 'small',
-      temperaturePreference: 'moderate',
-    },
-    behaviorProfile: {
-      punctuality: userStats?.punctuality ?? 1.0,
-      cleanliness: userStats?.cleanliness ?? 1.0,
-      respectfulness: userStats?.respectfulness ?? 1.0,
-      reliability: userStats?.reliability ?? 1.0,
-    },
-    rideHistory: [],
-  };
+  const [picking, setPicking] = useState<'origin' | 'destination' | null>(null);
+  const [departure, setDeparture] = useState(new Date(Date.now() + CONSTANTS.DEFAULT_LEAD_MS));
+  const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
+  const [seats, setSeats] = useState(1);
+  const [maxPrice, setMaxPrice] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
+  const [requests, setRequests] = useState<RideRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [matches, setMatches] = useState<Record<string, MatchRide[] | 'loading'>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const res = await ridesApi.getMyRideRequests();
+      if (res.success && res.data) {setRequests(res.data.requests);}
+    } catch (error) {
+      log.warn('Could not load ride requests', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Search hands over what was typed; turn it into places where we can.
   useEffect(() => {
-    // Pre-populate locations from route params if available
-    if (route?.params?.origin) {
-      setOrigin(route.params.origin as LocationData);
-    }
-    if (route?.params?.destination) {
-      setDestination(route.params.destination as LocationData);
-    }
-  }, [route?.params]);
+    const prefill = async (text: string | undefined, set: (l: LocationData) => void) => {
+      if (!text?.trim()) {return;}
+      try {
+        const found = await locationService.geocodeAddress(text);
+        if (found) {set({ longitude: found[0], latitude: found[1], address: { fullAddress: text } });}
+      } catch (error) {
+        log.info('Could not place search text', error);
+      }
+    };
+    prefill(typedOrigin, setOrigin);
+    prefill(typedDestination, setDestination);
+  }, [typedOrigin, typedDestination]);
 
-  const handleSearchRides = async () => {
+  const submit = async () => {
     if (!origin || !destination) {
       Alert.alert(t('rf.missingInformation'), t('rf.pleaseSelectBothPickupAnd'));
       return;
     }
-
-    setIsSearching(true);
+    if (departure.getTime() <= Date.now()) {
+      Alert.alert(t('rf.formError'), t('rf.departureTimeMustBeIn'));
+      return;
+    }
+    setSubmitting(true);
     try {
-      const matchingRequest: MatchingRequest = {
-        passengerProfile,
-        ridePreferences: preferences,
-        origin: {
-          latitude: origin.latitude,
-          longitude: origin.longitude,
-          address: origin.address?.fullAddress,
-        },
-        destination: {
-          latitude: destination.latitude,
-          longitude: destination.longitude,
-          address: destination.address?.fullAddress,
-        },
-        requestTime: new Date().toISOString(),
-        maxWaitTime: 15, // 15 minutes
-        maxDetour: 3, // 3 km
-        priceRange: { min: 5, max: 50 },
-      };
-
-      const results = await AIMatchingService.findMatches(matchingRequest);
-      setMatchingResults(results);
-      
-      if (results.matches.length === 0) {
-        Alert.alert(
-          t('rf.noMatchesFound'),
-          t('rf.noCompatibleDriversFoundFor'),
-          [
-            { text: t('rf.adjustPreferences'), onPress: () => setShowPreferences(true) },
-            { text: t('common.ok') },
-          ]
-        );
+      const res = await ridesApi.createRideRequest({
+        origin: { latitude: origin.latitude, longitude: origin.longitude, address: addressOf(origin) },
+        destination: { latitude: destination.latitude, longitude: destination.longitude, address: addressOf(destination) },
+        departureTime: departure.toISOString(),
+        passengers: seats,
+        maxPrice: maxPrice.trim() ? Number(maxPrice) : null,
+        description: note.trim() || undefined,
+      });
+      if (!res.success) {
+        Alert.alert(t('rf.requestError'), res.error || t('rf.failedToSendRideRequest'));
+        return;
       }
-    } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert(t('rf.searchError'), errMsg || t('rf.failedToFindMatchingRides'));
+      Alert.alert(t('rq.postedTitle'), t('rq.postedBody'));
+      setNote('');
+      setMaxPrice('');
+      await load();
+    } catch (error) {
+      Alert.alert(t('rf.requestError'), t('rf.failedToSendRideRequest'));
     } finally {
-      setIsSearching(false);
+      setSubmitting(false);
     }
   };
 
-  const handleSelectMatch = (match: DriverMatch) => {
-    setSelectedMatch(match);
-    
-    Alert.alert(
-      t('rf.requestRide'),
-      t('rf.sendRequestTo', { name: `${match.driver.firstName} ${match.driver.lastName}` }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('nav.requestRide'),
-          onPress: () => handleRequestRide(match),
+  const showMatches = async (id: string) => {
+    setMatches(prev => ({ ...prev, [id]: 'loading' }));
+    try {
+      const res = await ridesApi.getRideMatches(id);
+      setMatches(prev => ({ ...prev, [id]: res.success && Array.isArray(res.data) ? (res.data as unknown as MatchRide[]) : [] }));
+    } catch {
+      setMatches(prev => ({ ...prev, [id]: [] }));
+    }
+  };
+
+  const cancel = (id: string) => {
+    Alert.alert(t('rq.cancelTitle'), t('rq.cancelBody'), [
+      { text: t('myRides.no'), style: 'cancel' },
+      {
+        text: t('myRides.yesCancel'),
+        style: 'destructive',
+        onPress: async () => {
+          const res = await ridesApi.cancelRideRequest(id);
+          if (!res.success) {Alert.alert(t('common.error'), res.error || t('rq.cancelFailed'));}
+          await load();
         },
-      ]
+      },
+    ]);
+  };
+
+  const when = (iso: string | Date) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+  const renderPlace = (which: 'origin' | 'destination') => {
+    const value = which === 'origin' ? origin : destination;
+    return (
+      <TouchableOpacity style={styles.placeRow} onPress={() => setPicking(which)}>
+        <Icon name={which === 'origin' ? 'trip-origin' : 'place'} size={20} color={which === 'origin' ? colors.primary : colors.success} />
+        <Text style={[styles.placeText, !value && styles.placeholder]} numberOfLines={1}>
+          {value ? addressOf(value) || t('rf.unknownLocation') : which === 'origin' ? t('rf.pickupLocation') : t('rf.whereTo')}
+        </Text>
+      </TouchableOpacity>
     );
   };
 
-  const handleRequestRide = async (match: DriverMatch) => {
-    try {
-      // In production, this would send a ride request to the backend
-      log.info('Sending ride request to driver:', match.driver.id);
-      
-      Alert.alert(
-        t('rf.requestSent'),
-        t('rf.requestSentTo', { name: match.driver.firstName }),
-        [
-          {
-            text: t('rf.trackRequest'),
-            onPress: () => {
-              // Navigate to request tracking screen
-              navigation?.navigate('RideTracking', { 
-                requestId: `request_${Date.now()}`,
-                driverId: match.driver.id,
-              });
-            },
-          },
-          { text: t('common.ok') },
-        ]
-      );
-    } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert(t('rf.requestError'), errMsg || t('rf.failedToSendRideRequest'));
-    }
-  };
-
-  const handleMessageDriver = (driverId: string) => {
-    const match = matchingResults?.matches.find(m => m.driver.id === driverId);
-    if (match) {
-      navigation?.navigate('Chat', {
-        messageId: `driver-${driverId}`,
-        participantName: `${match.driver.firstName} ${match.driver.lastName}`,
-        driverId,
-      });
-    }
-  };
-
-  const renderLocationPicker = () => (
-    <Card style={styles.locationCard}>
-      <Text style={styles.sectionTitle}>{t('cf.tripDetails')}</Text>
-      
-      <View style={styles.locationPickers}>
-        <LocationPicker
-          visible={false}
-          onClose={() => {}}
-          onLocationSelect={setOrigin}
-          placeholder={t('rf.pickupLocation')}
-        />
-        
-        <View style={styles.locationDivider}>
-          <Icon name="more-vert" size={20} color="#CCCCCC" />
-        </View>
-        
-        <LocationPicker
-          visible={false}
-          onClose={() => {}}
-          onLocationSelect={setDestination}
-          placeholder={t('rf.whereTo')}
-        />
-      </View>
-    </Card>
-  );
-
-  const renderRideTypeSelector = () => (
-    <Card style={styles.rideTypeCard}>
-      <Text style={styles.sectionTitle}>{t('rf.rideType')}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.rideTypeList}>
-          {[
-            { id: 'economy', name: t('rf.economy'), icon: 'directions-car', description: t('rf.affordableRides') },
-            { id: 'comfort', name: t('search.tier.comfort'), icon: 'airline-seat-recline-extra', description: t('rf.extraLegroom') },
-            { id: 'premium', name: t('search.tier.premium'), icon: 'star', description: t('rf.luxuryVehicles') },
-            { id: 'shared', name: t('search.tier.shared'), icon: 'people', description: t('rf.splitTheCost') },
-          ].map((type) => (
-            <TouchableOpacity
-              key={type.id}
-              style={[
-                styles.rideTypeItem,
-                preferences.rideType === type.id && styles.rideTypeItemSelected,
-              ]}
-              onPress={() => setPreferences(prev => ({ ...prev, rideType: type.id as 'economy' | 'comfort' | 'premium' | 'shared' }))}
-            >
-              <Icon 
-                name={type.icon} 
-                size={24} 
-                color={preferences.rideType === type.id ? '#FFFFFF' : '#666666'} 
-              />
-              <Text style={[
-                styles.rideTypeName,
-                preferences.rideType === type.id && styles.rideTypeNameSelected,
-              ]}>
-                {type.name}
-              </Text>
-              <Text style={[
-                styles.rideTypeDescription,
-                preferences.rideType === type.id && styles.rideTypeDescriptionSelected,
-              ]}>
-                {type.description}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-    </Card>
-  );
-
-  const renderQuickPreferences = () => (
-    <Card style={styles.preferencesCard}>
-      <View style={styles.preferencesHeader}>
-        <Text style={styles.sectionTitle}>{t('rf.quickPreferences')}</Text>
-        <TouchableOpacity 
-          style={styles.morePreferencesButton}
-          onPress={() => setShowPreferences(true)}
-        >
-          <Text style={styles.morePreferencesText}>{t('rf.moreOptions')}</Text>
-          <Icon name="chevron-right" size={16} color="#2196F3" />
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.quickPreferences}>
-        <View style={styles.preferenceItem}>
-          <Text style={styles.preferenceLabel}>{t('rf.maxWaitTime')}</Text>
-          <View style={styles.preferenceButtons}>
-            {[5, 10, 15].map(time => (
-              <TouchableOpacity
-                key={time}
-                style={[
-                  styles.preferenceButton,
-                  // Add selected state logic here
-                ]}
-                onPress={() => {/* Handle preference change */}}
-              >
-                <Text style={styles.preferenceButtonText}>{time}min</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-        
-        <View style={styles.preferenceItem}>
-          <Text style={styles.preferenceLabel}>{t('rf.priority')}</Text>
-          <View style={styles.preferenceButtons}>
-            {[
-              { id: 'time', label: t('cf.speed') },
-              { id: 'price', label: t('rideDetails.price') },
-              { id: 'rating', label: t('rf.rating') },
-            ].map(priority => (
-              <TouchableOpacity
-                key={priority.id}
-                style={[
-                  styles.preferenceButton,
-                  preferences.prioritizeBy === priority.id && styles.preferenceButtonSelected,
-                ]}
-                onPress={() => setPreferences(prev => ({ ...prev, prioritizeBy: priority.id as 'time' | 'price' | 'rating' }))}
-              >
-                <Text style={[
-                  styles.preferenceButtonText,
-                  preferences.prioritizeBy === priority.id && styles.preferenceButtonTextSelected,
-                ]}>
-                  {priority.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </View>
-    </Card>
-  );
-
-  const renderSearchButton = () => (
-    <View style={styles.searchButtonContainer}>
-      <Button
-        title={isSearching ? t('rf.findingMatches') : t('rf.findMatchingDrivers')}
-        onPress={handleSearchRides}
-        disabled={isSearching || !origin || !destination}
-        loading={isSearching}
-        variant="primary"
-        size="large"
-        icon="search"
-        fullWidth
-      />
-    </View>
-  );
-
-  const renderMatchingResults = () => {
-    if (!matchingResults) return null;
-
+  const renderRequest = (r: RideRequest) => {
+    const m = matches[r.id];
+    const active = r.status === 'active';
     return (
-      <View style={styles.resultsContainer}>
-        <View style={styles.resultsHeader}>
-          <Text style={styles.resultsTitle}>
-            {matchingResults.matches.length} Compatible Driver{matchingResults.matches.length !== 1 ? 's' : ''} Found
-          </Text>
-          <Text style={styles.resultsSubtitle}>
-            Avg. Compatibility: {Math.round(matchingResults.averageCompatibility * 100)}% • 
-            Search took {(matchingResults.searchTime / 1000).toFixed(1)}s
-          </Text>
+      <Card key={r.id} style={styles.requestCard}>
+        <View style={styles.requestHeader}>
+          <Text style={styles.route} numberOfLines={2}>{r.origin.address} → {r.destination.address}</Text>
+          <Text style={[styles.status, !active && styles.statusInactive]}>{t(`rq.status.${r.status}` as 'rq.status.active')}</Text>
         </View>
-        
-        <ScrollView 
-          style={styles.matchesList}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isSearching}
-              onRefresh={handleSearchRides}
-            />
-          }
-        >
-          {matchingResults.matches.map((match, index) => (
-            <DriverMatchCard
-              key={match.driver.id}
-              match={match}
-              onSelect={handleSelectMatch}
-              onMessage={handleMessageDriver}
-            />
-          ))}
-          
-          {matchingResults.recommendations.length > 0 && (
-            <Card style={styles.recommendationsCard}>
-              <Text style={styles.recommendationsTitle}>{t('rf.suggestions')}</Text>
-              {matchingResults.recommendations.map((rec, index) => (
-                <TouchableOpacity key={index} style={styles.recommendationItem}>
-                  <Icon 
-                    name={rec.type === 'expand_search' ? 'zoom-out-map' : 
-                          rec.type === 'adjust_preferences' ? 'tune' :
-                          rec.type === 'try_different_time' ? 'schedule' : 'help-outline'}
-                    size={20} 
-                    color="#2196F3" 
-                  />
-                  <View style={styles.recommendationText}>
-                    <Text style={styles.recommendationTitle}>{rec.title}</Text>
-                    <Text style={styles.recommendationDescription}>{rec.description}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </Card>
-          )}
-        </ScrollView>
-      </View>
+        <Text style={styles.meta}>
+          {when(r.departureTime)} · {r.passengers === 1 ? t('myRides.seatOne') : t('myRides.seatMany', { count: r.passengers })}
+          {r.maxPrice != null ? ` · ${t('rq.upTo', { price: r.maxPrice })}` : ''}
+        </Text>
+        {active && (
+          <View style={styles.actions}>
+            <TouchableOpacity onPress={() => showMatches(r.id)} style={styles.action}>
+              <Icon name="search" size={18} color={colors.primary} />
+              <Text style={styles.actionText}>{t('rq.seeRides')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => cancel(r.id)} style={styles.action}>
+              <Icon name="close" size={18} color={colors.error} />
+              <Text style={[styles.actionText, { color: colors.error }]}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {m === 'loading' && <ActivityIndicator style={styles.spinner} color={colors.primary} />}
+        {Array.isArray(m) && m.length === 0 && <Text style={styles.noMatch}>{t('rq.noRidesYet')}</Text>}
+        {Array.isArray(m) && m.map(ride => (
+          <TouchableOpacity key={ride.id} style={styles.match} onPress={() => navigation?.navigate('Booking', { rideId: ride.id })}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.matchTitle}>{when(ride.departureTime)}{ride.driver?.firstName ? ` · ${ride.driver.firstName}` : ''}</Text>
+              <Text style={styles.matchMeta}>{t('myRides.pricePerSeat', { price: ride.pricePerSeat })} · {t('search.seatsLeft', { count: ride.availableSeats })}</Text>
+            </View>
+            <Text style={styles.book}>{t('search.book')}</Text>
+          </TouchableOpacity>
+        ))}
+      </Card>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-          <Text style={styles.screenTitle}>{t('rf.requestARide')}</Text>
-          
-          {!matchingResults ? (
-            <>
-              {renderLocationPicker()}
-              {renderRideTypeSelector()}
-              {renderQuickPreferences()}
-              {renderSearchButton()}
-            </>
-          ) : (
-            <>
-              <TouchableOpacity 
-                style={styles.newSearchButton}
-                onPress={() => {
-                  setMatchingResults(null);
-                  setSelectedMatch(null);
-                }}
-              >
-                <Icon name="arrow-back" size={20} color="#2196F3" />
-                <Text style={styles.newSearchText}>{t('rf.newSearch')}</Text>
-              </TouchableOpacity>
-              {renderMatchingResults()}
-            </>
-          )}
-        </View>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack()} accessibilityLabel={t('common.back')}>
+          <Icon name="arrow-back" size={24} color={colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('rf.requestARide')}</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}>
+        <Card style={styles.formCard}>
+          <Text style={styles.intro}>{t('rq.intro')}</Text>
+          {renderPlace('origin')}
+          {renderPlace('destination')}
+
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.half} onPress={() => setPickerMode('date')}>
+              <Icon name="event" size={18} color={colors.text.secondary} />
+              <Text style={styles.placeText}>{departure.toLocaleDateString()}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.half} onPress={() => setPickerMode('time')}>
+              <Icon name="schedule" size={18} color={colors.text.secondary} />
+              <Text style={styles.placeText}>{departure.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>{t('search.passengers')}</Text>
+            <View style={styles.stepper}>
+              <TouchableOpacity onPress={() => setSeats(s => Math.max(1, s - 1))} accessibilityLabel="-"><Icon name="remove" size={22} color={colors.primary} /></TouchableOpacity>
+              <Text style={styles.seats}>{seats}</Text>
+              <TouchableOpacity onPress={() => setSeats(s => Math.min(CONSTANTS.MAX_SEATS, s + 1))} accessibilityLabel="+"><Icon name="add" size={22} color={colors.primary} /></TouchableOpacity>
+            </View>
+          </View>
+
+          <TextInput
+            style={styles.input}
+            value={maxPrice}
+            onChangeText={v => setMaxPrice(v.replace(/[^0-9.]/g, ''))}
+            placeholder={t('rq.maxPricePlaceholder')}
+            placeholderTextColor={colors.text.secondary}
+            keyboardType="numeric"
+          />
+          <TextInput
+            style={[styles.input, styles.note]}
+            value={note}
+            onChangeText={setNote}
+            placeholder={t('rq.notePlaceholder')}
+            placeholderTextColor={colors.text.secondary}
+            maxLength={500}
+            multiline
+          />
+          <Button title={t('rq.post')} onPress={submit} loading={submitting} disabled={submitting} fullWidth />
+        </Card>
+
+        <Text style={styles.sectionTitle}>{t('rq.yourRequests')}</Text>
+        {loading ? <ActivityIndicator color={colors.primary} /> : requests.length === 0
+          ? <Text style={styles.noMatch}>{t('rq.none')}</Text>
+          : requests.map(renderRequest)}
       </ScrollView>
+
+      <LocationPicker
+        visible={picking !== null}
+        onClose={() => setPicking(null)}
+        onLocationSelect={l => { (picking === 'origin' ? setOrigin : setDestination)(l); setPicking(null); }}
+        title={picking === 'origin' ? t('rf.selectPickupLocation') : t('rf.selectDestination')}
+      />
+      {pickerMode && (
+        <DateTimePicker
+          value={departure}
+          mode={pickerMode}
+          display="default"
+          minimumDate={pickerMode === 'date' ? new Date() : undefined}
+          onChange={(_e, d) => { setPickerMode(null); if (d) {setDeparture(d);} }}
+        />
+      )}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  locationCard: {
-    marginBottom: 16,
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 12,
-  },
-  locationPickers: {
-    gap: 0,
-  },
-  locationPicker: {
-    marginBottom: 0,
-  },
-  locationDivider: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  rideTypeCard: {
-    marginBottom: 16,
-    padding: 16,
-  },
-  rideTypeList: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rideTypeItem: {
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    minWidth: 100,
-    gap: 8,
-  },
-  rideTypeItemSelected: {
-    backgroundColor: '#2196F3',
-    borderColor: '#1976D2',
-  },
-  rideTypeName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
-    textAlign: 'center',
-  },
-  rideTypeNameSelected: {
-    color: '#FFFFFF',
-  },
-  rideTypeDescription: {
-    fontSize: 10,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  rideTypeDescriptionSelected: {
-    color: '#E3F2FD',
-  },
-  preferencesCard: {
-    marginBottom: 16,
-    padding: 16,
-  },
-  preferencesHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  morePreferencesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  morePreferencesText: {
-    fontSize: 12,
-    color: '#2196F3',
-    fontWeight: '500',
-  },
-  quickPreferences: {
-    gap: 16,
-  },
-  preferenceItem: {
-    gap: 8,
-  },
-  preferenceLabel: {
-    fontSize: 14,
-    color: '#666666',
-  },
-  preferenceButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  preferenceButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F0F0F0',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  preferenceButtonSelected: {
-    backgroundColor: '#E3F2FD',
-    borderColor: '#2196F3',
-  },
-  preferenceButtonText: {
-    fontSize: 12,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  preferenceButtonTextSelected: {
-    color: '#2196F3',
-  },
-  searchButtonContainer: {
-    marginTop: 8,
-  },
-  newSearchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  newSearchText: {
-    fontSize: 16,
-    color: '#2196F3',
-    fontWeight: '500',
-  },
-  resultsContainer: {
-    flex: 1,
-  },
-  resultsHeader: {
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  resultsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  resultsSubtitle: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  matchesList: {
-    flex: 1,
-  },
-  recommendationsCard: {
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 16,
-  },
-  recommendationsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 12,
-  },
-  recommendationItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12,
-  },
-  recommendationText: {
-    flex: 1,
-  },
-  recommendationTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333333',
-    marginBottom: 2,
-  },
-  recommendationDescription: {
-    fontSize: 12,
-    color: '#666666',
-    lineHeight: 16,
-  },
+  container: { flex: 1, backgroundColor: colors.background.primary },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border.light },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text.primary },
+  content: { padding: 16, paddingBottom: 40 },
+  formCard: { marginBottom: 20 },
+  intro: { fontSize: 14, color: colors.text.secondary, marginBottom: 12, lineHeight: 20 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border.light },
+  placeText: { flex: 1, marginLeft: 10, fontSize: 15, color: colors.text.primary },
+  placeholder: { color: colors.text.secondary },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  half: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, marginRight: 8 },
+  label: { fontSize: 15, color: colors.text.primary },
+  stepper: { flexDirection: 'row', alignItems: 'center' },
+  seats: { fontSize: 16, fontWeight: '600', marginHorizontal: 16, color: colors.text.primary },
+  input: { borderWidth: 1, borderColor: colors.border.light, borderRadius: 8, padding: 12, marginTop: 12, fontSize: 15, color: colors.text.primary },
+  note: { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: colors.text.primary, marginBottom: 10 },
+  requestCard: { marginBottom: 12 },
+  requestHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  route: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text.primary, marginRight: 8 },
+  status: { fontSize: 12, fontWeight: '600', color: colors.success, textTransform: 'uppercase' },
+  statusInactive: { color: colors.text.secondary },
+  meta: { fontSize: 13, color: colors.text.secondary, marginTop: 4 },
+  actions: { flexDirection: 'row', marginTop: 10 },
+  action: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
+  actionText: { marginLeft: 4, fontSize: 14, color: colors.primary, fontWeight: '500' },
+  spinner: { marginTop: 10 },
+  noMatch: { fontSize: 14, color: colors.text.secondary, marginTop: 8 },
+  match: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border.light, marginTop: 8 },
+  matchTitle: { fontSize: 14, fontWeight: '600', color: colors.text.primary },
+  matchMeta: { fontSize: 13, color: colors.text.secondary, marginTop: 2 },
+  book: { fontSize: 14, fontWeight: '600', color: colors.primary },
 });
 
 export default RideRequestScreen;

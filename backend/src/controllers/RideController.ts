@@ -28,6 +28,7 @@ import { RideStatus, BookingStatus, RideTier, GeoPoint } from '../types';
 import { AuthenticatedRequest } from '../types';
 import { aiService } from '../services/AIService';
 import { notificationService } from '../services/NotificationService';
+import rideRequestService from '../services/RideRequestService';
 import GroupChatService from '../services/GroupChatService';
 import toRideView from '../utils/rideView';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
@@ -235,6 +236,10 @@ export class RideController {
         data: createdRide,
         timestamp: new Date().toISOString(),
       });
+
+      // Tell passengers whose open ride request this ride fits. After the
+      // response: it never fails or delays publishing.
+      void rideRequestService.notifyMatchesForRide(ride.id);
     } catch (error) {
       await transaction.rollback();
       logger.error('Error in createRide', {
