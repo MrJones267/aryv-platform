@@ -22,6 +22,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import notificationsApi, { NotificationRecord } from '../../services/api/notificationsApi';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { colors } from '../../theme';
+import { openFromNotification } from '../../services/appNavigation';
 import { useI18n } from '../../i18n/I18nContext';
 
 type NotificationsScreenProps = {
@@ -114,6 +115,10 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ navigation })
         prev.map((n) => (n.id === item.id ? { ...n, readAt: new Date().toISOString() } : n))
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+    // Open what it is about. This used to mark it read and do nothing else.
+    if (item.type !== 'system_alert') {
+      openFromNotification(item.type, item.data);
     }
   };
 

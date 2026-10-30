@@ -10,6 +10,7 @@ import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messag
 import { AuthService } from './AuthService';
 import { ApiClient } from './ApiClient';
 import logger from './LoggingService';
+import { openFromNotification } from './appNavigation';
 
 const log = logger.createLogger('NotificationService');
 
@@ -270,39 +271,7 @@ class NotificationService {
     try {
       const { type, data } = notification;
 
-      // Navigate based on notification type
-      const dataStr = data as Record<string, string | undefined> | undefined;
-      switch (type) {
-        case 'ride_request':
-          this.navigateToRideRequest(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
-          break;
-        case 'ride_matched':
-          this.navigateToActiveRide(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
-          break;
-        case 'driver_arrived':
-          this.navigateToPickup(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
-          break;
-        case 'ride_started':
-          this.navigateToTripTracking(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
-          break;
-        case 'ride_completed':
-          this.navigateToTripSummary(dataStr?.rideId != null ? String(dataStr.rideId) : undefined);
-          break;
-        case 'booking_update':
-          this.navigateToBooking(dataStr?.bookingId != null ? String(dataStr.bookingId) : undefined);
-          break;
-        case 'delivery_update':
-          this.navigateToDelivery(dataStr?.deliveryId != null ? String(dataStr.deliveryId) : undefined);
-          break;
-        case 'payment_received':
-          this.navigateToPayments();
-          break;
-        case 'chat_message':
-          this.navigateToChat(dataStr?.chatId != null ? String(dataStr.chatId) : undefined);
-          break;
-        default:
-          log.info('Unknown notification type:', type);
-      }
+      openFromNotification(String(type), data as Record<string, unknown> | undefined);
 
       this.notifyListeners('notification_tapped', notification);
     } catch (error) {
@@ -505,50 +474,14 @@ class NotificationService {
   }
 
   // Navigation helpers (these would integrate with your navigation system)
-  private navigateToRideRequest(rideId?: string): void {
-    log.info('Navigate to ride request:', rideId);
-    // Implement navigation to ride request screen
-  }
 
-  private navigateToActiveRide(rideId?: string): void {
-    log.info('Navigate to active ride:', rideId);
-    // Implement navigation to active ride screen
-  }
 
-  private navigateToPickup(rideId?: string): void {
-    log.info('Navigate to pickup:', rideId);
-    // Implement navigation to pickup screen
-  }
 
-  private navigateToTripTracking(rideId?: string): void {
-    log.info('Navigate to trip tracking:', rideId);
-    // Implement navigation to trip tracking screen
-  }
 
-  private navigateToTripSummary(rideId?: string): void {
-    log.info('Navigate to trip summary:', rideId);
-    // Implement navigation to trip summary screen
-  }
 
-  private navigateToBooking(bookingId?: string): void {
-    log.info('Navigate to booking:', bookingId);
-    // Implement navigation to booking screen
-  }
 
-  private navigateToDelivery(deliveryId?: string): void {
-    log.info('Navigate to delivery:', deliveryId);
-    // Implement navigation to delivery screen
-  }
 
-  private navigateToPayments(): void {
-    log.info('Navigate to payments');
-    // Implement navigation to payments screen
-  }
 
-  private navigateToChat(chatId?: string): void {
-    log.info('Navigate to chat:', chatId);
-    // Implement navigation to chat screen
-  }
 
   // Event listener system
   private listeners: Map<string, Function[]> = new Map();
