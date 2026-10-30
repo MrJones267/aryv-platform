@@ -1801,4 +1801,31 @@ export const tn: Record<TranslationKey, string> = {
 
   // Shared components (by hand)
   'ui.memoryWarning': 'Temoso ya mohopolo',
+
+  // Ride requests
+  'rq.intro': 'Ga go ise go nne le mosepele mo tseleng ya gago? Bolela kwa le nako e o batlang go tsamaya ka yone. Bakgweetsi ba ba gaufi le wena ba tla e bona, mme re tla go itsise fa mosepele o o tsamaelanang o phatlalatswa.',
+  'rq.maxPricePlaceholder': 'Bontsi jo o ka bo duelang ka setulo (ga se tlamelo)',
+  'rq.notePlaceholder': 'Sengwe le sengwe se mokgweetsi a tshwanetseng go se itse (ga se tlamelo)',
+  'rq.post': 'Romela Kopo',
+  'rq.postedTitle': 'Kopo e Rometswe',
+  'rq.postedBody': 'Bakgweetsi ba ba gaufi le lefelo la gago la go tsewa jaanong ba ka e bona. Re tla go itsise fa mosepele o o tsamaelanang o phatlalatswa.',
+  'rq.yourRequests': 'Dikopo tsa Gago',
+  'rq.none': 'Ga o ise o nne le dikopo tsa mesepele.',
+  'rq.status.active': 'E Butswe',
+  'rq.status.expired': 'E Fedile',
+  'rq.status.cancelled': 'E Khanseletswe',
+  'rq.upTo': 'go fitlha P{{price}}',
+  'rq.seeRides': 'Bona mesepele e e tsamaelanang',
+  'rq.noRidesYet': 'Ga go ise go nne le mosepele o o tsamaelanang. Re tla go itsise fa o phatlalatswa.',
+  'rq.cancelTitle': 'Khansela kopo',
+  'rq.cancelBody': 'Bakgweetsi ga ba kitla ba tlhola ba bona kopo e.',
+  'rq.cancelFailed': 'Ga re a kgona go khansela kopo',
+  'rq.nearbyTitle': 'Dikopo tsa mesepele gaufi le wena',
+  'rq.nearbyIntro': 'Bapalami ba ba gaufi le wena ba ba sa bonang mosepele. Neela mosepele mme ba tla itsisiwa gore o teng.',
+  'rq.passengerKmAway': '{{name}} · lefelo la go tsewa le kgakala ka {{km}} km',
+  'rq.offerThisRide': 'Neela mosepele o',
+  'rq.noneNearby': 'Ga go na dikopo tsa mesepele gaufi le wena gajaana.',
+  'rq.needLocation': 'Dumelela lefelo go bona dikopo tsa mesepele gaufi le wena.',
+  'rq.needVerification': 'Dikopo tsa mesepele di bontshiwa bakgweetsi ba dikwalo tsa bone di amogetsweng. Fetsa netefatso ya mokgweetsi go di bona.',
+  'rq.loadFailed': 'Ga re a kgona go tsenya dikopo tsa mesepele. Gogela kwa tlase go leka gape.',
 };

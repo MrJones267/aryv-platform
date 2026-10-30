@@ -1800,4 +1800,31 @@ export const af: Record<TranslationKey, string> = {
 
   // Shared components (by hand)
   'ui.memoryWarning': 'Geheuewaarskuwing',
+
+  // Ride requests
+  'rq.intro': 'Nog geen rit op jou roete nie? Sê waarheen en wanneer jy wil gaan. Bestuurders naby jou sal dit sien, en ons laat jou weet wanneer \'n rit wat pas, gepubliseer word.',
+  'rq.maxPricePlaceholder': 'Die meeste wat jy per sitplek sal betaal (opsioneel)',
+  'rq.notePlaceholder': 'Enigiets wat \'n bestuurder moet weet (opsioneel)',
+  'rq.post': 'Plaas versoek',
+  'rq.postedTitle': 'Versoek geplaas',
+  'rq.postedBody': 'Bestuurders naby jou afhaalplek kan dit nou sien. Ons laat jou weet wanneer \'n rit wat pas, gepubliseer word.',
+  'rq.yourRequests': 'Jou versoeke',
+  'rq.none': 'Jy het nog geen ritversoeke nie.',
+  'rq.status.active': 'Oop',
+  'rq.status.expired': 'Verval',
+  'rq.status.cancelled': 'Gekanselleer',
+  'rq.upTo': 'tot P{{price}}',
+  'rq.seeRides': 'Sien passende ritte',
+  'rq.noRidesYet': 'Nog geen rit pas nie. Ons laat jou weet wanneer een gepubliseer word.',
+  'rq.cancelTitle': 'Kanselleer versoek',
+  'rq.cancelBody': 'Bestuurders sal hierdie versoek nie meer sien nie.',
+  'rq.cancelFailed': 'Kon nie die versoek kanselleer nie',
+  'rq.nearbyTitle': 'Ritversoeke naby jou',
+  'rq.nearbyIntro': 'Passasiers naby jou wat geen rit gevind het nie. Bied een aan en hulle sal ingelig word dat dit beskikbaar is.',
+  'rq.passengerKmAway': '{{name}} · afhaal sowat {{km}} km van jou',
+  'rq.offerThisRide': 'Bied hierdie rit aan',
+  'rq.noneNearby': 'Geen oop ritversoeke naby jou op die oomblik nie.',
+  'rq.needLocation': 'Laat liggingtoegang toe om ritversoeke naby jou te sien.',
+  'rq.needVerification': 'Ritversoeke word gewys aan bestuurders wie se dokumente goedgekeur is. Voltooi bestuurderverifikasie om dit te sien.',
+  'rq.loadFailed': 'Kon nie ritversoeke laai nie. Trek af om weer te probeer.',
 };

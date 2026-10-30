@@ -568,6 +568,15 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       {renderTabSelector()}
       {renderFilterBar()}
+
+      {/* Passengers who found no ride post what they need; drivers see it here. */}
+      {activeTab === 'driving' && (
+        <TouchableOpacity style={styles.requestsBanner} onPress={() => nav.navigate('RideRequestsNearby')}>
+          <Icon name="campaign" size={20} color="#2196F3" />
+          <Text style={styles.requestsBannerText}>{t('rq.nearbyTitle')}</Text>
+          <Icon name="chevron-right" size={20} color="#2196F3" />
+        </TouchableOpacity>
+      )}
       
       <ScrollView
         style={styles.scrollView}
@@ -606,6 +615,22 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  requestsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#E3F2FD',
+  },
+  requestsBannerText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1565C0',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

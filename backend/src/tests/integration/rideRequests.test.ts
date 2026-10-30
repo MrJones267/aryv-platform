@@ -62,7 +62,7 @@ describe('Ride requests', () => {
     } as any);
     vehicle = await Vehicle.create({
       driverId: driver.id, make: 'Toyota', model: 'Quantum', year: 2020, color: 'White',
-      licensePlate: 'B456DEF', capacity: 14, type: VehicleType.VAN, isVerified: true,
+      licensePlate: 'B456DEF', capacity: 7, type: VehicleType.MINIVAN, isVerified: true,
     } as any);
   });
 

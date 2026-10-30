@@ -1800,6 +1800,33 @@ export const en = {
 
   // Shared components (by hand)
   'ui.memoryWarning': 'Memory warning',
+
+  // Ride requests
+  'rq.intro': 'No ride on your route yet? Say where and when you want to go. Drivers near you will see it, and we\'ll tell you when a ride that fits is published.',
+  'rq.maxPricePlaceholder': 'Most you\'ll pay per seat (optional)',
+  'rq.notePlaceholder': 'Anything a driver should know (optional)',
+  'rq.post': 'Post Request',
+  'rq.postedTitle': 'Request posted',
+  'rq.postedBody': 'Drivers near your pickup can now see it. We\'ll let you know when a ride that fits is published.',
+  'rq.yourRequests': 'Your Requests',
+  'rq.none': 'You have no ride requests yet.',
+  'rq.status.active': 'Open',
+  'rq.status.expired': 'Expired',
+  'rq.status.cancelled': 'Cancelled',
+  'rq.upTo': 'up to P{{price}}',
+  'rq.seeRides': 'See matching rides',
+  'rq.noRidesYet': 'No ride fits yet. We\'ll tell you when one is published.',
+  'rq.cancelTitle': 'Cancel request',
+  'rq.cancelBody': 'Drivers will no longer see this request.',
+  'rq.cancelFailed': 'Could not cancel the request',
+  'rq.nearbyTitle': 'Ride requests near you',
+  'rq.nearbyIntro': 'Passengers near you who found no ride. Offer one and they will be told it\'s there.',
+  'rq.passengerKmAway': '{{name}} · pickup about {{km}} km from you',
+  'rq.offerThisRide': 'Offer this ride',
+  'rq.noneNearby': 'No open ride requests near you right now.',
+  'rq.needLocation': 'Allow location access to see ride requests near you.',
+  'rq.needVerification': 'Ride requests are shown to drivers whose documents are approved. Finish driver verification to see them.',
+  'rq.loadFailed': 'Could not load ride requests. Pull down to try again.',
 };
 
 export type TranslationKey = keyof typeof en;
