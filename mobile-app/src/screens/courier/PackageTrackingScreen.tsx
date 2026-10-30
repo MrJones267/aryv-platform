@@ -2,7 +2,7 @@
  * @fileoverview Package tracking screen with real-time location updates
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-30
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -24,47 +24,8 @@ import { colors } from '../../theme';
 import PackageService from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
+import DeliveryTrackingMap from '../../components/courier/DeliveryTrackingMap';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
-
-// Mock Map Component
-const MockMapView: React.FC<{
-  pickup: [number, number];
-  dropoff: [number, number];
-  courierLocations?: Array<{ location: [number, number]; timestamp: string }>;
-}> = ({ pickup, dropoff, courierLocations }) => {
-  return (
-    <View style={styles.mapContainer}>
-      <View style={styles.mapPlaceholder}>
-        <Icon name="map" size={60} color={colors.text.secondary} />
-        <Text style={styles.mapText}>Live Tracking Map</Text>
-        <Text style={styles.mapSubtext}>
-          Real-time location updates during delivery
-        </Text>
-        
-        {/* Mock route visualization */}
-        <View style={styles.routeInfo}>
-          <View style={styles.locationPin}>
-            <Icon name="place" size={20} color={colors.primary} />
-            <Text style={styles.pinLabel}>Pickup</Text>
-          </View>
-          
-          <View style={styles.routeLine}>
-            {courierLocations && courierLocations.length > 0 && (
-              <View style={styles.courierDot}>
-                <Icon name="local-shipping" size={16} color={colors.warning} />
-              </View>
-            )}
-          </View>
-          
-          <View style={styles.locationPin}>
-            <Icon name="flag" size={20} color={colors.success} />
-            <Text style={styles.pinLabel}>Delivery</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-};
 
 type PackageTrackingRouteProp = RouteProp<CourierStackParamList, 'PackageTracking'>;
 
@@ -107,6 +68,8 @@ const PackageTrackingScreen: React.FC = () => {
   interface TrackingData {
     package: PackageData;
     deliveryAgreement?: DeliveryAgreementData;
+    pickupLocation?: [number, number] | null;
+    dropoffLocation?: [number, number] | null;
     courierLocations?: CourierLocationData[];
   }
   const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
@@ -115,14 +78,15 @@ const PackageTrackingScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const inTransit = trackingData?.deliveryAgreement?.status === 'in_transit';
+
+  // Refresh often while the package is moving, the courier's phone reports
+  // about every 20 seconds; otherwise only to notice a change of status.
   useEffect(() => {
     loadTrackingData();
-    
-    // Set up real-time updates (mock)
-    const interval = setInterval(loadTrackingData, 30000); // Update every 30 seconds
-    
+    const interval = setInterval(loadTrackingData, inTransit ? 15000 : 60000);
     return () => clearInterval(interval);
-  }, [packageId]);
+  }, [packageId, inTransit]);
 
   const loadTrackingData = async () => {
     try {
@@ -210,12 +174,12 @@ const PackageTrackingScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Map View */}
-      <MockMapView
-        pickup={[-74.0060, 40.7128]}
-        dropoff={[-73.9851, 40.7589]}
-        courierLocations={courierLocations as Array<{ location: [number, number]; timestamp: string }>}
+      <DeliveryTrackingMap
+        pickup={trackingData.pickupLocation}
+        dropoff={trackingData.dropoffLocation}
+        courierTrail={courierLocations}
+        inTransit={deliveryAgreement?.status === 'in_transit'}
       />
-
       <ScrollView style={styles.content}>
         {/* Status Header */}
         <View style={styles.statusCard}>
@@ -448,55 +412,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
-  },
-  mapContainer: {
-    height: 250,
-    backgroundColor: colors.background.secondary,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f0f0f0',
-  },
-  mapText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text.primary,
-    marginTop: 8,
-  },
-  mapSubtext: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginTop: 4,
-  },
-  routeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  locationPin: {
-    alignItems: 'center',
-  },
-  pinLabel: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    marginTop: 4,
-  },
-  routeLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: colors.border.light,
-    marginHorizontal: 16,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  courierDot: {
-    backgroundColor: colors.warning,
-    borderRadius: 12,
-    padding: 4,
-    position: 'absolute',
   },
   content: {
     flex: 1,

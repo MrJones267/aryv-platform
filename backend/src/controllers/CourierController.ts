@@ -31,6 +31,19 @@ const toGeoPoint = (coordinates: [number, number]): any => ({
   coordinates: [Number(coordinates[0]), Number(coordinates[1])],
 });
 
+/** A stored GEOMETRY point (GeoJSON) as [lng, lat], or null if unreadable. */
+const toLngLat = (point: any): [number, number] | null => {
+  const coordinates = Array.isArray(point) ? point : point?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+  const [lng, lat] = coordinates.map(Number);
+  return Number.isFinite(lng) && Number.isFinite(lat) ? [lng!, lat!] : null;
+};
+
+const CONSTANTS = {
+  // Courier positions sent with each tracking refresh.
+  TRACKING_POINTS: 100,
+};
+
 export class CourierController {
   /**
    * Get pricing suggestions for package delivery
@@ -659,7 +672,7 @@ export class CourierController {
       });
 
       if (location) {
-        agreement.pickupLocation = location;
+        agreement.pickupLocation = toGeoPoint(location);
       }
 
       await agreement.save({ transaction });
@@ -669,7 +682,7 @@ export class CourierController {
         await CourierLocation.create({
           deliveryAgreementId: agreementId,
           courierId: userId,
-          location,
+          location: toGeoPoint(location),
           timestamp: new Date(),
         }, { transaction });
       }
@@ -791,7 +804,7 @@ export class CourierController {
         await CourierLocation.create({
           deliveryAgreementId: paymentResult.agreementId,
           courierId: userId,
-          location,
+          location: toGeoPoint(location),
           timestamp: new Date(),
         });
       }
@@ -865,7 +878,7 @@ export class CourierController {
       const locationRecord = await CourierLocation.create({
         deliveryAgreementId: agreementId,
         courierId: userId,
-        location,
+        location: toGeoPoint(location),
         accuracy,
         speed,
         heading,
@@ -968,7 +981,6 @@ export class CourierController {
         return;
       }
 
-      // Get package with delivery agreement and courier locations
       const packageData = await Package.findOne({
         where: { id: packageId },
         include: [
@@ -986,11 +998,6 @@ export class CourierController {
                 as: 'courier',
                 attributes: ['id', 'firstName', 'lastName', 'phone'],
               },
-              {
-                model: CourierLocation,
-                as: 'courierLocations',
-                order: [['timestamp', 'DESC']],
-              },
             ],
           },
         ],
@@ -1005,8 +1012,14 @@ export class CourierController {
         return;
       }
 
+      // The delivery being tracked: the newest one that was not cancelled, or
+      // the newest of all. This used to take whichever agreement the database
+      // returned first, which could be an old, cancelled one.
+      const agreements = [...(packageData.deliveryAgreements || [])]
+        .sort((x: any, y: any) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime());
+      const deliveryAgreement = agreements.find(a => a.status !== DeliveryStatus.CANCELLED) || agreements[0];
+
       // Ensure user has permission to view this package
-      const deliveryAgreement = packageData.deliveryAgreements?.[0];
       const hasPermission = packageData.senderId === userId ||
                           deliveryAgreement?.courierId === userId;
 
@@ -1019,20 +1032,36 @@ export class CourierController {
         return;
       }
 
-      // Format courier locations for response
-      const courierLocations = (deliveryAgreement as any)?.courierLocations?.map((loc: any) => ({
-        location: loc.location,
-        timestamp: loc.timestamp,
-        accuracy: loc.accuracy,
-        speed: loc.speed,
-        heading: loc.heading,
-      })) || [];
+      // Where the courier has been, oldest first. Only while the package is on
+      // its way: the sender has no business knowing where the courier is
+      // before pickup or after handover. The newest points only, so a long
+      // delivery does not send its whole history every refresh.
+      let courierLocations: Array<Record<string, unknown>> = [];
+      if (deliveryAgreement?.status === DeliveryStatus.IN_TRANSIT) {
+        const recent = await CourierLocation.findAll({
+          where: { deliveryAgreementId: deliveryAgreement.id },
+          order: [['timestamp', 'DESC']],
+          limit: CONSTANTS.TRACKING_POINTS,
+        });
+        courierLocations = recent.reverse()
+          .map(loc => ({
+            location: toLngLat(loc.location),
+            timestamp: loc.timestamp,
+            accuracy: loc.accuracy,
+            speed: loc.speed,
+            heading: loc.heading,
+          }))
+          .filter(loc => loc.location);
+      }
 
       res.status(200).json({
         success: true,
         data: {
           package: packageData,
           deliveryAgreement: deliveryAgreement || null,
+          // [lng, lat], ready for a map; the package's own fields are GeoJSON.
+          pickupLocation: toLngLat(packageData.pickupCoordinates),
+          dropoffLocation: toLngLat(packageData.dropoffCoordinates),
           courierLocations,
         },
         timestamp: new Date().toISOString(),

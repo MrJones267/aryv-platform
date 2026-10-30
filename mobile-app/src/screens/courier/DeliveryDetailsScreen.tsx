@@ -2,7 +2,7 @@
  * @fileoverview Delivery details screen for managing active deliveries
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-30
  */
 
 import React, { useState, useEffect } from 'react';
@@ -24,6 +24,7 @@ import PackageService, { DeliveryAgreement } from '../../services/PackageService
 import locationService from '../../services/LocationService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
+import useShareDeliveryLocation from '../../hooks/useShareDeliveryLocation';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import logger from '../../services/LoggingService';
 
@@ -38,6 +39,7 @@ const DeliveryDetailsScreen: React.FC = () => {
   
   const [delivery, setDelivery] = useState<DeliveryAgreement | null>(null);
   const [loading, setLoading] = useState(true);
+  const sharing = useShareDeliveryLocation(delivery?.id, delivery?.status === 'in_transit');
 
   useEffect(() => {
     loadDeliveryDetails();
@@ -80,7 +82,8 @@ const DeliveryDetailsScreen: React.FC = () => {
               let location: [number, number] | undefined;
               try {
                 const currentLocation = await locationService.getCurrentLocation();
-                location = [currentLocation.latitude, currentLocation.longitude];
+                // The server takes [longitude, latitude]; this used to send them swapped.
+                location = [currentLocation.longitude, currentLocation.latitude];
               } catch (locationError) {
                 log.warn('Could not get location for pickup confirmation:', locationError);
                 // Continue without location if unavailable
@@ -304,6 +307,18 @@ const DeliveryDetailsScreen: React.FC = () => {
           </View>
           
           <Text style={styles.address}>{delivery.package?.dropoffAddress}</Text>
+
+          {delivery.status === 'in_transit' && (
+            <Text style={styles.sharingText}>
+              {sharing === 'sharing'
+                ? 'Sharing your location with the sender while this screen is open.'
+                : sharing === 'no_permission'
+                  ? 'Allow location access so the sender can follow the delivery.'
+                  : sharing === 'unavailable'
+                    ? 'Your location is unavailable, so the sender cannot see the delivery on the map.'
+                    : 'Finding your location…'}
+            </Text>
+          )}
           
           <View style={styles.locationActions}>
             <TouchableOpacity
@@ -450,6 +465,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.error,
     marginTop: 16,
+  },
+  sharingText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: 12,
   },
   statusCard: {
     backgroundColor: colors.background.secondary,
