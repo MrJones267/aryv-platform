@@ -1855,4 +1855,7 @@ export const tn: Record<TranslationKey, string> = {
   'pv.contacts': 'ARYV ga e bale dikgolagano tsa mogala wa gago. Batho ba gago ba tshoganyetso ke ba o ba tsentseng ka bowena fela.',
   'pv.preparing': 'Go baakanya data ya gago…',
   'pv.exportFailed': 'Ga re a kgona go baakanya data ya gago. Leka gape.',
+
+  // Profile: demand for drivers
+  'profile.demandSub': 'Gore mesepele e tshwaregile jang gaufi le wena, le gore batho ba tsamaya leng',
 };
