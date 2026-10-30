@@ -43,7 +43,7 @@ describe('Content reports', () => {
     sender = await mk('kago@test.com', 'Kago');
     outsider = await mk('tumi@test.com', 'Tumi');
 
-    const chat = await GroupChat.create({ name: 'Gaborone to Francistown', type: GroupChatType.RIDE_GROUP, createdBy: sender.id } as any);
+    const chat = await GroupChat.create({ name: 'Gaborone to Francistown', type: GroupChatType.CUSTOM_GROUP, createdBy: sender.id } as any);
     await GroupChatParticipant.create({ groupChatId: chat.id, userId: reporter.id } as any);
     await GroupChatParticipant.create({ groupChatId: chat.id, userId: sender.id } as any);
     message = await GroupChatMessage.create({ groupChatId: chat.id, senderId: sender.id, content: 'Send me your PIN or you lose the seat' } as any);
