@@ -1854,6 +1854,9 @@ export const en = {
   'pv.contacts': 'ARYV does not read your phone\'s contacts. Your emergency contacts are only the people you add yourself.',
   'pv.preparing': 'Preparing your data…',
   'pv.exportFailed': 'Could not prepare your data. Try again.',
+
+  // Profile: demand for drivers
+  'profile.demandSub': 'How busy rides are near you, and when people travel',
 };
 
 export type TranslationKey = keyof typeof en;

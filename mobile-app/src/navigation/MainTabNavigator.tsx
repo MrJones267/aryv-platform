@@ -39,8 +39,6 @@ import LanguageSettingsScreen from '../screens/settings/LanguageSettingsScreen';
 import HelpScreen from '../screens/settings/HelpScreen';
 import AboutScreen from '../screens/settings/AboutScreen';
 import TermsScreen from '../screens/settings/TermsScreen';
-import PerformanceDashboard from '../screens/performance/PerformanceDashboard';
-import RevenueAnalyticsScreen from '../screens/RevenueAnalyticsScreen';
 import AIDashboardScreen from '../screens/AIDashboardScreen';
 import { colors } from '../theme';
 import { useI18n } from '../i18n/I18nContext';
@@ -88,8 +86,6 @@ export type ProfileStackParamList = {
   Help: undefined;
   About: undefined;
   Terms: undefined;
-  PerformanceDashboard: undefined;
-  RevenueAnalytics: undefined;
   AIDashboard: undefined;
   DriverOnboarding: undefined;
 };
@@ -288,16 +284,6 @@ const ProfileNavigator: React.FC = () => {
       name="Terms" 
       component={TermsScreen}
       options={{ title: t('nav.terms'), headerShown: false }}
-    />
-    <ProfileStack.Screen
-      name="PerformanceDashboard"
-      component={PerformanceDashboard}
-      options={{ title: t('nav.performance'), headerShown: false }}
-    />
-    <ProfileStack.Screen
-      name="RevenueAnalytics"
-      component={RevenueAnalyticsScreen}
-      options={{ title: t('nav.revenue'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="AIDashboard"

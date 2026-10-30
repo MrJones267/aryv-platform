@@ -220,9 +220,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       case 'terms':
         nav.navigate('Terms');
         break;
-      case 'revenueAnalytics':
-        nav.navigate('RevenueAnalytics');
-        break;
       case 'aiDashboard':
         nav.navigate('AIDashboard');
         break;
@@ -439,29 +436,25 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       ],
     });
 
-    // Analytics & Insights section
-    sections.push({
-      id: 'analytics',
-      title: t('profile.analytics'),
-      items: [
-        {
-          id: 'revenueAnalytics',
-          icon: 'bar-chart',
-          title: t('nav.revenue'),
-          subtitle: t('profile.revenueSub'),
-          type: 'navigation',
-          action: 'revenueAnalytics',
-        },
-        {
-          id: 'aiDashboard',
-          icon: 'auto-awesome',
-          title: t('profile.aiInsights'),
-          subtitle: t('profile.aiInsightsSub'),
-          type: 'navigation',
-          action: 'aiDashboard',
-        },
-      ],
-    });
+    // Demand near you, for drivers deciding when to offer a ride. Platform
+    // revenue used to be listed here for every user, with made-up figures;
+    // that belongs in the admin panel.
+    if (hasRole('driver')) {
+      sections.push({
+        id: 'insights',
+        title: t('profile.analytics'),
+        items: [
+          {
+            id: 'aiDashboard',
+            icon: 'insights',
+            title: t('ui.demandNearYou'),
+            subtitle: t('profile.demandSub'),
+            type: 'navigation',
+            action: 'aiDashboard',
+          },
+        ],
+      });
+    }
 
     // Support section (always shown)
     sections.push({

@@ -1854,4 +1854,7 @@ export const af: Record<TranslationKey, string> = {
   'pv.contacts': 'ARYV lees nie jou foon se kontakte nie. Jou noodkontakte is net die mense wat jy self byvoeg.',
   'pv.preparing': 'Berei tans jou data voor…',
   'pv.exportFailed': 'Kon nie jou data voorberei nie. Probeer weer.',
+
+  // Profile: demand for drivers
+  'profile.demandSub': 'Hoe besig ritte naby jou is, en wanneer mense reis',
 };
