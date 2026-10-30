@@ -399,12 +399,11 @@ export class CashPaymentController {
           verificationLevel: wallet.verificationLevel,
           completedTransactions: wallet.completedCashTransactions,
           disputedTransactions: wallet.disputedTransactions,
-          dailyCashLimit: wallet.dailyCashLimit,
-          weeklyCashLimit: wallet.weeklyCashLimit,
-          monthlyCashLimit: wallet.monthlyCashLimit,
-          dailyCashUsed: wallet.dailyCashUsed,
-          weeklyCashUsed: wallet.weeklyCashUsed,
-          monthlyCashUsed: wallet.monthlyCashUsed,
+          // Riders have no cash limits. null rather than absent, so an app
+          // build that still compares against a limit compares against nothing.
+          dailyCashLimit: null,
+          weeklyCashLimit: null,
+          monthlyCashLimit: null,
           phoneVerified: wallet.phoneVerified,
           idVerified: wallet.idVerified,
           addressVerified: wallet.addressVerified,

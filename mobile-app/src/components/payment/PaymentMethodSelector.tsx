@@ -189,39 +189,13 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
   };
 
   const showCashRequirements = () => {
-    const requiredTrust = calculateRequiredTrust(amount);
     Alert.alert(
-      'Cash Payment Requirements',
-      `To use cash payment, you need:
-      
-• Trust Score: ${requiredTrust}/100 (Current: ${cashEligibility.trustScore || 0}/100)
-• Verified phone number
-• Within daily/weekly limits
-• Account in good standing
+      'Cash payment unavailable',
+      `${cashEligibility.reason || 'Cash payment is not available on this account.'}
 
-Build your trust score by:
-• Completing rides successfully
-• Avoiding disputes
-• Verifying your identity`,
-      [
-        {
-          text: 'View Wallet',
-          onPress: () => {
-            // Navigate to wallet screen
-            // navigation.navigate('Wallet');
-          },
-        },
-        { text: 'OK' },
-      ]
+Contact ARYV support if you think this is a mistake.`,
+      [{ text: 'OK' }]
     );
-  };
-
-  const calculateRequiredTrust = (amount: number): number => {
-    if (amount <= 10) return 20;
-    if (amount <= 50) return 40;
-    if (amount <= 100) return 60;
-    if (amount <= 500) return 80;
-    return 90;
   };
 
   const currentCurrency = selectedCurrency || primaryCurrency;

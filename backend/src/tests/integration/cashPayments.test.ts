@@ -95,7 +95,23 @@ describe('Cash ride payments', () => {
 
     // Wallet sums are numbers, not concatenated strings.
     const riderWallet = await UserWallet.findOne({ where: { userId: rider.id } });
-    expect(Number(riderWallet!.dailyCashUsed)).toBe(26.25);
+    expect(Number(riderWallet!.totalTransactionValue)).toBe(26.25);
+  });
+
+  it('takes cash for a long, expensive ride from a brand-new rider: there is no limit', async () => {
+    // P1,850 is far above the old P100 daily cap and the trust score it used to demand.
+    await booking.update({ totalAmount: 1850, platformFee: 88.1 });
+    const { transactionId } = await start();
+    expect(Number((await CashTransaction.findByPk(transactionId))!.amount)).toBe(1850);
+
+    const wallet = await request(app).get('/api/payments/cash/wallet').set('Authorization', `Bearer ${riderToken}`).expect(200);
+    expect(wallet.body.data).toMatchObject({ dailyCashLimit: null, weeklyCashLimit: null, monthlyCashLimit: null });
+  });
+
+  it('still refuses a rider whose cash account is suspended', async () => {
+    await UserWallet.create({ userId: rider.id, isSuspended: true, suspensionReason: 'Repeated non-payment' } as any);
+    const response = await asRider('/create', { bookingId: booking.id }).expect(400);
+    expect(JSON.stringify(response.body)).toContain('Repeated non-payment');
   });
 
   it('records a reported problem, marks the payment disputed, and refuses a second report', async () => {

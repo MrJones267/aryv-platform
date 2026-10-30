@@ -19,6 +19,7 @@ import CommissionLedger from '../../models/CommissionLedger';
 import TrustHold from '../../models/TrustHold';
 import UserWallet from '../../models/UserWallet';
 import { AuthService } from '../../services/AuthService';
+import { notificationService } from '../../services/NotificationService';
 import { BookingStatus, RideStatus, UserRole, VehicleType } from '../../types';
 
 describe('Admin cash payment disputes', () => {
@@ -113,7 +114,14 @@ describe('Admin cash payment disputes', () => {
 
   it('paid in full, before commission was charged: completes the payment and charges it', async () => {
     const { transactionId, disputeId, fee } = await disputedPayment(false);
+    const sent = jest.spyOn(notificationService, 'sendToUser').mockResolvedValue(undefined);
     await resolve(disputeId, { outcome: 'paid_in_full', reason: 'Rider sent a photo of the cash handover' }).expect(200);
+
+    // Both people hear the decision and the reason.
+    await new Promise(r => setTimeout(r, 100));
+    expect(sent.mock.calls.map(c => c[0]).sort()).toEqual([rider.id, driver.id].sort());
+    expect(sent.mock.calls[0]![1]).toMatchObject({ type: 'cash_dispute_resolved', message: expect.stringContaining('photo of the cash handover') });
+    sent.mockRestore();
 
     expect((await CashTransaction.findByPk(transactionId))!.status).toBe('completed');
     expect(await owed()).toBe(fee);
