@@ -67,6 +67,8 @@ import { useAppDispatch, useAppSelector } from '../../store';
 import { userService } from '../../services/api';
 import ReasonDialog from '../../components/users/ReasonDialog';
 import UserVerificationDialog from '../../components/users/UserVerificationDialog';
+import CloseAccountDialog from '../../components/users/CloseAccountDialog';
+import { selectAdminUser } from '../../store/slices/authSlice';
 import {
   fetchUserById,
   blockUser,
@@ -105,6 +107,10 @@ const UserDetailsPage: React.FC = () => {
   const [reasonAction, setReasonAction] = useState<'block' | 'unblock' | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const adminUser = useAppSelector(selectAdminUser);
+  // A closed account keeps its row, renamed, so other people's history stays linked.
+  const closed = !!user?.email?.endsWith('@deleted.aryv-app.com');
   const [edit, setEdit] = useState({ firstName: '', lastName: '', email: '', phone: '', role: 'passenger' });
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -180,6 +186,7 @@ const UserDetailsPage: React.FC = () => {
 
 
   const getStatusColor = (user: User) => {
+    if (closed) return 'default';
     if (user.isBlocked) return 'error';
     if (!user.isVerified) return 'warning';
     if (user.isActive) return 'success';
@@ -187,6 +194,7 @@ const UserDetailsPage: React.FC = () => {
   };
 
   const getStatusText = (user: User) => {
+    if (closed) return 'Closed';
     if (user.isBlocked) return 'Blocked';
     if (!user.isVerified) return 'Unverified';
     if (user.isActive) return 'Active';
@@ -244,7 +252,8 @@ const UserDetailsPage: React.FC = () => {
           </Box>
         </Box>
 
-        <Box display="flex" gap={1}>
+        {/* A closed account has nothing left to edit, verify or block. */}
+        <Box display={closed ? 'none' : 'flex'} gap={1}>
           <Button variant="outlined" startIcon={<Edit />} onClick={openEdit}>
             Edit User
           </Button>
@@ -498,6 +507,7 @@ const UserDetailsPage: React.FC = () => {
                             'user.unblock': 'Unblocked',
                             'user.update': 'Edited',
                             'user.verify': 'Verification changed',
+                            'user.close': 'Account closed',
                           }[entry.action] ?? entry.action}
                         </Typography>
                         {entry.outcome && entry.outcome !== 'succeeded' && (
@@ -571,11 +581,48 @@ const UserDetailsPage: React.FC = () => {
               <ListItemIcon>
                 <Schedule />
               </ListItemIcon>
-              <ListItemText primary="Last Login" secondary={new Date(user.lastLogin).toLocaleString()} />
+              <ListItemText
+                primary="Last Login"
+                secondary={user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}
+              />
             </ListItem>
           </List>
+
+          {closed ? (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              This account is closed. Its personal data has been erased.
+            </Alert>
+          ) : (
+            adminUser?.role === 'super_admin' && (
+              <Box mt={3}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Close account
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  For a deletion request received outside the app, or an account that must go for good. Erases their
+                  personal data; their ride and payment history stays, anonymised. Blocking is reversible; this is not.
+                </Typography>
+                <Button variant="outlined" color="error" onClick={() => setCloseOpen(true)}>
+                  Close account…
+                </Button>
+              </Box>
+            )
+          )}
         </TabPanel>
       </Card>
+
+      <CloseAccountDialog
+        open={closeOpen}
+        userId={user.id}
+        userName={`${user.firstName} ${user.lastName}`}
+        email={user.email}
+        onClose={() => setCloseOpen(false)}
+        onClosed={() => {
+          setCloseOpen(false);
+          dispatch(fetchUserById(user.id));
+          loadModeration(user.id);
+        }}
+      />
 
       <UserVerificationDialog
         open={verifyOpen}

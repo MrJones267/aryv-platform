@@ -94,6 +94,12 @@ export const authService = {
   updateProfile: (data: any) => adminApi.put<ApiResponse<{ user: any }>>('/auth/profile', data),
 };
 
+export interface ClosureBlocker {
+  code: 'UPCOMING_RIDES' | 'BOOKED_SEATS' | 'DELIVERIES_IN_PROGRESS' | 'OPEN_DISPUTES' | 'COMMISSION_OWED';
+  count: number;
+  message: string;
+}
+
 export interface UserDocument {
   id: string;
   documentType: string;
@@ -144,6 +150,14 @@ export const userService = {
       `/users/${id}/verify`,
       body
     ),
+
+  /** What would stop the account being closed now; empty when nothing does. */
+  getClosureCheck: (id: string) =>
+    adminApi.get<ApiResponse<{ blockers: ClosureBlocker[]; closed: boolean }>>(`/users/${id}/closure-check`),
+
+  /** Close the account for good (super admins only). */
+  closeAccount: (id: string, body: { reason: string; confirmEmail: string }) =>
+    adminApi.post<ApiResponse<{ userId: string; closed: true }>>(`/users/${id}/close`, body),
 
   /** The user's driver documents, every attempt, newest first. */
   getDocuments: (id: string) => adminApi.get<ApiResponse<{ documents: UserDocument[] }>>(`/users/${id}/documents`),
