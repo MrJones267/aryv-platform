@@ -25,6 +25,8 @@ import otpService, {
   type OtpFailureReason,
   type OtpVerifyResult,
 } from '../services/OtpService';
+import { NOTIFICATION_PREFERENCE_KEYS, notificationPreferencesOf } from '../utils/notificationPreferences';
+import accountExportService from '../services/AccountExportService';
 
 // Verifies Google ID tokens against Google's rotating public keys. Constructed
 // once at module load: the client caches those keys between requests.
@@ -341,6 +343,54 @@ export class AuthController {
   }
 
   /**
+   * POST /auth/logout-all — sign the account out on every device, this one
+   * included. Setting passwordChangedAt refuses every access token issued
+   * before now, and clearing the refresh token stops any being renewed.
+   */
+  static async logoutAll(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED', timestamp: new Date().toISOString() });
+        return;
+      }
+      const user = await User.findByPk(req.user.id);
+      if (!user) {
+        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+      await user.update({ passwordChangedAt: new Date(), refreshToken: null });
+      logger.info('Signed out of all devices', { userId: user.id });
+      res.status(200).json({ success: true, message: 'Signed out of all devices', timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('Logout all error', { error: (error as Error).message, userId: req.user?.id });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
+  }
+
+  /**
+   * GET /auth/export — a copy of what ARYV holds about the signed-in person.
+   * Their own records only, and never secrets (password hash, tokens) or the
+   * identity document images themselves, only that they were submitted.
+   */
+  static async exportMyData(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, error: 'Authentication required', code: 'AUTHENTICATION_REQUIRED', timestamp: new Date().toISOString() });
+        return;
+      }
+      const data = await accountExportService.build(req.user.id);
+      if (!data) {
+        res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+      res.status(200).json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('Export data error', { error: (error as Error).message, userId: req.user?.id });
+      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+    }
+  }
+
+  /**
    * Permanently delete the authenticated user's account.
    *
    * Re-authentication is required, and is accepted in either of the two forms
@@ -590,14 +640,7 @@ export class AuthController {
       }
 
       const prefs = (user.preferences as Record<string, any>) || {};
-      const notifPrefs = prefs['notifications'] || {
-        pushNotifications: true,
-        rideUpdates: true,
-        messages: true,
-        promotions: false,
-      };
-
-      res.status(200).json({ success: true, data: notifPrefs, timestamp: new Date().toISOString() });
+      res.status(200).json({ success: true, data: notificationPreferencesOf(prefs['notifications']), timestamp: new Date().toISOString() });
     } catch (error) {
       logger.error('Get notification preferences error', { error: (error as Error).message });
       res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
@@ -620,10 +663,17 @@ export class AuthController {
         return;
       }
 
-      const currentPrefs = (user.preferences as Record<string, any>) || {};
-      const currentNotifPrefs = currentPrefs['notifications'] || {};
+      // Only the known switches, and only true or false. This used to merge
+      // whatever the request body held into the user's preferences.
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const unknown = Object.keys(body).filter(k => !(NOTIFICATION_PREFERENCE_KEYS as readonly string[]).includes(k) || typeof body[k] !== 'boolean');
+      if (unknown.length > 0) {
+        res.status(400).json({ success: false, error: `Unknown or invalid notification settings: ${unknown.join(', ')}`, code: 'INVALID_PREFERENCES', timestamp: new Date().toISOString() });
+        return;
+      }
 
-      const updatedNotifPrefs = { ...currentNotifPrefs, ...req.body };
+      const currentPrefs = (user.preferences as Record<string, any>) || {};
+      const updatedNotifPrefs = notificationPreferencesOf({ ...notificationPreferencesOf(currentPrefs['notifications']), ...body });
 
       await user.update({
         preferences: { ...currentPrefs, notifications: updatedNotifPrefs },

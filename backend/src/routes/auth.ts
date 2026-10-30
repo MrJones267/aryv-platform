@@ -112,6 +112,17 @@ import { redisClient } from '../config/redis';
 const router = Router();
 
 // Rate limiting for authentication endpoints
+// Building an export reads every record a person has; a few an hour is plenty.
+const exportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { success: false, error: 'Too many data exports, please try again later', code: 'EXPORT_RATE_LIMIT_EXCEEDED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeStore('auth-export'),
+  keyGenerator: rateLimitKey,
+});
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // Limit each IP to 10 requests per windowMs for auth endpoints
@@ -333,6 +344,20 @@ router.post(
  * @access  Private
  */
 router.post('/change-password', authenticateToken, AuthController.changePassword);
+
+/**
+ * @route   POST /api/auth/logout-all
+ * @desc    Sign out on every device, this one included
+ * @access  Private
+ */
+router.post('/logout-all', authenticateToken, AuthController.logoutAll);
+
+/**
+ * @route   GET /api/auth/export
+ * @desc    A copy of the signed-in person's data
+ * @access  Private
+ */
+router.get('/export', exportLimiter, authenticateToken, AuthController.exportMyData);
 
 /**
  * @route   DELETE /api/auth/account

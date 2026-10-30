@@ -2,7 +2,7 @@
  * @fileoverview Privacy Settings screen component
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-10-30
  */
 
 import React, { useState } from 'react';
@@ -13,7 +13,7 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  Switch,
+  Share,
   Alert,
   Modal,
   TextInput,
@@ -25,20 +25,13 @@ import logger from '../../services/LoggingService';
 import { useAppDispatch } from '../../store/hooks';
 import { deleteAccount } from '../../store/slices/userSlice';
 import { logoutUser } from '../../store/slices/authSlice';
+import { authApi } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PrivacySettingsScreen');
 
 interface PrivacySettingsScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
-}
-
-interface PrivacySetting {
-  id: string;
-  title: string;
-  description: string;
-  enabled: boolean;
-  icon: string;
 }
 
 const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigation }) => {
@@ -48,79 +41,32 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<PrivacySetting[]>([
-    {
-      id: 'location_sharing',
-      title: t('st.locationSharing'),
-      description: t('st.shareYourLocationWithOther'),
-      enabled: true,
-      icon: 'location-on',
-    },
-    {
-      id: 'profile_visibility',
-      title: t('st.profileVisibility'),
-      description: t('st.allowOtherUsersToSee'),
-      enabled: true,
-      icon: 'visibility',
-    },
-    {
-      id: 'ride_history',
-      title: t('st.rideHistorySharing'),
-      description: t('st.showCompletedRidesToPotential'),
-      enabled: false,
-      icon: 'history',
-    },
-    {
-      id: 'contact_sync',
-      title: t('st.contactSynchronization'),
-      description: t('st.syncContactsToFindFriends'),
-      enabled: false,
-      icon: 'contacts',
-    },
-    {
-      id: 'analytics',
-      title: t('st.usageAnalytics'),
-      description: t('st.helpImproveTheAppBy'),
-      enabled: true,
-      icon: 'analytics',
-    },
-  ]);
+  const [exporting, setExporting] = useState(false);
 
-  const handleToggleSetting = (id: string): void => {
-    if (id === 'location_sharing') {
-      Alert.alert(
-        t('st.locationSharing'),
-        t('st.disablingLocationSharingMayAffect'),
-        [
-          { text: t('common.cancel'), style: 'cancel' },
-          {
-            text: t('st.disable'),
-            style: 'destructive',
-            onPress: () => toggleSetting(id),
-          },
-        ]
-      );
-    } else {
-      toggleSetting(id);
+  // A copy of the person's data, handed to the share sheet so they can
+  // save or send it. This used to promise an email within 48 hours and do
+  // nothing.
+  const downloadData = async (): Promise<void> => {
+    setExporting(true);
+    try {
+      const res = await authApi.exportMyData();
+      if (!res.success || !res.data) {
+        Alert.alert(t('common.error'), res.error || t('pv.exportFailed'));
+        return;
+      }
+      await Share.share({ title: t('st.downloadMyData'), message: JSON.stringify(res.data, null, 2) });
+    } catch (error) {
+      log.warn('Data export failed', error);
+      Alert.alert(t('common.error'), t('pv.exportFailed'));
+    } finally {
+      setExporting(false);
     }
-  };
-
-  const toggleSetting = (id: string): void => {
-    setSettings(prevSettings =>
-      prevSettings.map(setting =>
-        setting.id === id ? { ...setting, enabled: !setting.enabled } : setting
-      )
-    );
   };
 
   const handleDataManagement = (action: string): void => {
     switch (action) {
       case 'download':
-        Alert.alert(
-          t('st.downloadData'),
-          t('st.yourDataWillBePrepared'),
-          [{ text: t('common.ok') }]
-        );
+        downloadData();
         break;
       case 'delete':
         setDeleteError(null);
@@ -230,24 +176,6 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
     </View>
   );
 
-  const renderPrivacySetting = (setting: PrivacySetting): React.ReactNode => (
-    <View key={setting.id} style={styles.settingItem}>
-      <View style={styles.settingIcon}>
-        <Icon name={setting.icon} size={24} color={colors.primary} />
-      </View>
-      <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{setting.title}</Text>
-        <Text style={styles.settingDescription}>{setting.description}</Text>
-      </View>
-      <Switch
-        value={setting.enabled}
-        onValueChange={() => handleToggleSetting(setting.id)}
-        trackColor={{ false: colors.border.light, true: colors.primary + '40' }}
-        thumbColor={setting.enabled ? colors.primary : colors.text.secondary}
-      />
-    </View>
-  );
-
   const renderDataManagement = (): React.ReactNode => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t('st.dataManagement')}</Text>
@@ -255,12 +183,13 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
       <TouchableOpacity
         style={styles.actionItem}
         onPress={() => handleDataManagement('download')}
+        disabled={exporting}
       >
         <View style={styles.actionIcon}>
           <Icon name="download" size={24} color={colors.primary} />
         </View>
         <View style={styles.actionContent}>
-          <Text style={styles.actionTitle}>{t('st.downloadMyData')}</Text>
+          <Text style={styles.actionTitle}>{exporting ? t('pv.preparing') : t('st.downloadMyData')}</Text>
           <Text style={styles.actionDescription}>
             {t('st.getACopyOfAll')}
           </Text>
@@ -291,11 +220,15 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('st.privacyControls')}</Text>
-          <Text style={styles.sectionDescription}>
-            {t('st.controlHowYourInformationIs')}
-          </Text>
-          {settings.map(renderPrivacySetting)}
+          <Text style={styles.sectionTitle}>{t('pv.whatIsShared')}</Text>
+          {/* Statements of what the app does, not switches: the switches
+              that were here saved nothing and changed nothing. */}
+          {(['pv.location', 'pv.profile', 'pv.contacts'] as const).map(key => (
+            <View key={key} style={styles.factRow}>
+              <Icon name={key === 'pv.location' ? 'location-on' : key === 'pv.profile' ? 'person' : 'contacts'} size={20} color={colors.primary} />
+              <Text style={styles.factText}>{t(key)}</Text>
+            </View>
+          ))}
         </View>
         
         {renderDataManagement()}
@@ -315,6 +248,18 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
 };
 
 const styles = StyleSheet.create({
+  factRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+  },
+  factText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    color: colors.text.primary,
+    lineHeight: 20,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,

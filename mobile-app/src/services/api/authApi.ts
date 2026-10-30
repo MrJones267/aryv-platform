@@ -56,6 +56,14 @@ export interface VerifyTokenResponse {
   tokenValid: boolean;
 }
 
+export interface NotificationPreferences {
+  pushNotifications: boolean;
+  rideUpdates: boolean;
+  messages: boolean;
+  payments: boolean;
+  promotions: boolean;
+}
+
 class AuthApiService extends BaseApiService {
   /**
    * Login user
@@ -255,6 +263,31 @@ class AuthApiService extends BaseApiService {
   }
 
   /**
+   * Sign out on every device, this one included
+   */
+  async logoutAll(): Promise<ApiResponse<{ message: string }>> {
+    return this.post<{ message: string }>('/auth/logout-all');
+  }
+
+  /**
+   * A copy of what ARYV holds about the signed-in person
+   */
+  async exportMyData(): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.get<Record<string, unknown>>('/auth/export');
+  }
+
+  /**
+   * Notification settings: which pushes the person's phone receives
+   */
+  async getNotificationPreferences(): Promise<ApiResponse<NotificationPreferences>> {
+    return this.get<NotificationPreferences>('/auth/notification-preferences');
+  }
+
+  async updateNotificationPreferences(changes: Partial<NotificationPreferences>): Promise<ApiResponse<NotificationPreferences>> {
+    return this.patch<NotificationPreferences>('/auth/notification-preferences', changes);
+  }
+
+  /**
    * Delete account
    */
   async deleteAccount(
@@ -297,30 +330,6 @@ class AuthApiService extends BaseApiService {
     joinDate: string;
   }>> {
     return this.get('/auth/stats');
-  }
-
-  /**
-   * Update notification preferences
-   */
-  async updateNotificationPreferences(preferences: {
-    pushNotifications: boolean;
-    rideUpdates: boolean;
-    messages: boolean;
-    promotions: boolean;
-  }): Promise<ApiResponse<{ message: string }>> {
-    return this.patch('/auth/notification-preferences', preferences);
-  }
-
-  /**
-   * Get user's notification preferences
-   */
-  async getNotificationPreferences(): Promise<ApiResponse<{
-    pushNotifications: boolean;
-    rideUpdates: boolean;
-    messages: boolean;
-    promotions: boolean;
-  }>> {
-    return this.get('/auth/notification-preferences');
   }
 }
 

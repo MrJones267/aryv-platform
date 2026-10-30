@@ -14,6 +14,7 @@ import Vehicle from '../models/Vehicle';
 import { BookingStatus, RideStatus } from '../types';
 import { logInfo, logError } from '../utils/logger';
 import fcmService, { StalePushTokenError } from './FCMService';
+import { pushAllowed } from '../utils/notificationPreferences';
 
 export interface NotificationData {
   type: string;
@@ -150,7 +151,9 @@ export class NotificationService {
         const prefs = (user?.preferences as Record<string, any>) || {};
         const pushToken: string | undefined = prefs['pushToken'];
 
-        if (pushToken) {
+        // The person's own notification settings decide whether their phone
+        // is alerted; the in-app copy above is always delivered.
+        if (pushToken && pushAllowed(prefs['notifications'], notification.type)) {
           await fcmService.send({
             token: pushToken,
             title: notification.title,

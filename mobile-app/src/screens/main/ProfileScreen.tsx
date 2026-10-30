@@ -71,12 +71,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   
   const [isLoading, setIsLoading] = useState(false);
   const [currencyRegionText, setCurrencyRegionText] = useState(t('common.loading'));
-  const [settings, setSettings] = useState({
-    notifications: true,
-    locationSharing: true,
-    autoAcceptRides: false,
-    pushNotifications: true,
-  });
+  // Auto-accept, location sharing and push switches lived here and changed
+  // nothing. Notifications are set in Notification Settings, and location
+  // access in the phone's own settings.
+  const [settings, setSettings] = useState({ notifications: true });
 
   useEffect(() => {
     loadUserProfile();
@@ -213,9 +211,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       case 'language':
         nav.navigate('LanguageSettings');
         break;
-      case 'dataUsage':
-        nav.navigate('DataUsageSettings');
-        break;
       case 'help':
         nav.navigate('Help');
         break;
@@ -340,14 +335,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             type: 'info',
             badge: user?.isDriverVerified ? 'verified' : 'pending',
           },
-          {
-            id: 'autoAccept',
-            icon: 'auto-awesome',
-            title: t('profile.autoAccept'),
-            subtitle: t('profile.autoAcceptSub'),
-            type: 'switch',
-            value: settings.autoAcceptRides,
-          },
         ],
       });
     }
@@ -402,14 +389,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       title: t('profile.settings'),
       items: [
         {
-          id: 'locationSharing',
-          icon: 'location-on',
-          title: t('profile.locationSharing'),
-          subtitle: t('profile.locationSharingSub'),
-          type: 'switch',
-          value: settings.locationSharing,
-        },
-        {
           id: 'notifications',
           icon: 'notifications',
           title: t('profile.notifications'),
@@ -448,22 +427,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           subtitle: t('profile.languageSub'),
           type: 'navigation',
           action: 'language',
-        },
-        {
-          id: 'dataUsage',
-          icon: 'data-usage',
-          title: t('nav.dataUsage'),
-          subtitle: t('profile.dataUsageSub'),
-          type: 'navigation',
-          action: 'dataUsage',
-        },
-        {
-          id: 'pushNotifications',
-          icon: 'notifications-active',
-          title: t('profile.pushNotifications'),
-          subtitle: t('profile.pushNotificationsSub'),
-          type: 'switch',
-          value: settings.pushNotifications,
         },
         {
           id: 'darkMode',
