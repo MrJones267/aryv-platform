@@ -39,6 +39,7 @@ import {
   Logout as LogoutIcon,
   Warning as DisputeIcon,
   RequestQuote as PaymentDisputeIcon,
+  Flag as ReportIcon,
   VerifiedUser as VerificationIcon,
   History as AuditIcon,
   Payments as CommissionIcon,
@@ -71,6 +72,8 @@ const sidebarItems: SidebarItem[] = [
   { text: 'Delivery Disputes', icon: <DisputeIcon />, path: '/courier/disputes', color: 'error' },
   // Badge: open cash ride payment disputes, set in the component.
   { text: 'Payment Disputes', icon: <PaymentDisputeIcon />, path: '/payment-disputes', color: 'error' },
+  // Badge: open reports of chat messages and people.
+  { text: 'Reports', icon: <ReportIcon />, path: '/reports', color: 'error' },
   // Badge: drivers with documents waiting for review, set in the component.
   { text: 'Driver Verification', icon: <VerificationIcon />, path: '/verifications', color: 'warning' },
   { text: 'Commission', icon: <CommissionIcon />, path: '/commission', roles: ['super_admin', 'admin'] },
@@ -117,6 +120,7 @@ const DashboardLayout: React.FC = () => {
   const liveBadges: Record<string, number | undefined> = {
     '/courier/disputes': alerts?.counts.disputes || undefined,
     '/payment-disputes': alerts?.counts.cashDisputes || undefined,
+    '/reports': alerts?.counts.reports || undefined,
     '/verifications': alerts?.counts.verifications || undefined,
   };
   const navItems = sidebarItems

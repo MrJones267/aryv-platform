@@ -1857,4 +1857,17 @@ export const af: Record<TranslationKey, string> = {
 
   // Profile: demand for drivers
   'profile.demandSub': 'Hoe besig ritte naby jou is, en wanneer mense reis',
+
+  // Reporting
+  'rp.whyTitle': 'Wat is fout?',
+  'rp.whyBody': 'ARYV se span sal jou verslag hersien. Die ander persoon word nie vertel wie hulle gerapporteer het nie.',
+  'rp.reason.harassment': 'Teistering of dreigemente',
+  'rp.reason.scam': 'Swendelary of bedrog',
+  'rp.reason.inappropriate': 'Onvanpaste inhoud',
+  'rp.reason.safety': 'Ek voel onveilig',
+  'rp.reason.spam': 'Gemorspos',
+  'rp.sentTitle': 'Verslag gestuur',
+  'rp.sentBody': 'Dankie. ARYV se span sal dit hersien en optree waar nodig. As jy in gevaar is, bel 999.',
+  'rp.alreadySent': 'Jy het dit reeds gerapporteer. ARYV se span hersien dit.',
+  'rp.failed': 'Kon nie jou verslag stuur nie. Probeer weer.',
 };

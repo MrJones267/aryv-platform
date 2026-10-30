@@ -413,6 +413,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                         typedNavigation.navigate('Chat', {
                           chatId: `ride-${rideId}`,
                           recipientName: `${bookingDetails.ride.driver.firstName} ${bookingDetails.ride.driver.lastName}`,
+                          recipientId: bookingDetails.ride.driver.id,
                           rideId: rideId,
                         });
                       },
@@ -465,6 +466,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               typedNavigation.navigate('Chat', {
                 chatId: `ride-${rideId}`,
                 recipientName: `${ride.driver.firstName} ${ride.driver.lastName}`,
+                recipientId: ride.driver.id,
                 rideId: rideId,
               });
             }}

@@ -173,6 +173,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     typedNavigation.navigate('Chat', {
       chatId: `ride-${ride.id}`,
       recipientName: driverDisplayName(ride.driver),
+      recipientId: ride.driver?.id,
       rideId: ride.id,
     });
   };

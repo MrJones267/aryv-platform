@@ -26,6 +26,7 @@ import RideDetailsPage from './pages/rides/RideDetailsPage';
 import CourierPage from './pages/courier/CourierPage';
 import DisputesPage from './pages/courier/DisputesPage';
 import PaymentDisputesPage from './pages/payments/PaymentDisputesPage';
+import ReportsPage from './pages/reports/ReportsPage';
 import VerificationPage from './pages/verification/VerificationPage';
 import AuditLogPage from './pages/audit/AuditLogPage';
 import CommissionPage from './pages/commission/CommissionPage';
@@ -83,6 +84,7 @@ const App: React.FC = () => {
           <Route path="courier" element={<CourierPage />} />
           <Route path="courier/disputes" element={<DisputesPage />} />
           <Route path="payment-disputes" element={<PaymentDisputesPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route path="verifications" element={<VerificationPage />} />
           <Route path="audit-log" element={<AuditLogPage />} />
           <Route path="commission" element={<CommissionPage />} />
