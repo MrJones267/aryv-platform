@@ -24,6 +24,7 @@ import { colors, spacing, typography } from '../theme';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { BusinessMetrics } from '../services/AnalyticsService';
 import logger from '../services/LoggingService';
+import { useI18n } from '../i18n/I18nContext';
 
 const log = logger.createLogger('RevenueAnalyticsScreen');
 
@@ -57,6 +58,7 @@ interface MetricCard {
 }
 
 export const RevenueAnalyticsScreen: React.FC = () => {
+  const { t } = useI18n();
   const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'week' | 'month' | 'year'>('month');
   const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
   const [showRealTime, setShowRealTime] = useState(false);
@@ -158,7 +160,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
       await refreshMetrics(dateRange);
     } catch (error) {
       log.error('Error loading revenue data:', error);
-      Alert.alert('Error', 'Failed to load revenue data. Please try again.');
+      Alert.alert(t('common.error'), t('ui.failedToLoadRevenueData'));
     }
   };
 
@@ -169,7 +171,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
   const formatCurrency = (amount: number | null): string => {
     if (amount === null) {
-      return 'Not tracked';
+      return t('ui.notTracked');
     }
 
     return `P${new Intl.NumberFormat('en-BW', {
@@ -187,14 +189,14 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
     return [
       {
-        title: 'Total Revenue',
+        title: t('ui.totalRevenue'),
         value: formatCurrency(revenueData.totalRevenue),
         change: revenueData.growthRate,
         icon: 'trending-up',
         color: colors.success
       },
       {
-        title: 'Commission Revenue',
+        title: t('ui.commissionRevenue'),
         value: formatCurrency(revenueData.commissionRevenue),
         // No per-category growth is computed; this was a fixed number.
         change: null,
@@ -202,7 +204,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         color: colors.primary
       },
       {
-        title: 'Subscriptions',
+        title: t('ui.subscriptions'),
         value: formatCurrency(revenueData.subscriptionRevenue),
         // No per-category growth is computed; this was a fixed number.
         change: null,
@@ -210,7 +212,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         color: colors.warning
       },
       {
-        title: 'Service Fees',
+        title: t('ui.serviceFees'),
         value: formatCurrency(revenueData.serviceFeesRevenue),
         // No per-category growth is computed; this was a fixed number.
         change: null,
@@ -227,35 +229,35 @@ export const RevenueAnalyticsScreen: React.FC = () => {
     // charted as a zero slice — an absent measurement is not a measured zero.
     return [
       {
-        name: 'Commissions',
+        name: t('ui.commissions'),
         population: revenueData.commissionRevenue,
         color: colors.primary,
         legendFontColor: colors.text.primary,
         legendFontSize: 12,
       },
       {
-        name: 'Subscriptions',
+        name: t('ui.subscriptions'),
         population: revenueData.subscriptionRevenue,
         color: colors.warning,
         legendFontColor: colors.text.primary,
         legendFontSize: 12,
       },
       {
-        name: 'Service Fees',
+        name: t('ui.serviceFees'),
         population: revenueData.serviceFeesRevenue,
         color: colors.info,
         legendFontColor: colors.text.primary,
         legendFontSize: 12,
       },
       {
-        name: 'Financial Services',
+        name: t('ui.financialServices'),
         population: revenueData.financialServicesRevenue,
         color: colors.success,
         legendFontColor: colors.text.primary,
         legendFontSize: 12,
       },
       {
-        name: 'Advertising',
+        name: t('ui.advertising'),
         population: revenueData.advertisingRevenue,
         color: colors.error,
         legendFontColor: colors.text.primary,
@@ -321,7 +323,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
   const renderRevenueBreakdown = () => (
     <View style={styles.chartContainer}>
-      <Text style={styles.chartTitle}>Revenue Breakdown</Text>
+      <Text style={styles.chartTitle}>{t('ui.revenueBreakdown')}</Text>
       <PieChart
         data={getRevenueBreakdownData()}
         width={chartWidth}
@@ -340,7 +342,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
   const renderGrowthTrend = () => (
     <View style={styles.chartContainer}>
-      <Text style={styles.chartTitle}>Revenue Growth Trend</Text>
+      <Text style={styles.chartTitle}>{t('ui.revenueGrowthTrend')}</Text>
       <LineChart
         data={getGrowthTrendData()}
         width={chartWidth}
@@ -379,7 +381,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
     return (
       <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Commission Revenue by Type</Text>
+        <Text style={styles.chartTitle}>{t('ui.commissionRevenueByType')}</Text>
         <BarChart
           data={commissionData}
           width={chartWidth}
@@ -406,7 +408,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
   const renderRealTimeData = () => (
     <View style={styles.realTimeContainer}>
       <View style={styles.realTimeHeader}>
-        <Text style={styles.sectionTitle}>Real-Time Dashboard</Text>
+        <Text style={styles.sectionTitle}>{t('ui.realTimeDashboard')}</Text>
         <View style={styles.pulseIndicator}>
           <View style={styles.pulseCircle} />
         </View>
@@ -416,25 +418,25 @@ export const RevenueAnalyticsScreen: React.FC = () => {
         <View style={styles.realTimeCard}>
           <Ionicons name="people" size={24} color={colors.primary} />
           <Text style={styles.realTimeValue}>{realTimeData?.activeUsers?.toLocaleString() || '0'}</Text>
-          <Text style={styles.realTimeLabel}>Active Users</Text>
+          <Text style={styles.realTimeLabel}>{t('ui.activeUsers')}</Text>
         </View>
         
         <View style={styles.realTimeCard}>
           <Ionicons name="car" size={24} color={colors.success} />
           <Text style={styles.realTimeValue}>{realTimeData?.activeRides}</Text>
-          <Text style={styles.realTimeLabel}>Active Rides</Text>
+          <Text style={styles.realTimeLabel}>{t('ui.activeRides')}</Text>
         </View>
         
         <View style={styles.realTimeCard}>
           <Ionicons name="cash" size={24} color={colors.accent} />
           <Text style={styles.realTimeValue}>P{(realTimeData?.revenueToday ?? 0).toFixed(0)}</Text>
-          <Text style={styles.realTimeLabel}>Revenue Today</Text>
+          <Text style={styles.realTimeLabel}>{t('ui.revenueToday')}</Text>
         </View>
         
         <View style={styles.realTimeCard}>
           <Ionicons name="speedometer" size={24} color={colors.warning} />
           <Text style={styles.realTimeValue}>{((realTimeData?.systemLoad || 0) * 100).toFixed(0)}%</Text>
-          <Text style={styles.realTimeLabel}>System Load</Text>
+          <Text style={styles.realTimeLabel}>{t('ui.systemLoad')}</Text>
         </View>
       </View>
     </View>
@@ -442,23 +444,23 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
   const renderRevenueProjections = () => (
     <View style={styles.projectionContainer}>
-      <Text style={styles.sectionTitle}>Revenue Projections</Text>
+      <Text style={styles.sectionTitle}>{t('ui.revenueProjections')}</Text>
       
       <View style={styles.projectionGrid}>
         <View style={styles.projectionCard}>
-          <Text style={styles.projectionTitle}>Next Month</Text>
+          <Text style={styles.projectionTitle}>{t('ui.nextMonth')}</Text>
           <Text style={styles.projectionValue}>P145K</Text>
           <Text style={styles.projectionGrowth}>+16% growth</Text>
         </View>
         
         <View style={styles.projectionCard}>
-          <Text style={styles.projectionTitle}>Next Quarter</Text>
+          <Text style={styles.projectionTitle}>{t('ui.nextQuarter')}</Text>
           <Text style={styles.projectionValue}>P425K</Text>
           <Text style={styles.projectionGrowth}>+22% growth</Text>
         </View>
         
         <View style={styles.projectionCard}>
-          <Text style={styles.projectionTitle}>Annual Target</Text>
+          <Text style={styles.projectionTitle}>{t('ui.annualTarget')}</Text>
           <Text style={styles.projectionValue}>P1.8M</Text>
           <Text style={styles.projectionGrowth}>+28% growth</Text>
         </View>
@@ -468,33 +470,33 @@ export const RevenueAnalyticsScreen: React.FC = () => {
 
   const renderKeyMetrics = () => (
     <View style={styles.keyMetricsContainer}>
-      <Text style={styles.sectionTitle}>Key Performance Indicators</Text>
+      <Text style={styles.sectionTitle}>{t('ui.keyPerformanceIndicators')}</Text>
       
       <View style={styles.kpiGrid}>
         <View style={styles.kpiCard}>
           <MaterialIcons name="trending-up" size={32} color={colors.success} />
-          <Text style={styles.kpiTitle}>Average Order Value</Text>
+          <Text style={styles.kpiTitle}>{t('ui.averageOrderValue')}</Text>
           <Text style={styles.kpiValue}>P28.50</Text>
           <Text style={styles.kpiChange}>+8.2%</Text>
         </View>
         
         <View style={styles.kpiCard}>
           <MaterialIcons name="people" size={32} color={colors.primary} />
-          <Text style={styles.kpiTitle}>Monthly Active Users</Text>
+          <Text style={styles.kpiTitle}>{t('ui.monthlyActiveUsers')}</Text>
           <Text style={styles.kpiValue}>15.2K</Text>
           <Text style={styles.kpiChange}>+12.5%</Text>
         </View>
         
         <View style={styles.kpiCard}>
           <MaterialIcons name="attach-money" size={32} color={colors.warning} />
-          <Text style={styles.kpiTitle}>Revenue per User</Text>
+          <Text style={styles.kpiTitle}>{t('ui.revenuePerUser')}</Text>
           <Text style={styles.kpiValue}>P8.22</Text>
           <Text style={styles.kpiChange}>+5.1%</Text>
         </View>
         
         <View style={styles.kpiCard}>
           <MaterialIcons name="speed" size={32} color={colors.info} />
-          <Text style={styles.kpiTitle}>Commission Rate</Text>
+          <Text style={styles.kpiTitle}>{t('ui.commissionRate')}</Text>
           <Text style={styles.kpiValue}>17.5%</Text>
           <Text style={styles.kpiChange}>+0.2%</Text>
         </View>
@@ -506,7 +508,7 @@ export const RevenueAnalyticsScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading revenue analytics...</Text>
+          <Text style={styles.loadingText}>{t('ui.loadingRevenueAnalytics')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -515,12 +517,12 @@ export const RevenueAnalyticsScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Revenue Analytics</Text>
+        <Text style={styles.headerTitle}>{t('nav.revenue')}</Text>
         <View style={styles.headerControls}>
           {realTimeData && showRealTime && (
             <View style={styles.realTimeIndicator}>
               <View style={styles.liveIndicator} />
-              <Text style={styles.liveText}>Live</Text>
+              <Text style={styles.liveText}>{t('ui.live')}</Text>
             </View>
           )}
           <TouchableOpacity 

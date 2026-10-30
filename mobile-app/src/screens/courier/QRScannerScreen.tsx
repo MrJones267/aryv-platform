@@ -6,7 +6,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import CryptoJS from 'crypto-js';
 import {
   View,
   TextInput,
@@ -26,6 +25,7 @@ import PackageService from '../../services/PackageService';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import LocationService from '../../services/LocationService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('QRScannerScreen');
 
@@ -34,11 +34,11 @@ const CameraView: React.FC<{
   onBarCodeRead: (data: { data: string }) => void;
   scanning: boolean;
   agreementId?: string;
-}> = ({ onBarCodeRead, scanning, agreementId }) => {
+}> = ({ onBarCodeRead, scanning }) => {
+  const { t } = useI18n();
   const { hasPermission, requestPermission } = useCameraPermission();
   const devices = useCameraDevices();
   const device = devices.find((d: { position: string }) => d.position === 'back') || devices[0];
-  const [mockScanned, setMockScanned] = useState(false);
 
   useEffect(() => {
     if (!hasPermission) {
@@ -54,27 +54,6 @@ const CameraView: React.FC<{
       }
     },
   });
-
-  const simulateScan = () => {
-    if (!mockScanned && scanning) {
-      setMockScanned(true);
-      // Generate cryptographically secure QR token for demo
-      setTimeout(() => {
-        const timestamp = new Date().toISOString();
-        const randomId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        const tokenData = {
-          deliveryId: agreementId || 'demo_delivery',
-          timestamp,
-          nonce: randomId,
-        };
-        const secureToken = CryptoJS.SHA256(JSON.stringify(tokenData) + 'QR_SECRET_KEY').toString();
-        const qrToken = `ARYV_QR_${secureToken.substring(0, 16)}_${Date.now()}`;
-        
-        onBarCodeRead({ data: qrToken });
-        setMockScanned(false);
-      }, 1000);
-    }
-  };
 
   // Use real camera if permission granted and device available
   if (hasPermission && device) {
@@ -98,7 +77,7 @@ const CameraView: React.FC<{
     );
   }
 
-  // Fallback to mock camera for development/testing
+  // No camera, or no permission: the courier types the code instead.
   return (
     <View style={styles.mockCamera}>
       <View style={styles.scanArea}>
@@ -112,19 +91,15 @@ const CameraView: React.FC<{
       
       <View style={styles.scanInstructions}>
         <Text style={styles.scanText}>
-          {!hasPermission 
-            ? 'Camera permission required for scanning' 
-            : 'Position QR code within the frame'}
+          {!hasPermission
+            ? t('cf.cameraPermissionRequired')
+            : t('cf.noCameraUseCode')}
         </Text>
-        {!hasPermission ? (
+        {/* No demo scan here: it made up a code. Without a camera the
+            courier types the recipient's code below. */}
+        {!hasPermission && (
           <TouchableOpacity style={styles.mockScanButton} onPress={requestPermission}>
-            <Text style={styles.mockScanText}>Grant Camera Permission</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.mockScanButton} onPress={simulateScan}>
-            <Text style={styles.mockScanText}>
-              {mockScanned ? 'Scanning...' : 'Simulate Scan (Demo)'}
-            </Text>
+            <Text style={styles.mockScanText}>{t('cf.grantCameraPermission')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -139,6 +114,7 @@ type QRScannerScreenRouteProp = RouteProp<CourierStackParamList, 'QRScanner'>;
 const HANDOVER_CODE_PATTERN = /^[ACDEFGHJKLMNPQRTUVWXYZ234679]{6}$/;
 
 const QRScannerScreen: React.FC = () => {
+  const { t } = useI18n();
   const route = useRoute<QRScannerScreenRouteProp>();
   const navigation = useNavigation();
   const { agreementId } = route.params || {};
@@ -162,8 +138,8 @@ const QRScannerScreen: React.FC = () => {
       const scanned = (data.data || '').trim().toUpperCase();
       if (!HANDOVER_CODE_PATTERN.test(scanned)) {
         Alert.alert(
-          'Not a delivery code',
-          'That is not an ARYV delivery code. Ask the recipient for the six-character code from their SMS.',
+          t('cf3.notADeliveryCode'),
+          t('cf3.thatIsNotAnAryv'),
         );
         setScanning(true);
         return;
@@ -181,11 +157,11 @@ const QRScannerScreen: React.FC = () => {
       if (result.success) {
         const resultData = result.data as Record<string, unknown> | undefined;
         Alert.alert(
-          'Delivery confirmed',
-          `Payment released${resultData?.courierEarnings ? `: ${resultData.courierEarnings}` : ''}.`,
+          t('cf3.deliveryConfirmed'),
+          resultData?.courierEarnings ? t('cf.paymentReleasedAmount', { amount: String(resultData.courierEarnings) }) : t('cf.paymentReleased'),
           [
             {
-              text: 'Continue',
+              text: t('verify.continue'),
               onPress: () => {
                 // Navigate to appropriate screen based on delivery type
                 navigation.goBack();
@@ -194,12 +170,12 @@ const QRScannerScreen: React.FC = () => {
           ],
         );
       } else {
-        Alert.alert('Could not confirm', result.error || 'That code was not accepted.');
+        Alert.alert(t('cf2.couldNotConfirm'), result.error || t('cf2.thatCodeWasNotAccepted'));
         setScanning(true);
       }
     } catch (error) {
       log.error('QR verification error:', error);
-      Alert.alert('Error', 'Failed to verify QR code. Please try again.');
+      Alert.alert(t('common.error'), t('cf2.failedToVerifyQrCode'));
       setScanning(true);
     }
   };
@@ -223,8 +199,8 @@ const QRScannerScreen: React.FC = () => {
 
     if (!HANDOVER_CODE_PATTERN.test(code)) {
       Alert.alert(
-        'Check the code',
-        'Delivery codes are six characters, letters and numbers, from the recipient\'s SMS.',
+        t('cf3.checkTheCode'),
+        t('cf3.deliveryCodesAreSixCharacters'),
       );
       return;
     }
@@ -243,7 +219,7 @@ const QRScannerScreen: React.FC = () => {
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Icon name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Confirm delivery</Text>
+        <Text style={styles.headerTitle}>{t('cf.confirmDelivery')}</Text>
         <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
           <Icon name={flashOn ? "flash-on" : "flash-off"} size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -256,11 +232,9 @@ const QRScannerScreen: React.FC = () => {
       />
 
       <View style={styles.manualEntry}>
-        <Text style={styles.manualLabel}>Enter the recipient's code</Text>
+        <Text style={styles.manualLabel}>{t('cf.enterRecipientCode')}</Text>
         <Text style={styles.manualHint}>
-          Collect the cash, hand over the package, then ask the recipient for
-          the six-character code in their SMS. Entering it completes the
-          delivery — do not enter it before you have been paid.
+          {t('cf.codeHint')}
         </Text>
         <View style={styles.manualRow}>
           <TextInput
@@ -273,7 +247,7 @@ const QRScannerScreen: React.FC = () => {
             autoCorrect={false}
             maxLength={6}
             editable={!submitting}
-            accessibilityLabel="Delivery code"
+            accessibilityLabel={t('cf3.deliveryCode')}
           />
           <TouchableOpacity
             style={[styles.manualSubmit, submitting && styles.manualSubmitDisabled]}
@@ -282,7 +256,7 @@ const QRScannerScreen: React.FC = () => {
             accessibilityRole="button"
           >
             <Text style={styles.manualSubmitText}>
-              {submitting ? 'Checking…' : 'Confirm'}
+              {submitting ? t('cf2.checking') : t('common.confirm')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -291,12 +265,12 @@ const QRScannerScreen: React.FC = () => {
       <View style={styles.footer}>
         <TouchableOpacity style={styles.resetButton} onPress={resetScanner}>
           <Icon name="refresh" size={24} color={colors.white} />
-          <Text style={styles.resetText}>Reset Scanner</Text>
+          <Text style={styles.resetText}>{t('cf.resetScanner')}</Text>
         </TouchableOpacity>
         
         {scannedData && (
           <View style={styles.scannedInfo}>
-            <Text style={styles.scannedLabel}>Scanned Data:</Text>
+            <Text style={styles.scannedLabel}>{t('cf.scannedData')}</Text>
             <Text style={styles.scannedValue} numberOfLines={2}>
               {scannedData.substring(0, 50)}...
             </Text>

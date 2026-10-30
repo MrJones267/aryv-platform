@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface NotificationSettingsScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
@@ -31,46 +32,47 @@ interface NotificationSetting {
 }
 
 const NotificationSettingsScreen: React.FC<NotificationSettingsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<NotificationSetting[]>([
     {
       id: 'push',
-      title: 'Push Notifications',
-      description: 'Receive push notifications on your device',
+      title: t('rf.pushNotifications'),
+      description: t('st.receivePushNotificationsOnYour'),
       enabled: true,
       icon: 'notifications',
     },
     {
       id: 'ride_updates',
-      title: 'Ride Updates',
-      description: 'Get notified about ride status changes',
+      title: t('st.rideUpdates'),
+      description: t('st.getNotifiedAboutRideStatus'),
       enabled: true,
       icon: 'directions-car',
     },
     {
       id: 'messages',
-      title: 'New Messages',
-      description: 'Notifications for new chat messages',
+      title: t('st.newMessages'),
+      description: t('st.notificationsForNewChatMessages'),
       enabled: true,
       icon: 'message',
     },
     {
       id: 'promotions',
-      title: 'Promotions & Offers',
-      description: 'Special deals and discount notifications',
+      title: t('st.promotionsOffers'),
+      description: t('st.specialDealsAndDiscountNotifications'),
       enabled: false,
       icon: 'local-offer',
     },
     {
       id: 'payment',
-      title: 'Payment Notifications',
-      description: 'Payment confirmations and receipts',
+      title: t('st.paymentNotifications'),
+      description: t('st.paymentConfirmationsAndReceipts'),
       enabled: true,
       icon: 'payment',
     },
     {
       id: 'security',
-      title: 'Security Alerts',
-      description: 'Important security and account updates',
+      title: t('st.securityAlerts'),
+      description: t('st.importantSecurityAndAccountUpdates'),
       enabled: true,
       icon: 'security',
     },
@@ -89,7 +91,7 @@ const NotificationSettingsScreen: React.FC<NotificationSettingsScreenProps> = ({
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Notification Settings</Text>
+      <Text style={styles.headerTitle}>{t('st.notificationSettings')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -118,7 +120,7 @@ const NotificationSettingsScreen: React.FC<NotificationSettingsScreenProps> = ({
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <Text style={styles.sectionDescription}>
-            Customize your notification preferences to stay informed about what matters most to you.
+            {t('st.customizeYourNotificationPreferencesTo')}
           </Text>
           {settings.map(renderNotificationSetting)}
         </View>

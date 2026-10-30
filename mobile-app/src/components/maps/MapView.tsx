@@ -25,6 +25,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LocationCoordinates, LocationData } from '../../services/LocationService';
 import NavigationService, { NavigationRoute } from '../../services/NavigationService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('MapView');
 
@@ -68,6 +69,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
   onStartNavigation,
   style,
 }) => {
+  const { t } = useI18n();
   const mapRef = useRef<MapView>(null);
   const [region, setRegion] = useState<Region>(
     initialRegion || 
@@ -149,7 +151,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
       );
       onStartNavigation?.(destination);
     } catch (error) {
-      Alert.alert('Navigation Error', 'Failed to open navigation app. Please check if you have a navigation app installed.');
+      Alert.alert(t('ui.navigationError'), t('ui.failedToOpenNavigationApp'));
     }
   };
 
@@ -175,7 +177,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
       };
       mapRef.current?.animateToRegion(newRegion, 1000);
     } else {
-      Alert.alert('Location Unavailable', 'Current location is not available');
+      Alert.alert(t('ui.locationUnavailable'), t('ui.currentLocationIsNotAvailable'));
     }
   };
 
@@ -209,7 +211,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
         }}
-        title="Your Location"
+        title={t('ui.yourLocation')}
         description={currentLocation.address?.fullAddress}
         pinColor="#2196F3"
         identifier="current-location"
@@ -227,7 +229,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
         {/* Origin Marker */}
         <Marker
           coordinate={ride.origin}
-          title="Pickup Location"
+          title={t('cf.pickupLocation')}
           description={ride.origin.address}
           pinColor="#4CAF50"
           identifier={`${ride.id}-origin`}
@@ -241,7 +243,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
         {/* Destination Marker */}
         <Marker
           coordinate={ride.destination}
-          title="Drop-off Location"
+          title={t('ui.dropOffLocation')}
           description={ride.destination.address}
           pinColor="#F44336"
           identifier={`${ride.id}-destination`}
@@ -256,7 +258,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
         {ride.driverLocation && (
           <Marker
             coordinate={ride.driverLocation}
-            title="Driver Location"
+            title={t('ui.driverLocation')}
             pinColor={getMarkerColor(ride.id)}
             identifier={`${ride.id}-driver`}
             onPress={() => onMarkerPress?.(ride.id)}
@@ -272,7 +274,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
           <Marker
             key={`${ride.id}-pickup-${index}`}
             coordinate={pickup}
-            title={`Passenger Pickup ${index + 1}`}
+            title={t('ui.passengerPickupN', { n: index + 1 })}
             pinColor="#FF9800"
             identifier={`${ride.id}-pickup-${index}`}
             onPress={() => onMarkerPress?.(ride.id)}
@@ -337,7 +339,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
         {navigationDestination && (
           <Marker
             coordinate={navigationDestination}
-            title="Navigation Destination"
+            title={t('ui.navigationDestination')}
             pinColor="#1976D2"
             identifier="navigation-destination"
           >
@@ -421,7 +423,7 @@ export const HitchMapView: React.FC<MapViewProps> = ({
             </Text>
           </View>
           {loadingNavigation && (
-            <Text style={styles.navigationLoading}>Loading route...</Text>
+            <Text style={styles.navigationLoading}>{t('ui.loadingRoute')}</Text>
           )}
         </View>
       )}

@@ -25,19 +25,21 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import PackageService, { DeliveryProblem, DeliveryProblemType } from '../../services/PackageService';
+import { useI18n } from '../../i18n/I18nContext';
+import type { TranslationKey } from '../../i18n/translations';
 
 // Constants
 const DESCRIPTION_MIN = 10;
 const DESCRIPTION_MAX = 1000;
 
-const PROBLEMS: Array<{ type: DeliveryProblemType; label: string }> = [
-  { type: 'package_not_delivered', label: 'Package not delivered' },
-  { type: 'package_damaged', label: 'Package damaged' },
-  { type: 'incorrect_location', label: 'Delivered to the wrong place' },
-  { type: 'wrong_recipient', label: 'Wrong recipient' },
-  { type: 'late_delivery', label: 'Very late' },
-  { type: 'courier_no_show', label: 'Courier did not show up' },
-  { type: 'other', label: 'Something else' },
+const PROBLEMS: Array<{ type: DeliveryProblemType; label: TranslationKey }> = [
+  { type: 'package_not_delivered', label: 'cf.packageNotDelivered' },
+  { type: 'package_damaged', label: 'cf.packageDamaged' },
+  { type: 'incorrect_location', label: 'cf.deliveredToTheWrongPlace' },
+  { type: 'wrong_recipient', label: 'cf.wrongRecipient' },
+  { type: 'late_delivery', label: 'cf.veryLate' },
+  { type: 'courier_no_show', label: 'cf.courierDidNotShowUp' },
+  { type: 'other', label: 'cf.somethingElse' },
 ];
 
 interface Props {
@@ -49,6 +51,7 @@ interface Props {
 }
 
 const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, onReported }) => {
+  const { t } = useI18n();
   const [problem, setProblem] = useState<DeliveryProblem | null>(null);
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<DeliveryProblemType | null>(null);
@@ -76,11 +79,11 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
       setOpen(false);
       setType(null);
       setDescription('');
-      Alert.alert('Problem reported', response.data?.message ?? 'ARYV will review it and tell you both what was decided.');
+      Alert.alert(t('cf2.problemReported'), response.data?.message ?? t('cf2.aryvWillReviewItAnd'));
       load();
       onReported?.();
     } else {
-      Alert.alert('Could not report the problem', response.error ?? 'Please try again.');
+      Alert.alert(t('cf2.couldNotReportTheProblem'), response.error ?? t('cf2.pleaseTryAgain'));
     }
   };
 
@@ -88,7 +91,8 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
   const openProblem = problem && (problem.status === 'open' || problem.status === 'under_review');
 
   if (problem && (openProblem || !reportable)) {
-    const label = PROBLEMS.find(p => p.type === problem.disputeType)?.label ?? 'Problem';
+    const found = PROBLEMS.find(p => p.type === problem.disputeType);
+    const label = found ? t(found.label) : t('cf.somethingElse');
     return (
       <View style={styles.card}>
         <View style={styles.row}>
@@ -97,8 +101,8 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
         </View>
         <Text style={styles.body}>
           {openProblem
-            ? 'ARYV is reviewing this and will tell you and the other person what was decided.'
-            : problem.resolutionNotes ?? 'This problem has been resolved.'}
+            ? t('cf2.aryvIsReviewingThisAnd')
+            : problem.resolutionNotes ?? t('cf2.thisProblemHasBeenResolved')}
         </Text>
       </View>
     );
@@ -112,13 +116,13 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
     <>
       <TouchableOpacity style={styles.button} onPress={() => setOpen(true)} accessibilityRole="button">
         <Icon name="report-problem" size={20} color={colors.error} />
-        <Text style={styles.buttonText}>Report a problem with this delivery</Text>
+        <Text style={styles.buttonText}>{t('cf.reportAProblemWithThis')}</Text>
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => !sending && setOpen(false)}>
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>What went wrong?</Text>
+            <Text style={styles.sheetTitle}>{t('cf.whatWentWrong')}</Text>
             {PROBLEMS.map(p => (
               <TouchableOpacity
                 key={p.type}
@@ -132,12 +136,12 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
                   size={20}
                   color={type === p.type ? colors.primary : colors.text.secondary}
                 />
-                <Text style={styles.optionText}>{p.label}</Text>
+                <Text style={styles.optionText}>{t(p.label)}</Text>
               </TouchableOpacity>
             ))}
             <TextInput
               style={styles.input}
-              placeholder="Tell us what happened"
+              placeholder={t('cf.tellUsWhatHappened')}
               placeholderTextColor={colors.text.light}
               value={description}
               onChangeText={setDescription}
@@ -147,14 +151,14 @@ const ReportDeliveryProblem: React.FC<Props> = ({ agreementId, deliveryStatus, o
             <Text style={styles.hint}>At least {DESCRIPTION_MIN} characters. The other person will be told a problem was reported.</Text>
             <View style={styles.actions}>
               <TouchableOpacity onPress={() => setOpen(false)} disabled={sending} style={styles.cancel}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={send}
                 disabled={!valid || sending}
                 style={[styles.submit, (!valid || sending) && styles.submitDisabled]}
               >
-                {sending ? <ActivityIndicator color={colors.text.inverse} /> : <Text style={styles.submitText}>Report</Text>}
+                {sending ? <ActivityIndicator color={colors.text.inverse} /> : <Text style={styles.submitText}>{t('cf.report')}</Text>}
               </TouchableOpacity>
             </View>
           </View>

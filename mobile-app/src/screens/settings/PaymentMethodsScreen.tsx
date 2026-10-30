@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { paymentApi, SavedPaymentMethod, PaymentProvider } from '../../services/api';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PaymentMethodsScreen');
 
@@ -54,6 +55,7 @@ const MOBILE_MONEY_PROVIDERS: { value: PaymentProvider; label: string; icon: str
 ];
 
 const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -117,12 +119,12 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
 
   const handleDeletePaymentMethod = (id: string, name: string): void => {
     Alert.alert(
-      'Delete Payment Method',
-      `Are you sure you want to remove ${name}?`,
+      t('st.deletePaymentMethod'),
+      t('st.confirmRemove', { name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -139,7 +141,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
 
   const handleAddMobileMoney = async (): Promise<void> => {
     if (!mobileMoneyForm.phone) {
-      Alert.alert('Error', 'Please enter your mobile money phone number.');
+      Alert.alert(t('common.error'), t('st.pleaseEnterYourMobileMoney'));
       return;
     }
 
@@ -155,7 +157,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
       if (response.success && response.data) {
         setPaymentMethods(prev => [...prev, mapSavedMethod(response.data!)]);
       } else {
-        const providerLabel = MOBILE_MONEY_PROVIDERS.find(p => p.value === mobileMoneyForm.provider)?.label || 'Mobile Money';
+        const providerLabel = MOBILE_MONEY_PROVIDERS.find(p => p.value === mobileMoneyForm.provider)?.label || t('paySel.mobileMoney');
         setPaymentMethods(prev => [...prev, {
           id: Date.now().toString(),
           type: 'mobile',
@@ -169,9 +171,9 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
 
       setIsAddMobileMoneyVisible(false);
       setMobileMoneyForm({ phone: '', provider: 'orange_money', accountName: '' });
-      Alert.alert('Success', 'Mobile money account added!');
+      Alert.alert(t('common.success'), t('st.mobileMoneyAccountAdded'));
     } catch (error) {
-      Alert.alert('Error', 'Failed to add mobile money. Please try again.');
+      Alert.alert(t('common.error'), t('st.failedToAddMobileMoney'));
     } finally {
       setIsSaving(false);
     }
@@ -182,7 +184,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Payment Methods</Text>
+      <Text style={styles.headerTitle}>{t('nav.paymentMethods')}</Text>
       <TouchableOpacity onPress={() => setIsAddMobileMoneyVisible(true)}>
         <Icon name="add" size={24} color={colors.primary} />
       </TouchableOpacity>
@@ -200,7 +202,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
             <Text style={styles.paymentMethodName}>{method.name}</Text>
             {method.isDefault && (
               <View style={styles.defaultBadge}>
-                <Text style={styles.defaultBadgeText}>Default</Text>
+                <Text style={styles.defaultBadgeText}>{t('st.default')}</Text>
               </View>
             )}
           </View>
@@ -228,7 +230,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
             onPress={() => handleSetDefault(method.id)}
             style={styles.actionButton}
           >
-            <Text style={styles.actionButtonText}>Set Default</Text>
+            <Text style={styles.actionButtonText}>{t('st.setDefault')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -248,8 +250,8 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         onPress={() => setIsAddMobileMoneyVisible(true)}
       >
         <Icon name="phone-android" size={32} color={colors.primary} />
-        <Text style={styles.addOptionTitle}>Add Mobile Money</Text>
-        <Text style={styles.addOptionSubtitle}>Orange Money, M-Pesa, MTN MoMo, FNB eWallet</Text>
+        <Text style={styles.addOptionTitle}>{t('st.addMobileMoney')}</Text>
+        <Text style={styles.addOptionSubtitle}>{t('st.orangeMoneyMPesaMtn')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -260,7 +262,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {paymentMethods.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Payment Methods</Text>
+            <Text style={styles.sectionTitle}>{t('st.yourPaymentMethods')}</Text>
             {paymentMethods.map(renderPaymentMethod)}
           </View>
         )}
@@ -271,10 +273,10 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
           <View style={styles.cashNote}>
             <Icon name="payments" size={22} color={colors.primary} />
             <Text style={styles.cashNoteText}>
-              Pay your driver in cash at the end of the ride, or add a mobile money account. Cards are not accepted.
+              {t('st.payYourDriverInCash')}
             </Text>
           </View>
-          <Text style={styles.sectionTitle}>Add New Payment Method</Text>
+          <Text style={styles.sectionTitle}>{t('st.addNewPaymentMethod')}</Text>
           {renderAddOptions()}
         </View>
       </ScrollView>
@@ -290,17 +292,17 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
             <TouchableOpacity onPress={() => setIsAddMobileMoneyVisible(false)}>
               <Icon name="close" size={24} color={colors.text.primary} />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Add Mobile Money</Text>
+            <Text style={styles.modalTitle}>{t('st.addMobileMoney')}</Text>
             <TouchableOpacity onPress={handleAddMobileMoney} disabled={isSaving}>
               <Text style={[styles.modalSaveButton, isSaving && { opacity: 0.5 }]}>
-                {isSaving ? 'Saving...' : 'Save'}
+                {isSaving ? 'Saving...' : t('common.save')}
               </Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Provider</Text>
+              <Text style={styles.label}>{t('st.provider')}</Text>
               <View style={styles.providerGrid}>
                 {MOBILE_MONEY_PROVIDERS.map((provider) => (
                   <TouchableOpacity
@@ -330,7 +332,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
+              <Text style={styles.label}>{t('rf.phoneNumber')}</Text>
               <TextInput
                 style={styles.input}
                 value={mobileMoneyForm.phone}
@@ -341,12 +343,12 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Account Name (optional)</Text>
+              <Text style={styles.label}>{t('st.accountNameOptional')}</Text>
               <TextInput
                 style={styles.input}
                 value={mobileMoneyForm.accountName}
                 onChangeText={(value) => setMobileMoneyForm(prev => ({ ...prev, accountName: value }))}
-                placeholder="Name on the account"
+                placeholder={t('st.nameOnTheAccount')}
                 autoCapitalize="words"
               />
             </View>

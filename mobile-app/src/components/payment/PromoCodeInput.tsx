@@ -17,6 +17,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import PromoCodeService, { PromoCode } from '../../services/PromoCodeService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface PromoCodeInputProps {
   rideAmount: number;
@@ -29,6 +30,7 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
   onPromoApplied,
   onPromoRemoved,
 }) => {
+  const { t } = useI18n();
   const [code, setCode] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
@@ -44,12 +46,12 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
       const promo = await promoService.validateCode(code);
 
       if (!promo) {
-        setError('Invalid promo code');
+        setError(t('promo.invalidCode'));
         return;
       }
 
       if (!promo.isActive) {
-        setError('This code has expired');
+        setError(t('promo.expired'));
         return;
       }
 
@@ -58,8 +60,8 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
       if (discount === 0) {
         setError(
           promo.minRideAmount
-            ? `Minimum ride amount: ${promo.currency || 'BWP'} ${promo.minRideAmount}`
-            : 'Code not applicable to this ride',
+            ? t('ui.minRideAmount', { currency: promo.currency || 'BWP', amount: promo.minRideAmount })
+            : t('promo.notApplicable'),
         );
         return;
       }
@@ -67,7 +69,7 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
       setAppliedPromo(promo);
       onPromoApplied(discount, promo.code);
     } catch {
-      setError('Could not validate code');
+      setError(t('promo.validationFailed'));
     } finally {
       setIsValidating(false);
     }
@@ -110,7 +112,7 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
             setCode(text.toUpperCase());
             setError('');
           }}
-          placeholder="Enter promo code"
+          placeholder={t('promo.enterCode')}
           placeholderTextColor={colors.text.light}
           autoCapitalize="characters"
           returnKeyType="done"
@@ -124,7 +126,7 @@ const PromoCodeInput: React.FC<PromoCodeInputProps> = ({
           {isValidating ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.applyText}>Apply</Text>
+            <Text style={styles.applyText}>{t('common.apply')}</Text>
           )}
         </TouchableOpacity>
       </View>

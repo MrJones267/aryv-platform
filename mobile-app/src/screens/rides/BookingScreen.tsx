@@ -224,7 +224,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       });
     } catch (error) {
       log.error('Error loading booking details:', error);
-      Alert.alert('Error', 'Failed to load booking details');
+      Alert.alert(t('common.error'), t('bk.failedToLoadBookingDetails'));
       navigation.goBack();
     } finally {
       setIsLoading(false);
@@ -284,10 +284,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const handlePaymentMethodConfirm = (method: PaymentMethodType) => {
     setSelectedPaymentMethod(method);
     const methodLabels: Record<PaymentMethodType, string> = {
-      cash: 'Cash',
-      stripe: 'Credit/Debit Card',
-      mobile_money: 'Mobile Money',
-      wallet: 'ARYV Wallet',
+      cash: t('bk.cash'),
+      stripe: t('paySel.card'),
+      mobile_money: t('paySel.mobileMoney'),
+      wallet: t('paySel.wallet'),
     };
     if (bookingDetails) {
       setBookingDetails(prev => prev ? {
@@ -302,7 +302,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     if (!bookingDetails) return;
 
     if (!bookingDetails.paymentMethod || !selectedPaymentMethod) {
-      Alert.alert('Payment Method Required', 'Please select a payment method to continue');
+      Alert.alert(t('bk.paymentMethodRequired'), t('bk.pleaseSelectAPaymentMethod'));
       return;
     }
 

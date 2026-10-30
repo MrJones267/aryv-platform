@@ -22,8 +22,10 @@ import { colors } from '../../theme';
 import PackageService, { Package } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import CurrencyService from '../../services/CurrencyService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const PackageScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,10 +41,10 @@ const PackageScreen: React.FC = () => {
       if (response.success && response.data) {
         setPackages(response.data);
       } else {
-        Alert.alert('Error', response.error || 'Failed to load packages');
+        Alert.alert(t('common.error'), response.error || t('cf2.failedToLoadPackages'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load packages');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadPackages'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -87,7 +89,7 @@ const PackageScreen: React.FC = () => {
 
   const getStatusText = (package_: Package) => {
     if (!package_.isActive) {
-      return 'Cancelled';
+      return t('status.cancelled');
     }
 
     // Check the package status field if available
@@ -95,29 +97,29 @@ const PackageScreen: React.FC = () => {
       switch (package_.status.toLowerCase()) {
         case 'pending':
         case 'awaiting_courier':
-          return 'Awaiting Courier';
+          return t('cf2.awaitingCourier');
         case 'accepted':
         case 'courier_assigned':
-          return 'Courier Assigned';
+          return t('cf.courierAssigned');
         case 'pending_pickup':
-          return 'Pending Pickup';
+          return t('cf2.pendingPickup');
         case 'in_transit':
         case 'picked_up':
-          return 'In Transit';
+          return t('cf.inTransit');
         case 'delivered':
         case 'completed':
-          return 'Delivered';
+          return t('cf2.delivered');
         case 'disputed':
-          return 'Disputed';
+          return t('cf2.disputed');
         case 'cancelled':
-          return 'Cancelled';
+          return t('status.cancelled');
         default:
           return package_.status.charAt(0).toUpperCase() + package_.status.slice(1).replace(/_/g, ' ');
       }
     }
 
     // Default to Active if no status is set but package is active
-    return 'Active';
+    return t('cf.active');
   };
 
   const renderPackageCard = (package_: Package) => (
@@ -157,7 +159,7 @@ const PackageScreen: React.FC = () => {
           {package_.fragile && (
             <View style={styles.fragileTag}>
               <Icon name="warning" size={12} color={colors.warning} />
-              <Text style={styles.fragileText}>Fragile</Text>
+              <Text style={styles.fragileText}>{t('cf.fragile')}</Text>
             </View>
           )}
         </View>
@@ -171,7 +173,7 @@ const PackageScreen: React.FC = () => {
   );
 
   if (loading) {
-    return <LoadingScreen message="Loading your packages..." />;
+    return <LoadingScreen message={t('cf.loadingYourPackages')} />;
   }
 
   return (
@@ -185,9 +187,9 @@ const PackageScreen: React.FC = () => {
         {packages.length === 0 ? (
           <View style={styles.emptyState}>
             <Icon name="local-shipping" size={80} color={colors.text.secondary} />
-            <Text style={styles.emptyTitle}>No packages yet</Text>
+            <Text style={styles.emptyTitle}>{t('cf.noPackagesYet')}</Text>
             <Text style={styles.emptyDescription}>
-              Send your first package with our secure delivery service
+              {t('cf.sendYourFirstPackageWith')}
             </Text>
           </View>
         ) : (
@@ -202,7 +204,7 @@ const PackageScreen: React.FC = () => {
         onPress={navigateToCreatePackage}
       >
         <Icon name="add" size={24} color={colors.text.inverse} />
-        <Text style={styles.createButtonText}>Send Package</Text>
+        <Text style={styles.createButtonText}>{t('cf.sendPackage')}</Text>
       </TouchableOpacity>
     </View>
   );

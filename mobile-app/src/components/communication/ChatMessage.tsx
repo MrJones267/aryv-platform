@@ -16,6 +16,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface MessageData {
   id: string;
@@ -58,6 +59,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   onMessagePress,
   onResend,
 }) => {
+  const { t } = useI18n();
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -144,12 +146,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     >
       <View style={styles.locationHeader}>
         <Icon name="location-on" size={20} color={colors.primary} />
-        <Text style={styles.locationTitle}>Location Shared</Text>
+        <Text style={styles.locationTitle}>{t('ui.locationShared')}</Text>
       </View>
       <Text style={styles.locationAddress}>
-        {message.location?.address || 'Unknown location'}
+        {message.location?.address || t('rf.unknownLocation')}
       </Text>
-      <Text style={styles.locationAction}>Tap to view on map</Text>
+      <Text style={styles.locationAction}>{t('ui.tapToViewOnMap')}</Text>
     </TouchableOpacity>
   );
 
@@ -166,7 +168,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     ]}>
       <View style={styles.deliveryUpdateHeader}>
         <Icon name="local-shipping" size={20} color={colors.primary} />
-        <Text style={styles.deliveryUpdateTitle}>Delivery Update</Text>
+        <Text style={styles.deliveryUpdateTitle}>{t('ui.deliveryUpdate')}</Text>
       </View>
       <Text style={styles.deliveryUpdateStatus}>
         Status: {message.deliveryUpdate?.status}

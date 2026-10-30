@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface Country {
   code: string;
@@ -64,13 +65,15 @@ const PhoneInput: React.FC<PhoneInputProps> = ({
   onChangeCountry,
   onCountryChange,
   selectedCountry,
-  placeholder = 'Phone number',
+  placeholder: placeholderProp,
   error,
   disabled = false,
   label,
   countries = defaultCountries,
   defaultCountry = 'BW',
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('cf.phoneNumber');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const defaultSelected = selectedCountry
     || countries.find(c => c.code === defaultCountry)
@@ -150,7 +153,7 @@ const PhoneInput: React.FC<PhoneInputProps> = ({
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Country</Text>
+              <Text style={styles.modalTitle}>{t('ui.selectCountry')}</Text>
               <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
                 <Icon name="close" size={24} color={colors.text.primary} />
               </TouchableOpacity>

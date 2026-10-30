@@ -31,6 +31,7 @@ import CurrencyService, { Currency } from '../../services/CurrencyService';
 import { useAppDispatch } from '../../store/hooks';
 import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('CreatePackageScreen');
 
@@ -59,6 +60,7 @@ interface PackageFormData {
 }
 
 const CreatePackageScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const dispatch = useAppDispatch();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -174,12 +176,12 @@ const CreatePackageScreen: React.FC = () => {
 
   const getStepTitle = (step: number): string => {
     switch (step) {
-      case 1: return 'Package Details';
-      case 2: return 'Pickup & Delivery';
-      case 3: return 'Additional Details';
-      case 4: return 'Pricing & Delivery Speed';
-      case 5: return 'Review & Submit';
-      default: return 'Package Creation';
+      case 1: return t('cf.packageDetails');
+      case 2: return t('cf.pickupDelivery');
+      case 3: return t('cf.additionalDetails');
+      case 4: return t('cf.pricingDeliverySpeed');
+      case 5: return t('cf.reviewSubmit');
+      default: return t('cf2.packageCreation');
     }
   };
 
@@ -205,7 +207,7 @@ const CreatePackageScreen: React.FC = () => {
       setCurrentStep(prev => Math.min(prev + 1, totalSteps));
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     } else {
-      Alert.alert('Required Fields', 'Please fill in all required fields before continuing.');
+      Alert.alert(t('cf2.requiredFields'), t('cf2.pleaseFillInAllRequired'));
     }
   };
 
@@ -216,7 +218,7 @@ const CreatePackageScreen: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) {
-      Alert.alert('Error', 'Please complete all required fields.');
+      Alert.alert(t('common.error'), t('cf2.pleaseCompleteAllRequiredFields'));
       return;
     }
 
@@ -226,7 +228,7 @@ const CreatePackageScreen: React.FC = () => {
       // has changed since.
       const resolved = await resolveRoute();
       if (!resolved) {
-        throw new Error('Unable to find coordinates for provided addresses');
+        throw new Error(t('cf2.unableToFindCoordinatesFor'));
       }
       const { pickup: pickupCoordinates, dropoff: dropoffCoordinates } = resolved;
 
@@ -265,22 +267,20 @@ const CreatePackageScreen: React.FC = () => {
         // call failed every time, logged a warning, and the flow carried on
         // regardless.
         Alert.alert(
-          'Package listed',
-          'Couriers can now accept your delivery. The recipient pays the '
-            + 'courier in cash when it arrives, and we will text them a code to '
-            + 'hand over once they have it.',
+          t('cf3.packageListed'),
+          t('cf.listedBody'),
           [
             {
-              text: 'OK',
+              text: t('common.ok'),
               onPress: () => navigation.goBack(),
             },
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Failed to create package');
+        Alert.alert(t('common.error'), response.error || t('cf2.failedToCreatePackage'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to create package');
+      Alert.alert(t('common.error'), t('cf2.failedToCreatePackage'));
     } finally {
       setLoading(false);
     }
@@ -314,26 +314,26 @@ const CreatePackageScreen: React.FC = () => {
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Package Details</Text>
+      <Text style={styles.stepTitle}>{t('cf.packageDetails')}</Text>
       
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Package Title *</Text>
+        <Text style={styles.label}>{t('cf.packageTitle')}</Text>
         <TextInput
           style={styles.input}
           value={formData.title}
           onChangeText={(value) => updateFormData('title', value)}
-          placeholder="e.g., Documents, Electronics, Gift"
+          placeholder={t('cf.eGDocumentsElectronicsGift')}
           placeholderTextColor={colors.text.secondary}
         />
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Description *</Text>
+        <Text style={styles.label}>{t('cf.description')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           value={formData.description}
           onChangeText={(value) => updateFormData('description', value)}
-          placeholder="Describe your package contents..."
+          placeholder={t('cf.describeYourPackageContents')}
           placeholderTextColor={colors.text.secondary}
           multiline
           numberOfLines={3}
@@ -341,7 +341,7 @@ const CreatePackageScreen: React.FC = () => {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Package Size</Text>
+        <Text style={styles.label}>{t('cf.packageSize')}</Text>
         <View style={styles.sizeButtons}>
           {['small', 'medium', 'large', 'custom'].map((size) => (
             <TouchableOpacity
@@ -364,7 +364,7 @@ const CreatePackageScreen: React.FC = () => {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Offered Price *</Text>
+        <Text style={styles.label}>{t('cf.offeredPrice')}</Text>
         <View style={styles.priceInput}>
           <Text style={styles.currencySymbol}>{currency?.symbol ?? ''}</Text>
           <TextInput
@@ -382,21 +382,21 @@ const CreatePackageScreen: React.FC = () => {
 
   const renderStep2 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Pickup & Delivery</Text>
+      <Text style={styles.stepTitle}>{t('cf.pickupDelivery')}</Text>
       
       <View style={styles.addressSection}>
         <View style={styles.addressHeader}>
           <Icon name="place" size={20} color={colors.primary} />
-          <Text style={styles.addressTitle}>Pickup Location</Text>
+          <Text style={styles.addressTitle}>{t('cf.pickupLocation')}</Text>
         </View>
         
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Address *</Text>
+          <Text style={styles.label}>{t('cf.address')}</Text>
           <TextInput
             style={styles.input}
             value={formData.pickupAddress}
             onChangeText={(value) => updateFormData('pickupAddress', value)}
-            placeholder="Enter pickup address..."
+            placeholder={t('cf.enterPickupAddress')}
             placeholderTextColor={colors.text.secondary}
             multiline
           />
@@ -404,22 +404,22 @@ const CreatePackageScreen: React.FC = () => {
 
         <View style={styles.row}>
           <View style={[styles.inputGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Contact Name</Text>
+            <Text style={styles.label}>{t('cf.contactName')}</Text>
             <TextInput
               style={styles.input}
               value={formData.pickupContactName}
               onChangeText={(value) => updateFormData('pickupContactName', value)}
-              placeholder="Contact person"
+              placeholder={t('cf.contactPerson')}
               placeholderTextColor={colors.text.secondary}
             />
           </View>
           <View style={[styles.inputGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Phone</Text>
+            <Text style={styles.label}>{t('cf.phone')}</Text>
             <TextInput
               style={styles.input}
               value={formData.pickupContactPhone}
               onChangeText={(value) => updateFormData('pickupContactPhone', value)}
-              placeholder="Phone number"
+              placeholder={t('cf.phoneNumber')}
               placeholderTextColor={colors.text.secondary}
               keyboardType="phone-pad"
             />
@@ -430,16 +430,16 @@ const CreatePackageScreen: React.FC = () => {
       <View style={styles.addressSection}>
         <View style={styles.addressHeader}>
           <Icon name="flag" size={20} color={colors.success} />
-          <Text style={styles.addressTitle}>Delivery Location</Text>
+          <Text style={styles.addressTitle}>{t('cf.deliveryLocation')}</Text>
         </View>
         
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Address *</Text>
+          <Text style={styles.label}>{t('cf.address')}</Text>
           <TextInput
             style={styles.input}
             value={formData.dropoffAddress}
             onChangeText={(value) => updateFormData('dropoffAddress', value)}
-            placeholder="Enter delivery address..."
+            placeholder={t('cf.enterDeliveryAddress')}
             placeholderTextColor={colors.text.secondary}
             multiline
           />
@@ -447,22 +447,22 @@ const CreatePackageScreen: React.FC = () => {
 
         <View style={styles.row}>
           <View style={[styles.inputGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Contact Name</Text>
+            <Text style={styles.label}>{t('cf.contactName')}</Text>
             <TextInput
               style={styles.input}
               value={formData.dropoffContactName}
               onChangeText={(value) => updateFormData('dropoffContactName', value)}
-              placeholder="Contact person"
+              placeholder={t('cf.contactPerson')}
               placeholderTextColor={colors.text.secondary}
             />
           </View>
           <View style={[styles.inputGroup, styles.halfWidth]}>
-            <Text style={styles.label}>Phone</Text>
+            <Text style={styles.label}>{t('cf.phone')}</Text>
             <TextInput
               style={styles.input}
               value={formData.dropoffContactPhone}
               onChangeText={(value) => updateFormData('dropoffContactPhone', value)}
-              placeholder="Phone number"
+              placeholder={t('cf.phoneNumber')}
               placeholderTextColor={colors.text.secondary}
               keyboardType="phone-pad"
             />
@@ -474,13 +474,13 @@ const CreatePackageScreen: React.FC = () => {
 
   const renderStep3 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Additional Details</Text>
+      <Text style={styles.stepTitle}>{t('cf.additionalDetails')}</Text>
       
       <View style={styles.dimensionsSection}>
-        <Text style={styles.sectionTitle}>Dimensions (cm)</Text>
+        <Text style={styles.sectionTitle}>{t('cf.dimensionsCm')}</Text>
         <View style={styles.dimensionsRow}>
           <View style={styles.dimensionInput}>
-            <Text style={styles.dimensionLabel}>Length</Text>
+            <Text style={styles.dimensionLabel}>{t('cf.length')}</Text>
             <TextInput
               style={styles.input}
               value={formData.dimensionsLength?.toString() || ''}
@@ -491,7 +491,7 @@ const CreatePackageScreen: React.FC = () => {
             />
           </View>
           <View style={styles.dimensionInput}>
-            <Text style={styles.dimensionLabel}>Width</Text>
+            <Text style={styles.dimensionLabel}>{t('cf.width')}</Text>
             <TextInput
               style={styles.input}
               value={formData.dimensionsWidth?.toString() || ''}
@@ -502,7 +502,7 @@ const CreatePackageScreen: React.FC = () => {
             />
           </View>
           <View style={styles.dimensionInput}>
-            <Text style={styles.dimensionLabel}>Height</Text>
+            <Text style={styles.dimensionLabel}>{t('cf.height')}</Text>
             <TextInput
               style={styles.input}
               value={formData.dimensionsHeight?.toString() || ''}
@@ -516,7 +516,7 @@ const CreatePackageScreen: React.FC = () => {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Weight (kg)</Text>
+        <Text style={styles.label}>{t('cf.weightKg')}</Text>
         <TextInput
           style={styles.input}
           value={formData.weight?.toString() || ''}
@@ -530,8 +530,8 @@ const CreatePackageScreen: React.FC = () => {
       <View style={styles.switchGroup}>
         <View style={styles.switchRow}>
           <View style={styles.switchInfo}>
-            <Text style={styles.switchLabel}>Fragile Item</Text>
-            <Text style={styles.switchDescription}>Requires careful handling</Text>
+            <Text style={styles.switchLabel}>{t('cf.fragileItem')}</Text>
+            <Text style={styles.switchDescription}>{t('cf.requiresCarefulHandling')}</Text>
           </View>
           <Switch
             value={formData.fragile}
@@ -543,8 +543,8 @@ const CreatePackageScreen: React.FC = () => {
 
         <View style={styles.switchRow}>
           <View style={styles.switchInfo}>
-            <Text style={styles.switchLabel}>Valuable Item</Text>
-            <Text style={styles.switchDescription}>High-value package</Text>
+            <Text style={styles.switchLabel}>{t('cf.valuableItem')}</Text>
+            <Text style={styles.switchDescription}>{t('cf.highValuePackage')}</Text>
           </View>
           <Switch
             value={formData.valuable}
@@ -556,12 +556,12 @@ const CreatePackageScreen: React.FC = () => {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Special Instructions</Text>
+        <Text style={styles.label}>{t('cf.specialInstructions')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           value={formData.specialInstructions}
           onChangeText={(value) => updateFormData('specialInstructions', value)}
-          placeholder="Any special handling instructions..."
+          placeholder={t('cf.anySpecialHandlingInstructions')}
           placeholderTextColor={colors.text.secondary}
           multiline
           numberOfLines={3}
@@ -572,20 +572,20 @@ const CreatePackageScreen: React.FC = () => {
         onImagesSelected={(images) => updateFormData('images', images)}
         maxImages={5}
         existingImages={formData.images || []}
-        placeholder="Add photos to help couriers identify your package"
+        placeholder={t('cf.addPhotosToHelpCouriers')}
       />
     </View>
   );
 
   const renderStep5 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Pricing & Delivery Speed</Text>
+      <Text style={styles.stepTitle}>{t('cf.pricingDeliverySpeed')}</Text>
       <Text style={styles.stepSubtitle}>
-        Choose your delivery speed and pricing. You can select a tier or set your own price.
+        {t('cf.chooseYourDeliverySpeedAnd')}
       </Text>
 
       {routeStatus === 'resolving' && (
-        <Text style={styles.stepSubtitle}>Working out the route to price each delivery speed…</Text>
+        <Text style={styles.stepSubtitle}>{t('cf.workingOutTheRouteTo')}</Text>
       )}
       {routeStatus === 'failed' && (
         <Text style={styles.stepSubtitle}>
@@ -610,7 +610,7 @@ const CreatePackageScreen: React.FC = () => {
       />
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Your Price Offer *</Text>
+        <Text style={styles.label}>{t('cf.yourPriceOffer')}</Text>
         <TextInput
           style={styles.input}
           value={formData.senderPriceOffer.toString()}
@@ -620,7 +620,7 @@ const CreatePackageScreen: React.FC = () => {
           keyboardType="decimal-pad"
         />
         <Text style={styles.label}>
-          You can modify the suggested price or set your own amount
+          {t('cf.youCanModifyTheSuggested')}
         </Text>
       </View>
 
@@ -628,11 +628,11 @@ const CreatePackageScreen: React.FC = () => {
         <View style={styles.tierSummary}>
           <Text style={styles.tierSummaryTitle}>Selected: {selectedTierSuggestion.tierType}</Text>
           <View style={styles.tierSummaryRow}>
-            <Text style={styles.tierSummaryLabel}>Estimated delivery:</Text>
+            <Text style={styles.tierSummaryLabel}>{t('cf.estimatedDelivery')}</Text>
             <Text style={styles.tierSummaryValue}>{selectedTierSuggestion.estimatedDeliveryTime}</Text>
           </View>
           <View style={styles.tierSummaryRow}>
-            <Text style={styles.tierSummaryLabel}>Demand level:</Text>
+            <Text style={styles.tierSummaryLabel}>{t('cf.demandLevel')}</Text>
             <Text style={[
               styles.tierSummaryValue,
               { color: selectedTierSuggestion.demandLevel === 'HIGH' || selectedTierSuggestion.demandLevel === 'SURGE' 
@@ -648,43 +648,43 @@ const CreatePackageScreen: React.FC = () => {
 
   const renderStep6 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Review & Submit</Text>
+      <Text style={styles.stepTitle}>{t('cf.reviewSubmit')}</Text>
       <Text style={styles.stepSubtitle}>
-        Please review your package details before submitting.
+        {t('cf.pleaseReviewYourPackageDetails')}
       </Text>
 
       <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Package Information</Text>
+        <Text style={styles.reviewSectionTitle}>{t('cf.packageInformation')}</Text>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Title:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.title')}</Text>
           <Text style={styles.reviewValue}>{formData.title}</Text>
         </View>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Description:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.description2')}</Text>
           <Text style={styles.reviewValue}>{formData.description}</Text>
         </View>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Size:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.size')}</Text>
           <Text style={styles.reviewValue}>{formData.packageSize}</Text>
         </View>
       </View>
 
       <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Pickup & Delivery</Text>
+        <Text style={styles.reviewSectionTitle}>{t('cf.pickupDelivery')}</Text>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>From:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.from')}</Text>
           <Text style={styles.reviewValue}>{formData.pickupAddress}</Text>
         </View>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>To:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.to')}</Text>
           <Text style={styles.reviewValue}>{formData.dropoffAddress}</Text>
         </View>
       </View>
 
       <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Pricing</Text>
+        <Text style={styles.reviewSectionTitle}>{t('cf.pricing')}</Text>
         <View style={styles.reviewItem}>
-          <Text style={styles.reviewLabel}>Your Offer:</Text>
+          <Text style={styles.reviewLabel}>{t('cf.yourOffer')}</Text>
           <Text style={[styles.reviewValue, styles.priceValue]}>
             {currency
               ? CurrencyService.formatAmount(formData.senderPriceOffer, currency)
@@ -693,7 +693,7 @@ const CreatePackageScreen: React.FC = () => {
         </View>
         {selectedTierSuggestion && (
           <View style={styles.reviewItem}>
-            <Text style={styles.reviewLabel}>Delivery Tier:</Text>
+            <Text style={styles.reviewLabel}>{t('cf.deliveryTier')}</Text>
             <Text style={styles.reviewValue}>
               {selectedTierSuggestion.tierType} ({selectedTierSuggestion.estimatedDeliveryTime})
             </Text>
@@ -721,7 +721,7 @@ const CreatePackageScreen: React.FC = () => {
   };
 
   if (loading) {
-    return <LoadingScreen message="Creating your package..." />;
+    return <LoadingScreen message={t('cf.creatingYourPackage')} />;
   }
 
   return (
@@ -733,7 +733,7 @@ const CreatePackageScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Icon name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Package</Text>
+        <Text style={styles.headerTitle}>{t('cf.createPackage')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -746,7 +746,7 @@ const CreatePackageScreen: React.FC = () => {
       <View style={styles.footer}>
         {currentStep > 1 && (
           <TouchableOpacity style={styles.backButton} onPress={prevStep}>
-            <Text style={styles.backButtonText}>Back</Text>
+            <Text style={styles.backButtonText}>{t('common.back')}</Text>
           </TouchableOpacity>
         )}
         
@@ -755,7 +755,7 @@ const CreatePackageScreen: React.FC = () => {
           onPress={currentStep === totalSteps ? handleSubmit : nextStep}
         >
           <Text style={styles.nextButtonText}>
-            {currentStep === totalSteps ? 'Create Package' : 'Continue'}
+            {currentStep === totalSteps ? t('cf.createPackage') : t('verify.continue')}
           </Text>
         </TouchableOpacity>
       </View>

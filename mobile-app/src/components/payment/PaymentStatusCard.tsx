@@ -16,6 +16,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface PaymentStatus {
   id: string;
@@ -42,6 +43,7 @@ const PaymentStatusCard: React.FC<PaymentStatusCardProps> = ({
   showDetails = false,
   animated = true,
 }) => {
+  const { t } = useI18n();
   const animatedValue = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -152,7 +154,7 @@ const PaymentStatusCard: React.FC<PaymentStatusCardProps> = ({
           <View style={styles.additionalDetails}>
             {payment.transactionId && (
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Transaction ID:</Text>
+                <Text style={styles.detailLabel}>{t('ui.transactionId')}</Text>
                 <Text style={styles.detailValue} numberOfLines={1}>
                   {payment.transactionId}
                 </Text>
@@ -161,7 +163,7 @@ const PaymentStatusCard: React.FC<PaymentStatusCardProps> = ({
             
             {payment.completedAt && (
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Completed:</Text>
+                <Text style={styles.detailLabel}>{t('ui.completed')}</Text>
                 <Text style={styles.detailValue}>
                   {formatDate(payment.completedAt)}
                 </Text>

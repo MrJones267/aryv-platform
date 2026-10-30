@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Button } from '../../components/ui';
+import { useI18n } from '../../i18n/I18nContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,6 +25,7 @@ interface OnboardingWelcomeScreenProps {
 }
 
 const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const handleGetStarted = () => {
     navigation.navigate('RoleSelection');
   };
@@ -43,7 +45,7 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
             </View>
           </View>
           <Text style={styles.appName}>ARYV</Text>
-          <Text style={styles.tagline}>Your Smart Ride-Sharing Companion</Text>
+          <Text style={styles.tagline}>{t('rf.yourSmartRideSharingCompanion')}</Text>
         </View>
 
         {/* Illustration */}
@@ -60,9 +62,9 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
             <View style={styles.featureIcon}>
               <Icon name="search" size={24} color="#2196F3" />
             </View>
-            <Text style={styles.featureTitle}>Find Rides</Text>
+            <Text style={styles.featureTitle}>{t('nav.findRides')}</Text>
             <Text style={styles.featureDescription}>
-              Discover rides to your destination with verified drivers
+              {t('rf.discoverRidesToYourDestination')}
             </Text>
           </View>
 
@@ -70,9 +72,9 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
             <View style={styles.featureIcon}>
               <Icon name="share" size={24} color="#4CAF50" />
             </View>
-            <Text style={styles.featureTitle}>Share Your Journey</Text>
+            <Text style={styles.featureTitle}>{t('rf.shareYourJourney')}</Text>
             <Text style={styles.featureDescription}>
-              Offer rides to fellow travelers and earn while you drive
+              {t('rf.offerRidesToFellowTravelers')}
             </Text>
           </View>
 
@@ -80,9 +82,9 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
             <View style={styles.featureIcon}>
               <Icon name="security" size={24} color="#FF9800" />
             </View>
-            <Text style={styles.featureTitle}>Safe & Secure</Text>
+            <Text style={styles.featureTitle}>{t('rf.safeSecure')}</Text>
             <Text style={styles.featureDescription}>
-              Real-time tracking and verified users for your peace of mind
+              {t('rf.realTimeTrackingAndVerified')}
             </Text>
           </View>
         </View>
@@ -90,7 +92,7 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
         {/* Actions */}
         <View style={styles.actions}>
           <Button
-            title="Get Started"
+            title={t('welcome.getStarted')}
             onPress={handleGetStarted}
             variant="primary"
             size="large"
@@ -101,7 +103,7 @@ const OnboardingWelcomeScreen: React.FC<OnboardingWelcomeScreenProps> = ({ navig
           />
           
           <Button
-            title="Skip for now"
+            title={t('verify.skipForNow')}
             onPress={handleSkip}
             variant="ghost"
             size="medium"

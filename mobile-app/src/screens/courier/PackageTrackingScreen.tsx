@@ -26,10 +26,12 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
 import DeliveryTrackingMap from '../../components/courier/DeliveryTrackingMap';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
+import { useI18n } from '../../i18n/I18nContext';
 
 type PackageTrackingRouteProp = RouteProp<CourierStackParamList, 'PackageTracking'>;
 
 const PackageTrackingScreen: React.FC = () => {
+  const { t } = useI18n();
   const route = useRoute<PackageTrackingRouteProp>();
   const navigation = useNavigation();
   const { packageId } = route.params;
@@ -100,11 +102,11 @@ const PackageTrackingScreen: React.FC = () => {
         // available" screen, and a failed refresh keeps what was shown.
         if (!alertedRef.current) {
           alertedRef.current = true;
-          Alert.alert('Error', response.error || 'Failed to load tracking information');
+          Alert.alert(t('common.error'), response.error || t('cf2.failedToLoadTrackingInformation'));
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load tracking information');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadTrackingInformation'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -134,15 +136,15 @@ const PackageTrackingScreen: React.FC = () => {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'pending_pickup':
-        return 'Waiting for Pickup';
+        return t('cf2.waitingForPickup');
       case 'in_transit':
-        return 'In Transit';
+        return t('cf.inTransit');
       case 'completed':
-        return 'Delivered';
+        return t('cf2.delivered');
       case 'disputed':
-        return 'Disputed';
+        return t('cf2.disputed');
       default:
-        return 'Unknown';
+        return t('cf2.unknown');
     }
   };
 
@@ -157,14 +159,14 @@ const PackageTrackingScreen: React.FC = () => {
   };
 
   if (loading) {
-    return <LoadingScreen message="Loading package tracking..." />;
+    return <LoadingScreen message={t('cf.loadingPackageTracking')} />;
   }
 
   if (!trackingData) {
     return (
       <View style={styles.errorContainer}>
         <Icon name="error" size={80} color={colors.error} />
-        <Text style={styles.errorText}>Tracking information not available</Text>
+        <Text style={styles.errorText}>{t('cf.trackingInformationNotAvailable')}</Text>
       </View>
     );
   }
@@ -221,22 +223,22 @@ const PackageTrackingScreen: React.FC = () => {
           <View style={styles.liveCard}>
             <View style={styles.liveHeader}>
               <Icon name="my-location" size={20} color={colors.success} />
-              <Text style={styles.liveTitle}>Live Tracking</Text>
+              <Text style={styles.liveTitle}>{t('cf.liveTracking')}</Text>
               <View style={styles.liveIndicator}>
                 <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
+                <Text style={styles.liveText}>{t('cf.live')}</Text>
               </View>
             </View>
             
             <View style={styles.speedInfo}>
               <View style={styles.speedItem}>
-                <Text style={styles.speedLabel}>Speed</Text>
+                <Text style={styles.speedLabel}>{t('cf.speed')}</Text>
                 <Text style={styles.speedValue}>
                   {(courierLocations[courierLocations.length - 1]?.speed as number) || 0} km/h
                 </Text>
               </View>
               <View style={styles.speedItem}>
-                <Text style={styles.speedLabel}>Last Update</Text>
+                <Text style={styles.speedLabel}>{t('cf.lastUpdate')}</Text>
                 <Text style={styles.speedValue}>
                   {formatTime(courierLocations[courierLocations.length - 1]?.timestamp as string)}
                 </Text>
@@ -247,12 +249,12 @@ const PackageTrackingScreen: React.FC = () => {
 
         {/* Package Information */}
         <View style={styles.infoCard}>
-          <Text style={styles.cardTitle}>Package Details</Text>
+          <Text style={styles.cardTitle}>{t('cf.packageDetails')}</Text>
           
           <View style={styles.infoRow}>
             <Icon name="category" size={20} color={colors.text.secondary} />
             <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Size</Text>
+              <Text style={styles.infoLabel}>{t('cf.size2')}</Text>
               <Text style={styles.infoValue}>{pkg.packageSize}</Text>
             </View>
           </View>
@@ -261,13 +263,13 @@ const PackageTrackingScreen: React.FC = () => {
             {pkg.fragile && (
               <View style={styles.fragileTag}>
                 <Icon name="warning" size={16} color={colors.warning} />
-                <Text style={styles.fragileText}>Fragile</Text>
+                <Text style={styles.fragileText}>{t('cf.fragile')}</Text>
               </View>
             )}
             {pkg.valuable && (
               <View style={styles.valuableTag}>
                 <Icon name="diamond" size={16} color={colors.primary} />
-                <Text style={styles.valuableText}>Valuable</Text>
+                <Text style={styles.valuableText}>{t('cf.valuable')}</Text>
               </View>
             )}
           </View>
@@ -275,14 +277,14 @@ const PackageTrackingScreen: React.FC = () => {
 
         {/* Address Information */}
         <View style={styles.addressCard}>
-          <Text style={styles.cardTitle}>Delivery Route</Text>
+          <Text style={styles.cardTitle}>{t('cf.deliveryRoute')}</Text>
           
           <View style={styles.addressItem}>
             <View style={styles.addressIcon}>
               <Icon name="place" size={20} color={colors.primary} />
             </View>
             <View style={styles.addressContent}>
-              <Text style={styles.addressLabel}>Pickup</Text>
+              <Text style={styles.addressLabel}>{t('cf.pickup')}</Text>
               <Text style={styles.addressText}>{pkg.pickupAddress}</Text>
             </View>
           </View>
@@ -300,7 +302,7 @@ const PackageTrackingScreen: React.FC = () => {
               <Icon name="flag" size={20} color={colors.success} />
             </View>
             <View style={styles.addressContent}>
-              <Text style={styles.addressLabel}>Delivery</Text>
+              <Text style={styles.addressLabel}>{t('cf.delivery')}</Text>
               <Text style={styles.addressText}>{pkg.dropoffAddress}</Text>
             </View>
           </View>
@@ -308,14 +310,14 @@ const PackageTrackingScreen: React.FC = () => {
 
         {/* Timeline */}
         <View style={styles.timelineCard}>
-          <Text style={styles.cardTitle}>Delivery Timeline</Text>
+          <Text style={styles.cardTitle}>{t('cf.deliveryTimeline')}</Text>
           
           <View style={styles.timelineItem}>
             <View style={[styles.timelineIcon, { backgroundColor: colors.success }]}>
               <Icon name="check" size={16} color={colors.text.inverse} />
             </View>
             <View style={styles.timelineContent}>
-              <Text style={styles.timelineTitle}>Package Created</Text>
+              <Text style={styles.timelineTitle}>{t('cf.packageCreated')}</Text>
               <Text style={styles.timelineTime}>
                 {formatDate(pkg.createdAt)} at {formatTime(pkg.createdAt)}
               </Text>
@@ -328,7 +330,7 @@ const PackageTrackingScreen: React.FC = () => {
                 <Icon name="check" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>Courier Assigned</Text>
+                <Text style={styles.timelineTitle}>{t('cf.courierAssigned')}</Text>
                 <Text style={styles.timelineTime}>
                   {deliveryAgreement.courier?.firstName} {deliveryAgreement.courier?.lastName}
                 </Text>
@@ -342,8 +344,8 @@ const PackageTrackingScreen: React.FC = () => {
                 <Icon name="check" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>Package Picked Up</Text>
-                <Text style={styles.timelineTime}>Confirmed</Text>
+                <Text style={styles.timelineTitle}>{t('cf.packagePickedUp')}</Text>
+                <Text style={styles.timelineTime}>{t('cf.confirmed')}</Text>
               </View>
             </View>
           )}
@@ -354,8 +356,8 @@ const PackageTrackingScreen: React.FC = () => {
                 <Icon name="local-shipping" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>In Transit</Text>
-                <Text style={styles.timelineTime}>Live tracking active</Text>
+                <Text style={styles.timelineTitle}>{t('cf.inTransit')}</Text>
+                <Text style={styles.timelineTime}>{t('cf.liveTrackingActive')}</Text>
               </View>
             </View>
           )}
@@ -366,8 +368,8 @@ const PackageTrackingScreen: React.FC = () => {
                 <Icon name="check" size={16} color={colors.text.inverse} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineTitle}>Package Delivered</Text>
-                <Text style={styles.timelineTime}>Completed successfully</Text>
+                <Text style={styles.timelineTitle}>{t('cf.packageDelivered')}</Text>
+                <Text style={styles.timelineTime}>{t('cf.completedSuccessfully')}</Text>
               </View>
             </View>
           )}
@@ -376,7 +378,7 @@ const PackageTrackingScreen: React.FC = () => {
         {/* Contact Information */}
         {deliveryAgreement?.courier && (
           <View style={styles.contactCard}>
-            <Text style={styles.cardTitle}>Contact Courier</Text>
+            <Text style={styles.cardTitle}>{t('cf.contactCourier')}</Text>
             
             <TouchableOpacity
               style={styles.contactButton}

@@ -17,6 +17,7 @@ import RoleSelectionScreen from '../screens/onboarding/RoleSelectionScreen';
 import OnboardingPermissionsScreen from '../screens/onboarding/OnboardingPermissionsScreen';
 import IncomingCallScreen from '../screens/call/IncomingCallScreen';
 import ActiveCallScreen from '../screens/call/ActiveCallScreen';
+import { useI18n } from '../i18n/I18nContext';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -49,11 +50,12 @@ export type RootStackParamList = {
 const Stack = createStackNavigator<RootStackParamList>();
 
 const AppNavigator: React.FC = () => {
+  const { t } = useI18n();
   const { isAuthenticated, isLoading } = useSelector((state: RootState) => state.auth);
   const { isOnboarded } = useSelector((state: RootState) => state.app);
 
   if (isLoading) {
-    return <LoadingScreen message="Initializing app..." />;
+    return <LoadingScreen message={t('ui.initializingApp')} />;
   }
 
   return (

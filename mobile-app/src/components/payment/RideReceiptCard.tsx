@@ -15,6 +15,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import ReceiptService, { RideReceipt } from '../../services/ReceiptService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface RideReceiptCardProps {
   receipt: RideReceipt;
@@ -22,6 +23,7 @@ interface RideReceiptCardProps {
 }
 
 const RideReceiptCard: React.FC<RideReceiptCardProps> = ({ receipt, onShare }) => {
+  const { t } = useI18n();
   const receiptService = ReceiptService.getInstance();
   const date = new Date(receipt.date);
   const dateStr = date.toLocaleDateString('en-BW', {
@@ -56,7 +58,7 @@ const RideReceiptCard: React.FC<RideReceiptCardProps> = ({ receipt, onShare }) =
           </View>
         </View>
         <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{receipt.status === 'paid' ? 'Paid' : 'Pending'}</Text>
+          <Text style={styles.statusText}>{receipt.status === 'paid' ? t('ui.paid') : t('status.pending')}</Text>
         </View>
       </View>
 
@@ -142,7 +144,7 @@ const RideReceiptCard: React.FC<RideReceiptCardProps> = ({ receipt, onShare }) =
 
       {/* Total */}
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total</Text>
+        <Text style={styles.totalLabel}>{t('receipt.total')}</Text>
         <Text style={styles.totalAmount}>
           {receipt.currency} {receipt.totalAmount.toFixed(0)}
         </Text>
@@ -157,7 +159,7 @@ const RideReceiptCard: React.FC<RideReceiptCardProps> = ({ receipt, onShare }) =
       {/* Share button */}
       <TouchableOpacity style={styles.shareBtn} onPress={handleShare} activeOpacity={0.7}>
         <Icon name="share" size={16} color={colors.primary} />
-        <Text style={styles.shareBtnText}>Share Receipt</Text>
+        <Text style={styles.shareBtnText}>{t('receipt.shareReceipt')}</Text>
       </TouchableOpacity>
     </View>
   );

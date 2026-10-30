@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { Currency, CurrencyService } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('CurrencySelector');
 
@@ -38,9 +39,12 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   onCurrencySelect,
   showPopularOnly = false,
   disabled = false,
-  label = 'Currency',
-  placeholder = 'Select currency',
+  label: labelProp,
+  placeholder: placeholderProp,
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('ui.selectCurrency');
+  const label = labelProp ?? t('paySel.currency');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [filteredCurrencies, setFilteredCurrencies] = useState<Currency[]>([]);
@@ -165,7 +169,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Currency</Text>
+            <Text style={styles.modalTitle}>{t('ui.selectCurrency2')}</Text>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => setIsModalVisible(false)}
@@ -178,7 +182,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
             <Icon name="search" size={20} color={colors.text.secondary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search currencies..."
+              placeholder={t('ui.searchCurrencies')}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="characters"
@@ -193,7 +197,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading currencies...</Text>
+              <Text style={styles.loadingText}>{t('ui.loadingCurrencies')}</Text>
             </View>
           ) : (
             <FlatList
@@ -205,9 +209,9 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Icon name="search-off" size={48} color={colors.text.secondary} />
-                  <Text style={styles.emptyText}>No currencies found</Text>
+                  <Text style={styles.emptyText}>{t('ui.noCurrenciesFound')}</Text>
                   <Text style={styles.emptySubtext}>
-                    Try adjusting your search terms
+                    {t('ui.tryAdjustingYourSearchTerms')}
                   </Text>
                 </View>
               }

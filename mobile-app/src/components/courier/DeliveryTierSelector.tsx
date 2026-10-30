@@ -20,6 +20,7 @@ import { colors } from '../../theme';
 import packageService, { DeliveryTier, PricingSuggestion, DemandInfo } from '../../services/PackageService';
 import CurrencyService, { Currency } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('DeliveryTierSelector');
 
@@ -54,6 +55,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
   currency: initialCurrency,
   onCurrencyResolved,
 }) => {
+  const { t } = useI18n();
   // Every price here was printed with a hardcoded "P", so a rand or kwacha
   // price read as pula. The pricing response names its currency; until it
   // arrives, the screen's currency (the sender's own) is shown.
@@ -87,11 +89,11 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
       if (response.success && (response.tiers || response.data)) {
         setDeliveryTiers(response.tiers || response.data || []);
       } else {
-        Alert.alert('Error', response.error || 'Failed to load delivery tiers');
+        Alert.alert(t('common.error'), response.error || t('cf2.failedToLoadDeliveryTiers'));
       }
     } catch (error) {
       log.error('Error loading delivery tiers:', error);
-      Alert.alert('Error', 'Failed to load delivery tiers');
+      Alert.alert(t('common.error'), t('cf2.failedToLoadDeliveryTiers'));
     } finally {
       setLoading(false);
     }
@@ -219,7 +221,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                 styles.tierDetailLabel,
                 isSelected && styles.selectedTierText
               ]}>
-                Delivery Time:
+                {t('cf.deliveryTime')}
               </Text>
               <Text style={[
                 styles.tierDetailValue,
@@ -234,7 +236,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                 styles.tierDetailLabel,
                 isSelected && styles.selectedTierText
               ]}>
-                Your Earnings:
+                {t('cf.yourEarnings2')}
               </Text>
               <Text style={[
                 styles.tierDetailValue,
@@ -250,7 +252,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                 styles.tierDetailLabel,
                 isSelected && styles.selectedTierText
               ]}>
-                SLA Guarantee:
+                {t('cf.slaGuarantee')}
               </Text>
               <Text style={[
                 styles.tierDetailValue,
@@ -266,7 +268,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
                   styles.tierDetailLabel,
                   isSelected && styles.selectedTierText
                 ]}>
-                  Demand Multiplier:
+                  {t('cf.demandMultiplier')}
                 </Text>
                 <Text style={[
                   styles.tierDetailValue,
@@ -283,7 +285,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
         {!suggestion && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.text.primary} />
-            <Text style={styles.loadingText}>Calculating...</Text>
+            <Text style={styles.loadingText}>{t('cf.calculating')}</Text>
           </View>
         )}
       </TouchableOpacity>
@@ -294,7 +296,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading delivery options...</Text>
+        <Text style={styles.loadingText}>{t('cf.loadingDeliveryOptions')}</Text>
       </View>
     );
   }
@@ -302,7 +304,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Choose Delivery Speed</Text>
+        <Text style={styles.title}>{t('cf.chooseDeliverySpeed')}</Text>
         {demandInfo && (
           <View style={styles.demandInfo}>
             <Icon name="info-outline" size={16} color={colors.text.primary} />
@@ -316,7 +318,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
       {loadingPricing && (
         <View style={styles.pricingLoadingContainer}>
           <ActivityIndicator size="small" color={colors.primary} />
-          <Text style={styles.pricingLoadingText}>Updating prices...</Text>
+          <Text style={styles.pricingLoadingText}>{t('cf.updatingPrices')}</Text>
         </View>
       )}
 
@@ -330,7 +332,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
       {selectedPrice && selectedPrice > 0 && (
         <View style={styles.customPriceInfo}>
           <Text style={styles.customPriceLabel}>
-            You can still offer your own price:
+            {t('cf.youCanStillOfferYour')}
           </Text>
           <Text style={styles.customPriceValue}>
             Current offer: {money(selectedPrice)}

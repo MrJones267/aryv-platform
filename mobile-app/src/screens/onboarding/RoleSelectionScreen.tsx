@@ -19,6 +19,8 @@ import { Button } from '../../components/ui';
 import { colors } from '../../theme';
 import { useAppDispatch } from '../../store/hooks';
 import { setOnboardingUserRole } from '../../store/slices/appSlice';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 
 const { width } = Dimensions.get('window');
 
@@ -37,28 +39,29 @@ interface Role {
 const roles: Role[] = [
   {
     id: 'passenger',
-    title: 'Passenger',
-    description: 'Find and book rides to your destination',
+    title: 'rideDetails.passenger',
+    description: 'rf.findAndBookRidesTo',
     icon: 'person',
     color: '#2196F3',
   },
   {
     id: 'driver',
-    title: 'Driver',
-    description: 'Share your journey and earn money',
+    title: 'rideDetails.driver',
+    description: 'rf.shareYourJourneyAndEarn',
     icon: 'directions-car',
     color: '#4CAF50',
   },
   {
     id: 'courier',
-    title: 'Courier',
-    description: 'Deliver packages along your route',
+    title: 'nav.courier',
+    description: 'rf.deliverPackagesAlongYourRoute',
     icon: 'local-shipping',
     color: '#FF9800',
   },
 ];
 
 const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const [selectedRole, setSelectedRole] = useState<Role['id'] | null>(null);
 
@@ -87,8 +90,8 @@ const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({ navigation })
           <Icon name={role.icon} size={32} color={role.color} />
         </View>
         <View style={styles.roleContent}>
-          <Text style={styles.roleTitle}>{role.title}</Text>
-          <Text style={styles.roleDescription}>{role.description}</Text>
+          <Text style={styles.roleTitle}>{t(role.title as TranslationKey)}</Text>
+          <Text style={styles.roleDescription}>{t(role.description as TranslationKey)}</Text>
         </View>
         <View style={[styles.radioOuter, isSelected && { borderColor: role.color }]}>
           {isSelected && <View style={[styles.radioInner, { backgroundColor: role.color }]} />}
@@ -106,9 +109,9 @@ const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({ navigation })
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.title}>How will you use ARYV?</Text>
+        <Text style={styles.title}>{t('rf.howWillYouUseAryv')}</Text>
         <Text style={styles.subtitle}>
-          Choose your primary role. You can always switch or use multiple roles later.
+          {t('rf.chooseYourPrimaryRoleYou')}
         </Text>
 
         <View style={styles.rolesContainer}>
@@ -118,7 +121,7 @@ const RoleSelectionScreen: React.FC<RoleSelectionScreenProps> = ({ navigation })
 
       <View style={styles.footer}>
         <Button
-          title="Continue"
+          title={t('verify.continue')}
           onPress={handleContinue}
           variant="primary"
           size="large"

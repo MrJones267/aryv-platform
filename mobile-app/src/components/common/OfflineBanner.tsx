@@ -14,12 +14,14 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useOfflineMode } from '../../hooks/useOfflineMode';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface OfflineBannerProps {
   showPendingCount?: boolean;
 }
 
 const OfflineBanner: React.FC<OfflineBannerProps> = ({ showPendingCount = true }) => {
+  const { t } = useI18n();
   const { isOffline, pendingActions, wasOffline } = useOfflineMode();
   const slideAnim = useRef(new Animated.Value(-50)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -72,7 +74,7 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ showPendingCount = true }
         You're offline
         {showPendingCount && pendingActions > 0
           ? ` (${pendingActions} pending)`
-          : ' — some features may be limited'}
+          : t('ui.someFeaturesMayBeLimited')}
       </Text>
     </Animated.View>
   );

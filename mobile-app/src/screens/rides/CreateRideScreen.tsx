@@ -25,6 +25,7 @@ import { LocationPicker } from '../../components/maps';
 import PriceSuggestionService, { PriceSuggestion, RideTier } from '../../services/PriceSuggestionService';
 import { ridesApi } from '../../services/api';
 import { LocationData } from '../../services/LocationService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface CreateRideFormData {
   origin: LocationData | null;
@@ -58,6 +59,7 @@ interface CreateRideScreenProps {
 }
 
 const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -87,12 +89,12 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const availableAmenities = [
-    { id: 'wifi', label: 'WiFi', icon: 'wifi' },
-    { id: 'charger', label: 'Phone Charger', icon: 'battery-charging-full' },
-    { id: 'ac', label: 'Air Conditioning', icon: 'ac-unit' },
-    { id: 'music', label: 'Music System', icon: 'music-note' },
-    { id: 'snacks', label: 'Snacks', icon: 'local-dining' },
-    { id: 'luggage', label: 'Luggage Space', icon: 'luggage' },
+    { id: 'wifi', label: t('rf.wifi'), icon: 'wifi' },
+    { id: 'charger', label: t('rf.phoneCharger'), icon: 'battery-charging-full' },
+    { id: 'ac', label: t('rf.airConditioning'), icon: 'ac-unit' },
+    { id: 'music', label: t('rf.musicSystem'), icon: 'music-note' },
+    { id: 'snacks', label: t('rf.snacks'), icon: 'local-dining' },
+    { id: 'luggage', label: t('rf.luggageSpace'), icon: 'luggage' },
   ];
 
   // Auto-select user's first vehicle
@@ -148,26 +150,26 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.origin) {
-      newErrors.origin = 'Pickup location is required';
+      newErrors.origin = t('rf.pickupLocationIsRequired');
     }
 
     if (!formData.destination) {
-      newErrors.destination = 'Destination is required';
+      newErrors.destination = t('rf.destinationIsRequired');
     }
 
     if (formData.departureDateTime <= new Date()) {
-      newErrors.departureDateTime = 'Departure time must be in the future';
+      newErrors.departureDateTime = t('rf.departureTimeMustBeIn');
     }
 
     if (formData.availableSeats < 1 || formData.availableSeats > 7) {
-      newErrors.availableSeats = 'Available seats must be between 1 and 7';
+      newErrors.availableSeats = t('rf.availableSeatsMustBeBetween');
     }
 
     const price = parseFloat(formData.pricePerSeat);
     if (!formData.pricePerSeat || isNaN(price) || price < 0) {
-      newErrors.pricePerSeat = 'Valid price is required';
+      newErrors.pricePerSeat = t('rf.validPriceIsRequired');
     } else if (price > 5000) {
-      newErrors.pricePerSeat = 'Price cannot exceed P5,000';
+      newErrors.pricePerSeat = t('rf.priceCannotExceedP5000');
     }
 
     // Stop fares must climb along the route and stop short of the full price,
@@ -177,20 +179,20 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     let previousFare = 0;
     formData.stops.forEach((stop, index) => {
       if (!stop.location) {
-        newErrors[`stop-${index}`] = 'Choose a location for this stop';
+        newErrors[`stop-${index}`] = t('rf.chooseALocationForThis');
         return;
       }
 
       const fare = parseFloat(stop.fare);
 
       if (!stop.fare || isNaN(fare)) {
-        newErrors[`stop-${index}`] = 'Enter the fare to this stop';
+        newErrors[`stop-${index}`] = t('rf.enterTheFareToThis');
       } else if (fare <= previousFare) {
         newErrors[`stop-${index}`] = index === 0
-          ? 'Fare must be more than 0'
-          : 'Fare must be more than the previous stop';
+          ? t('rf.fareMustBeMoreThan')
+          : t('rf.fareMustBeMoreThan2');
       } else if (!isNaN(price) && fare >= price) {
-        newErrors[`stop-${index}`] = 'Fare must be less than the full trip price';
+        newErrors[`stop-${index}`] = t('rf.fareMustBeLessThan');
       } else {
         previousFare = fare;
       }
@@ -295,7 +297,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
   const handleCreateRide = async () => {
     if (!isFormValid()) {
-      Alert.alert('Form Error', 'Please fix all errors before creating the ride');
+      Alert.alert(t('rf.formError'), t('rf.pleaseFixAllErrorsBefore'));
       return;
     }
 
@@ -307,18 +309,18 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         origin: {
           latitude: originData.latitude,
           longitude: originData.longitude,
-          address: originData.address?.fullAddress || 'Unknown location',
+          address: originData.address?.fullAddress || t('rf.unknownLocation'),
         },
         destination: {
           latitude: destData.latitude,
           longitude: destData.longitude,
-          address: destData.address?.fullAddress || 'Unknown location',
+          address: destData.address?.fullAddress || t('rf.unknownLocation'),
         },
         departureTime: formData.departureDateTime.toISOString(),
         stops: formData.stops.map(stop => ({
           latitude: stop.location.latitude,
           longitude: stop.location.longitude,
-          address: stop.location.address?.fullAddress || 'Unknown location',
+          address: stop.location.address?.fullAddress || t('rf.unknownLocation'),
           fareFromOrigin: parseFloat(stop.fare),
         })),
         availableSeats: formData.availableSeats,
@@ -334,17 +336,17 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
       
       if (response.success) {
         Alert.alert(
-          'Ride Created!',
-          'Your ride has been created successfully. Passengers can now book it.',
+          t('rf.rideCreated'),
+          t('rf.yourRideHasBeenCreated'),
           [
             {
-              text: 'View Ride',
+              text: t('rf.viewRide'),
               onPress: () => {
                 navigation.replace('RideDetails', { rideId: response.data?.id || 'unknown' });
               },
             },
             {
-              text: 'Create Another',
+              text: t('rf.createAnother'),
               onPress: () => {
                 // Reset form
                 setFormData({
@@ -368,11 +370,11 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Failed to create ride');
+        Alert.alert(t('common.error'), response.error || t('rf.failedToCreateRide'));
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Failed to create ride');
+      Alert.alert(t('common.error'), errMsg || t('rf.failedToCreateRide'));
     } finally {
       setIsCreating(false);
     }
@@ -397,7 +399,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
             styles.locationAddress,
             !location && styles.placeholderText
           ]}>
-            {location?.address?.fullAddress || 'Tap to select location'}
+            {location?.address?.fullAddress || t('rf.tapToSelectLocation')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color="#CCCCCC" />
@@ -423,17 +425,17 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
    */
   const renderTierCard = () => {
     const tiers: Array<{ id: RideTier; label: string; description: string; icon: string }> = [
-      { id: 'shared', label: 'Shared', description: 'Minibus or van, lower fare', icon: 'people' },
-      { id: 'standard', label: 'Standard', description: 'An ordinary car', icon: 'directions-car' },
-      { id: 'comfort', label: 'Comfort', description: 'Newer, more room', icon: 'airline-seat-recline-extra' },
-      { id: 'premium', label: 'Premium', description: 'Executive vehicle', icon: 'star' },
+      { id: 'shared', label: t('search.tier.shared'), description: t('rf.minibusOrVanLowerFare'), icon: 'people' },
+      { id: 'standard', label: t('search.tier.standard'), description: t('rf.anOrdinaryCar'), icon: 'directions-car' },
+      { id: 'comfort', label: t('search.tier.comfort'), description: t('rf.newerMoreRoom'), icon: 'airline-seat-recline-extra' },
+      { id: 'premium', label: t('search.tier.premium'), description: t('rf.executiveVehicle'), icon: 'star' },
     ];
 
     return (
       <Card style={styles.tierCard}>
-        <Text style={styles.sectionTitle}>Vehicle Type</Text>
+        <Text style={styles.sectionTitle}>{t('rf.vehicleType')}</Text>
         <Text style={styles.tierHint}>
-          Passengers filter by this, and it sets what similar trips are compared against.
+          {t('rf.passengersFilterByThisAnd')}
         </Text>
 
         <View style={styles.tierList}>
@@ -466,10 +468,10 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   const renderStopsCard = () => (
     <Card style={styles.stopsCard}>
       <View style={styles.stopsHeader}>
-        <Text style={styles.sectionTitle}>Stops Along the Way</Text>
+        <Text style={styles.sectionTitle}>{t('rf.stopsAlongTheWay')}</Text>
         <TouchableOpacity onPress={handleAddStop} style={styles.addStopButton}>
           <Icon name="add" size={20} color="#2196F3" />
-          <Text style={styles.addStopText}>Add stop</Text>
+          <Text style={styles.addStopText}>{t('rf.addStop')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -499,19 +501,19 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
                   ]}
                   numberOfLines={1}
                 >
-                  {stop.location?.address?.fullAddress || 'Tap to choose where'}
+                  {stop.location?.address?.fullAddress || t('rf.tapToChooseWhere')}
                 </Text>
               </TouchableOpacity>
 
               <View style={styles.stopFareRow}>
-                <Text style={styles.stopFareLabel}>Fare to here</Text>
+                <Text style={styles.stopFareLabel}>{t('rf.fareToHere')}</Text>
                 <TextInput
                   style={styles.stopFareInput}
                   value={stop.fare}
                   onChangeText={(value: string) => handleStopFareChange(index, value)}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
-                  accessibilityLabel={`Fare from pickup to stop ${index + 1}`}
+                  accessibilityLabel={t('rf.fareToStop', { n: index + 1 })}
                 />
               </View>
 
@@ -523,7 +525,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               onPress={() => handleRemoveStop(index)}
               style={styles.removeStopButton}
-              accessibilityLabel={`Remove stop ${index + 1}`}
+              accessibilityLabel={t('rf.removeStop', { n: index + 1 })}
             >
               <Icon name="close" size={20} color="#999999" />
             </TouchableOpacity>
@@ -535,7 +537,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
   const renderDateTimeCard = () => (
     <Card style={styles.dateTimeCard}>
-      <Text style={styles.sectionTitle}>Departure Time</Text>
+      <Text style={styles.sectionTitle}>{t('rf.departureTime')}</Text>
       <View style={styles.dateTimeRow}>
         <TouchableOpacity
           style={[styles.dateTimeButton, errors.departureDateTime ? styles.errorButton : undefined]}
@@ -570,7 +572,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     <Card style={styles.seatsCard}>
       <View style={styles.seatsRow}>
         <View style={styles.seatsSection}>
-          <Text style={styles.sectionTitle}>Available Seats</Text>
+          <Text style={styles.sectionTitle}>{t('rf.availableSeats')}</Text>
           <View style={styles.seatsControls}>
             <TouchableOpacity
               style={[styles.seatButton, formData.availableSeats <= 1 && styles.seatButtonDisabled]}
@@ -595,7 +597,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
         <View style={styles.priceSection}>
           <Input
-            label="Price per Seat"
+            label={t('rf.pricePerSeat')}
             placeholder="P25"
             value={formData.pricePerSeat}
             onChangeText={(text) => setFormData(prev => ({ ...prev, pricePerSeat: text }))}
@@ -616,14 +618,14 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
               <Icon name="insights" size={16} color="#2196F3" />
               <Text style={styles.suggestionText}>
                 {priceSuggestion.basis === 'comparable_routes'
-                  ? `Similar trips charge around P${priceSuggestion.suggested}`
-                  : `Trips this length charge around P${priceSuggestion.suggested}`}
+                  ? t('rf.similarTripsCharge', { price: priceSuggestion.suggested })
+                  : t('rf.tripsThisLength', { price: priceSuggestion.suggested })}
                 {priceSuggestion.range
-                  ? ` (most are P${priceSuggestion.range.low}–P${priceSuggestion.range.high})`
+                  ? t('rf.mostAre', { low: priceSuggestion.range.low, high: priceSuggestion.range.high })
                   : ''}
                 {/* The sample size is shown so a driver can weigh the advice
                     rather than take it as fact. */}
-                {` · based on ${priceSuggestion.sampleSize} rides`}
+                {t('rf.basedOn', { count: priceSuggestion.sampleSize })}
                 {/* Named, so a driver can explain a raised price to a
                     passenger rather than just charging more. */}
                 {priceSuggestion.surge
@@ -640,8 +642,8 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
   const renderDescriptionCard = () => (
     <Card style={styles.descriptionCard}>
       <Input
-        label="Description (Optional)"
-        placeholder="Tell passengers about your ride, vehicle, or any special instructions..."
+        label={t('rf.descriptionOptional')}
+        placeholder={t('rf.tellPassengersAboutYourRide')}
         value={formData.description}
         onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
         multiline
@@ -657,12 +659,12 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
   const renderPreferencesCard = () => (
     <Card style={styles.preferencesCard}>
-      <Text style={styles.sectionTitle}>Ride Preferences</Text>
+      <Text style={styles.sectionTitle}>{t('rf.ridePreferences')}</Text>
       <View style={styles.preferencesList}>
         <View style={styles.preference}>
           <View style={styles.preferenceLeft}>
             <Icon name="smoking-rooms" size={20} color="#666666" />
-            <Text style={styles.preferenceText}>Smoking allowed</Text>
+            <Text style={styles.preferenceText}>{t('rideDetails.smokingAllowed')}</Text>
           </View>
           <Switch
             value={formData.preferences.smokingAllowed}
@@ -674,7 +676,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         <View style={styles.preference}>
           <View style={styles.preferenceLeft}>
             <Icon name="pets" size={20} color="#666666" />
-            <Text style={styles.preferenceText}>Pets allowed</Text>
+            <Text style={styles.preferenceText}>{t('rideDetails.petsAllowed')}</Text>
           </View>
           <Switch
             value={formData.preferences.petsAllowed}
@@ -686,7 +688,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         <View style={styles.preference}>
           <View style={styles.preferenceLeft}>
             <Icon name="music-note" size={20} color="#666666" />
-            <Text style={styles.preferenceText}>Music allowed</Text>
+            <Text style={styles.preferenceText}>{t('rideDetails.musicAllowed')}</Text>
           </View>
           <Switch
             value={formData.preferences.musicAllowed}
@@ -700,7 +702,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
   const renderAmenitiesCard = () => (
     <Card style={styles.amenitiesCard}>
-      <Text style={styles.sectionTitle}>Available Amenities</Text>
+      <Text style={styles.sectionTitle}>{t('rf.availableAmenities')}</Text>
       <View style={styles.amenitiesGrid}>
         {availableAmenities.map((amenity) => (
           <TouchableOpacity
@@ -732,15 +734,15 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          <Text style={styles.screenTitle}>Create a New Ride</Text>
+          <Text style={styles.screenTitle}>{t('rf.createANewRide')}</Text>
           <Text style={styles.screenSubtitle}>
-            Share your journey and help others get around
+            {t('rf.shareYourJourneyAndHelp')}
           </Text>
 
           {renderLocationCard(
             'origin',
             formData.origin,
-            'Pickup Location',
+            t('cf.pickupLocation'),
             'my-location',
             errors.origin
           )}
@@ -748,7 +750,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
           {renderLocationCard(
             'destination',
             formData.destination,
-            'Destination',
+            t('home.destination'),
             'location-on',
             errors.destination
           )}
@@ -766,7 +768,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
 
       <View style={styles.footer}>
         <Button
-          title={isCreating ? 'Creating Ride...' : 'Create Ride'}
+          title={isCreating ? t('rf.creatingRide') : t('nav.createRide')}
           onPress={handleCreateRide}
           disabled={!isFormValid() || isCreating}
           loading={isCreating}
@@ -788,10 +790,10 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         }}
         title={
           showLocationPicker === 'origin'
-            ? 'Select Pickup Location'
+            ? t('rf.selectPickupLocation')
             : showLocationPicker === 'destination'
-              ? 'Select Destination'
-              : 'Select Stop'
+              ? t('rf.selectDestination')
+              : t('rf.selectStop')
         }
       />
 

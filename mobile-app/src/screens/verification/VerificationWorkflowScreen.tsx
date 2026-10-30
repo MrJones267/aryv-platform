@@ -31,6 +31,7 @@ import DocumentVerificationService, {
 } from '../../services/DocumentVerificationService';
 import DocumentCapture from '../../components/verification/DocumentCapture';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('VerificationWorkflowScreen');
 
@@ -46,6 +47,7 @@ interface DocumentUploadState {
 }
 
 const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -87,7 +89,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       setVerificationStatus(status);
     } catch (error: unknown) {
       log.error('Error loading verification status:', error);
-      Alert.alert('Error', 'Failed to load verification status. Please try again.');
+      Alert.alert(t('common.error'), t('ui.failedToLoadVerificationStatus'));
     } finally {
       setIsLoading(false);
     }
@@ -151,10 +153,10 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
 
         // Show success message
         Alert.alert(
-          'Document Uploaded',
+          t('ui.documentUploaded'),
           uploadResponse.message,
           [
-            { text: 'OK', onPress: () => {
+            { text: t('common.ok'), onPress: () => {
               // Refresh verification status
               loadVerificationStatus();
               
@@ -186,11 +188,11 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       }));
 
       Alert.alert(
-        'Upload Failed',
-        errMsg || 'Failed to upload document. Please try again.',
+        t('ui.uploadFailed'),
+        errMsg || t('ui.failedToUploadDocumentPlease'),
         [
-          { text: 'Retry', onPress: () => handleDocumentUpload(selectedDocumentType) },
-          { text: 'Cancel' },
+          { text: t('common.retry'), onPress: () => handleDocumentUpload(selectedDocumentType) },
+          { text: t('common.cancel') },
         ]
       );
     }
@@ -200,12 +202,12 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
 
   const handleResubmitDocument = (documentRecord: DocumentRecord) => {
     Alert.alert(
-      'Resubmit Document',
-      `Your ${documentRecord.documentType.replace('_', ' ')} was rejected. Would you like to resubmit it?`,
+      t('ui.resubmitDocument'),
+      t('ui.docRejected', { doc: documentRecord.documentType.replace('_', ' ') }),
       [
-        { text: 'Cancel' },
+        { text: t('common.cancel') },
         { 
-          text: 'Resubmit', 
+          text: t('ui.resubmit'), 
           onPress: () => handleDocumentUpload(documentRecord.documentType) 
         },
       ]
@@ -249,7 +251,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
     return (
       <View style={styles.progressContainer}>
         <View style={styles.progressHeader}>
-          <Text style={styles.progressTitle}>Verification Progress</Text>
+          <Text style={styles.progressTitle}>{t('ui.verificationProgress')}</Text>
           <Text style={styles.progressPercent}>
             {Math.round(verificationStatus.completionPercentage)}%
           </Text>
@@ -314,7 +316,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
                 size={20} 
                 color={verificationStatus.canBookRides ? '#4CAF50' : '#F44336'} 
               />
-              <Text style={styles.permissionText}>Book Rides</Text>
+              <Text style={styles.permissionText}>{t('ui.bookRides')}</Text>
             </View>
             <View style={styles.permission}>
               <Icon 
@@ -322,7 +324,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
                 size={20} 
                 color={verificationStatus.canStartDriving ? '#4CAF50' : '#F44336'} 
               />
-              <Text style={styles.permissionText}>Start Driving</Text>
+              <Text style={styles.permissionText}>{t('ui.startDriving')}</Text>
             </View>
           </View>
         </View>
@@ -335,7 +337,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
 
     return (
       <View style={styles.requirementsContainer}>
-        <Text style={styles.sectionTitle}>Required Documents</Text>
+        <Text style={styles.sectionTitle}>{t('ui.requiredDocuments')}</Text>
         
         {verificationStatus.requiredDocuments.map((requirement, index) => {
           const documentStatus = getDocumentStatus(requirement.documentType);
@@ -375,7 +377,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
                       disabled={!!uploadState?.isUploading}
                     >
                       <Icon name="camera-alt" size={20} color="#FFFFFF" />
-                      <Text style={styles.uploadButtonText}>Upload</Text>
+                      <Text style={styles.uploadButtonText}>{t('ui.upload')}</Text>
                     </TouchableOpacity>
                   )}
                   
@@ -385,14 +387,14 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
                       onPress={() => handleResubmitDocument(documentStatus)}
                     >
                       <Icon name="refresh" size={20} color="#FF5722" />
-                      <Text style={styles.resubmitButtonText}>Resubmit</Text>
+                      <Text style={styles.resubmitButtonText}>{t('ui.resubmit')}</Text>
                     </TouchableOpacity>
                   )}
                   
                   {documentStatus?.status === 'approved' && (
                     <View style={styles.approvedBadge}>
                       <Icon name="check" size={16} color="#FFFFFF" />
-                      <Text style={styles.approvedText}>Approved</Text>
+                      <Text style={styles.approvedText}>{t('ui.approved')}</Text>
                     </View>
                   )}
                 </View>
@@ -450,7 +452,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
 
     return (
       <View style={styles.nextStepsContainer}>
-        <Text style={styles.sectionTitle}>Next Steps</Text>
+        <Text style={styles.sectionTitle}>{t('ui.nextSteps')}</Text>
         {verificationStatus.nextSteps.map((step, index) => (
           <View key={index} style={styles.nextStepItem}>
             <View style={styles.nextStepNumber}>
@@ -468,7 +470,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <Icon name="assignment" size={48} color="#2196F3" />
-          <Text style={styles.loadingText}>Loading verification status...</Text>
+          <Text style={styles.loadingText}>{t('ui.loadingVerificationStatus')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -483,7 +485,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
         >
           <Icon name="arrow-back" size={24} color="#333333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Document Verification</Text>
+        <Text style={styles.headerTitle}>{t('ui.documentVerification')}</Text>
         <TouchableOpacity style={styles.helpButton} onPress={() => {}}>
           <Icon name="help-outline" size={24} color="#2196F3" />
         </TouchableOpacity>

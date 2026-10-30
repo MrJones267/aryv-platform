@@ -23,10 +23,12 @@ import { colors } from '../../theme';
 import CallService from '../../services/CallService';
 import { IncomingCallScreenProps } from '../../navigation/types';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('IncomingCallScreen');
 
 const IncomingCallScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const route = useRoute();
   const params = route.params as Record<string, unknown>;
@@ -87,17 +89,17 @@ const IncomingCallScreen: React.FC = () => {
         });
       } else {
         Alert.alert(
-          'Call Failed',
-          'Unable to accept the call. Please try again.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
+          t('ui.callFailed'),
+          t('ui.unableToAcceptTheCall'),
+          [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
         );
       }
     } catch (error) {
       log.error('Error accepting call:', error);
       Alert.alert(
-        'Call Error',
-        'Something went wrong while accepting the call.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+        t('ui.callError'),
+        t('ui.somethingWentWrongWhileAccepting'),
+        [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
       );
     }
   };
@@ -130,14 +132,14 @@ const IncomingCallScreen: React.FC = () => {
   };
 
   const getCallTypeText = (): string => {
-    if (isEmergency) return 'Emergency Call';
+    if (isEmergency) return t('ui.emergencyCall');
     switch (callType) {
       case 'video':
-        return 'Video Call';
+        return t('ui.videoCall');
       case 'voice':
-        return 'Voice Call';
+        return t('ui.voiceCall');
       default:
-        return 'Incoming Call';
+        return t('ui.incomingCall');
     }
   };
 
@@ -184,11 +186,11 @@ const IncomingCallScreen: React.FC = () => {
             </View>
 
             <Text style={styles.callerName}>
-              {caller?.name || 'Unknown Caller'}
+              {caller?.name || t('ui.unknownCaller')}
             </Text>
             
             <Text style={styles.callerInfo}>
-              {isEmergency ? 'Emergency Contact' : 'Hitch User'}
+              {isEmergency ? t('ui.emergencyContact') : t('ui.hitchUser')}
             </Text>
           </View>
 
@@ -224,7 +226,7 @@ const IncomingCallScreen: React.FC = () => {
               onPress={() => {/* Handle message */}}
             >
               <Icon name="message" size={20} color="#FFFFFF" />
-              <Text style={styles.optionText}>Message</Text>
+              <Text style={styles.optionText}>{t('ui.message')}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -232,7 +234,7 @@ const IncomingCallScreen: React.FC = () => {
               onPress={() => handleRejectCall('remind_later')}
             >
               <Icon name="schedule" size={20} color="#FFFFFF" />
-              <Text style={styles.optionText}>Remind Me</Text>
+              <Text style={styles.optionText}>{t('ui.remindMe')}</Text>
             </TouchableOpacity>
           </View>
         </View>

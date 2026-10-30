@@ -24,6 +24,7 @@ import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
 import chatApi from '../../services/api/chatApi';
 import { useAppSelector } from '../../store/hooks';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ConversationListScreen');
 
@@ -47,6 +48,7 @@ interface Conversation {
 }
 
 const ConversationListScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const user = useAppSelector((state) => state.user.profile);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -101,7 +103,7 @@ const ConversationListScreen: React.FC = () => {
       }
     } catch (error) {
       log.error('Error loading conversations:', error);
-      Alert.alert('Error', 'Failed to load conversations');
+      Alert.alert(t('common.error'), t('st.failedToLoadConversations'));
     } finally {
       setLoading(false);
     }
@@ -152,7 +154,7 @@ const ConversationListScreen: React.FC = () => {
         minute: '2-digit',
       });
     } else if (diffDays === 1) {
-      return 'Yesterday';
+      return t('st.yesterday');
     } else if (diffDays < 7) {
       return messageDate.toLocaleDateString('en-US', { weekday: 'short' });
     } else {
@@ -175,11 +177,11 @@ const ConversationListScreen: React.FC = () => {
 
   const getDeliveryStatusText = (status: Conversation['deliveryStatus']) => {
     switch (status) {
-      case 'pending': return 'Pending Pickup';
-      case 'in_progress': return 'In Transit';
-      case 'delivered': return 'Delivered';
-      case 'cancelled': return 'Cancelled';
-      default: return 'Unknown';
+      case 'pending': return t('cf2.pendingPickup');
+      case 'in_progress': return t('cf.inTransit');
+      case 'delivered': return t('cf2.delivered');
+      case 'cancelled': return t('status.cancelled');
+      default: return t('cf2.unknown');
     }
   };
 
@@ -285,9 +287,9 @@ const ConversationListScreen: React.FC = () => {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Icon name="chat-bubble-outline" size={64} color={colors.text.secondary} />
-      <Text style={styles.emptyTitle}>No conversations yet</Text>
+      <Text style={styles.emptyTitle}>{t('st.noConversationsYet')}</Text>
       <Text style={styles.emptySubtitle}>
-        Your conversations with couriers and senders will appear here
+        {t('st.yourConversationsWithCouriersAnd')}
       </Text>
     </View>
   );
@@ -302,17 +304,17 @@ const ConversationListScreen: React.FC = () => {
           style={styles.searchInput}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search by name or message"
+          placeholder={t('st.searchByNameOrMessage')}
           placeholderTextColor={colors.text.secondary}
           autoFocus
           returnKeyType="search"
         />
       ) : (
-        <Text style={styles.headerTitle}>Messages</Text>
+        <Text style={styles.headerTitle}>{t('nav.messages')}</Text>
       )}
       <TouchableOpacity
         onPress={() => (searching ? closeSearch() : setSearching(true))}
-        accessibilityLabel={searching ? 'Close search' : 'Search conversations'}
+        accessibilityLabel={searching ? t('st.closeSearch') : t('st.searchConversations')}
       >
         <Icon name={searching ? 'close' : 'search'} size={24} color={colors.text.primary} />
       </TouchableOpacity>
@@ -322,7 +324,7 @@ const ConversationListScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading conversations...</Text>
+        <Text style={styles.loadingText}>{t('st.loadingConversations')}</Text>
       </View>
     );
   }
@@ -345,7 +347,7 @@ const ConversationListScreen: React.FC = () => {
         }
         ListEmptyComponent={query.trim() ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptySubtitle}>No conversations match "{query.trim()}"</Text>
+            <Text style={styles.emptySubtitle}>{t('st.noMatch', { query: query.trim() })}</Text>
           </View>
         ) : renderEmptyState}
         showsVerticalScrollIndicator={false}

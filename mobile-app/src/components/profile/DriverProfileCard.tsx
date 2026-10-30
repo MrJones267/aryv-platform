@@ -19,6 +19,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import UserProfileCard, { UserProfileData } from './UserProfileCard';
+import { useI18n } from '../../i18n/I18nContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GALLERY_IMAGE_SIZE = 120;
@@ -58,6 +59,7 @@ const DriverProfileCard: React.FC<DriverProfileCardProps> = ({
   compact = false,
   style,
 }) => {
+  const { t } = useI18n();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
   const renderVehicleGallery = () => {
@@ -65,7 +67,7 @@ const DriverProfileCard: React.FC<DriverProfileCardProps> = ({
 
     return (
       <View style={styles.gallerySection}>
-        <Text style={styles.gallerySectionTitle}>Vehicle Photos</Text>
+        <Text style={styles.gallerySectionTitle}>{t('rf.vehiclePhotos')}</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -135,7 +137,7 @@ const DriverProfileCard: React.FC<DriverProfileCardProps> = ({
             </View>
           </View>
           <View style={styles.plateContainer}>
-            <Text style={styles.plateLabel}>Plate</Text>
+            <Text style={styles.plateLabel}>{t('rf.plate')}</Text>
             <View style={styles.plateBadge}>
               <Text style={styles.plateText}>{vehicle.licensePlate}</Text>
             </View>
@@ -147,13 +149,13 @@ const DriverProfileCard: React.FC<DriverProfileCardProps> = ({
           {vehicle.isVerified && (
             <View style={styles.vehicleBadge}>
               <Icon name="verified" size={13} color="#2563EB" />
-              <Text style={styles.vehicleBadgeText}>Registered</Text>
+              <Text style={styles.vehicleBadgeText}>{t('ui.registered')}</Text>
             </View>
           )}
           {vehicle.isInspected && (
             <View style={styles.vehicleBadge}>
               <Icon name="check-circle" size={13} color="#10B981" />
-              <Text style={styles.vehicleBadgeTextGreen}>Inspected</Text>
+              <Text style={styles.vehicleBadgeTextGreen}>{t('rf.inspected')}</Text>
             </View>
           )}
           {vehicle.vehicleType && (
@@ -180,13 +182,13 @@ const DriverProfileCard: React.FC<DriverProfileCardProps> = ({
         {onContactPress && (
           <TouchableOpacity style={styles.contactButton} onPress={onContactPress}>
             <Icon name="message" size={18} color="#2563EB" />
-            <Text style={styles.contactButtonText}>Message</Text>
+            <Text style={styles.contactButtonText}>{t('ui.message')}</Text>
           </TouchableOpacity>
         )}
         {onCallPress && (
           <TouchableOpacity style={[styles.contactButton, styles.callButton]} onPress={onCallPress}>
             <Icon name="call" size={18} color="#10B981" />
-            <Text style={[styles.contactButtonText, styles.callButtonText]}>Call</Text>
+            <Text style={[styles.contactButtonText, styles.callButtonText]}>{t('cf.call')}</Text>
           </TouchableOpacity>
         )}
       </View>

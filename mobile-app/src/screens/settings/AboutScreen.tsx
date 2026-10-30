@@ -19,6 +19,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('AboutScreen');
 
@@ -35,35 +36,36 @@ interface LinkItem {
 }
 
 const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const appVersion = '1.0.0';
   const buildNumber = '100';
   
   const socialLinks: LinkItem[] = [
     {
       id: 'website',
-      title: 'Website',
-      subtitle: 'Visit our official website',
+      title: t('st.website'),
+      subtitle: t('st.visitOurOfficialWebsite'),
       icon: 'public',
       url: 'https://aryv-app.com',
     },
     {
       id: 'twitter',
-      title: 'Twitter',
-      subtitle: 'Follow us for updates',
+      title: t('st.twitter'),
+      subtitle: t('st.followUsForUpdates'),
       icon: 'alternate-email',
       url: 'https://twitter.com/aryvapp',
     },
     {
       id: 'facebook',
-      title: 'Facebook',
-      subtitle: 'Like our page',
+      title: t('st.facebook'),
+      subtitle: t('st.likeOurPage'),
       icon: 'facebook',
       url: 'https://facebook.com/aryvapp',
     },
     {
       id: 'instagram',
-      title: 'Instagram',
-      subtitle: 'Follow our journey',
+      title: t('st.instagram'),
+      subtitle: t('st.followOurJourney'),
       icon: 'camera-alt',
       url: 'https://instagram.com/aryvapp',
     },
@@ -72,22 +74,22 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
   const legalLinks: LinkItem[] = [
     {
       id: 'terms',
-      title: 'Terms of Service',
-      subtitle: 'Read our terms and conditions',
+      title: t('welcome.terms'),
+      subtitle: t('st.readOurTermsAndConditions'),
       icon: 'description',
       url: 'https://aryv-app.com/terms',
     },
     {
       id: 'privacy',
-      title: 'Privacy Policy',
-      subtitle: 'How we protect your data',
+      title: t('welcome.privacy'),
+      subtitle: t('st.howWeProtectYourData'),
       icon: 'privacy-tip',
       url: 'https://aryv-app.com/privacy',
     },
     {
       id: 'licenses',
-      title: 'Open Source Licenses',
-      subtitle: 'Third-party software licenses',
+      title: t('st.openSourceLicenses'),
+      subtitle: t('st.thirdPartySoftwareLicenses'),
       icon: 'code',
       url: 'https://aryv-app.com/licenses',
     },
@@ -104,7 +106,7 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>About</Text>
+      <Text style={styles.headerTitle}>{t('nav.about')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -115,7 +117,7 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
         <Icon name="directions-car" size={40} color={colors.primary} />
       </View>
       <Text style={styles.appName}>ARYV</Text>
-      <Text style={styles.appTagline}>Ride sharing made simple</Text>
+      <Text style={styles.appTagline}>{t('st.rideSharingMadeSimple')}</Text>
       <View style={styles.versionInfo}>
         <Text style={styles.versionText}>Version {appVersion} ({buildNumber})</Text>
       </View>
@@ -138,15 +140,15 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
 
   const renderFeatures = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Key Features</Text>
+      <Text style={styles.sectionTitle}>{t('st.keyFeatures')}</Text>
       <View style={styles.featuresList}>
         {[
-          'Find and offer rides instantly',
-          'Real-time GPS tracking',
-          'Secure payment system',
-          'Package delivery service',
-          'In-app messaging',
-          'Safety features and ratings',
+          t('st.findAndOfferRidesInstantly'),
+          t('st.realTimeGpsTracking'),
+          t('st.securePaymentSystem'),
+          t('st.packageDeliveryService'),
+          t('st.inAppMessaging'),
+          t('st.safetyFeaturesAndRatings'),
         ].map((feature, index) => (
           <View key={index} style={styles.featureItem}>
             <Icon name="check-circle" size={16} color={colors.success} />
@@ -181,12 +183,12 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
 
   const renderCredits = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Credits</Text>
+      <Text style={styles.sectionTitle}>{t('st.credits')}</Text>
       <Text style={styles.creditsText}>
-        Made with ❤️ by the ARYV team
+        {t('st.madeWithByTheAryv')}
       </Text>
       <Text style={styles.creditsText}>
-        Special thanks to our community of riders and drivers who make ARYV possible.
+        {t('st.specialThanksToOurCommunity')}
       </Text>
     </View>
   );
@@ -198,8 +200,8 @@ const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
         {renderAppInfo()}
         {renderDescription()}
         {renderFeatures()}
-        {renderLinkSection('Connect With Us', socialLinks)}
-        {renderLinkSection('Legal', legalLinks)}
+        {renderLinkSection(t('st.connectWithUs'), socialLinks)}
+        {renderLinkSection(t('st.legal'), legalLinks)}
         {renderCredits()}
         
         <View style={styles.footer}>

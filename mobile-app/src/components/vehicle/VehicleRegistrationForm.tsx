@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { launchCamera, launchImageLibrary, ImagePickerResponse } from 'react-native-image-picker';
 import { colors } from '../../theme';
 import { CreateVehicleData } from '../../services/api/vehicleApi';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface VehicleRegistrationFormProps {
   onVehicleRegister: (vehicleData: CreateVehicleData, photos: string[]) => Promise<void>;
@@ -35,6 +36,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
   isLoading = false,
   onSkip,
 }) => {
+  const { t } = useI18n();
   const [formData, setFormData] = useState<CreateVehicleData>({
     make: '',
     model: '',
@@ -50,40 +52,40 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const vehicleTypes = [
-    { value: 'sedan', label: 'Sedan', icon: 'drive-eta' },
+    { value: 'sedan', label: t('search.vehicle.Sedan'), icon: 'drive-eta' },
     { value: 'suv', label: 'SUV', icon: 'local-shipping' },
-    { value: 'hatchback', label: 'Hatchback', icon: 'drive-eta' },
-    { value: 'coupe', label: 'Coupe', icon: 'drive-eta' },
-    { value: 'truck', label: 'Truck', icon: 'local-shipping' },
-    { value: 'van', label: 'Van', icon: 'airport-shuttle' },
-    { value: 'motorcycle', label: 'Motorcycle', icon: 'motorcycle' },
+    { value: 'hatchback', label: t('rf.hatchback'), icon: 'drive-eta' },
+    { value: 'coupe', label: t('rf.coupe'), icon: 'drive-eta' },
+    { value: 'truck', label: t('rf.truck'), icon: 'local-shipping' },
+    { value: 'van', label: t('rf.van'), icon: 'airport-shuttle' },
+    { value: 'motorcycle', label: t('rf.motorcycle'), icon: 'motorcycle' },
   ];
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.make.trim()) {
-      newErrors.make = 'Vehicle make is required';
+      newErrors.make = t('rf.vehicleMakeIsRequired');
     }
 
     if (!formData.model.trim()) {
-      newErrors.model = 'Vehicle model is required';
+      newErrors.model = t('rf.vehicleModelIsRequired');
     }
 
     if (formData.year < 1900 || formData.year > new Date().getFullYear() + 1) {
-      newErrors.year = 'Invalid year';
+      newErrors.year = t('rf.invalidYear');
     }
 
     if (!formData.color.trim()) {
-      newErrors.color = 'Vehicle color is required';
+      newErrors.color = t('rf.vehicleColorIsRequired');
     }
 
     if (!formData.licensePlate.trim()) {
-      newErrors.licensePlate = 'License plate is required';
+      newErrors.licensePlate = t('rf.licensePlateIsRequired');
     }
 
     if (formData.capacity < 1 || formData.capacity > 15) {
-      newErrors.capacity = 'Capacity must be between 1 and 15';
+      newErrors.capacity = t('rf.capacityMustBeBetween1');
     }
 
     setErrors(newErrors);
@@ -100,13 +102,13 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
   const handleAddPhoto = () => {
     if (photos.length >= MAX_PHOTOS) {
-      Alert.alert('Limit reached', `Maximum ${MAX_PHOTOS} photos allowed`);
+      Alert.alert(t('rf.limitReached'), t('rf.maxPhotos', { count: MAX_PHOTOS }));
       return;
     }
 
-    Alert.alert('Add Vehicle Photo', 'Choose a source', [
+    Alert.alert(t('rf.addVehiclePhoto'), t('rf.chooseASource'), [
       {
-        text: 'Camera',
+        text: t('rf.camera'),
         onPress: () => {
           launchCamera(
             { mediaType: 'photo', quality: 0.8, maxWidth: 1200, maxHeight: 1200 },
@@ -115,7 +117,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
         },
       },
       {
-        text: 'Gallery',
+        text: t('rf.gallery'),
         onPress: () => {
           launchImageLibrary(
             { mediaType: 'photo', quality: 0.8, maxWidth: 1200, maxHeight: 1200 },
@@ -123,7 +125,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
           );
         },
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -140,8 +142,8 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
       await onVehicleRegister(formData, photos);
     } catch (error) {
       Alert.alert(
-        'Registration Failed',
-        error instanceof Error ? error.message : 'Failed to register vehicle'
+        t('register.failed'),
+        error instanceof Error ? error.message: t('rf.failedToRegisterVehicle')
       );
     }
   };
@@ -157,21 +159,21 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={styles.title}>Register Your Vehicle</Text>
+        <Text style={styles.title}>{t('rf.registerYourVehicle')}</Text>
         <Text style={styles.subtitle}>
-          Add your vehicle details to start offering rides
+          {t('rf.addYourVehicleDetailsTo')}
         </Text>
       </View>
 
       <View style={styles.form}>
         {/* Make */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Make *</Text>
+          <Text style={styles.label}>{t('rf.make2')}</Text>
           <TextInput
             style={[styles.input, !!errors.make && styles.inputError]}
             value={formData.make}
             onChangeText={(value) => updateFormData('make', value)}
-            placeholder="e.g., Toyota, Honda, Ford"
+            placeholder={t('rf.eGToyotaHondaFord')}
             placeholderTextColor={colors.text.secondary}
           />
           {errors.make && <Text style={styles.errorText}>{errors.make}</Text>}
@@ -179,12 +181,12 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
         {/* Model */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Model *</Text>
+          <Text style={styles.label}>{t('rf.model2')}</Text>
           <TextInput
             style={[styles.input, !!errors.model && styles.inputError]}
             value={formData.model}
             onChangeText={(value) => updateFormData('model', value)}
-            placeholder="e.g., Camry, Civic, Focus"
+            placeholder={t('rf.eGCamryCivicFocus')}
             placeholderTextColor={colors.text.secondary}
           />
           {errors.model && <Text style={styles.errorText}>{errors.model}</Text>}
@@ -193,7 +195,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
         {/* Year and Color Row */}
         <View style={styles.row}>
           <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Year *</Text>
+            <Text style={styles.label}>{t('rf.year2')}</Text>
             <TextInput
               style={[styles.input, !!errors.year && styles.inputError]}
               value={formData.year.toString()}
@@ -209,12 +211,12 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
           </View>
 
           <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Color *</Text>
+            <Text style={styles.label}>{t('rf.color2')}</Text>
             <TextInput
               style={[styles.input, !!errors.color && styles.inputError]}
               value={formData.color}
               onChangeText={(value) => updateFormData('color', value)}
-              placeholder="e.g., Blue, Red"
+              placeholder={t('rf.eGBlueRed')}
               placeholderTextColor={colors.text.secondary}
             />
             {errors.color && <Text style={styles.errorText}>{errors.color}</Text>}
@@ -223,7 +225,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
         {/* License Plate */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>License Plate *</Text>
+          <Text style={styles.label}>{t('rf.licensePlate2')}</Text>
           <TextInput
             style={[styles.input, !!errors.licensePlate && styles.inputError]}
             value={formData.licensePlate}
@@ -237,7 +239,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
         {/* Vehicle Type */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Vehicle Type *</Text>
+          <Text style={styles.label}>{t('rf.vehicleType2')}</Text>
           <View style={styles.typeSelector}>
             {vehicleTypes.map((type) => (
               <TouchableOpacity
@@ -268,7 +270,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
         {/* Capacity */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Passenger Capacity *</Text>
+          <Text style={styles.label}>{t('rf.passengerCapacity')}</Text>
           <View style={styles.capacitySelector}>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((capacity) => (
               <TouchableOpacity
@@ -295,7 +297,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
 
         {/* Vehicle Photos */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Vehicle Photos</Text>
+          <Text style={styles.label}>{t('rf.vehiclePhotos')}</Text>
           <Text style={styles.photoHint}>
             Add up to {MAX_PHOTOS} photos of your vehicle. Clear photos help passengers recognise your car.
           </Text>
@@ -326,7 +328,7 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
                 ) : (
                   <>
                     <Icon name="add-a-photo" size={28} color={colors.primary} />
-                    <Text style={styles.addPhotoText}>Add Photo</Text>
+                    <Text style={styles.addPhotoText}>{t('rf.addPhoto')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -342,13 +344,13 @@ export const VehicleRegistrationForm: React.FC<VehicleRegistrationFormProps> = (
           disabled={isLoading}
         >
           <Text style={styles.registerButtonText}>
-            {isLoading ? 'Registering...' : 'Register Vehicle'}
+            {isLoading ? 'Registering...' : t('rf.registerVehicle')}
           </Text>
         </TouchableOpacity>
 
         {onSkip && (
           <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
-            <Text style={styles.skipButtonText}>Skip for Now</Text>
+            <Text style={styles.skipButtonText}>{t('rf.skipForNow2')}</Text>
           </TouchableOpacity>
         )}
       </View>

@@ -19,6 +19,7 @@ import locationService from '../../services/LocationService';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { updateOnboardingProgress, completeOnboardingStep, setOnboarded } from '../../store/slices/appSlice';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('OnboardingPermissionsScreen');
 
@@ -41,6 +42,7 @@ interface Permission {
 }
 
 const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { onboardingProgress } = useAppSelector((state) => state.app);
   const selectedRole = route?.params?.selectedRole || onboardingProgress.userRole || 'passenger';
@@ -50,16 +52,16 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
     const basePermissions = [
       {
         id: 'location',
-        title: 'Location Access',
-        description: 'Find nearby rides and provide accurate pickup locations',
+        title: t('rf.locationAccess'),
+        description: t('rf.findNearbyRidesAndProvide'),
         icon: 'location-on',
         required: true,
         granted: false,
       },
       {
         id: 'notifications',
-        title: 'Push Notifications',
-        description: 'Get real-time updates about your rides and messages',
+        title: t('rf.pushNotifications'),
+        description: t('rf.getRealTimeUpdatesAbout'),
         icon: 'notifications',
         required: false,
         granted: false,
@@ -69,16 +71,16 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
     const roleSpecificPermissions = selectedRole === 'driver' || selectedRole === 'courier' ? [
       {
         id: 'camera',
-        title: 'Camera Access',
-        description: 'Take photos for identity verification and trip documentation',
+        title: t('rf.cameraAccess'),
+        description: t('rf.takePhotosForIdentityVerification'),
         icon: 'camera-alt',
         required: true,
         granted: false,
       },
       {
         id: 'contacts',
-        title: 'Contacts Access',
-        description: 'Share ride details with your emergency contacts',
+        title: t('rf.contactsAccess'),
+        description: t('rf.shareRideDetailsWithYour'),
         icon: 'contacts',
         required: false,
         granted: false,
@@ -144,14 +146,14 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
 
       if (!granted && permissions.find(p => p.id === permissionId)?.required) {
         Alert.alert(
-          'Permission Required',
-          'This permission is required for the app to function properly. You can enable it later in your device settings.',
-          [{ text: 'OK' }]
+          t('rf.permissionRequired'),
+          t('rf.thisPermissionIsRequiredFor'),
+          [{ text: t('common.ok') }]
         );
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Failed to request permission');
+      Alert.alert(t('common.error'), errMsg || t('rf.failedToRequestPermission'));
     } finally {
       setIsRequesting(false);
     }
@@ -187,11 +189,11 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
 
       if (!requiredPermissionsGranted) {
         Alert.alert(
-          'Required Permissions',
-          'Some required permissions are not granted. The app may not work properly. Continue anyway?',
+          t('rf.requiredPermissions'),
+          t('rf.someRequiredPermissionsAreNot'),
           [
-            { text: 'Go Back', style: 'cancel' },
-            { text: 'Continue', onPress: completeOnboarding },
+            { text: t('rideDetails.goBack'), style: 'cancel' },
+            { text: t('verify.continue'), onPress: completeOnboarding },
           ]
         );
       } else {
@@ -204,12 +206,12 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
 
   const handleSkip = () => {
     Alert.alert(
-      'Skip Permissions?',
-      'You can set up permissions later in the app settings. Some features may not work without proper permissions.',
+      t('rf.skipPermissions'),
+      t('rf.youCanSetUpPermissions'),
       [
-        { text: 'Go Back', style: 'cancel' },
+        { text: t('rideDetails.goBack'), style: 'cancel' },
         {
-          text: 'Skip',
+          text: t('common.skip'),
           onPress: () => {
             dispatch(updateOnboardingProgress({
               permissionsGranted: false,
@@ -248,7 +250,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
               <Text style={styles.permissionTitle}>{permission.title}</Text>
               {permission.required && (
                 <View style={styles.requiredBadge}>
-                  <Text style={styles.requiredText}>Required</Text>
+                  <Text style={styles.requiredText}>{t('rf.required')}</Text>
                 </View>
               )}
             </View>
@@ -260,7 +262,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
         
         {!permission.granted && (
           <Button
-            title="Allow"
+            title={t('rf.allow')}
             onPress={() => handleRequestPermission(permission.id)}
             disabled={isRequesting}
             variant="outline"
@@ -279,9 +281,9 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
           <View style={styles.iconContainer}>
             <Icon name="security" size={48} color="#2196F3" />
           </View>
-          <Text style={styles.title}>App Permissions</Text>
+          <Text style={styles.title}>{t('rf.appPermissions')}</Text>
           <Text style={styles.subtitle}>
-            ARYV needs a few permissions to provide you with the best experience
+            {t('rf.aryvNeedsAFewPermissions')}
           </Text>
         </View>
 
@@ -294,7 +296,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
         {!allPermissionsGranted && (
           <View style={styles.grantAllContainer}>
             <Button
-              title="Allow All Permissions"
+              title={t('rf.allowAllPermissions')}
               onPress={handleRequestAllPermissions}
               disabled={isRequesting}
               loading={isRequesting}
@@ -319,14 +321,14 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
             <View style={styles.statusMessage}>
               <Icon name="info" size={20} color="#2196F3" />
               <Text style={styles.statusText}>
-                Required permissions granted. Optional permissions can be enabled later.
+                {t('rf.requiredPermissionsGrantedOptionalPermissions')}
               </Text>
             </View>
           ) : (
             <View style={styles.statusMessage}>
               <Icon name="warning" size={20} color="#FF9800" />
               <Text style={styles.statusTextWarning}>
-                Some required permissions are missing. The app may not work properly.
+                {t('rf.someRequiredPermissionsAreMissing')}
               </Text>
             </View>
           )}
@@ -335,7 +337,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
         {/* Actions */}
         <View style={styles.actions}>
           <Button
-            title="Continue"
+            title={t('verify.continue')}
             onPress={handleContinue}
             variant="primary"
             size="large"
@@ -346,7 +348,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
           />
           
           <Button
-            title="Skip Setup"
+            title={t('rf.skipSetup')}
             onPress={handleSkip}
             variant="ghost"
             size="medium"

@@ -21,6 +21,7 @@ import { colors } from '../../theme';
 import { Currency, CurrencyService, CurrencyConversion } from '../../services/CurrencyService';
 import CurrencySelector from './CurrencySelector';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('CurrencyConverter');
 
@@ -39,6 +40,7 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
   onConversionResult,
   showRealTimeConversion = false,
 }) => {
+  const { t } = useI18n();
   const [fromCurrency, setFromCurrency] = useState<Currency | null>(initialFromCurrency || null);
   const [toCurrency, setToCurrency] = useState<Currency | null>(initialToCurrency || null);
   const [amount, setAmount] = useState<string>(initialAmount ? initialAmount.toString() : '');
@@ -101,7 +103,7 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
     // Validate conversion amount
     const validation = CurrencyService.validateConversionAmount(numericAmount);
     if (!validation.isValid) {
-      Alert.alert('Conversion Error', validation.message);
+      Alert.alert(t('ui.conversionError'), validation.message);
       return;
     }
 
@@ -138,12 +140,12 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
           
           onConversionResult?.(conversion);
         } else {
-          Alert.alert('Conversion Error', 'Failed to convert currency. Please try again.');
+          Alert.alert(t('ui.conversionError'), t('ui.failedToConvertCurrencyPlease'));
         }
       }
     } catch (error) {
       log.error('Error performing conversion:', error);
-      Alert.alert('Error', 'Failed to convert currency. Please check your connection and try again.');
+      Alert.alert(t('common.error'), t('ui.failedToConvertCurrencyPlease2'));
     } finally {
       setLoading(false);
     }
@@ -183,25 +185,25 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
     
     try {
       const date = new Date(lastUpdated);
-      return `Updated ${date.toLocaleTimeString()}`;
+      return t('ui.updatedAt', { time: date.toLocaleTimeString() });
     } catch (error) {
-      return 'Recently updated';
+      return t('ui.recentlyUpdated');
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Currency Converter</Text>
+      <Text style={styles.title}>{t('st.currencyConverter')}</Text>
 
       <View style={styles.conversionContainer}>
         {/* From Currency Section */}
         <View style={styles.currencySection}>
-          <Text style={styles.sectionLabel}>From</Text>
+          <Text style={styles.sectionLabel}>{t('rides.from')}</Text>
           <CurrencySelector
             selectedCurrency={fromCurrency}
             onCurrencySelect={setFromCurrency}
             showPopularOnly={true}
-            placeholder="Select source currency"
+            placeholder={t('ui.selectSourceCurrency')}
           />
           <View style={styles.amountInputContainer}>
             <TextInput
@@ -231,12 +233,12 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
 
         {/* To Currency Section */}
         <View style={styles.currencySection}>
-          <Text style={styles.sectionLabel}>To</Text>
+          <Text style={styles.sectionLabel}>{t('rides.to')}</Text>
           <CurrencySelector
             selectedCurrency={toCurrency}
             onCurrencySelect={setToCurrency}
             showPopularOnly={true}
-            placeholder="Select target currency"
+            placeholder={t('ui.selectTargetCurrency')}
           />
           <View style={[styles.amountInputContainer, styles.convertedAmountContainer]}>
             <Text style={styles.convertedAmount}>{convertedAmount}</Text>
@@ -280,7 +282,7 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
           ) : (
             <>
               <Icon name="currency-exchange" size={20} color={colors.surface} />
-              <Text style={styles.convertButtonText}>Convert</Text>
+              <Text style={styles.convertButtonText}>{t('ui.convert')}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -290,7 +292,7 @@ const CurrencyConverter: React.FC<CurrencyConverterProps> = ({
       <View style={styles.noticeContainer}>
         <Icon name="info" size={16} color={colors.text.secondary} />
         <Text style={styles.noticeText}>
-          Conversion limits: $0.01 - $10,000 USD equivalent
+          {t('ui.conversionLimits00110')}
         </Text>
       </View>
     </View>

@@ -29,14 +29,16 @@ import { userApi } from '../../services/api/userApi';
 import VehicleRegistrationForm from '../../components/vehicle/VehicleRegistrationForm';
 import type { CreateVehicleData } from '../../services/api/vehicleApi';
 import logger from '../../services/LoggingService';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('DriverOnboardingScreen');
 
-const STEPS = [
-  { key: 'license', title: 'Driver License', icon: 'badge' },
-  { key: 'vehicle', title: 'Your Vehicle', icon: 'directions-car' },
-  { key: 'documents', title: 'Verification', icon: 'verified-user' },
-] as const;
+const STEPS: ReadonlyArray<{ key: string; title: TranslationKey; icon: string }> = [
+  { key: 'license', title: 'rf.driverLicense', icon: 'badge' },
+  { key: 'vehicle', title: 'rf.yourVehicle', icon: 'directions-car' },
+  { key: 'documents', title: 'rf.verification', icon: 'verified-user' },
+];
 
 interface LicenseFormData {
   licenseNumber: string;
@@ -46,6 +48,7 @@ interface LicenseFormData {
 }
 
 const DriverOnboardingScreen: React.FC = () => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<{ navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void }>();
   const { profile } = useAppSelector((state) => state.user);
@@ -99,7 +102,7 @@ const DriverOnboardingScreen: React.FC = () => {
 
   const handleLicenseSubmit = async () => {
     if (!isLicenseValid()) {
-      Alert.alert('Incomplete', 'Please fill in all license details correctly.');
+      Alert.alert(t('rf.incomplete'), t('rf.pleaseFillInAllLicense'));
       return;
     }
 
@@ -142,7 +145,7 @@ const DriverOnboardingScreen: React.FC = () => {
         dispatch(completeOnboardingStep('vehicle_registration'));
         goToStep(2);
       } else {
-        Alert.alert('Error', response.error || 'Failed to register vehicle');
+        Alert.alert(t('common.error'), response.error || t('rf.failedToRegisterVehicle'));
       }
     } catch (error: unknown) {
       // Continue even if API fails
@@ -164,12 +167,12 @@ const DriverOnboardingScreen: React.FC = () => {
 
   const handleSkipVerification = () => {
     Alert.alert(
-      'Skip for Now?',
-      'You can complete document verification later from your profile. You won\'t be able to offer rides until verification is complete.',
+      t('rf.skipForNow'),
+      t('rf.youCanCompleteDocumentVerification'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Skip',
+          text: t('common.skip'),
           onPress: () => handleComplete(false),
         },
       ]
@@ -184,19 +187,19 @@ const DriverOnboardingScreen: React.FC = () => {
       dispatch(completeOnboardingStep('driver_onboarding'));
 
       Alert.alert(
-        verified ? 'Verification Submitted' : 'Welcome, Driver!',
+        verified ? t('rf.verificationSubmitted') : t('rf.welcomeDriver'),
         verified
-          ? 'Your documents are under review. You\'ll be notified once approved. You can start setting up rides once verified.'
-          : 'Your driver profile is set up! Complete document verification from your profile to start offering rides.',
+          ? t('rf.yourDocumentsAreUnderReview')
+          : t('rf.yourDriverProfileIsSet'),
         [
           {
-            text: 'Got it',
+            text: t('rf.gotIt'),
             onPress: () => navigation.navigate('HomeMain'),
           },
         ]
       );
     } catch (error: unknown) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert(t('common.error'), t('rf.somethingWentWrongPleaseTry'));
     } finally {
       setIsSubmitting(false);
     }
@@ -244,7 +247,7 @@ const DriverOnboardingScreen: React.FC = () => {
                 index < currentStep && styles.stepLabelComplete,
               ]}
             >
-              {step.title}
+              {t(step.title)}
             </Text>
           </View>
         ))}
@@ -254,13 +257,13 @@ const DriverOnboardingScreen: React.FC = () => {
 
   const renderLicenseStep = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Driver License Details</Text>
+      <Text style={styles.stepTitle}>{t('rf.driverLicenseDetails')}</Text>
       <Text style={styles.stepDescription}>
-        Enter your valid Botswana driver license information. This is required to offer rides on Hitch.
+        {t('rf.enterYourValidBotswanaDriver')}
       </Text>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>License Number</Text>
+        <Text style={styles.label}>{t('rf.licenseNumber')}</Text>
         <View style={styles.inputWrapper}>
           <Icon name="badge" size={18} color="#666666" style={styles.inputIcon} />
           <TextInput
@@ -275,7 +278,7 @@ const DriverOnboardingScreen: React.FC = () => {
       </View>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>License Class</Text>
+        <Text style={styles.label}>{t('rf.licenseClass')}</Text>
         <View style={styles.classRow}>
           {['A', 'B', 'C', 'D', 'EB'].map((cls) => (
             <TouchableOpacity
@@ -298,12 +301,12 @@ const DriverOnboardingScreen: React.FC = () => {
           ))}
         </View>
         <Text style={styles.hint}>
-          Class B covers standard cars and light vehicles
+          {t('rf.classBCoversStandardCars')}
         </Text>
       </View>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>Expiry Date</Text>
+        <Text style={styles.label}>{t('rf.expiryDate')}</Text>
         <TouchableOpacity
           style={styles.dateButton}
           onPress={() => setShowDatePicker(true)}
@@ -318,12 +321,12 @@ const DriverOnboardingScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
         {licenseForm.expiryDate <= new Date() && (
-          <Text style={styles.errorText}>License must not be expired</Text>
+          <Text style={styles.errorText}>{t('rf.licenseMustNotBeExpired')}</Text>
         )}
       </View>
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>Years of Driving Experience</Text>
+        <Text style={styles.label}>{t('rf.yearsOfDrivingExperience')}</Text>
         <View style={styles.inputWrapper}>
           <Icon name="history" size={18} color="#666666" style={styles.inputIcon} />
           <TextInput
@@ -342,7 +345,7 @@ const DriverOnboardingScreen: React.FC = () => {
       <View style={styles.infoBox}>
         <Icon name="info-outline" size={18} color="#3B82F6" />
         <Text style={styles.infoText}>
-          You must have a valid driver license and at least 1 year of driving experience to offer rides.
+          {t('rf.youMustHaveAValid')}
         </Text>
       </View>
 
@@ -355,7 +358,7 @@ const DriverOnboardingScreen: React.FC = () => {
           <ActivityIndicator color="#FFFFFF" size="small" />
         ) : (
           <>
-            <Text style={styles.primaryButtonText}>Continue</Text>
+            <Text style={styles.primaryButtonText}>{t('verify.continue')}</Text>
             <Icon name="arrow-forward" size={20} color="#FFFFFF" />
           </>
         )}
@@ -378,9 +381,9 @@ const DriverOnboardingScreen: React.FC = () => {
 
   const renderVehicleStep = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Register Your Vehicle</Text>
+      <Text style={styles.stepTitle}>{t('rf.registerYourVehicle')}</Text>
       <Text style={styles.stepDescription}>
-        Add your vehicle details so passengers know what to expect. You can add more vehicles later.
+        {t('rf.addYourVehicleDetailsSo')}
       </Text>
 
       <VehicleRegistrationForm
@@ -392,9 +395,9 @@ const DriverOnboardingScreen: React.FC = () => {
 
   const renderDocumentsStep = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Verify Your Identity</Text>
+      <Text style={styles.stepTitle}>{t('rf.verifyYourIdentity')}</Text>
       <Text style={styles.stepDescription}>
-        Upload documents to verify your identity and vehicle. This protects you and your passengers.
+        {t('rf.uploadDocumentsToVerifyYour')}
       </Text>
 
       <View style={styles.documentsList}>
@@ -404,9 +407,9 @@ const DriverOnboardingScreen: React.FC = () => {
           </View>
           <View style={styles.documentInfo}>
             <Text style={styles.documentTitle}>Driver's License</Text>
-            <Text style={styles.documentDesc}>Clear photo of front and back</Text>
+            <Text style={styles.documentDesc}>{t('rf.clearPhotoOfFrontAnd')}</Text>
           </View>
-          <Text style={styles.requiredBadge}>Required</Text>
+          <Text style={styles.requiredBadge}>{t('rf.required')}</Text>
         </View>
 
         <View style={styles.documentItem}>
@@ -414,10 +417,10 @@ const DriverOnboardingScreen: React.FC = () => {
             <Icon name="description" size={24} color="#3B82F6" />
           </View>
           <View style={styles.documentInfo}>
-            <Text style={styles.documentTitle}>Vehicle Registration</Text>
-            <Text style={styles.documentDesc}>Proof of vehicle ownership</Text>
+            <Text style={styles.documentTitle}>{t('rf.vehicleRegistration')}</Text>
+            <Text style={styles.documentDesc}>{t('rf.proofOfVehicleOwnership')}</Text>
           </View>
-          <Text style={styles.requiredBadge}>Required</Text>
+          <Text style={styles.requiredBadge}>{t('rf.required')}</Text>
         </View>
 
         <View style={styles.documentItem}>
@@ -425,10 +428,10 @@ const DriverOnboardingScreen: React.FC = () => {
             <Icon name="security" size={24} color="#10B981" />
           </View>
           <View style={styles.documentInfo}>
-            <Text style={styles.documentTitle}>Insurance Certificate</Text>
-            <Text style={styles.documentDesc}>Valid vehicle insurance</Text>
+            <Text style={styles.documentTitle}>{t('rf.insuranceCertificate')}</Text>
+            <Text style={styles.documentDesc}>{t('rf.validVehicleInsurance')}</Text>
           </View>
-          <Text style={styles.requiredBadge}>Required</Text>
+          <Text style={styles.requiredBadge}>{t('rf.required')}</Text>
         </View>
 
         <View style={styles.documentItem}>
@@ -436,17 +439,17 @@ const DriverOnboardingScreen: React.FC = () => {
             <Icon name="account-box" size={24} color="#8B5CF6" />
           </View>
           <View style={styles.documentInfo}>
-            <Text style={styles.documentTitle}>National ID / Passport</Text>
-            <Text style={styles.documentDesc}>Government-issued photo ID</Text>
+            <Text style={styles.documentTitle}>{t('rf.nationalIdPassport')}</Text>
+            <Text style={styles.documentDesc}>{t('rf.governmentIssuedPhotoId')}</Text>
           </View>
-          <Text style={[styles.requiredBadge, styles.optionalBadge]}>Optional</Text>
+          <Text style={[styles.requiredBadge, styles.optionalBadge]}>{t('rf.optional')}</Text>
         </View>
       </View>
 
       <View style={styles.infoBox}>
         <Icon name="shield" size={18} color="#10B981" />
         <Text style={styles.infoText}>
-          Your documents are encrypted and securely stored. They are only used for verification purposes and never shared with other users.
+          {t('rf.yourDocumentsAreEncryptedAnd')}
         </Text>
       </View>
 
@@ -455,14 +458,14 @@ const DriverOnboardingScreen: React.FC = () => {
         onPress={handleStartVerification}
       >
         <Icon name="upload-file" size={20} color="#FFFFFF" />
-        <Text style={styles.primaryButtonText}>Upload Documents</Text>
+        <Text style={styles.primaryButtonText}>{t('rf.uploadDocuments')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.skipButton}
         onPress={handleSkipVerification}
       >
-        <Text style={styles.skipButtonText}>Skip for now</Text>
+        <Text style={styles.skipButtonText}>{t('verify.skipForNow')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -470,7 +473,7 @@ const DriverOnboardingScreen: React.FC = () => {
         onPress={() => handleComplete(false)}
       >
         <Icon name="check-circle" size={20} color="#10B981" />
-        <Text style={styles.completeButtonText}>Finish Setup</Text>
+        <Text style={styles.completeButtonText}>{t('rf.finishSetup')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -495,7 +498,7 @@ const DriverOnboardingScreen: React.FC = () => {
           >
             <Icon name="arrow-back" size={24} color="#333333" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Become a Driver</Text>
+          <Text style={styles.headerTitle}>{t('nav.becomeDriver')}</Text>
           <View style={styles.headerRight}>
             <Text style={styles.stepCounter}>
               {currentStep + 1}/{STEPS.length}
