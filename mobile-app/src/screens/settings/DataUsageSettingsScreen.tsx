@@ -18,6 +18,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('DataUsageSettingsScreen');
 
@@ -34,39 +35,40 @@ interface DataSetting {
 }
 
 const DataUsageSettingsScreen: React.FC<DataUsageSettingsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<DataSetting[]>([
     {
       id: 'wifi_only_maps',
-      title: 'Download Maps on Wi-Fi Only',
-      description: 'Only download map data when connected to Wi-Fi',
+      title: t('st.downloadMapsOnWiFi'),
+      description: t('st.onlyDownloadMapDataWhen'),
       icon: 'map',
       enabled: true,
     },
     {
       id: 'compress_images',
-      title: 'Compress Images',
-      description: 'Reduce image quality to save data',
+      title: t('st.compressImages'),
+      description: t('st.reduceImageQualityToSave'),
       icon: 'image',
       enabled: false,
     },
     {
       id: 'auto_play_videos',
-      title: 'Auto-play Videos',
-      description: 'Automatically play videos in the feed',
+      title: t('st.autoPlayVideos'),
+      description: t('st.automaticallyPlayVideosInThe'),
       icon: 'play-circle',
       enabled: false,
     },
     {
       id: 'background_data',
-      title: 'Background Data',
-      description: 'Allow app to use data in the background',
+      title: t('st.backgroundData'),
+      description: t('st.allowAppToUseData'),
       icon: 'sync',
       enabled: true,
     },
     {
       id: 'data_saver',
-      title: 'Data Saver Mode',
-      description: 'Reduce overall data usage across the app',
+      title: t('st.dataSaverMode'),
+      description: t('st.reduceOverallDataUsageAcross'),
       icon: 'data-saver-on',
       enabled: false,
     },
@@ -91,7 +93,7 @@ const DataUsageSettingsScreen: React.FC<DataUsageSettingsScreenProps> = ({ navig
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Data Usage</Text>
+      <Text style={styles.headerTitle}>{t('nav.dataUsage')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -116,18 +118,18 @@ const DataUsageSettingsScreen: React.FC<DataUsageSettingsScreenProps> = ({ navig
 
   const renderCacheSection = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Storage</Text>
+      <Text style={styles.sectionTitle}>{t('st.storage')}</Text>
 
       <View style={styles.cacheCard}>
         <View style={styles.cacheInfo}>
           <Icon name="folder" size={32} color={colors.primary} />
           <View style={styles.cacheDetails}>
-            <Text style={styles.cacheLabel}>Cached Data</Text>
+            <Text style={styles.cacheLabel}>{t('st.cachedData')}</Text>
             <Text style={styles.cacheSize}>{cacheSize}</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.clearButton} onPress={handleClearCache}>
-          <Text style={styles.clearButtonText}>Clear</Text>
+          <Text style={styles.clearButtonText}>{t('st.clear')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -138,9 +140,9 @@ const DataUsageSettingsScreen: React.FC<DataUsageSettingsScreenProps> = ({ navig
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data Settings</Text>
+          <Text style={styles.sectionTitle}>{t('st.dataSettings')}</Text>
           <Text style={styles.sectionDescription}>
-            Control how the app uses your mobile data.
+            {t('st.controlHowTheAppUses')}
           </Text>
           {settings.map(renderDataSetting)}
         </View>
@@ -151,7 +153,7 @@ const DataUsageSettingsScreen: React.FC<DataUsageSettingsScreenProps> = ({ navig
           <View style={styles.infoCard}>
             <Icon name="info" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              Enabling data saver mode may affect app performance and real-time features like live tracking.
+              {t('st.enablingDataSaverModeMay')}
             </Text>
           </View>
         </View>

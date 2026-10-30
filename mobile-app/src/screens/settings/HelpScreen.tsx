@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface HelpScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
@@ -39,41 +40,42 @@ interface ContactMethod {
 }
 
 const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [faqItems, setFaqItems] = useState<FAQItem[]>([
     {
       id: '1',
-      question: 'How do I book a ride?',
-      answer: 'To book a ride, go to the Home screen, tap "Find a Ride", enter your pickup and destination locations, select your preferred ride, and confirm your booking.',
+      question: t('st.howDoIBookA'),
+      answer: t('st.toBookARideGo'),
       expanded: false,
     },
     {
       id: '2',
-      question: 'How do I offer a ride?',
-      answer: 'Tap "Offer a Ride" on the Home screen, enter your route details, set your departure time and price, then publish your ride for others to book.',
+      question: t('st.howDoIOfferA'),
+      answer: t('st.tapOfferARideOn'),
       expanded: false,
     },
     {
       id: '3',
-      question: 'What payment methods are accepted?',
-      answer: 'We accept credit/debit cards, mobile money (MTN, Airtel), and bank transfers. You can manage your payment methods in Settings > Payment Methods.',
+      question: t('st.whatPaymentMethodsAreAccepted'),
+      answer: t('st.weAcceptCreditDebitCards'),
       expanded: false,
     },
     {
       id: '4',
-      question: 'How does the courier service work?',
-      answer: 'You can send packages through our courier service. Create a package request, set pickup and delivery locations, and a verified courier will handle the delivery with real-time tracking.',
+      question: t('st.howDoesTheCourierService'),
+      answer: t('st.youCanSendPackagesThrough'),
       expanded: false,
     },
     {
       id: '5',
-      question: 'Is my personal information safe?',
-      answer: 'Yes, we use advanced encryption and security measures to protect your data. You can control your privacy settings in Settings > Privacy Settings.',
+      question: t('st.isMyPersonalInformationSafe'),
+      answer: t('st.yesWeUseAdvancedEncryption'),
       expanded: false,
     },
     {
       id: '6',
-      question: 'How do I cancel a ride?',
-      answer: 'You can cancel a ride from the "My Rides" section. Cancellation policies may apply depending on how close to departure time you cancel.',
+      question: t('st.howDoICancelA'),
+      answer: t('st.youCanCancelARide'),
       expanded: false,
     },
   ]);
@@ -84,7 +86,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
   const contactMethods: ContactMethod[] = [
     {
       id: 'email',
-      title: 'Email Support',
+      title: t('st.emailSupport'),
       subtitle: 'support@aryv-app.com',
       icon: 'email',
       action: () => handleContactMethod('email'),
@@ -103,7 +105,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
     switch (method) {
       case 'email':
         Linking.openURL('mailto:support@aryv-app.com?subject=Support Request')
-          .catch(() => Alert.alert('Error', 'Unable to open email app'));
+          .catch(() => Alert.alert(t('common.error'), t('st.unableToOpenEmailApp')));
         break;
     }
   };
@@ -113,7 +115,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Help & Support</Text>
+      <Text style={styles.headerTitle}>{t('nav.help')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -161,14 +163,14 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+          <Text style={styles.sectionTitle}>{t('st.frequentlyAskedQuestions')}</Text>
           {faqItems.map(renderFAQItem)}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Support</Text>
+          <Text style={styles.sectionTitle}>{t('st.contactSupport')}</Text>
           <Text style={styles.sectionDescription}>
-            Need more help? Our support team is here to assist you.
+            {t('st.needMoreHelpOurSupport')}
           </Text>
           {contactMethods.map(renderContactMethod)}
         </View>
@@ -179,15 +181,15 @@ const HelpScreen: React.FC<HelpScreenProps> = ({ navigation }) => {
               <Icon name="emergency" size={24} color={colors.error} />
             </View>
             <View style={styles.emergencyContent}>
-              <Text style={styles.emergencyTitle}>Emergency Support</Text>
+              <Text style={styles.emergencyTitle}>{t('st.emergencySupport')}</Text>
               <Text style={styles.emergencyDescription}>
-                For urgent safety concerns during a ride
+                {t('st.forUrgentSafetyConcernsDuring')}
               </Text>
               <TouchableOpacity
                 style={styles.emergencyButton}
                 onPress={() => Linking.openURL('tel:999')}
               >
-                <Text style={styles.emergencyButtonText}>Call Emergency Services</Text>
+                <Text style={styles.emergencyButtonText}>{t('st.callEmergencyServices')}</Text>
               </TouchableOpacity>
             </View>
           </View>

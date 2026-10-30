@@ -25,6 +25,7 @@ import logger from '../../services/LoggingService';
 import { useAppDispatch } from '../../store/hooks';
 import { deleteAccount } from '../../store/slices/userSlice';
 import { logoutUser } from '../../store/slices/authSlice';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PrivacySettingsScreen');
 
@@ -41,6 +42,7 @@ interface PrivacySetting {
 }
 
 const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -49,36 +51,36 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
   const [settings, setSettings] = useState<PrivacySetting[]>([
     {
       id: 'location_sharing',
-      title: 'Location Sharing',
-      description: 'Share your location with other users during rides',
+      title: t('st.locationSharing'),
+      description: t('st.shareYourLocationWithOther'),
       enabled: true,
       icon: 'location-on',
     },
     {
       id: 'profile_visibility',
-      title: 'Profile Visibility',
-      description: 'Allow other users to see your profile information',
+      title: t('st.profileVisibility'),
+      description: t('st.allowOtherUsersToSee'),
       enabled: true,
       icon: 'visibility',
     },
     {
       id: 'ride_history',
-      title: 'Ride History Sharing',
-      description: 'Show completed rides to potential riders',
+      title: t('st.rideHistorySharing'),
+      description: t('st.showCompletedRidesToPotential'),
       enabled: false,
       icon: 'history',
     },
     {
       id: 'contact_sync',
-      title: 'Contact Synchronization',
-      description: 'Sync contacts to find friends on ARYV',
+      title: t('st.contactSynchronization'),
+      description: t('st.syncContactsToFindFriends'),
       enabled: false,
       icon: 'contacts',
     },
     {
       id: 'analytics',
-      title: 'Usage Analytics',
-      description: 'Help improve the app by sharing usage data',
+      title: t('st.usageAnalytics'),
+      description: t('st.helpImproveTheAppBy'),
       enabled: true,
       icon: 'analytics',
     },
@@ -87,12 +89,12 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
   const handleToggleSetting = (id: string): void => {
     if (id === 'location_sharing') {
       Alert.alert(
-        'Location Sharing',
-        'Disabling location sharing may affect the core functionality of the app. Are you sure?',
+        t('st.locationSharing'),
+        t('st.disablingLocationSharingMayAffect'),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Disable',
+            text: t('st.disable'),
             style: 'destructive',
             onPress: () => toggleSetting(id),
           },
@@ -115,8 +117,8 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
     switch (action) {
       case 'download':
         Alert.alert(
-          'Download Data',
-          'Your data will be prepared and sent to your registered email address within 48 hours.',
+          t('st.downloadData'),
+          t('st.yourDataWillBePrepared'),
           [{ text: 'OK' }]
         );
         break;
@@ -130,7 +132,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
 
   const handleConfirmDelete = async (): Promise<void> => {
     if (!deletePassword) {
-      setDeleteError('Enter your password to confirm.');
+      setDeleteError(t('st.enterYourPasswordToConfirm'));
       return;
     }
 
@@ -142,7 +144,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
 
       if (deleteAccount.rejected.match(result)) {
         setDeleteError(
-          (result.payload as string) || 'We could not delete your account. Try again.'
+          (result.payload as string) || t('st.weCouldNotDeleteYour')
         );
         return;
       }
@@ -151,10 +153,10 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
       // Clear the local session so the app cannot keep using a token that no
       // longer maps to a real account.
       await dispatch(logoutUser());
-      Alert.alert('Account deleted', 'Your account and personal data have been deleted.');
+      Alert.alert(t('st.accountDeleted'), t('st.yourAccountAndPersonalData'));
     } catch (error) {
       log.error('Account deletion failed', error);
-      setDeleteError('We could not delete your account. Try again.');
+      setDeleteError(t('st.weCouldNotDeleteYour'));
     } finally {
       setDeleting(false);
     }
@@ -169,7 +171,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
     >
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Delete your account</Text>
+          <Text style={styles.modalTitle}>{t('st.deleteYourAccount')}</Text>
           <Text style={styles.modalBody}>
             This permanently deletes your profile and personal data. Completed
             rides stay on record in anonymised form for tax and dispute
@@ -178,14 +180,14 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
 
           <TextInput
             style={styles.modalInput}
-            placeholder="Confirm your password"
+            placeholder={t('st.confirmYourPassword')}
             placeholderTextColor={colors.text.secondary}
             secureTextEntry
             autoCapitalize="none"
             value={deletePassword}
             onChangeText={setDeletePassword}
             editable={!deleting}
-            accessibilityLabel="Confirm your password"
+            accessibilityLabel={t('st.confirmYourPassword')}
           />
 
           {deleteError ? <Text style={styles.modalError}>{deleteError}</Text> : null}
@@ -197,7 +199,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
               disabled={deleting}
               accessibilityRole="button"
             >
-              <Text style={styles.modalCancelText}>Cancel</Text>
+              <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -209,7 +211,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
               {deleting ? (
                 <ActivityIndicator color={colors.text.inverse} size="small" />
               ) : (
-                <Text style={styles.modalConfirmText}>Delete permanently</Text>
+                <Text style={styles.modalConfirmText}>{t('st.deletePermanently')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -223,7 +225,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Privacy Settings</Text>
+      <Text style={styles.headerTitle}>{t('st.privacySettings')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -248,7 +250,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
 
   const renderDataManagement = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Data Management</Text>
+      <Text style={styles.sectionTitle}>{t('st.dataManagement')}</Text>
       
       <TouchableOpacity
         style={styles.actionItem}
@@ -258,9 +260,9 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
           <Icon name="download" size={24} color={colors.primary} />
         </View>
         <View style={styles.actionContent}>
-          <Text style={styles.actionTitle}>Download My Data</Text>
+          <Text style={styles.actionTitle}>{t('st.downloadMyData')}</Text>
           <Text style={styles.actionDescription}>
-            Get a copy of all your data stored in ARYV
+            {t('st.getACopyOfAll')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -274,9 +276,9 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
           <Icon name="delete-forever" size={24} color={colors.error} />
         </View>
         <View style={styles.actionContent}>
-          <Text style={[styles.actionTitle, styles.dangerText]}>Delete My Account</Text>
+          <Text style={[styles.actionTitle, styles.dangerText]}>{t('st.deleteMyAccount')}</Text>
           <Text style={styles.actionDescription}>
-            Permanently delete your account and all data
+            {t('st.permanentlyDeleteYourAccountAnd')}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color={colors.text.secondary} />
@@ -289,9 +291,9 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Privacy Controls</Text>
+          <Text style={styles.sectionTitle}>{t('st.privacyControls')}</Text>
           <Text style={styles.sectionDescription}>
-            Control how your information is shared and used within the ARYV platform.
+            {t('st.controlHowYourInformationIs')}
           </Text>
           {settings.map(renderPrivacySetting)}
         </View>
@@ -302,7 +304,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
           <View style={styles.infoCard}>
             <Icon name="shield" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              Your privacy is important to us. Read our Privacy Policy to learn more about how we protect your data.
+              {t('st.yourPrivacyIsImportantTo')}
             </Text>
           </View>
         </View>

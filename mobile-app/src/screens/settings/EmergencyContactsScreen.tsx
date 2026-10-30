@@ -23,6 +23,7 @@ import { colors } from '../../theme';
 import EmergencyService, { EmergencyContact } from '../../services/EmergencyService';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -39,6 +40,7 @@ interface EmergencyContactsScreenProps {
 }
 
 const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -61,7 +63,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       setContacts(emergencyContacts);
     } catch (error) {
       log.error('Error loading emergency contacts:', error);
-      Alert.alert('Error', 'Failed to load emergency contacts');
+      Alert.alert(t('common.error'), t('st.failedToLoadEmergencyContacts'));
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +71,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
 
   const handleAddContact = async (): Promise<void> => {
     if (!newContact.name.trim() || !newContact.phoneNumber.trim()) {
-      Alert.alert('Validation Error', 'Please fill in name and phone number');
+      Alert.alert(t('st.validationError'), t('st.pleaseFillInNameAnd'));
       return;
     }
 
@@ -91,7 +93,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
     if (!result.ok) {
       // The server explains an unreadable number precisely; show that rather
       // than a generic failure the user cannot act on.
-      Alert.alert('Could not save contact', result.error ?? 'Please try again.');
+      Alert.alert(t('st.couldNotSaveContact'), result.error ?? t('cf2.pleaseTryAgain'));
       return;
     }
 
@@ -107,12 +109,12 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
 
   const handleRemoveContact = (contact: EmergencyContact): void => {
     Alert.alert(
-      'Remove Contact',
-      `Remove ${contact.name} from emergency contacts?`,
+      t('st.removeContact'),
+      t('st.removeFromContacts', { name: contact.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('st.remove'),
           style: 'destructive',
           onPress: () => removeContact(contact.id),
         },
@@ -126,7 +128,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
     const removed = await EmergencyService.removeEmergencyContact(contactId);
 
     if (!removed) {
-      Alert.alert('Could not remove contact', 'Please try again.');
+      Alert.alert(t('st.couldNotRemoveContact'), t('cf2.pleaseTryAgain'));
       return;
     }
 
@@ -137,11 +139,11 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
 
   const handleCallContact = (contact: EmergencyContact): void => {
     Alert.alert(
-      'Call Emergency Contact',
-      `Call ${contact.name} at ${contact.phone}?`,
+      t('home.callEmergencyContact'),
+      t('st.callNameAt', { name: contact.name, phone: contact.phone }),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => Linking.openURL(`tel:${contact.phone}`) },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('cf.call'), onPress: () => Linking.openURL(`tel:${contact.phone}`) },
       ]
     );
   };
@@ -192,7 +194,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Emergency Contact</Text>
+            <Text style={styles.modalTitle}>{t('st.addEmergencyContact')}</Text>
             <TouchableOpacity onPress={() => setShowAddModal(false)}>
               <Icon name="close" size={24} color="#666666" />
             </TouchableOpacity>
@@ -200,12 +202,12 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
 
           <ScrollView style={styles.modalBody}>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Full Name *</Text>
+              <Text style={styles.inputLabel}>{t('st.fullName')}</Text>
               <TextInput
                 style={styles.textInput}
                 value={newContact.name}
                 onChangeText={(text) => setNewContact({ ...newContact, name: text })}
-                placeholder="Enter full name"
+                placeholder={t('st.enterFullName')}
                 autoCapitalize="words"
               />
             </View>
@@ -215,19 +217,19 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
                 value={newContact.phoneNumber}
                 onChangeText={(text) => setNewContact({ ...newContact, phoneNumber: text })}
                 onCountryChange={handleCountryChange}
-                label="Phone Number *"
-                placeholder="Enter phone number"
+                label={t('st.phoneNumber')}
+                placeholder={t('rf.enterPhoneNumber')}
                 defaultCountry="BW"
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Relationship</Text>
+              <Text style={styles.inputLabel}>{t('rf.relationship')}</Text>
               <TextInput
                 style={styles.textInput}
                 value={newContact.relationship}
                 onChangeText={(text) => setNewContact({ ...newContact, relationship: text })}
-                placeholder="e.g., Spouse, Parent, Friend"
+                placeholder={t('st.eGSpouseParentFriend')}
                 autoCapitalize="words"
               />
             </View>
@@ -241,7 +243,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
                 size={24}
                 color={colors.primary}
               />
-              <Text style={styles.primaryToggleText}>Set as primary emergency contact</Text>
+              <Text style={styles.primaryToggleText}>{t('st.setAsPrimaryEmergencyContact')}</Text>
             </TouchableOpacity>
           </ScrollView>
 
@@ -250,13 +252,13 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
               style={styles.cancelButton}
               onPress={() => setShowAddModal(false)}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.saveButton}
               onPress={handleAddContact}
             >
-              <Text style={styles.saveButtonText}>Add Contact</Text>
+              <Text style={styles.saveButtonText}>{t('st.addContact')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -267,16 +269,16 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
   const renderEmptyState = (): React.ReactNode => (
     <View style={styles.emptyState}>
       <Icon name="contacts" size={64} color="#CCCCCC" />
-      <Text style={styles.emptyStateTitle}>No Emergency Contacts</Text>
+      <Text style={styles.emptyStateTitle}>{t('st.noEmergencyContacts')}</Text>
       <Text style={styles.emptyStateSubtitle}>
-        Add emergency contacts to enable safety features and emergency alerts.
+        {t('st.addEmergencyContactsToEnable')}
       </Text>
       <TouchableOpacity
         style={styles.addFirstContactButton}
         onPress={() => setShowAddModal(true)}
       >
         <Icon name="add" size={20} color="#FFFFFF" />
-        <Text style={styles.addFirstContactText}>Add Your First Contact</Text>
+        <Text style={styles.addFirstContactText}>{t('st.addYourFirstContact')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -290,7 +292,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
         >
           <Icon name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Emergency Contacts</Text>
+        <Text style={styles.headerTitle}>{t('nav.emergencyContacts')}</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => setShowAddModal(true)}
@@ -303,7 +305,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
         <View style={styles.infoCard}>
           <Icon name="info" size={24} color={colors.primary} />
           <View style={styles.infoContent}>
-            <Text style={styles.infoTitle}>Safety First</Text>
+            <Text style={styles.infoTitle}>{t('st.safetyFirst')}</Text>
             <Text style={styles.infoText}>
               Emergency contacts will be notified immediately when you trigger an emergency alert. 
               Make sure these are people who can help you in case of emergency.
@@ -313,11 +315,11 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({ navig
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading contacts...</Text>
+            <Text style={styles.loadingText}>{t('st.loadingContacts')}</Text>
           </View>
         ) : contacts.length > 0 ? (
           <View style={styles.contactsList}>
-            <Text style={styles.sectionTitle}>Your Emergency Contacts</Text>
+            <Text style={styles.sectionTitle}>{t('st.yourEmergencyContacts')}</Text>
             {contacts.map(renderContactCard)}
           </View>
         ) : (

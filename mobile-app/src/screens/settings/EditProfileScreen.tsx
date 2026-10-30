@@ -25,6 +25,7 @@ import { updateUserProfile, uploadProfilePicture } from '../../store/slices/user
 import { colors } from '../../theme';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -49,6 +50,7 @@ interface ProfileFormData {
 }
 
 const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile, updateLoading } = useAppSelector((state) => state.user);
 
@@ -86,7 +88,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
 
   const handleSave = async (): Promise<void> => {
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
-      Alert.alert('Validation Error', 'First name and last name are required.');
+      Alert.alert(t('st.validationError'), t('st.firstNameAndLastName'));
       return;
     }
 
@@ -100,13 +102,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
       })).unwrap();
 
       Alert.alert(
-        'Success',
-        'Your profile has been updated successfully.',
+        t('common.success'),
+        t('st.yourProfileHasBeenUpdated'),
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Failed to update profile. Please try again.');
+      Alert.alert(t('common.error'), errMsg || t('st.failedToUpdateProfilePlease'));
     } finally {
       setIsSubmitting(false);
     }
@@ -114,26 +116,26 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
 
   const handleSelectPhoto = (): void => {
     Alert.alert(
-      'Profile Photo',
-      'Choose how you want to update your photo',
+      t('st.profilePhoto'),
+      t('st.chooseHowYouWantTo'),
       [
         {
-          text: 'Take Photo',
+          text: t('rf.takePhoto'),
           onPress: () => pickImage(true),
         },
         {
-          text: 'Choose from Gallery',
+          text: t('rf.chooseFromGallery'),
           onPress: () => pickImage(false),
         },
         {
-          text: 'Remove Photo',
+          text: t('st.removePhoto'),
           style: 'destructive',
           onPress: () => {
             setLocalPhotoUri(null);
             // Could dispatch an update to clear the photo
           },
         },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
@@ -167,7 +169,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
         setIsUploadingPhoto(false);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to select photo. Please try again.');
+      Alert.alert(t('common.error'), t('st.failedToSelectPhotoPlease'));
     }
   };
 
@@ -178,7 +180,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Edit Profile</Text>
+      <Text style={styles.headerTitle}>{t('nav.editProfile')}</Text>
       <TouchableOpacity
         onPress={handleSave}
         disabled={isSubmitting || updateLoading}
@@ -187,7 +189,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
         {isSubmitting || updateLoading ? (
           <ActivityIndicator size="small" color={colors.text.inverse} />
         ) : (
-          <Text style={styles.saveButtonText}>Save</Text>
+          <Text style={styles.saveButtonText}>{t('common.save')}</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -214,11 +216,11 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
         )}
       </TouchableOpacity>
       <Text style={styles.photoHelpText}>
-        {isUploadingPhoto ? 'Uploading...' : 'Tap to change photo'}
+        {isUploadingPhoto ? 'Uploading...' : t('st.tapToChangePhoto')}
       </Text>
       {!displayPhotoUri && (
         <Text style={styles.photoWarning}>
-          Adding a photo helps other travellers recognise you
+          {t('st.addingAPhotoHelpsOther')}
         </Text>
       )}
     </View>
@@ -227,15 +229,15 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
   const renderVerificationBadges = (): React.ReactNode => {
     if (!profile) return null;
     const badges = [
-      { key: 'email', icon: 'email', label: 'Email', verified: profile.isEmailVerified },
-      { key: 'phone', icon: 'phone', label: 'Phone', verified: profile.isPhoneVerified },
+      { key: 'email', icon: 'email', label: t('auth.email'), verified: profile.isEmailVerified },
+      { key: 'phone', icon: 'phone', label: t('cf.phone'), verified: profile.isPhoneVerified },
       { key: 'id', icon: 'verified-user', label: 'ID', verified: profile.isIdentityVerified },
-      { key: 'driver', icon: 'directions-car', label: 'Driver', verified: profile.isDriverVerified },
+      { key: 'driver', icon: 'directions-car', label: t('rideDetails.driver'), verified: profile.isDriverVerified },
     ];
 
     return (
       <View style={styles.badgesSection}>
-        <Text style={styles.badgesTitle}>Verification Status</Text>
+        <Text style={styles.badgesTitle}>{t('st.verificationStatus')}</Text>
         <View style={styles.badgesRow}>
           {badges.map((badge) => (
             <View key={badge.key} style={[styles.badge, badge.verified && styles.badgeVerified]}>
@@ -257,7 +259,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
           >
             <Icon name="shield" size={16} color={colors.primary} />
             <Text style={styles.verifyPromptText}>
-              Verify your identity to increase trust
+              {t('st.verifyYourIdentityToIncrease')}
             </Text>
             <Icon name="chevron-right" size={18} color={colors.primary} />
           </TouchableOpacity>
@@ -269,37 +271,37 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
   const renderForm = (): React.ReactNode => (
     <View style={styles.form}>
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>First Name</Text>
+        <Text style={styles.label}>{t('register.firstName')}</Text>
         <TextInput
           style={styles.input}
           value={formData.firstName}
           onChangeText={(value) => handleInputChange('firstName', value)}
-          placeholder="Enter your first name"
+          placeholder={t('st.enterYourFirstName')}
           placeholderTextColor={colors.text.secondary}
         />
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Last Name</Text>
+        <Text style={styles.label}>{t('register.lastName')}</Text>
         <TextInput
           style={styles.input}
           value={formData.lastName}
           onChangeText={(value) => handleInputChange('lastName', value)}
-          placeholder="Enter your last name"
+          placeholder={t('st.enterYourLastName')}
           placeholderTextColor={colors.text.secondary}
         />
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Email</Text>
+        <Text style={styles.label}>{t('auth.email')}</Text>
         <TextInput
           style={[styles.input, styles.inputDisabled]}
           value={formData.email}
           editable={false}
-          placeholder="Email address"
+          placeholder={t('st.emailAddress')}
           placeholderTextColor={colors.text.secondary}
         />
-        <Text style={styles.inputHint}>Email cannot be changed</Text>
+        <Text style={styles.inputHint}>{t('st.emailCannotBeChanged')}</Text>
       </View>
 
       <View style={styles.inputGroup}>
@@ -307,19 +309,19 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
           value={formData.phone}
           onChangeText={(value) => handleInputChange('phone', value)}
           onCountryChange={handleCountryChange}
-          label="Phone Number"
-          placeholder="Enter your phone number"
+          label={t('rf.phoneNumber')}
+          placeholder={t('st.enterYourPhoneNumber')}
           defaultCountry="BW"
         />
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Bio</Text>
+        <Text style={styles.label}>{t('st.bio')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           value={formData.bio}
           onChangeText={(value) => handleInputChange('bio', value)}
-          placeholder="Tell other travellers about yourself..."
+          placeholder={t('st.tellOtherTravellersAboutYourself')}
           placeholderTextColor={colors.text.secondary}
           multiline
           numberOfLines={4}
@@ -335,21 +337,21 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
     if (!profile) return null;
     return (
       <View style={styles.statsSection}>
-        <Text style={styles.statsTitle}>Your Stats</Text>
+        <Text style={styles.statsTitle}>{t('st.yourStats')}</Text>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{profile.totalRides || 0}</Text>
-            <Text style={styles.statLabel}>Rides</Text>
+            <Text style={styles.statLabel}>{t('st.rides')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{profile.rating?.toFixed(1) || '0.0'}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
+            <Text style={styles.statLabel}>{t('rf.rating')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{profile.totalDeliveries || 0}</Text>
-            <Text style={styles.statLabel}>Deliveries</Text>
+            <Text style={styles.statLabel}>{t('st.deliveries')}</Text>
           </View>
         </View>
       </View>

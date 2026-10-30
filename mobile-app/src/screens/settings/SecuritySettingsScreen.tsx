@@ -19,6 +19,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('SecuritySettingsScreen');
 
@@ -36,16 +37,17 @@ interface SecurityOption {
 }
 
 const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [loginAlertsEnabled, setLoginAlertsEnabled] = useState(true);
 
   const handleChangePassword = (): void => {
     Alert.alert(
-      'Change Password',
-      'You will receive an email with instructions to change your password.',
+      t('st.changePassword'),
+      t('st.youWillReceiveAnEmail'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         { text: 'Send Email', onPress: () => log.info('Password reset email sent') },
       ]
     );
@@ -54,12 +56,12 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
   const handleSetupTwoFactor = (): void => {
     if (twoFactorEnabled) {
       Alert.alert(
-        'Disable Two-Factor Authentication',
-        'This will make your account less secure. Are you sure?',
+        t('st.disableTwoFactorAuthentication'),
+        t('st.thisWillMakeYourAccount'),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Disable',
+            text: t('st.disable'),
             style: 'destructive',
             onPress: () => setTwoFactorEnabled(false),
           },
@@ -67,11 +69,11 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
       );
     } else {
       Alert.alert(
-        'Enable Two-Factor Authentication',
-        'We will send a verification code to your registered phone number.',
+        t('st.enableTwoFactorAuthentication'),
+        t('st.weWillSendAVerification'),
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Enable', onPress: () => setTwoFactorEnabled(true) },
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('st.enable'), onPress: () => setTwoFactorEnabled(true) },
         ]
       );
     }
@@ -79,18 +81,18 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
 
   const handleViewDevices = (): void => {
     Alert.alert(
-      'Active Devices',
-      'This device (Current)\n\nNo other active sessions found.',
+      t('st.activeDevices'),
+      t('st.thisDeviceCurrentNNno'),
       [{ text: 'OK' }]
     );
   };
 
   const handleLogoutAll = (): void => {
     Alert.alert(
-      'Log Out All Devices',
-      'This will log you out from all devices except this one.',
+      t('st.logOutAllDevices'),
+      t('st.thisWillLogYouOut'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         { text: 'Log Out All', style: 'destructive', onPress: () => log.info('Logged out all devices') },
       ]
     );
@@ -101,7 +103,7 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Security</Text>
+      <Text style={styles.headerTitle}>{t('nav.security')}</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -154,26 +156,26 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
       {renderHeader()}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Authentication</Text>
+          <Text style={styles.sectionTitle}>{t('st.authentication')}</Text>
 
           {renderActionItem(
-            'Change Password',
-            'Update your account password',
+            t('st.changePassword'),
+            t('st.updateYourAccountPassword'),
             'lock',
             handleChangePassword
           )}
 
           {renderToggleItem(
-            'Biometric Login',
-            'Use fingerprint or face recognition to log in',
+            t('st.biometricLogin'),
+            t('st.useFingerprintOrFaceRecognition'),
             'fingerprint',
             biometricEnabled,
             () => setBiometricEnabled(!biometricEnabled)
           )}
 
           {renderToggleItem(
-            'Two-Factor Authentication',
-            'Add an extra layer of security',
+            t('st.twoFactorAuthentication'),
+            t('st.addAnExtraLayerOf'),
             'security',
             twoFactorEnabled,
             handleSetupTwoFactor
@@ -181,26 +183,26 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Login Activity</Text>
+          <Text style={styles.sectionTitle}>{t('st.loginActivity')}</Text>
 
           {renderToggleItem(
-            'Login Alerts',
-            'Get notified when someone logs into your account',
+            t('st.loginAlerts'),
+            t('st.getNotifiedWhenSomeoneLogs'),
             'notifications',
             loginAlertsEnabled,
             () => setLoginAlertsEnabled(!loginAlertsEnabled)
           )}
 
           {renderActionItem(
-            'Active Devices',
-            'View devices logged into your account',
+            t('st.activeDevices'),
+            t('st.viewDevicesLoggedIntoYour'),
             'devices',
             handleViewDevices
           )}
 
           {renderActionItem(
-            'Log Out All Devices',
-            'Sign out from all other devices',
+            t('st.logOutAllDevices'),
+            t('st.signOutFromAllOther'),
             'logout',
             handleLogoutAll,
             true
@@ -211,7 +213,7 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
           <View style={styles.infoCard}>
             <Icon name="info" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              Keep your account secure by using a strong password and enabling two-factor authentication.
+              {t('st.keepYourAccountSecureBy')}
             </Text>
           </View>
         </View>

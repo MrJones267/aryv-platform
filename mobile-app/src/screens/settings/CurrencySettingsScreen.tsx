@@ -26,10 +26,12 @@ import UserPreferencesService from '../../services/UserPreferencesService';
 import CurrencySelector from '../../components/currency/CurrencySelector';
 import CurrencyConverter from '../../components/currency/CurrencyConverter';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('CurrencySettingsScreen');
 
 const CurrencySettingsScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ const CurrencySettingsScreen: React.FC = () => {
       }
     } catch (error) {
       log.error('Error loading currency preferences:', error);
-      Alert.alert('Error', 'Failed to load currency settings');
+      Alert.alert(t('common.error'), t('st.failedToLoadCurrencySettings'));
     } finally {
       setLoading(false);
     }
@@ -85,16 +87,16 @@ const CurrencySettingsScreen: React.FC = () => {
         const preferencesService = UserPreferencesService.getInstance();
         await preferencesService.updateCurrency(currency.code);
         
-        Alert.alert('Success', `Primary currency changed to ${currency.name}`);
+        Alert.alert(t('common.success'), t('st.primaryChanged', { name: currency.name }));
         
         // Reload preferences to get updated data
         await loadCurrencyPreferences();
       } else {
-        Alert.alert('Error', 'Failed to update primary currency');
+        Alert.alert(t('common.error'), t('st.failedToUpdatePrimaryCurrency'));
       }
     } catch (error) {
       log.error('Error updating primary currency:', error);
-      Alert.alert('Error', 'Failed to update primary currency');
+      Alert.alert(t('common.error'), t('st.failedToUpdatePrimaryCurrency'));
     } finally {
       setSaving(false);
     }
@@ -109,14 +111,14 @@ const CurrencySettingsScreen: React.FC = () => {
         if (success) {
           setSelectedPaymentCurrencies(prev => new Set([...prev, currency.code]));
         } else {
-          Alert.alert('Error', `Failed to add ${currency.name} to payment options`);
+          Alert.alert(t('common.error'), t('st.addCurrencyFailed', { name: currency.name }));
         }
       } else {
         // Don't allow removing primary currency from payment options
         if (currency.code === primaryCurrency?.code) {
           Alert.alert(
-            'Cannot Remove', 
-            'Primary currency cannot be removed from payment options. Set another currency as primary first.'
+            t('st.cannotRemove'),
+            t('st.primaryCurrencyCannotBeRemoved')
           );
           return;
         }
@@ -129,12 +131,12 @@ const CurrencySettingsScreen: React.FC = () => {
             return newSet;
           });
         } else {
-          Alert.alert('Error', `Failed to remove ${currency.name} from payment options`);
+          Alert.alert(t('common.error'), t('st.removeCurrencyFailed', { name: currency.name }));
         }
       }
     } catch (error) {
       log.error('Error toggling payment currency:', error);
-      Alert.alert('Error', 'Failed to update payment currency');
+      Alert.alert(t('common.error'), t('st.failedToUpdatePaymentCurrency'));
     } finally {
       setSaving(false);
     }
@@ -175,7 +177,7 @@ const CurrencySettingsScreen: React.FC = () => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading currency settings...</Text>
+        <Text style={styles.loadingText}>{t('st.loadingCurrencySettings')}</Text>
       </View>
     );
   }
@@ -184,9 +186,9 @@ const CurrencySettingsScreen: React.FC = () => {
     return (
       <View style={styles.errorContainer}>
         <Icon name="error-outline" size={48} color={colors.error} />
-        <Text style={styles.errorText}>Failed to load currency settings</Text>
+        <Text style={styles.errorText}>{t('st.failedToLoadCurrencySettings')}</Text>
         <Button
-          title="Retry"
+          title={t('common.retry')}
           onPress={loadCurrencyPreferences}
           style={styles.retryButton}
         />
@@ -203,16 +205,16 @@ const CurrencySettingsScreen: React.FC = () => {
         >
           <Icon name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Currency Settings</Text>
+        <Text style={styles.headerTitle}>{t('st.currencySettings')}</Text>
         <View style={styles.headerRight} />
       </View>
 
       <View style={styles.content}>
         {/* Primary Currency Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Primary Currency</Text>
+          <Text style={styles.sectionTitle}>{t('st.primaryCurrency')}</Text>
           <Text style={styles.sectionDescription}>
-            Your primary currency is used for displaying prices and your main payment option.
+            {t('st.yourPrimaryCurrencyIsUsed')}
           </Text>
           
           <CurrencySelector
@@ -221,15 +223,15 @@ const CurrencySettingsScreen: React.FC = () => {
             showPopularOnly={true}
             disabled={saving}
             label=""
-            placeholder="Select primary currency"
+            placeholder={t('st.selectPrimaryCurrency')}
           />
         </View>
 
         {/* Payment Currencies Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Currencies</Text>
+          <Text style={styles.sectionTitle}>{t('st.paymentCurrencies')}</Text>
           <Text style={styles.sectionDescription}>
-            Enable currencies you want to use for payments. Your primary currency is always enabled.
+            {t('st.enableCurrenciesYouWantTo')}
           </Text>
           
           <View style={styles.paymentCurrenciesList}>
@@ -240,7 +242,7 @@ const CurrencySettingsScreen: React.FC = () => {
         {/* Currency Converter Section */}
         <View style={styles.section}>
           <View style={styles.converterHeader}>
-            <Text style={styles.sectionTitle}>Currency Converter</Text>
+            <Text style={styles.sectionTitle}>{t('st.currencyConverter')}</Text>
             <TouchableOpacity
               style={styles.toggleButton}
               onPress={() => setShowConverter(!showConverter)}
@@ -265,7 +267,7 @@ const CurrencySettingsScreen: React.FC = () => {
         <View style={styles.infoSection}>
           <Icon name="info" size={20} color={colors.primary} />
           <View style={styles.infoContent}>
-            <Text style={styles.infoTitle}>Exchange Rates</Text>
+            <Text style={styles.infoTitle}>{t('st.exchangeRates')}</Text>
             <Text style={styles.infoText}>
               Exchange rates are updated regularly from reliable financial data sources. 
               Actual rates may vary slightly at the time of transaction.
@@ -277,7 +279,7 @@ const CurrencySettingsScreen: React.FC = () => {
         <View style={styles.infoSection}>
           <Icon name="public" size={20} color={colors.primary} />
           <View style={styles.infoContent}>
-            <Text style={styles.infoTitle}>Global Support</Text>
+            <Text style={styles.infoTitle}>{t('st.globalSupport')}</Text>
             <Text style={styles.infoText}>
               We support major currencies from around the world. Popular currencies for your region 
               are prioritized in the selection lists.
