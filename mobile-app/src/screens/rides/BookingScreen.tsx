@@ -26,6 +26,7 @@ import PaymentMethodSelector, { PaymentMethodType } from '../../components/payme
 import { paymentApi } from '../../services/api';
 import { CurrencyService, Currency } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('BookingScreen');
 
@@ -104,6 +105,7 @@ const fareBetween = (
 };
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const typedNavigation = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
   const { rideId } = route.params;
   const params = route.params as Record<string, unknown>;
@@ -310,12 +312,14 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       : `P${bookingDetails.totalAmount.toFixed(2)}`;
 
     Alert.alert(
-      'Confirm Booking',
-      `Book ${selectedSeats} seat${selectedSeats > 1 ? 's' : ''} for ${displayAmount}?`,
+      t('booking.confirmTitle'),
+      selectedSeats > 1
+        ? t('booking.confirmBodyMany', { count: selectedSeats, amount: displayAmount })
+        : t('booking.confirmBodyOne', { amount: displayAmount }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Confirm & Pay',
+          text: t('booking.confirmPay'),
           onPress: async () => {
             setIsBooking(true);
             try {
@@ -354,8 +358,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
                   if (!paymentResponse.success || !paymentResponse.data?.id) {
                     Alert.alert(
-                      'Seat held — payment not taken',
-                      `${paymentResponse.error || 'The payment could not be started.'}\n\nYour seat is reserved. Open the booking to pay, or cancel it for a full refund.`,
+                      t('booking.heldNotTaken'),
+                      `${paymentResponse.error || t('booking.paymentNotStarted')}\n\n${t('booking.heldOpenToPay')}`,
                     );
                     typedNavigation.navigate('Rides');
                     return;
@@ -366,8 +370,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                     // signed webhook, never from here. The seat is held as a
                     // pending booking until that arrives.
                     Alert.alert(
-                      'Seat held — approve the payment',
-                      'Your seat is reserved. Approve the payment prompt on your phone to confirm it, or cancel the booking for a full refund.',
+                      t('booking.heldApprove'),
+                      t('booking.heldApproveBody'),
                     );
                     typedNavigation.navigate('Rides');
                     return;
@@ -383,8 +387,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                     // processor says so, so this is a real "not paid yet" —
                     // never tell the passenger it went through.
                     Alert.alert(
-                      'Seat held — payment pending',
-                      `${confirmation.error || 'Your payment has not completed yet.'}\n\nYour seat is reserved. Open the booking to finish paying, or cancel it for a full refund.`,
+                      t('booking.heldPending'),
+                      `${confirmation.error || t('booking.paymentNotComplete')}\n\n${t('booking.heldFinishPaying')}`,
                     );
                     typedNavigation.navigate('Rides');
                     return;
@@ -392,19 +396,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 }
 
                 Alert.alert(
-                  'Booking Confirmed!',
+                  t('booking.confirmed'),
                   selectedPaymentMethod === 'cash'
-                    ? 'Your booking is confirmed. Please pay the driver in cash upon meeting.'
-                    : 'Your booking and payment have been confirmed.',
+                    ? t('booking.confirmedCash')
+                    : t('booking.confirmedPaid'),
                   [
                     {
-                      text: 'View Booking',
+                      text: t('booking.viewBooking'),
                       onPress: () => {
                         typedNavigation.navigate('Rides');
                       },
                     },
                     {
-                      text: 'Contact Driver',
+                      text: t('myRides.contactDriver'),
                       onPress: () => {
                         typedNavigation.navigate('Chat', {
                           chatId: `ride-${rideId}`,
@@ -418,11 +422,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               } else {
                 // Nothing to unwind: no payment is raised until the booking
                 // exists, so a failed booking has taken no money.
-                Alert.alert('Booking Failed', response.error || 'Unable to complete booking');
+                Alert.alert(t('rideDetails.bookFailed'), response.error || t('booking.failedBody'));
               }
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              Alert.alert('Error', errMsg || 'Booking failed. No payment was charged.');
+              Alert.alert(t('common.error'), errMsg || t('booking.failedNoCharge'));
             } finally {
               setIsBooking(false);
             }
@@ -517,7 +521,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <>
             <View style={styles.separator} />
             <View style={styles.amenitiesSection}>
-              <Text style={styles.sectionTitle}>Amenities</Text>
+              <Text style={styles.sectionTitle}>{t('rideDetails.amenities')}</Text>
               <View style={styles.amenitiesList}>
                 {ride.amenities.map((amenity, index) => (
                   <Badge
@@ -586,7 +590,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
     return (
       <Card style={styles.segmentCard}>
-        <Text style={styles.sectionTitle}>Your Part of the Trip</Text>
+        <Text style={styles.sectionTitle}>{t('booking.yourPart')}</Text>
 
         <TouchableOpacity
           style={styles.segmentRow}
@@ -594,9 +598,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         >
           <Icon name="trip-origin" size={20} color="#2196F3" />
           <View style={styles.segmentTextGroup}>
-            <Text style={styles.segmentLabel}>Get on at</Text>
+            <Text style={styles.segmentLabel}>{t('booking.getOn')}</Text>
             <Text style={styles.segmentValue} numberOfLines={1}>
-              {boardingStop?.address ?? 'Start of the trip'}
+              {boardingStop?.address ?? t('booking.startOfTrip')}
             </Text>
           </View>
           <Icon
@@ -612,9 +616,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         >
           <Icon name="place" size={20} color="#4CAF50" />
           <View style={styles.segmentTextGroup}>
-            <Text style={styles.segmentLabel}>Get off at</Text>
+            <Text style={styles.segmentLabel}>{t('booking.getOff')}</Text>
             <Text style={styles.segmentValue} numberOfLines={1}>
-              {alightingStop?.address ?? 'End of the trip'}
+              {alightingStop?.address ?? t('booking.endOfTrip')}
             </Text>
           </View>
           <Icon
@@ -644,7 +648,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         )}
 
         <Text style={styles.segmentHint}>
-          You only pay for the part you travel.
+          {t('booking.payForPart')}
         </Text>
       </Card>
     );
@@ -667,10 +671,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
     return (
       <Card style={styles.bookingCard}>
-        <Text style={styles.sectionTitle}>Booking Details</Text>
+        <Text style={styles.sectionTitle}>{t('booking.details')}</Text>
         
         <View style={styles.seatSelection}>
-          <Text style={styles.seatLabel}>Number of Seats</Text>
+          <Text style={styles.seatLabel}>{t('booking.numberOfSeats')}</Text>
           <View style={styles.seatControls}>
             <TouchableOpacity
               style={[styles.seatButton, selectedSeats <= 1 && styles.seatButtonDisabled]}
@@ -698,11 +702,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         >
           <View style={styles.paymentMethodLeft}>
             <Icon name="credit-card" size={20} color="#666666" />
-            <Text style={styles.paymentMethodLabel}>Payment Method</Text>
+            <Text style={styles.paymentMethodLabel}>{t('booking.paymentMethod')}</Text>
           </View>
           <View style={styles.paymentMethodRight}>
             <Text style={styles.paymentMethodText}>
-              {bookingDetails.paymentMethod || 'Select method'}
+              {bookingDetails.paymentMethod || t('booking.selectMethod')}
             </Text>
             <Icon name="chevron-right" size={20} color="#CCCCCC" />
           </View>
@@ -715,7 +719,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Loading booking details...</Text>
+          <Text>{t('booking.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -726,7 +730,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Icon name="error" size={48} color="#CCCCCC" />
-          <Text style={styles.errorText}>Unable to load booking details</Text>
+          <Text style={styles.errorText}>{t('booking.loadFailed')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -736,7 +740,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          <Text style={styles.screenTitle}>Confirm Your Booking</Text>
+          <Text style={styles.screenTitle}>{t('booking.confirmYour')}</Text>
           
           {renderRideDetails()}
           {renderSegmentSelector()}
@@ -746,7 +750,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
       <View style={styles.footer}>
         <Button
-          title={isBooking ? 'Booking...' : 'Confirm & Pay'}
+          title={isBooking ? t('rideDetails.booking') : t('booking.confirmPay')}
           onPress={handleConfirmBooking}
           disabled={isBooking || !bookingDetails.paymentMethod}
           loading={isBooking}
@@ -768,7 +772,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             <TouchableOpacity onPress={() => setShowPaymentSelector(false)}>
               <Icon name="close" size={24} color="#333333" />
             </TouchableOpacity>
-            <Text style={styles.paymentModalTitle}>Payment Method</Text>
+            <Text style={styles.paymentModalTitle}>{t('booking.paymentMethod')}</Text>
             <View style={{ width: 24 }} />
           </View>
           <ScrollView style={styles.paymentModalContent}>

@@ -21,6 +21,7 @@ import { CashPaymentService } from '../../services/CashPaymentService';
 import { Currency, CurrencyService } from '../../services/CurrencyService';
 import CurrencySelector from '../currency/CurrencySelector';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PaymentMethodSelector');
 
@@ -70,6 +71,7 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
   onCurrencyChange,
   showCurrencySelector = true,
 }) => {
+  const { t } = useI18n();
   const [cashEligibility, setCashEligibility] = useState<{
     canPay: boolean;
     reason?: string;
@@ -121,10 +123,10 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
   const paymentMethods: PaymentMethodOption[] = [
     {
       id: 'cash',
-      title: 'Cash Payment',
-      subtitle: cashEligibility.canPay 
-        ? `Pay directly to driver • Trust Score: ${cashEligibility.trustScore || 0}/100`
-        : cashEligibility.reason || 'Not available',
+      title: t('paySel.cash'),
+      subtitle: cashEligibility.canPay
+        ? t('paySel.cashSub', { score: cashEligibility.trustScore || 0 })
+        : cashEligibility.reason || t('paySel.notAvailable'),
       icon: 'attach-money',
       available: true,
       disabled: !cashEligibility.canPay,
@@ -134,24 +136,24 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
       // Cards are not accepted: there is no card-entry step, and card details
       // must never pass through ARYV's server. Shown disabled so riders know.
       id: 'stripe',
-      title: 'Credit/Debit Card',
-      subtitle: 'Not accepted',
+      title: t('paySel.card'),
+      subtitle: t('paySel.notAccepted'),
       icon: 'credit-card',
       available: true,
       disabled: true,
-      disabledReason: 'Cards are not accepted. Please use cash, mobile money or your ARYV wallet.',
+      disabledReason: t('paySel.cardReason'),
     },
     {
       id: 'mobile_money',
-      title: 'Mobile Money',
+      title: t('paySel.mobileMoney'),
       subtitle: 'Orange Money, M-Pesa, MTN MoMo, FNB eWallet',
       icon: 'phone-android',
       available: true,
     },
     {
       id: 'wallet',
-      title: 'ARYV Wallet',
-      subtitle: 'Pay from your in-app wallet balance',
+      title: t('paySel.wallet'),
+      subtitle: t('paySel.walletSub'),
       icon: 'account-balance-wallet',
       available: true,
     },
@@ -160,23 +162,23 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
   const handleMethodPress = (method: PaymentMethodOption) => {
     if (method.disabled) {
       Alert.alert(
-        'Payment Method Not Available',
-        method.disabledReason || 'This payment method is not available',
-        [{ text: 'OK' }]
+        t('paySel.methodUnavailable'),
+        method.disabledReason || t('paySel.methodUnavailableBody'),
+        [{ text: t('common.ok') }]
       );
       return;
     }
 
     if (method.id === 'cash' && !cashEligibility.canPay) {
       Alert.alert(
-        'Cash Payment Not Available',
-        cashEligibility.reason || 'You cannot use cash payment for this transaction',
+        t('paySel.cashUnavailable'),
+        cashEligibility.reason || t('paySel.cashUnavailableBody'),
         [
           {
-            text: 'Check Requirements',
+            text: t('paySel.checkRequirements'),
             onPress: () => showCashRequirements(),
           },
-          { text: 'OK' },
+          { text: t('common.ok') },
         ]
       );
       return;
@@ -187,11 +189,9 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
 
   const showCashRequirements = () => {
     Alert.alert(
-      'Cash payment unavailable',
-      `${cashEligibility.reason || 'Cash payment is not available on this account.'}
-
-Contact ARYV support if you think this is a mistake.`,
-      [{ text: 'OK' }]
+      t('paySel.cashUnavailableLower'),
+      `${cashEligibility.reason || t('paySel.cashNotOnAccount')}\n\n${t('paySel.contactSupport')}`,
+      [{ text: t('common.ok') }]
     );
   };
 
@@ -202,7 +202,7 @@ Contact ARYV support if you think this is a mistake.`,
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Select Payment Method</Text>
+      <Text style={styles.title}>{t('paySel.title')}</Text>
       <Text style={styles.subtitle}>Amount: {displayAmount}</Text>
 
       {showCurrencySelector && (
@@ -214,7 +214,7 @@ Contact ARYV support if you think this is a mistake.`,
               setPrimaryCurrency(currency);
             }}
             showPopularOnly={true}
-            label="Currency"
+            label={t('paySel.currency')}
           />
         </View>
       )}
@@ -222,7 +222,7 @@ Contact ARYV support if you think this is a mistake.`,
       {checkingCashEligibility && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color={colors.primary} />
-          <Text style={styles.loadingText}>Checking cash payment eligibility...</Text>
+          <Text style={styles.loadingText}>{t('paySel.checking')}</Text>
         </View>
       )}
 

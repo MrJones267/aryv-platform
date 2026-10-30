@@ -31,6 +31,8 @@ import AnonymizedCallService from '../../services/AnonymizedCallService';
 import PromoCodeInput from '../../components/payment/PromoCodeInput';
 import logger from '../../services/LoggingService';
 import { driverDisplayName } from '../../utils/driverName';
+import { useI18n } from '../../i18n/I18nContext';
+import type { TranslationKey } from '../../i18n/translations';
 
 const log = logger.createLogger('RideDetailsScreen');
 
@@ -92,6 +94,7 @@ interface RideDetails {
 }
 
 const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const { rideId } = route.params;
   const { profile: user } = useAppSelector((state) => state.user);
   
@@ -117,9 +120,9 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       }
     } catch (error) {
       log.error('Error loading ride details:', error);
-      Alert.alert('Error', 'Failed to load ride details. Please try again.', [
-        { text: 'Retry', onPress: loadRideDetails },
-        { text: 'Go Back', onPress: () => navigation.goBack() },
+      Alert.alert(t('common.error'), t('rideDetails.loadFailed'), [
+        { text: t('common.retry'), onPress: loadRideDetails },
+        { text: t('rideDetails.goBack'), onPress: () => navigation.goBack() },
       ]);
     } finally {
       setIsLoading(false);
@@ -131,28 +134,28 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     haptic.confirm();
 
     Alert.alert(
-      'Book This Ride',
-      `Book 1 seat for P${ride.pricePerSeat.toFixed(2)}?`,
+      t('rideDetails.bookTitle'),
+      t('rideDetails.bookBody', { price: ride.pricePerSeat.toFixed(2) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Book Now',
+          text: t('rides.bookNow'),
           onPress: async () => {
             setIsBooking(true);
             try {
               const response = await ridesApi.bookRide(ride.id, 1);
               if (response.success) {
                 Alert.alert(
-                  'Booking Successful',
-                  'Your ride has been booked! You can find it in your "Rides" tab.',
-                  [{ text: 'OK', onPress: () => navigation.goBack() }]
+                  t('rideDetails.bookSuccess'),
+                  t('rideDetails.bookSuccessBody'),
+                  [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
                 );
               } else {
-                Alert.alert('Booking Failed', response.error || 'Unable to book ride');
+                Alert.alert(t('rideDetails.bookFailed'), response.error || t('rideDetails.bookFailedBody'));
               }
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              Alert.alert('Error', errMsg || 'Booking failed');
+              Alert.alert(t('common.error'), errMsg || t('rideDetails.bookingFailed'));
             } finally {
               setIsBooking(false);
             }
@@ -193,26 +196,26 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     haptic.confirm();
 
     Alert.alert(
-      'Start This Ride',
-      'Confirm that all passengers are on board and you are ready to depart?',
+      t('rideDetails.startTitle'),
+      t('rideDetails.startBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Start Ride',
+          text: t('rideDetails.startRide'),
           onPress: async () => {
             setIsUpdatingStatus(true);
             try {
               const response = await ridesApi.startRide(ride.id);
               if (response.success) {
                 setRide(prev => prev ? { ...prev, status: 'in_progress' } : null);
-                Alert.alert('Ride Started', 'Have a safe journey! Passengers have been notified.');
+                Alert.alert(t('rideDetails.started'), t('rideDetails.startedNotified'));
               } else {
-                Alert.alert('Error', response.error || 'Failed to start ride');
+                Alert.alert(t('common.error'), response.error || t('rideDetails.startFailed'));
               }
             } catch (error: unknown) {
               // Update locally even if API fails
               setRide(prev => prev ? { ...prev, status: 'in_progress' } : null);
-              Alert.alert('Ride Started', 'Have a safe journey!');
+              Alert.alert(t('rideDetails.started'), t('rideDetails.startedBody'));
             } finally {
               setIsUpdatingStatus(false);
             }
@@ -227,12 +230,12 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     haptic.confirm();
 
     Alert.alert(
-      'Complete This Ride',
-      'Confirm that you have arrived at the destination and all passengers have been dropped off?',
+      t('rideDetails.completeTitle'),
+      t('rideDetails.completeBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Complete Ride',
+          text: t('rideDetails.completeRide'),
           onPress: async () => {
             setIsUpdatingStatus(true);
             try {
@@ -265,23 +268,23 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     haptic.tap();
 
     Alert.alert(
-      'Cancel This Ride',
-      'Are you sure you want to cancel? All booked passengers will be notified.',
+      t('rideDetails.cancelTitle'),
+      t('rideDetails.cancelBody'),
       [
-        { text: 'Keep Ride', style: 'cancel' },
+        { text: t('rideDetails.keepRide'), style: 'cancel' },
         {
-          text: 'Cancel Ride',
+          text: t('rides.cancelRide'),
           style: 'destructive',
           onPress: async () => {
             setIsUpdatingStatus(true);
             try {
               await ridesApi.cancelRide(ride.id, 'Driver cancelled');
               setRide(prev => prev ? { ...prev, status: 'cancelled' } : null);
-              Alert.alert('Ride Cancelled', 'Passengers have been notified.', [
-                { text: 'OK', onPress: () => navigation.goBack() },
+              Alert.alert(t('rideDetails.cancelled'), t('rideDetails.passengersNotified'), [
+                { text: t('common.ok'), onPress: () => navigation.goBack() },
               ]);
             } catch (error: unknown) {
-              Alert.alert('Error', 'Failed to cancel ride');
+              Alert.alert(t('common.error'), t('myRides.cancelRideFailed'));
             } finally {
               setIsUpdatingStatus(false);
             }
@@ -292,7 +295,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   };
 
   const handleReportRide = (): void => {
-    Alert.alert('Report Ride', 'Please contact support to report this ride.');
+    Alert.alert(t('rideDetails.reportTitle'), t('rideDetails.reportBody'));
   };
 
   const getStatusColor = (status: string): string => {
@@ -311,7 +314,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Driver & Vehicle</Text>
+        <Text style={styles.sectionTitle}>{t('rideDetails.driverVehicle')}</Text>
         <DriverProfileCard
           driver={{
             id: ride.driver.id,
@@ -346,7 +349,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const renderRouteInfo = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Route</Text>
+      <Text style={styles.sectionTitle}>{t('rideDetails.route')}</Text>
       <View style={styles.routeCard}>
         <View style={styles.routeTimeline}>
           <View style={styles.timeColumn}>
@@ -405,19 +408,19 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const renderRideInfo = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Ride Information</Text>
+      <Text style={styles.sectionTitle}>{t('rideDetails.info')}</Text>
       <View style={styles.infoCard}>
         <View style={styles.infoRow}>
           <View style={styles.infoItem}>
             <Icon name="event" size={20} color="#666666" />
-            <Text style={styles.infoLabel}>Date</Text>
+            <Text style={styles.infoLabel}>{t('search.date')}</Text>
             <Text style={styles.infoValue}>
               {ride ? new Date(ride.departureTime).toLocaleDateString() : ''}
             </Text>
           </View>
           <View style={styles.infoItem}>
             <Icon name="attach-money" size={20} color="#666666" />
-            <Text style={styles.infoLabel}>Price</Text>
+            <Text style={styles.infoLabel}>{t('rideDetails.price')}</Text>
             <Text style={styles.infoValue}>P{ride?.pricePerSeat?.toFixed(2)} per seat</Text>
           </View>
         </View>
@@ -425,16 +428,16 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
         <View style={styles.infoRow}>
           <View style={styles.infoItem}>
             <Icon name="airline-seat-recline-normal" size={20} color="#666666" />
-            <Text style={styles.infoLabel}>Seats</Text>
+            <Text style={styles.infoLabel}>{t('rideDetails.seats')}</Text>
             <Text style={styles.infoValue}>
-              {ride?.availableSeats} of {ride?.totalSeats} available
+              {t('rideDetails.seatsOf', { available: ride?.availableSeats ?? 0, total: ride?.totalSeats ?? 0 })}
             </Text>
           </View>
           <View style={styles.infoItem}>
             <Icon name="flag" size={20} color={getStatusColor(ride?.status || '')} />
-            <Text style={styles.infoLabel}>Status</Text>
+            <Text style={styles.infoLabel}>{t('rideDetails.status')}</Text>
             <Text style={[styles.infoValue, { color: getStatusColor(ride?.status || '') }]}>
-              {ride?.status.replace('_', ' ').toUpperCase()}
+              {ride ? t(`status.${ride.status}` as TranslationKey).toUpperCase() : ''}
             </Text>
           </View>
         </View>
@@ -447,7 +450,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Amenities</Text>
+        <Text style={styles.sectionTitle}>{t('rideDetails.amenities')}</Text>
         <View style={styles.amenitiesContainer}>
           {ride.amenities.map((amenity, index) => (
             <View key={index} style={styles.amenityChip}>
@@ -462,7 +465,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const renderPreferences = (): React.ReactNode => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Preferences</Text>
+      <Text style={styles.sectionTitle}>{t('rideDetails.preferences')}</Text>
       <View style={styles.preferencesContainer}>
         <View style={styles.preference}>
           <Icon 
@@ -471,7 +474,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             color={ride?.preferences.smokingAllowed ? '#4CAF50' : '#F44336'} 
           />
           <Text style={styles.preferenceText}>
-            Smoking {ride?.preferences.smokingAllowed ? 'allowed' : 'not allowed'}
+            {ride?.preferences.smokingAllowed ? t('rideDetails.smokingAllowed') : t('rideDetails.smokingNotAllowed')}
           </Text>
         </View>
         <View style={styles.preference}>
@@ -481,7 +484,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             color={ride?.preferences.petsAllowed ? '#4CAF50' : '#F44336'} 
           />
           <Text style={styles.preferenceText}>
-            Pets {ride?.preferences.petsAllowed ? 'allowed' : 'not allowed'}
+            {ride?.preferences.petsAllowed ? t('rideDetails.petsAllowed') : t('rideDetails.petsNotAllowed')}
           </Text>
         </View>
         <View style={styles.preference}>
@@ -491,7 +494,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             color={ride?.preferences.musicAllowed ? '#4CAF50' : '#F44336'} 
           />
           <Text style={styles.preferenceText}>
-            Music {ride?.preferences.musicAllowed ? 'allowed' : 'not allowed'}
+            {ride?.preferences.musicAllowed ? t('rideDetails.musicAllowed') : t('rideDetails.musicNotAllowed')}
           </Text>
         </View>
       </View>
@@ -503,7 +506,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Other Passengers</Text>
+        <Text style={styles.sectionTitle}>{t('rideDetails.otherPassengers')}</Text>
         <View style={styles.bookingsContainer}>
           {ride.bookings.map((booking) => (
             <View key={booking.id} style={styles.bookingCard}>
@@ -527,12 +530,12 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
   const buildTripShareData = (): TripShareData => ({
     rideId: ride?.id || rideId,
-    driverName: ride ? driverDisplayName(ride.driver) : 'Driver',
+    driverName: ride ? driverDisplayName(ride.driver) : t('rideDetails.driver'),
     vehicleInfo: ride?.vehicle
       ? `${ride.vehicle.color} ${ride.vehicle.make} ${ride.vehicle.model} (${ride.vehicle.licensePlate})`
       : undefined,
-    origin: ride?.origin.address || 'Origin',
-    destination: ride?.destination.address || 'Destination',
+    origin: ride?.origin.address || t('home.origin'),
+    destination: ride?.destination.address || t('home.destination'),
     departureTime: ride?.departureTime
       ? new Date(ride.departureTime).toLocaleString()
       : undefined,
@@ -541,7 +544,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       : undefined,
     passengerName: user
       ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
-      : 'Passenger',
+      : t('rideDetails.passenger'),
   });
 
   const renderActionButtons = (): React.ReactNode => {
@@ -564,7 +567,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
                 >
                   <Icon name="play-arrow" size={22} color="#FFFFFF" />
                   <Text style={styles.startRideButtonText}>
-                    {isUpdatingStatus ? 'Starting...' : 'Start Ride'}
+                    {isUpdatingStatus ? t('rideDetails.starting') : t('rideDetails.startRide')}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -572,7 +575,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
                   onPress={handleCancelRide}
                   disabled={isUpdatingStatus}
                 >
-                  <Text style={styles.cancelRideButtonText}>Cancel Ride</Text>
+                  <Text style={styles.cancelRideButtonText}>{t('rides.cancelRide')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -585,20 +588,20 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
               >
                 <Icon name="check-circle" size={22} color="#FFFFFF" />
                 <Text style={styles.completeRideButtonText}>
-                  {isUpdatingStatus ? 'Completing...' : 'Complete Ride'}
+                  {isUpdatingStatus ? t('rideDetails.completing') : t('rideDetails.completeRide')}
                 </Text>
               </TouchableOpacity>
             )}
             {ride.status === 'completed' && (
               <View style={styles.statusBanner}>
                 <Icon name="check-circle" size={20} color="#10B981" />
-                <Text style={styles.statusBannerText}>Ride Completed</Text>
+                <Text style={styles.statusBannerText}>{t('rideDetails.completed')}</Text>
               </View>
             )}
             {ride.status === 'cancelled' && (
               <View style={[styles.statusBanner, styles.cancelledBanner]}>
                 <Icon name="cancel" size={20} color="#EF4444" />
-                <Text style={[styles.statusBannerText, styles.cancelledText]}>Ride Cancelled</Text>
+                <Text style={[styles.statusBannerText, styles.cancelledText]}>{t('rideDetails.cancelled')}</Text>
               </View>
             )}
           </View>
@@ -621,10 +624,10 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
               <Icon name="event-seat" size={20} color="#FFFFFF" />
               <Text style={styles.bookButtonText}>
                 {isBooking
-                  ? 'Booking...'
+                  ? t('rideDetails.booking')
                   : promoDiscount > 0
-                    ? `Book for P${finalPrice.toFixed(2)} (was P${ride.pricePerSeat.toFixed(2)})`
-                    : `Book for P${ride.pricePerSeat.toFixed(2)}`}
+                    ? t('rideDetails.bookForWas', { price: finalPrice.toFixed(2), was: ride.pricePerSeat.toFixed(2) })
+                    : t('rideDetails.bookFor', { price: ride.pricePerSeat.toFixed(2) })}
               </Text>
             </TouchableOpacity>
           </>
@@ -647,7 +650,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             activeOpacity={0.8}
           >
             <Icon name="star" size={20} color="#FFFFFF" />
-            <Text style={styles.rateRideButtonText}>Rate This Ride</Text>
+            <Text style={styles.rateRideButtonText}>{t('rideDetails.rateThis')}</Text>
           </TouchableOpacity>
         )}
 
@@ -657,11 +660,11 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
             onPress={() => setShowShareSheet(true)}
           >
             <Icon name="share" size={16} color="#2563EB" />
-            <Text style={styles.shareRideButtonText}>Share Trip</Text>
+            <Text style={styles.shareRideButtonText}>{t('rides.shareTrip')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.reportButton} onPress={handleReportRide}>
             <Icon name="report" size={16} color="#F44336" />
-            <Text style={styles.reportButtonText}>Report</Text>
+            <Text style={styles.reportButtonText}>{t('rideDetails.report')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -726,7 +729,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Icon name="error" size={48} color="#CCCCCC" />
-          <Text style={styles.errorText}>Ride not found</Text>
+          <Text style={styles.errorText}>{t('rideDetails.notFound')}</Text>
         </View>
       </SafeAreaView>
     );

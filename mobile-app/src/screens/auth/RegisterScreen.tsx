@@ -36,10 +36,12 @@ interface PhoneCountry {
 }
 import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('RegisterScreen');
 
 const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { isLoading, error } = useAppSelector((state) => state.auth);
 
@@ -71,8 +73,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     if (error) {
-      Alert.alert('Registration Failed', error, [
-        { text: 'OK', onPress: () => dispatch(clearAuthError()) },
+      Alert.alert(t('register.failed'), error, [
+        { text: t('common.ok'), onPress: () => dispatch(clearAuthError()) },
       ]);
     }
   }, [error, dispatch]);
@@ -82,55 +84,55 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
     // First name validation
     if (!formData.firstName.trim()) {
-      errors.firstName = 'First name is required';
+      errors.firstName = t('register.firstNameRequired');
     } else if (formData.firstName.length < 2) {
-      errors.firstName = 'First name must be at least 2 characters';
+      errors.firstName = t('register.firstNameShort');
     }
 
     // Last name validation
     if (!formData.lastName.trim()) {
-      errors.lastName = 'Last name is required';
+      errors.lastName = t('register.lastNameRequired');
     } else if (formData.lastName.length < 2) {
-      errors.lastName = 'Last name must be at least 2 characters';
+      errors.lastName = t('register.lastNameShort');
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email) {
-      errors.email = 'Email is required';
+      errors.email = t('register.emailRequired');
     } else if (!emailRegex.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
+      errors.email = t('forgot.enterValidEmail');
     }
 
     // Phone validation (simplified since PhoneInput handles country code)
     if (!formData.phone) {
-      errors.phone = 'Phone number is required';
+      errors.phone = t('register.phoneRequired');
     } else if (formData.phone.replace(/\s/g, '').length < 6) {
-      errors.phone = 'Phone number must be at least 6 digits';
+      errors.phone = t('register.phoneShort');
     } else if (!/^\d+$/.test(formData.phone.replace(/[\s\-]/g, ''))) {
-      errors.phone = 'Phone number can only contain digits, spaces, and dashes';
+      errors.phone = t('register.phoneDigits');
     }
 
     // Password validation
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!formData.password) {
-      errors.password = 'Password is required';
+      errors.password = t('register.passwordRequired');
     } else if (!passwordRegex.test(formData.password)) {
-      errors.password = 'Password must contain uppercase, lowercase, number, and special character';
+      errors.password = t('register.passwordMix');
     } else if (formData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
+      errors.password = t('register.passwordShort');
     }
 
     // Confirm password validation
     if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Please confirm your password';
+      errors.confirmPassword = t('register.confirmRequired');
     } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
+      errors.confirmPassword = t('register.mismatch');
     }
 
     // Terms validation
     if (!agreeToTerms) {
-      errors.terms = 'You must agree to the terms and privacy policy';
+      errors.terms = t('register.mustAgree');
     }
 
     setValidationErrors(errors);
@@ -153,10 +155,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
         
         // Show currency suggestion to user
         Alert.alert(
-          'Currency Setting',
-          `Based on your country selection (${country.name}), we've set your currency to ${primaryCurrency.name} (${primaryCurrency.code}). You can change this in settings later.`,
+          t('register.currencyTitle'),
+          t('register.currencyBody', { country: country.name, currency: primaryCurrency.name, code: primaryCurrency.code }),
           [
-            { text: 'OK', style: 'default' }
+            { text: t('common.ok'), style: 'default' }
           ]
         );
 
@@ -275,8 +277,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
             <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
               <Icon name="arrow-back" size={24} color="#333333" />
             </TouchableOpacity>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join the ARYV community</Text>
+            <Text style={styles.title}>{t('auth.createAccount')}</Text>
+            <Text style={styles.subtitle}>{t('register.subtitle')}</Text>
           </View>
 
           {/* Form */}
@@ -284,11 +286,11 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
             {/* Name Row */}
             <View style={styles.nameRow}>
               <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.inputLabel}>First Name</Text>
+                <Text style={styles.inputLabel}>{t('register.firstName')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="First name"
+                    placeholder={t('register.firstNamePlaceholder')}
                     placeholderTextColor="#999999"
                     value={formData.firstName}
                     onChangeText={(text) => handleInputChange('firstName', text)}
@@ -300,11 +302,11 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               </View>
 
               <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
-                <Text style={styles.inputLabel}>Last Name</Text>
+                <Text style={styles.inputLabel}>{t('register.lastName')}</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Last name"
+                    placeholder={t('register.lastNamePlaceholder')}
                     placeholderTextColor="#999999"
                     value={formData.lastName}
                     onChangeText={(text) => handleInputChange('lastName', text)}
@@ -318,12 +320,12 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
             {/* Email Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
+              <Text style={styles.inputLabel}>{t('login.emailLabel')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="email" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter your email"
+                  placeholder={t('login.emailPlaceholder')}
                   placeholderTextColor="#999999"
                   value={formData.email}
                   onChangeText={(text) => handleInputChange('email', text)}
@@ -347,7 +349,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
             {/* Role Selection */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>I want to</Text>
+              <Text style={styles.inputLabel}>{t('register.iWantTo')}</Text>
               <View style={styles.roleContainer}>
                 <TouchableOpacity
                   style={[
@@ -367,7 +369,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                       formData.role === 'passenger' && styles.roleTextSelected,
                     ]}
                   >
-                    Find Rides
+                    {t('register.findRides')}
                   </Text>
                 </TouchableOpacity>
 
@@ -389,7 +391,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                       formData.role === 'driver' && styles.roleTextSelected,
                     ]}
                   >
-                    Offer Rides
+                    {t('register.offerRides')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -397,12 +399,12 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
             {/* Password Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
+              <Text style={styles.inputLabel}>{t('auth.password')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="lock" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={[styles.textInput, { paddingRight: 48 }]}
-                  placeholder="Create password"
+                  placeholder={t('register.createPassword')}
                   placeholderTextColor="#999999"
                   value={formData.password}
                   onChangeText={(text) => handleInputChange('password', text)}
@@ -427,12 +429,12 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
             {/* Confirm Password Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <Text style={styles.inputLabel}>{t('register.confirmPassword')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="lock" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={[styles.textInput, { paddingRight: 48 }]}
-                  placeholder="Confirm password"
+                  placeholder={t('register.confirmPlaceholder')}
                   placeholderTextColor="#999999"
                   value={formData.confirmPassword}
                   onChangeText={(text) => handleInputChange('confirmPassword', text)}
@@ -465,10 +467,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                 {agreeToTerms && <Icon name="check" size={16} color="#FFFFFF" />}
               </View>
               <Text style={styles.termsText}>
-                I agree to the{' '}
-                <Text style={styles.linkText}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={styles.linkText}>Privacy Policy</Text>
+                {t('register.iAgree')}{' '}
+                <Text style={styles.linkText}>{t('welcome.terms')}</Text>
+                {' '}{t('welcome.and')}{' '}
+                <Text style={styles.linkText}>{t('welcome.privacy')}</Text>
               </Text>
             </TouchableOpacity>
             {renderError('terms')}
@@ -484,14 +486,14 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               activeOpacity={0.8}
             >
               <Text style={styles.registerButtonText}>
-                {isLoading ? 'Creating Account...' : 'Create Account'}
+                {isLoading ? t('register.creating') : t('auth.createAccount')}
               </Text>
             </TouchableOpacity>
 
             {/* Divider */}
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
+              <Text style={styles.dividerText}>{t('register.orUpper')}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -503,14 +505,14 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               activeOpacity={0.8}
             >
               <Icon name="login" size={20} color={colors.text.primary} />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
+              <Text style={styles.googleButtonText}>{t('register.continueGoogle')}</Text>
             </TouchableOpacity>
 
             {/* Login Link */}
             <View style={styles.loginSection}>
-              <Text style={styles.loginText}>Already have an account? </Text>
+              <Text style={styles.loginText}>{t('register.haveAccount')}</Text>
               <TouchableOpacity onPress={handleLogin}>
-                <Text style={styles.loginLink}>Sign In</Text>
+                <Text style={styles.loginLink}>{t('login.signIn')}</Text>
               </TouchableOpacity>
             </View>
           </View>

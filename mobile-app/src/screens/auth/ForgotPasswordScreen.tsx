@@ -20,12 +20,14 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { authApi } from '../../services/api';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ForgotPasswordScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
 }
 
 const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
@@ -37,7 +39,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
 
   const handleSendResetEmail = async (): Promise<void> => {
     if (!validateEmail(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      Alert.alert(t('forgot.invalidEmail'), t('forgot.enterValidEmail'));
       return;
     }
 
@@ -49,21 +51,21 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
       if (response.success) {
         setEmailSent(true);
         Alert.alert(
-          'Reset Email Sent',
-          'Check your email for instructions to reset your password.',
+          t('forgot.sentTitle'),
+          t('forgot.sentBody'),
           [
             {
-              text: 'OK',
+              text: t('common.ok'),
               onPress: () => navigation.goBack(),
             },
           ]
         );
       } else {
-        Alert.alert('Error', response.error || 'Failed to send reset email');
+        Alert.alert(t('common.error'), response.error || t('forgot.sendFailed'));
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errMsg || 'Network error occurred');
+      Alert.alert(t('common.error'), errMsg || t('forgot.networkError'));
     } finally {
       setIsLoading(false);
     }
@@ -89,9 +91,9 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
             <Icon name="check-circle" size={80} color="#4CAF50" />
           </View>
           
-          <Text style={styles.successTitle}>Email Sent!</Text>
+          <Text style={styles.successTitle}>{t('forgot.emailSent')}</Text>
           <Text style={styles.successMessage}>
-            We've sent a password reset link to {email}. Please check your email and follow the instructions to reset your password.
+            {t('forgot.sentTo', { email })}
           </Text>
           
           <TouchableOpacity
@@ -99,11 +101,11 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
             onPress={handleBackToLogin}
             activeOpacity={0.8}
           >
-            <Text style={styles.primaryButtonText}>Back to Login</Text>
+            <Text style={styles.primaryButtonText}>{t('forgot.backToLogin')}</Text>
           </TouchableOpacity>
           
           <Text style={styles.helpText}>
-            Didn't receive the email? Check your spam folder or try again in a few minutes.
+            {t('forgot.notReceived')}
           </Text>
         </View>
       </SafeAreaView>
@@ -126,9 +128,9 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
             <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
               <Icon name="arrow-back" size={24} color="#333333" />
             </TouchableOpacity>
-            <Text style={styles.title}>Forgot Password?</Text>
+            <Text style={styles.title}>{t('auth.forgotPassword')}</Text>
             <Text style={styles.subtitle}>
-              No worries! Enter your email address and we'll send you a link to reset your password.
+              {t('forgot.intro')}
             </Text>
           </View>
 
@@ -142,12 +144,12 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
+              <Text style={styles.inputLabel}>{t('login.emailLabel')}</Text>
               <View style={styles.inputWrapper}>
                 <Icon name="email" size={20} color="#666666" style={styles.inputIcon} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Enter your email address"
+                  placeholder={t('forgot.emailPlaceholder')}
                   placeholderTextColor="#999999"
                   value={email}
                   onChangeText={setEmail}
@@ -170,16 +172,16 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
               activeOpacity={0.8}
             >
               <Text style={styles.sendButtonText}>
-                {isLoading ? 'Sending...' : 'Send Reset Link'}
+                {isLoading ? t('forgot.sending') : t('forgot.sendLink')}
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Alternative Actions */}
           <View style={styles.alternativeActions}>
-            <Text style={styles.alternativeText}>Remember your password?</Text>
+            <Text style={styles.alternativeText}>{t('forgot.remember')}</Text>
             <TouchableOpacity onPress={handleBackToLogin}>
-              <Text style={styles.alternativeLink}>Back to Login</Text>
+              <Text style={styles.alternativeLink}>{t('forgot.backToLogin')}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

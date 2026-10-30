@@ -25,6 +25,7 @@ import { MessagesScreenProps } from '../../navigation/types';
 import { useSocketEvent } from '../../hooks/useSocket';
 import logger from '../../services/LoggingService';
 import chatApi from '../../services/api/chatApi';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('MessagesScreen');
 
@@ -45,6 +46,7 @@ interface Message {
 }
 
 const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const { profile: user } = useAppSelector((state) => state.user);
   
   const [messages, setMessages] = useState<Message[]>([]);
@@ -127,19 +129,14 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     });
   };
 
-  const handleNewMessage = (): void => {
-    // Navigate to new message screen or show contacts
-    log.info('Create new message');
-  };
-
   const handleDeleteMessage = (messageId: string): void => {
     Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to delete this conversation? This action cannot be undone.',
+      t('messagesList.deleteTitle'),
+      t('messagesList.deleteBody'),
       [
-        { text: 'Cancel', style: 'cancel' as const },
+        { text: t('common.cancel'), style: 'cancel' as const },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => {
             setMessages(prev => prev.filter(msg => msg.id !== messageId));
@@ -152,12 +149,12 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
   const handleMessageLongPress = (message: Message): void => {
     const actions = [
       {
-        text: 'Delete Conversation',
+        text: t('messagesList.deleteTitle'),
         style: 'destructive' as const,
         onPress: () => handleDeleteMessage(message.id)
       },
       {
-        text: 'Mark as Unread',
+        text: t('messagesList.markUnread'),
         onPress: () => {
           setMessages(prev => prev.map(msg => 
             msg.id === message.id 
@@ -166,34 +163,10 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
           ));
         }
       },
-      {
-        text: 'Mute Conversation',
-        onPress: () => {
-          Alert.alert('Muted', `${message.participantName} conversation has been muted.`);
-        }
-      },
-      { text: 'Cancel', style: 'cancel' as const }
+      { text: t('common.cancel'), style: 'cancel' as const }
     ];
     
-    Alert.alert('Message Options', 'Choose an action', actions);
-  };
-
-  const handleClearAllSampleMessages = (): void => {
-    Alert.alert(
-      'Clear All Messages',
-      'This will remove all sample/demo messages. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' as const },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: () => {
-            setMessages([]);
-            Alert.alert('Cleared', 'All sample messages have been removed.');
-          }
-        }
-      ]
-    );
+    Alert.alert(t('messagesList.options'), t('messagesList.chooseAction'), actions);
   };
 
   const getFilteredMessages = (): Message[] => {
@@ -225,10 +198,10 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMinutes < 1) return 'now';
-    if (diffMinutes < 60) return `${diffMinutes}m`;
-    if (diffHours < 24) return `${diffHours}h`;
-    if (diffDays < 7) return `${diffDays}d`;
+    if (diffMinutes < 1) {return t('messagesList.now');}
+    if (diffMinutes < 60) {return t('messagesList.minutes', { count: diffMinutes });}
+    if (diffHours < 24) {return t('messagesList.hours', { count: diffHours });}
+    if (diffDays < 7) {return t('messagesList.days', { count: diffDays });}
     return messageTime.toLocaleDateString();
   };
 
@@ -274,7 +247,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
               activeFilter === filter && styles.activeFilterChipText,
             ]}
           >
-            {filter.charAt(0).toUpperCase() + filter.slice(1)}
+            {t(`messagesList.filter.${filter}`)}
           </Text>
         </TouchableOpacity>
       ))}
@@ -289,7 +262,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
           onPress={() => handleDeleteMessage(messageId)}
         >
           <Icon name="delete" size={24} color="#FFFFFF" />
-          <Text style={styles.deleteButtonText}>Delete</Text>
+          <Text style={styles.deleteButtonText}>{t('common.delete')}</Text>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -373,9 +346,9 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
   const renderEmptyState = (): React.JSX.Element => (
     <View style={styles.emptyState}>
       <Icon name="message" size={64} color="#CCCCCC" />
-      <Text style={styles.emptyStateTitle}>No messages yet</Text>
+      <Text style={styles.emptyStateTitle}>{t('messages.noMessages')}</Text>
       <Text style={styles.emptyStateSubtext}>
-        Start a conversation with drivers or passengers from your rides
+        {t('messagesList.emptyBody')}
       </Text>
     </View>
   );
@@ -390,7 +363,7 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
           <Icon name="search" size={20} color="#666666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search messages..."
+            placeholder={t('messagesList.searchPlaceholder')}
             placeholderTextColor="#999999"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -406,18 +379,6 @@ const MessagesScreen: React.FC<MessagesScreenProps> = ({ navigation }) => {
           )}
         </View>
 
-        <TouchableOpacity style={styles.newMessageButton} onPress={handleNewMessage}>
-          <Icon name="add" size={20} color="#2196F3" />
-        </TouchableOpacity>
-        
-        {messages.length > 0 && (
-          <TouchableOpacity 
-            style={styles.clearAllButton} 
-            onPress={handleClearAllSampleMessages}
-          >
-            <Icon name="delete-sweep" size={20} color="#FF5722" />
-          </TouchableOpacity>
-        )}
       </View>
 
       {renderFilterBar()}
@@ -473,22 +434,6 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     padding: 4,
-  },
-  newMessageButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearAllButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFEBEE',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   filterBar: {
     flexDirection: 'row',

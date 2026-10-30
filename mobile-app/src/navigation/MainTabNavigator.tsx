@@ -43,6 +43,7 @@ import PerformanceDashboard from '../screens/performance/PerformanceDashboard';
 import RevenueAnalyticsScreen from '../screens/RevenueAnalyticsScreen';
 import AIDashboardScreen from '../screens/AIDashboardScreen';
 import { colors } from '../theme';
+import { useI18n } from '../i18n/I18nContext';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -98,7 +99,9 @@ const HomeStack = createStackNavigator<HomeStackParamList>();
 const MessagesStack = createStackNavigator<MessagesStackParamList>();
 const ProfileStack = createStackNavigator<ProfileStackParamList>();
 
-const HomeNavigator: React.FC = () => (
+const HomeNavigator: React.FC = () => {
+  const { t } = useI18n();
+  return (
   <HomeStack.Navigator
     screenOptions={{
       headerStyle: {
@@ -113,52 +116,55 @@ const HomeNavigator: React.FC = () => (
     <HomeStack.Screen 
       name="HomeMain" 
       component={HomeScreen}
-      options={{ title: 'Hitch', headerShown: false }}
+      options={{ title: 'ARYV', headerShown: false }}
     />
     <HomeStack.Screen 
       name="Search" 
       component={SearchScreen}
-      options={{ title: 'Find Rides' }}
+      options={{ title: t('nav.findRides') }}
     />
     <HomeStack.Screen 
       name="RideDetails" 
       component={RideDetailsScreen}
-      options={{ title: 'Ride Details' }}
+      options={{ title: t('nav.rideDetails') }}
     />
     <HomeStack.Screen 
       name="CreateRide" 
       component={CreateRideScreen}
-      options={{ title: 'Create Ride', headerShown: false }}
+      options={{ title: t('nav.createRide'), headerShown: false }}
     />
     <HomeStack.Screen 
       name="Booking" 
       component={BookingScreen}
-      options={{ title: 'Book Ride' }}
+      options={{ title: t('nav.bookRide') }}
     />
     <HomeStack.Screen
       name="RideRequest"
       component={RideRequestScreen}
-      options={{ title: 'Request Ride', headerShown: false }}
+      options={{ title: t('nav.requestRide'), headerShown: false }}
     />
     <HomeStack.Screen
       name="RideRating"
       component={RideRatingScreen}
-      options={{ title: 'Rate Trip', headerShown: false }}
+      options={{ title: t('nav.rateTrip'), headerShown: false }}
     />
     <HomeStack.Screen
       name="AIRecommendations"
       component={RecommendationsScreen}
-      options={{ title: 'AI Recommendations', headerShown: false }}
+      options={{ title: t('nav.aiRecommendations'), headerShown: false }}
     />
     <HomeStack.Screen
       name="DriverOnboarding"
       component={DriverOnboardingScreen}
-      options={{ title: 'Become a Driver', headerShown: false }}
+      options={{ title: t('nav.becomeDriver'), headerShown: false }}
     />
-  </HomeStack.Navigator>
-);
+    </HomeStack.Navigator>
+  );
+};
 
-const MessagesNavigator: React.FC = () => (
+const MessagesNavigator: React.FC = () => {
+  const { t } = useI18n();
+  return (
   <MessagesStack.Navigator
     screenOptions={{
       headerStyle: {
@@ -173,22 +179,25 @@ const MessagesNavigator: React.FC = () => (
     <MessagesStack.Screen 
       name="MessagesList" 
       component={MessagesScreen}
-      options={{ title: 'Messages', headerShown: false }}
+      options={{ title: t('nav.messages'), headerShown: false }}
     />
     <MessagesStack.Screen 
       name="Chat" 
       component={ChatScreen}
-      options={{ title: 'Chat' }}
+      options={{ title: t('nav.chat') }}
     />
     <MessagesStack.Screen 
       name="ConversationList" 
       component={ConversationListScreen}
-      options={{ title: 'All Conversations', headerShown: false }}
+      options={{ title: t('nav.allConversations'), headerShown: false }}
     />
-  </MessagesStack.Navigator>
-);
+    </MessagesStack.Navigator>
+  );
+};
 
-const ProfileNavigator: React.FC = () => (
+const ProfileNavigator: React.FC = () => {
+  const { t } = useI18n();
+  return (
   <ProfileStack.Navigator
     screenOptions={{
       headerStyle: {
@@ -203,107 +212,109 @@ const ProfileNavigator: React.FC = () => (
     <ProfileStack.Screen 
       name="ProfileMain" 
       component={ProfileScreen}
-      options={{ title: 'Profile', headerShown: false }}
+      options={{ title: t('nav.profile'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="EditProfile" 
       component={EditProfileScreen}
-      options={{ title: 'Edit Profile', headerShown: false }}
+      options={{ title: t('nav.editProfile'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="PaymentMethods" 
       component={PaymentMethodsScreen}
-      options={{ title: 'Payment Methods', headerShown: false }}
+      options={{ title: t('nav.paymentMethods'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="PaymentScreen" 
       component={PaymentScreen}
-      options={{ title: 'Payment Center', headerShown: false }}
+      options={{ title: t('nav.paymentCenter'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="VerificationWorkflow" 
       component={VerificationWorkflowScreen}
-      options={{ title: 'Identity Verification', headerShown: false }}
+      options={{ title: t('nav.identityVerification'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="EmergencyContacts" 
       component={EmergencyContactsScreen}
-      options={{ title: 'Emergency Contacts', headerShown: false }}
+      options={{ title: t('nav.emergencyContacts'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="NotificationsInbox"
       component={NotificationsScreen}
-      options={{ title: 'Notifications', headerShown: false }}
+      options={{ title: t('nav.notifications'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="NotificationSettings"
       component={NotificationSettingsScreen}
-      options={{ title: 'Notifications', headerShown: false }}
+      options={{ title: t('nav.notifications'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="PrivacySettings" 
       component={PrivacySettingsScreen}
-      options={{ title: 'Privacy', headerShown: false }}
+      options={{ title: t('nav.privacy'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="CurrencySettings" 
       component={CurrencySettingsScreen}
-      options={{ title: 'Currency & Region', headerShown: false }}
+      options={{ title: t('nav.currencyRegion'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="SecuritySettings" 
       component={SecuritySettingsScreen}
-      options={{ title: 'Security', headerShown: false }}
+      options={{ title: t('nav.security'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="LanguageSettings" 
       component={LanguageSettingsScreen}
-      options={{ title: 'Language & Region', headerShown: false }}
+      options={{ title: t('nav.languageRegion'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="DataUsageSettings" 
       component={DataUsageSettingsScreen}
-      options={{ title: 'Data Usage', headerShown: false }}
+      options={{ title: t('nav.dataUsage'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="Help" 
       component={HelpScreen}
-      options={{ title: 'Help & Support', headerShown: false }}
+      options={{ title: t('nav.help'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="About" 
       component={AboutScreen}
-      options={{ title: 'About', headerShown: false }}
+      options={{ title: t('nav.about'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="Terms" 
       component={TermsScreen}
-      options={{ title: 'Terms & Conditions', headerShown: false }}
+      options={{ title: t('nav.terms'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="PerformanceDashboard"
       component={PerformanceDashboard}
-      options={{ title: 'Performance Dashboard', headerShown: false }}
+      options={{ title: t('nav.performance'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="RevenueAnalytics"
       component={RevenueAnalyticsScreen}
-      options={{ title: 'Revenue Analytics', headerShown: false }}
+      options={{ title: t('nav.revenue'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="AIDashboard"
       component={AIDashboardScreen}
-      options={{ title: 'AI Dashboard', headerShown: false }}
+      options={{ title: t('nav.aiDashboard'), headerShown: false }}
     />
     <ProfileStack.Screen
       name="DriverOnboarding"
       component={DriverOnboardingScreen}
-      options={{ title: 'Become a Driver', headerShown: false }}
+      options={{ title: t('nav.becomeDriver'), headerShown: false }}
     />
-  </ProfileStack.Navigator>
-);
+    </ProfileStack.Navigator>
+  );
+};
 
 const MainTabNavigator: React.FC = () => {
+  const { t } = useI18n();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -350,27 +361,27 @@ const MainTabNavigator: React.FC = () => {
       <Tab.Screen 
         name="Home" 
         component={HomeNavigator}
-        options={{ title: 'Hitch', headerShown: false }}
+        options={{ title: t('nav.home'), headerShown: false }}
       />
       <Tab.Screen 
         name="Rides" 
         component={RidesScreen}
-        options={{ title: 'My Rides' }}
+        options={{ title: t('nav.myRides') }}
       />
       <Tab.Screen 
         name="Messages" 
         component={MessagesNavigator}
-        options={{ title: 'Messages', headerShown: false }}
+        options={{ title: t('nav.messages'), headerShown: false }}
       />
       <Tab.Screen
         name="Courier"
         component={CourierHubNavigator}
-        options={{ title: 'Courier', headerShown: false }}
+        options={{ title: t('nav.courier'), headerShown: false }}
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileNavigator}
-        options={{ title: 'Profile', headerShown: false }}
+        options={{ title: t('nav.profile'), headerShown: false }}
       />
     </Tab.Navigator>
   );

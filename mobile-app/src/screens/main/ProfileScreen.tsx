@@ -27,6 +27,7 @@ import UserPreferencesService from '../../services/UserPreferencesService';
 import { useAppTheme } from '../../contexts/ThemeContext';
 import UserProfileCard from '../../components/profile/UserProfileCard';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ProfileScreen');
 
@@ -62,13 +63,14 @@ interface ProfileMenuItem {
 }
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { isDark, toggleTheme } = useAppTheme();
   
   const [isLoading, setIsLoading] = useState(false);
-  const [currencyRegionText, setCurrencyRegionText] = useState('Loading...');
+  const [currencyRegionText, setCurrencyRegionText] = useState(t('common.loading'));
   const [settings, setSettings] = useState({
     notifications: true,
     locationSharing: true,
@@ -107,19 +109,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const handleLogout = (): void => {
     Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
+      t('profile.signOut'),
+      t('profile.signOutConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Sign Out',
+          text: t('profile.signOut'),
           style: 'destructive',
           onPress: async () => {
             try {
               await dispatch(logoutUser()).unwrap();
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              Alert.alert('Error', errMsg || 'Failed to sign out');
+              Alert.alert(t('common.error'), errMsg || t('profile.signOutFailed'));
             }
           },
         },
@@ -129,29 +131,28 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const handleVehicleManagement = (): void => {
     Alert.alert(
-      'Vehicle Management',
-      'Choose an action:',
+      t('profile.vehicleManagement'),
+      t('profile.chooseAction'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'View Vehicles',
+          text: t('profile.viewVehicles'),
           onPress: () => {
             // For now, show vehicles in an alert (until VehicleList screen is created)
             const vehicles = user?.vehicles || [];
             if (vehicles.length === 0) {
-              Alert.alert('No Vehicles', 'You have no registered vehicles.');
+              Alert.alert(t('profile.noVehicles'), t('profile.noVehiclesBody'));
             } else {
               const vehicleList = vehicles.map(v => `${v.year} ${v.make} ${v.model} (${v.licensePlate})`).join('\n');
-              Alert.alert('Your Vehicles', vehicleList);
+              Alert.alert(t('profile.yourVehicles'), vehicleList);
             }
           },
         },
         {
-          text: 'Add Vehicle',
-          onPress: () => {
-            // Navigate to vehicle registration or show form
-            Alert.alert('Add Vehicle', 'Vehicle registration form will open here.');
-          },
+          text: t('profile.addVehicle'),
+          // The vehicle form lives in driver onboarding. This used to show
+          // "Vehicle registration form will open here." and do nothing.
+          onPress: () => (navigation as unknown as { navigate: (screen: string) => void }).navigate('DriverOnboarding'),
         },
       ]
     );
@@ -166,15 +167,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       text: role.charAt(0).toUpperCase() + role.slice(1),
       onPress: () => {
         dispatch(setPrimaryRole(role));
-        Alert.alert('Role Switched', `Your active role is now: ${role}`);
+        Alert.alert(t('profile.roleSwitched'), t('profile.roleSwitchedBody', { role }));
       },
     }));
 
     Alert.alert(
-      'Switch Role',
-      `Current role: ${user.primaryRole}. Select a new primary role:`,
+      t('profile.switchRole'),
+      t('profile.switchRoleBody', { role: user.primaryRole }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         ...roleOptions,
       ]
     );
@@ -267,29 +268,29 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     // Account section (always shown)
     sections.push({
       id: 'account',
-      title: 'Account',
+      title: t('profile.account'),
       items: [
         {
           id: 'editProfile',
           icon: 'edit',
-          title: 'Edit Profile',
-          subtitle: 'Update your personal information',
+          title: t('profile.editProfile'),
+          subtitle: t('profile.editProfileSub'),
           type: 'navigation',
           action: 'editProfile',
         },
         {
           id: 'verification',
           icon: 'verified',
-          title: 'Account Verification',
-          subtitle: user?.isEmailVerified ? 'Verified' : 'Not verified',
+          title: t('profile.accountVerification'),
+          subtitle: user?.isEmailVerified ? t('profile.verified') : t('profile.notVerified'),
           type: 'info',
           badge: user?.isEmailVerified ? 'verified' : 'pending',
         },
         {
           id: 'paymentMethods',
           icon: 'payment',
-          title: 'Payment Methods',
-          subtitle: 'Manage cards and payment options',
+          title: t('nav.paymentMethods'),
+          subtitle: t('profile.paymentMethodsSub'),
           type: 'navigation',
           action: 'paymentMethods',
         },
@@ -300,13 +301,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     if (!hasRole('driver')) {
       sections.push({
         id: 'becomeDriver',
-        title: 'Drive with Hitch',
+        title: t('profile.driveWith'),
         items: [
           {
             id: 'becomeDriver',
             icon: 'directions-car',
-            title: 'Become a Driver',
-            subtitle: 'Offer rides on routes you already travel',
+            title: t('nav.becomeDriver'),
+            subtitle: t('profile.becomeDriverSub'),
             type: 'navigation',
             action: 'becomeDriver',
           },
@@ -319,31 +320,31 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       const activeVehicle = getActiveVehicle();
       sections.push({
         id: 'driver',
-        title: 'Driver Settings',
+        title: t('profile.driverSettings'),
         items: [
           {
             id: 'vehicles',
             icon: 'drive-eta',
-            title: 'My Vehicles',
+            title: t('profile.myVehicles'),
             subtitle: activeVehicle 
               ? `${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}`
-              : 'No vehicle registered',
+              : t('profile.noVehicleRegistered'),
             type: 'navigation',
             action: 'vehicles',
           },
           {
             id: 'driverVerification',
             icon: 'verified-user',
-            title: 'Driver Verification',
-            subtitle: user?.isDriverVerified ? 'Verified' : 'Pending verification',
+            title: t('profile.driverVerification'),
+            subtitle: user?.isDriverVerified ? t('profile.verified') : t('profile.pendingVerification'),
             type: 'info',
             badge: user?.isDriverVerified ? 'verified' : 'pending',
           },
           {
             id: 'autoAccept',
             icon: 'auto-awesome',
-            title: 'Auto-accept rides',
-            subtitle: 'Automatically accept matching ride requests',
+            title: t('profile.autoAccept'),
+            subtitle: t('profile.autoAcceptSub'),
             type: 'switch',
             value: settings.autoAcceptRides,
           },
@@ -355,21 +356,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     if (hasRole('courier')) {
       sections.push({
         id: 'courier',
-        title: 'Courier Settings',
+        title: t('profile.courierSettings'),
         items: [
           {
             id: 'courierVerification',
             icon: 'local-shipping',
-            title: 'Courier Verification',
-            subtitle: (user as unknown as Record<string, any>)?.courierVerification?.isVerified ? 'Verified' : 'Pending verification',
+            title: t('profile.courierVerification'),
+            subtitle: (user as unknown as Record<string, any>)?.courierVerification?.isVerified ? t('profile.verified') : t('profile.pendingVerification'),
             type: 'info',
             badge: (user as unknown as Record<string, any>)?.courierVerification?.isVerified ? 'verified' : 'pending',
           },
           {
             id: 'deliveryHistory',
             icon: 'history',
-            title: 'Delivery History',
-            subtitle: `${user?.totalDeliveries || 0} completed deliveries`,
+            title: t('profile.deliveryHistory'),
+            subtitle: t('profile.completedDeliveries', { count: user?.totalDeliveries || 0 }),
             type: 'navigation',
             action: 'deliveryHistory',
           },
@@ -381,13 +382,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     if (user && user.roles && user.roles.length > 1) {
       sections.push({
         id: 'roles',
-        title: 'Role Management',
+        title: t('profile.roleManagement'),
         items: [
           {
             id: 'switchRole',
             icon: 'swap-horiz',
-            title: 'Switch Active Role',
-            subtitle: `Currently: ${user.primaryRole}`,
+            title: t('profile.switchActiveRole'),
+            subtitle: t('profile.currently', { role: user.primaryRole }),
             type: 'navigation',
             action: 'switchRole',
           },
@@ -398,36 +399,36 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     // Shared settings section
     sections.push({
       id: 'settings',
-      title: 'Settings',
+      title: t('profile.settings'),
       items: [
         {
           id: 'locationSharing',
           icon: 'location-on',
-          title: 'Location sharing',
-          subtitle: 'Share location during rides',
+          title: t('profile.locationSharing'),
+          subtitle: t('profile.locationSharingSub'),
           type: 'switch',
           value: settings.locationSharing,
         },
         {
           id: 'notifications',
           icon: 'notifications',
-          title: 'Notifications',
-          subtitle: 'Push notifications and alerts',
+          title: t('profile.notifications'),
+          subtitle: t('profile.notificationsSub'),
           type: 'navigation',
           action: 'notifications',
         },
         {
           id: 'privacy',
           icon: 'security',
-          title: 'Privacy & Security',
-          subtitle: 'Manage your privacy settings',
+          title: t('profile.privacySecurity'),
+          subtitle: t('profile.privacySub'),
           type: 'navigation',
           action: 'privacy',
         },
         {
           id: 'currency',
           icon: 'attach-money',
-          title: 'Currency & Region',
+          title: t('profile.currency'),
           subtitle: currencyRegionText,
           type: 'navigation',
           action: 'currency',
@@ -435,40 +436,40 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {
           id: 'security',
           icon: 'shield',
-          title: 'Security Settings',
-          subtitle: 'Manage account security and authentication',
+          title: t('profile.securitySettings'),
+          subtitle: t('profile.securitySub'),
           type: 'navigation',
           action: 'security',
         },
         {
           id: 'language',
           icon: 'language',
-          title: 'Language & Region',
-          subtitle: 'Change app language and regional settings',
+          title: t('nav.languageRegion'),
+          subtitle: t('profile.languageSub'),
           type: 'navigation',
           action: 'language',
         },
         {
           id: 'dataUsage',
           icon: 'data-usage',
-          title: 'Data Usage',
-          subtitle: 'Monitor and control data consumption',
+          title: t('nav.dataUsage'),
+          subtitle: t('profile.dataUsageSub'),
           type: 'navigation',
           action: 'dataUsage',
         },
         {
           id: 'pushNotifications',
           icon: 'notifications-active',
-          title: 'Push notifications',
-          subtitle: 'Receive push notifications',
+          title: t('profile.pushNotifications'),
+          subtitle: t('profile.pushNotificationsSub'),
           type: 'switch',
           value: settings.pushNotifications,
         },
         {
           id: 'darkMode',
           icon: 'dark-mode',
-          title: 'Dark Mode',
-          subtitle: isDark ? 'On' : 'Off',
+          title: t('profile.darkMode'),
+          subtitle: isDark ? t('profile.on') : t('profile.off'),
           type: 'switch',
           value: isDark,
         },
@@ -478,21 +479,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     // Analytics & Insights section
     sections.push({
       id: 'analytics',
-      title: 'Analytics & Insights',
+      title: t('profile.analytics'),
       items: [
         {
           id: 'revenueAnalytics',
           icon: 'bar-chart',
-          title: 'Revenue Analytics',
-          subtitle: 'View earnings breakdown and trends',
+          title: t('nav.revenue'),
+          subtitle: t('profile.revenueSub'),
           type: 'navigation',
           action: 'revenueAnalytics',
         },
         {
           id: 'aiDashboard',
           icon: 'auto-awesome',
-          title: 'AI Insights',
-          subtitle: 'Demand predictions and smart recommendations',
+          title: t('profile.aiInsights'),
+          subtitle: t('profile.aiInsightsSub'),
           type: 'navigation',
           action: 'aiDashboard',
         },
@@ -502,29 +503,29 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     // Support section (always shown)
     sections.push({
       id: 'support',
-      title: 'Support',
+      title: t('profile.support'),
       items: [
         {
           id: 'help',
           icon: 'help',
-          title: 'Help Center',
-          subtitle: 'Get help and support',
+          title: t('profile.helpCenter'),
+          subtitle: t('profile.helpCenterSub'),
           type: 'navigation',
           action: 'help',
         },
         {
           id: 'about',
           icon: 'info',
-          title: 'About ARYV',
-          subtitle: 'Version 1.0.0',
+          title: t('profile.aboutAryv'),
+          subtitle: t('profile.version', { version: '1.0.0' }),
           type: 'navigation',
           action: 'about',
         },
         {
           id: 'terms',
           icon: 'description',
-          title: 'Terms & Privacy',
-          subtitle: 'Read our terms and privacy policy',
+          title: t('profile.termsPrivacy'),
+          subtitle: t('profile.termsPrivacySub'),
           type: 'navigation',
           action: 'terms',
         },
@@ -543,7 +544,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         <UserProfileCard
           user={{
             id: user?.id || '',
-            firstName: user?.firstName || 'User',
+            firstName: user?.firstName || t('profile.user'),
             lastName: user?.lastName || '',
             profilePicture: extUser?.profilePicture,
             rating: extUser?.rating || 0,
@@ -636,7 +637,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Loading profile...</Text>
+          <Text>{t('profile.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -656,7 +657,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           activeOpacity={0.8}
         >
           <Icon name="logout" size={20} color="#F44336" />
-          <Text style={styles.logoutText}>Sign Out</Text>
+          <Text style={styles.logoutText}>{t('profile.signOut')}</Text>
         </TouchableOpacity>
 
         <View style={styles.bottomSpacer} />

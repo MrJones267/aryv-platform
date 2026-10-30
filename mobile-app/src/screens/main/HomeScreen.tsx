@@ -34,6 +34,7 @@ import EmergencyService, { EmergencyAlert } from '../../services/EmergencyServic
 import EmergencyAlertModal from '../../components/emergency/EmergencyAlertModal';
 import OfflineBanner from '../../components/common/OfflineBanner';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('HomeScreen');
 
@@ -49,6 +50,7 @@ const DEFAULT_REGION: Region = {
 };
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { currentLocation } = useAppSelector((state) => state.location);
@@ -188,12 +190,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       const currentEmergency = EmergencyService.getCurrentEmergency();
       if (currentEmergency) {
         Alert.alert(
-          'Active Emergency',
-          `You have an active ${currentEmergency.alertType} emergency alert.`,
+          t('home.activeEmergency'),
+          t('home.activeEmergencyBody', { type: currentEmergency.alertType }),
           [
-            { text: 'View Details', onPress: () => showActiveEmergencyDetails(currentEmergency) },
-            { text: "I'm Safe Now", onPress: () => resolveCurrentEmergency() },
-            { text: 'Cancel', style: 'cancel' },
+            { text: t('home.viewDetails'), onPress: () => showActiveEmergencyDetails(currentEmergency) },
+            { text: t('home.imSafeNow'), onPress: () => resolveCurrentEmergency() },
+            { text: t('common.cancel'), style: 'cancel' },
           ]
         );
         return;
@@ -204,13 +206,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const showActiveEmergencyDetails = (emergency: EmergencyAlert): void => {
     Alert.alert(
-      'Emergency Details',
-      `Type: ${emergency.alertType.toUpperCase()}\nTime: ${new Date(emergency.createdAt).toLocaleString()}`,
+      t('home.emergencyDetails'),
+      t('home.emergencyDetailsBody', { type: emergency.alertType.toUpperCase(), time: new Date(emergency.createdAt).toLocaleString() }),
       [
-        { text: 'Call 999', onPress: () => EmergencyService.callEmergencyServices() },
-        { text: 'Call Emergency Contact', onPress: () => EmergencyService.callPrimaryContact() },
-        { text: "I'm Safe", onPress: () => resolveCurrentEmergency() },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('home.call999'), onPress: () => EmergencyService.callEmergencyServices() },
+        { text: t('home.callEmergencyContact'), onPress: () => EmergencyService.callPrimaryContact() },
+        { text: t('home.imSafe'), onPress: () => resolveCurrentEmergency() },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
@@ -223,17 +225,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const handleEmergencyTriggered = (alert: EmergencyAlert): void => {
     setActiveEmergency(alert);
     Alert.alert(
-      'Emergency Alert Sent',
-      'Your emergency alert has been sent to your emergency contacts and your location is being shared.',
-      [{ text: 'OK' }]
+      t('home.alertSent'),
+      t('home.alertSentBody'),
+      [{ text: t('common.ok') }]
     );
   };
 
   const getGreeting = (): string => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'morning';
-    if (hour < 17) return 'afternoon';
-    return 'evening';
+    if (hour < 12) {return t('home.greeting.morning');}
+    if (hour < 17) {return t('home.greeting.afternoon');}
+    return t('home.greeting.evening');
   };
 
   // Map section with route overview
@@ -309,7 +311,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         activeOpacity={0.8}
       >
         <Icon name="emergency" size={18} color="#FFFFFF" />
-        <Text style={styles.sosText}>SOS</Text>
+        <Text style={styles.sosText}>{t('home.sos')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -325,7 +327,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <Icon name="search" size={22} color={colors.primary} />
       </View>
       <View style={styles.searchTextContainer}>
-        <Text style={styles.searchPlaceholder}>Where are you travelling to?</Text>
+        <Text style={styles.searchPlaceholder}>{t('home.searchPlaceholder')}</Text>
         <Text style={styles.searchSubtext}>
           {currentLocation?.address || 'Search intercity routes'}
         </Text>
@@ -333,7 +335,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       <View style={styles.searchDivider} />
       <TouchableOpacity style={styles.searchTimeBtn} onPress={handleFindRide}>
         <Icon name="schedule" size={18} color={colors.text.secondary} />
-        <Text style={styles.searchTimeText}>Now</Text>
+        <Text style={styles.searchTimeText}>{t('home.now')}</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -350,7 +352,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={[styles.quickActionIcon, { backgroundColor: colors.primary + '15' }]}>
             <Icon name="search" size={24} color={colors.primary} />
           </View>
-          <Text style={styles.quickActionLabel}>Find Ride</Text>
+          <Text style={styles.quickActionLabel}>{t('home.quickFindRide')}</Text>
         </TouchableOpacity>
       </ScaleIn>
 
@@ -363,7 +365,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={[styles.quickActionIcon, { backgroundColor: '#10B981' + '15' }]}>
             <Icon name="add-circle-outline" size={24} color="#10B981" />
           </View>
-          <Text style={styles.quickActionLabel}>Offer Ride</Text>
+          <Text style={styles.quickActionLabel}>{t('home.quickOfferRide')}</Text>
         </TouchableOpacity>
       </ScaleIn>
 
@@ -376,7 +378,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={[styles.quickActionIcon, { backgroundColor: '#F59E0B' + '15' }]}>
             <Icon name="local-shipping" size={24} color="#F59E0B" />
           </View>
-          <Text style={styles.quickActionLabel}>Send Parcel</Text>
+          <Text style={styles.quickActionLabel}>{t('home.quickSendParcel')}</Text>
         </TouchableOpacity>
       </ScaleIn>
 
@@ -389,7 +391,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={[styles.quickActionIcon, { backgroundColor: '#8B5CF6' + '15' }]}>
             <Icon name="delivery-dining" size={24} color="#8B5CF6" />
           </View>
-          <Text style={styles.quickActionLabel}>Deliver</Text>
+          <Text style={styles.quickActionLabel}>{t('home.quickDeliver')}</Text>
         </TouchableOpacity>
       </ScaleIn>
     </View>
@@ -399,9 +401,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const renderUpcomingRides = (): React.ReactNode => (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Available Rides</Text>
+        <Text style={styles.sectionTitle}>{t('home.availableRides')}</Text>
         <TouchableOpacity onPress={handleFindRide}>
-          <Text style={styles.seeAllText}>See All</Text>
+          <Text style={styles.seeAllText}>{t('home.seeAll')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -424,10 +426,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               {/* Route info */}
               <View style={styles.rideRouteInfo}>
                 <Text style={styles.rideCity} numberOfLines={1}>
-                  {ride.origin?.address || ride.origin?.city || 'Origin'}
+                  {ride.origin?.address || ride.origin?.city || t('home.origin')}
                 </Text>
                 <Text style={styles.rideCity} numberOfLines={1}>
-                  {ride.destination?.address || ride.destination?.city || 'Destination'}
+                  {ride.destination?.address || ride.destination?.city || t('home.destination')}
                 </Text>
               </View>
             </View>
@@ -437,7 +439,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <Text style={styles.ridePrice}>
                 P{(ride.pricePerSeat ?? 0).toFixed(0)}
               </Text>
-              <Text style={styles.ridePriceLabel}>per seat</Text>
+              <Text style={styles.ridePriceLabel}>{t('rides.pricePerSeat')}</Text>
 
               {/* Details row */}
               <View style={styles.rideMetaRow}>
@@ -455,7 +457,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                           hour: '2-digit',
                           minute: '2-digit',
                         })
-                      : 'TBD'}
+                      : t('home.tbd')}
                   </Text>
                 </View>
               </View>
@@ -465,13 +467,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       ) : (
         <View style={styles.emptyState}>
           <Icon name="directions-car" size={40} color={colors.border.light} />
-          <Text style={styles.emptyStateTitle}>No rides available</Text>
+          <Text style={styles.emptyStateTitle}>{t('home.noRides')}</Text>
           <Text style={styles.emptyStateSubtext}>
-            Be the first to offer a ride or search for upcoming routes
+            {t('home.noRidesBody')}
           </Text>
           <TouchableOpacity style={styles.emptyActionBtn} onPress={handleOfferRide}>
             <Icon name="add" size={18} color="#FFFFFF" />
-            <Text style={styles.emptyActionText}>Offer a Ride</Text>
+            <Text style={styles.emptyActionText}>{t('home.offerRide')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -481,28 +483,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   // How it works section for new users
   const renderHowItWorks = (): React.ReactNode => (
     <View style={styles.howItWorksSection}>
-      <Text style={styles.sectionTitle}>How ARYV Works</Text>
+      <Text style={styles.sectionTitle}>{t('home.howItWorks')}</Text>
       <View style={styles.howItWorksCards}>
         <View style={styles.howCard}>
           <View style={[styles.howCardIcon, { backgroundColor: colors.primary + '15' }]}>
             <Icon name="search" size={22} color={colors.primary} />
           </View>
-          <Text style={styles.howCardTitle}>Search</Text>
-          <Text style={styles.howCardDesc}>Find rides on your route</Text>
+          <Text style={styles.howCardTitle}>{t('home.howSearch')}</Text>
+          <Text style={styles.howCardDesc}>{t('home.howSearchBody')}</Text>
         </View>
         <View style={styles.howCard}>
           <View style={[styles.howCardIcon, { backgroundColor: '#10B981' + '15' }]}>
             <Icon name="event-seat" size={22} color="#10B981" />
           </View>
-          <Text style={styles.howCardTitle}>Reserve</Text>
-          <Text style={styles.howCardDesc}>Book a seat or cargo space</Text>
+          <Text style={styles.howCardTitle}>{t('home.howReserve')}</Text>
+          <Text style={styles.howCardDesc}>{t('home.howReserveBody')}</Text>
         </View>
         <View style={styles.howCard}>
           <View style={[styles.howCardIcon, { backgroundColor: '#F59E0B' + '15' }]}>
             <Icon name="directions-car" size={22} color="#F59E0B" />
           </View>
-          <Text style={styles.howCardTitle}>Travel</Text>
-          <Text style={styles.howCardDesc}>Share the journey safely</Text>
+          <Text style={styles.howCardTitle}>{t('home.howTravel')}</Text>
+          <Text style={styles.howCardDesc}>{t('home.howTravelBody')}</Text>
         </View>
       </View>
     </View>
@@ -514,7 +516,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <StatusBar barStyle="dark-content" backgroundColor={colors.background.primary} />
         <View style={styles.loadingContainer}>
           <Icon name="directions-car" size={48} color={colors.primary} />
-          <Text style={styles.loadingText}>Loading ARYV...</Text>
+          <Text style={styles.loadingText}>{t('home.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -529,13 +531,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerGreeting}>
-            Good {getGreeting()}, {user?.firstName || 'there'}
+            {t('home.greetingName', { greeting: getGreeting(), name: user?.firstName || t('home.there') })}
           </Text>
           {currentLocation && (
             <View style={styles.headerLocation}>
               <Icon name="location-on" size={14} color={colors.text.secondary} />
               <Text style={styles.headerLocationText} numberOfLines={1}>
-                {currentLocation.address || 'Current location'}
+                {currentLocation.address || t('home.currentLocation')}
               </Text>
             </View>
           )}

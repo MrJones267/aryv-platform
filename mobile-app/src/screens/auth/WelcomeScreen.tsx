@@ -19,10 +19,12 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { WelcomeScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 const { width, height } = Dimensions.get('window');
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const handleGetStarted = (): void => {
     navigation.navigate('Register');
   };
@@ -44,7 +46,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
               <Text style={styles.logoText}>A</Text>
             </View>
             <Text style={styles.appName}>ARYV</Text>
-            <Text style={styles.tagline}>Your ride, your way</Text>
+            <Text style={styles.tagline}>{t('welcome.tagline')}</Text>
           </View>
         </View>
 
@@ -54,9 +56,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
             <View style={styles.featureIcon}>
               <Icon name="directions-car" size={32} color="#2196F3" />
             </View>
-            <Text style={styles.featureTitle}>Find Rides</Text>
+            <Text style={styles.featureTitle}>{t('welcome.findRides')}</Text>
             <Text style={styles.featureDescription}>
-              Discover nearby rides going your way
+              {t('welcome.findRidesBody')}
             </Text>
           </View>
 
@@ -64,9 +66,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
             <View style={styles.featureIcon}>
               <Icon name="people" size={32} color="#4CAF50" />
             </View>
-            <Text style={styles.featureTitle}>Meet People</Text>
+            <Text style={styles.featureTitle}>{t('welcome.meetPeople')}</Text>
             <Text style={styles.featureDescription}>
-              Connect with verified community members
+              {t('welcome.meetPeopleBody')}
             </Text>
           </View>
 
@@ -74,9 +76,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
             <View style={styles.featureIcon}>
               <Icon name="eco" size={32} color="#FF9800" />
             </View>
-            <Text style={styles.featureTitle}>Go Green</Text>
+            <Text style={styles.featureTitle}>{t('welcome.goGreen')}</Text>
             <Text style={styles.featureDescription}>
-              Reduce your carbon footprint together
+              {t('welcome.goGreenBody')}
             </Text>
           </View>
         </View>
@@ -88,7 +90,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
             onPress={handleGetStarted}
             activeOpacity={0.8}
           >
-            <Text style={styles.primaryButtonText}>Get Started</Text>
+            <Text style={styles.primaryButtonText}>{t('welcome.getStarted')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -96,17 +98,17 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
             onPress={handleSignIn}
             activeOpacity={0.8}
           >
-            <Text style={styles.secondaryButtonText}>I already have an account</Text>
+            <Text style={styles.secondaryButtonText}>{t('welcome.haveAccount')}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Terms and Privacy */}
         <View style={styles.legalSection}>
           <Text style={styles.legalText}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.linkText}>Terms of Service</Text>
-            {' '}and{' '}
-            <Text style={styles.linkText}>Privacy Policy</Text>
+            {t('welcome.agreePrefix')}{' '}
+            <Text style={styles.linkText}>{t('welcome.terms')}</Text>
+            {' '}{t('welcome.and')}{' '}
+            <Text style={styles.linkText}>{t('welcome.privacy')}</Text>
           </Text>
         </View>
       </ScrollView>
