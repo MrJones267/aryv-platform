@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -18,6 +19,15 @@
       FCM notification is ever shown on Android 13+.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Couriers keep sharing their position with the sender while they use
+      another app during a delivery (DeliveryLocationService). A foreground
+      service of type "location", started while the app is open, keeps
+      while-in-use access; no background-location permission is needed.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
       android:name="com.aryvmobile.MainApplication"
@@ -43,6 +53,14 @@
         android:name="firebase_analytics_collection_enabled"
         android:value="true" />
       
+      <!-- react-native-background-actions' service, declared as a location
+           service; Android 14 refuses to start it otherwise. -->
+      <service
+        android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
+        android:foregroundServiceType="location"
+        android:exported="false"
+        tools:node="merge" />
+
       <!-- Firebase Cloud Messaging Service -->
       <service
         android:name="com.aryvmobile.AryvFirebaseMessagingService"

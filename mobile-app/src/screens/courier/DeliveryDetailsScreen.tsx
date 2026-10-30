@@ -25,6 +25,7 @@ import locationService from '../../services/LocationService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
 import useShareDeliveryLocation from '../../hooks/useShareDeliveryLocation';
+import DeliveryLocationService from '../../services/DeliveryLocationService';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import logger from '../../services/LoggingService';
 
@@ -311,7 +312,9 @@ const DeliveryDetailsScreen: React.FC = () => {
           {delivery.status === 'in_transit' && (
             <Text style={styles.sharingText}>
               {sharing === 'sharing'
-                ? 'Sharing your location with the sender while this screen is open.'
+                ? (DeliveryLocationService.supported
+                  ? 'Sharing your location with the sender until you hand the package over, even in other apps.'
+                  : 'Sharing your location with the sender while this screen is open.')
                 : sharing === 'no_permission'
                   ? 'Allow location access so the sender can follow the delivery.'
                   : sharing === 'unavailable'
