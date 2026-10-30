@@ -5,9 +5,10 @@
  * @lastModified 2025-01-25
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef, flushPendingNavigation } from './services/appNavigation';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { Provider as ReduxProvider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
@@ -36,7 +37,6 @@ const AppContent: React.FC = () => {
   const dispatch = useAppDispatch();
   const { isLoading, isAuthenticated, accessToken, refreshToken } = useAppSelector((state) => state.auth);
   const { profile: user } = useAppSelector((state) => state.user);
-  const navigationRef = useRef<any>(null);
   
   // Debug auth state
   log.info('App: Auth state', { isLoading, isAuthenticated });
@@ -126,7 +126,9 @@ const AppContent: React.FC = () => {
           
           // Initialize CallIntegrationService
           callIntegrationService = CallIntegrationService.getInstance();
-          await callIntegrationService.initialize(navigationRef.current);
+          await callIntegrationService.initialize({
+            navigate: (screen: string, params?: Record<string, unknown>) => navigationRef.navigate(screen, params),
+          });
           log.info('CallIntegrationService initialized successfully');
 
           // Initialize Push Notifications
@@ -166,7 +168,7 @@ const AppContent: React.FC = () => {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.surface} />
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer ref={navigationRef} onReady={flushPendingNavigation} onStateChange={flushPendingNavigation}>
         <AppNavigator />
       </NavigationContainer>
     </>

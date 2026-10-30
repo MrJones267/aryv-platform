@@ -23,6 +23,31 @@ export interface NotificationData {
   timestamp: string;
 }
 
+/**
+ * The push's data: the type plus the ids the app needs to open the right
+ * screen when it is tapped. Push data values must be strings and the whole
+ * message is capped at 4 KB, so only plain values are sent; a nested booking
+ * or ride contributes its id. This used to send the type and time only, so a
+ * tapped push could not say which ride or booking it was about.
+ */
+export function pushData(notification: NotificationData): Record<string, string> {
+  const out: Record<string, string> = { type: notification.type, timestamp: notification.timestamp };
+  const data = (notification.data ?? {}) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(data)) {
+    if (['string', 'number', 'boolean'].includes(typeof value) && String(value).length <= 200) {
+      out[key] = String(value);
+    }
+  }
+  for (const nested of ['booking', 'ride']) {
+    const obj = data[nested] as Record<string, unknown> | undefined;
+    if (obj && typeof obj === 'object') {
+      if (obj['id'] != null && out[`${nested}Id`] == null) {out[`${nested}Id`] = String(obj['id']);}
+      if (obj['rideId'] != null && out['rideId'] == null) {out['rideId'] = String(obj['rideId']);}
+    }
+  }
+  return out;
+}
+
 export interface BookingNotification extends NotificationData {
   bookingId: string;
   rideId: string;
@@ -131,7 +156,7 @@ export class NotificationService {
             title: notification.title,
             body: notification.message,
             priority: 'normal',
-            data: { type: notification.type, timestamp: notification.timestamp },
+            data: pushData(notification),
           });
         }
       } catch (pushError) {
