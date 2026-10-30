@@ -261,12 +261,9 @@ const defineAssociations = (): void => {
     onUpdate: 'CASCADE',
   });
 
-  DeliveryDispute.belongsTo(User, {
-    foreignKey: 'resolvedByAdminId',
-    as: 'resolvedByAdmin',
-    onDelete: 'SET NULL',
-    onUpdate: 'CASCADE',
-  });
+  // resolvedByAdminId holds an admin_users id, so it is not associated with
+  // User: that association made a users foreign key, which every admin
+  // resolution violated (dropped in production by migration 032).
 
   // CourierLocation associations
   CourierLocation.belongsTo(DeliveryAgreement, {

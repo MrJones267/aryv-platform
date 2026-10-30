@@ -69,7 +69,6 @@ export class DeliveryDispute extends Model<DeliveryDisputeAttributes, DeliveryDi
   // Associations
   public readonly deliveryAgreement?: DeliveryAgreement;
   public readonly raisedByUser?: import('./User').UserModel;
-  public readonly resolvedByAdmin?: import('./User').UserModel;
 
   // Methods
   public isOpen(): boolean {
