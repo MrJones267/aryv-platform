@@ -36,7 +36,6 @@ import PrivacySettingsScreen from '../screens/settings/PrivacySettingsScreen';
 import CurrencySettingsScreen from '../screens/settings/CurrencySettingsScreen';
 import SecuritySettingsScreen from '../screens/settings/SecuritySettingsScreen';
 import LanguageSettingsScreen from '../screens/settings/LanguageSettingsScreen';
-import DataUsageSettingsScreen from '../screens/settings/DataUsageSettingsScreen';
 import HelpScreen from '../screens/settings/HelpScreen';
 import AboutScreen from '../screens/settings/AboutScreen';
 import TermsScreen from '../screens/settings/TermsScreen';
@@ -86,7 +85,6 @@ export type ProfileStackParamList = {
   CurrencySettings: undefined;
   SecuritySettings: undefined;
   LanguageSettings: undefined;
-  DataUsageSettings: undefined;
   Help: undefined;
   About: undefined;
   Terms: undefined;
@@ -275,11 +273,6 @@ const ProfileNavigator: React.FC = () => {
       name="LanguageSettings" 
       component={LanguageSettingsScreen}
       options={{ title: t('nav.languageRegion'), headerShown: false }}
-    />
-    <ProfileStack.Screen 
-      name="DataUsageSettings" 
-      component={DataUsageSettingsScreen}
-      options={{ title: t('nav.dataUsage'), headerShown: false }}
     />
     <ProfileStack.Screen 
       name="Help" 

@@ -1827,6 +1827,33 @@ export const en = {
   'rq.needLocation': 'Allow location access to see ride requests near you.',
   'rq.needVerification': 'Ride requests are shown to drivers whose documents are approved. Finish driver verification to see them.',
   'rq.loadFailed': 'Could not load ride requests. Pull down to try again.',
+
+  // Settings that work
+  'sec.currentPassword': 'Current password',
+  'sec.newPassword': 'New password (at least 8 characters)',
+  'sec.fillAll': 'Enter your current and new password.',
+  'sec.wrongCurrent': 'Your current password is not right.',
+  'sec.changeFailed': 'Could not change your password. Try again.',
+  'sec.changeHint': 'Changing your password signs you out on every device, this one included. Sign in again with the new one.',
+  'sec.changedTitle': 'Password changed',
+  'sec.changedBody': 'You\'ve been signed out on all your devices. Sign in with your new password.',
+  'sec.forgotCurrent': 'Forgot your current password? Get a reset link by email',
+  'sec.resetTitle': 'Reset password by email',
+  'sec.resetBody': 'We\'ll send a reset link to {{email}}.',
+  'sec.everywhereTitle': 'Sign out of all devices?',
+  'sec.everywhereBody': 'You\'ll be signed out on every phone and tablet, this one included, and need to sign in again.',
+  'sec.everywhereConfirm': 'Sign out everywhere',
+  'sec.everywhereDesc': 'Use this if you lost a phone or think someone else is signed in.',
+  'sec.everywhereFailed': 'Could not sign out of all devices. Try again.',
+  'ns.saveFailed': 'Could not save that setting. Try again.',
+  'ns.loadFailed': 'Could not load your notification settings. Check your connection and open this screen again.',
+  'ns.alwaysOn': 'Emergency alerts, calls and account security messages are always sent.',
+  'pv.whatIsShared': 'What ARYV shares',
+  'pv.location': 'Your location is used while you use the app, to find rides near you. When you deliver a package, the sender sees where it is until you hand it over. Change location access in your phone\'s settings.',
+  'pv.profile': 'People you ride, drive or deliver with see your name, photo and rating. Ride search shows other passengers only a driver\'s first name and rough location.',
+  'pv.contacts': 'ARYV does not read your phone\'s contacts. Your emergency contacts are only the people you add yourself.',
+  'pv.preparing': 'Preparing your data…',
+  'pv.exportFailed': 'Could not prepare your data. Try again.',
 };
 
 export type TranslationKey = keyof typeof en;
