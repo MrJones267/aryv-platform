@@ -45,7 +45,9 @@ async function loadIntent(id: string): Promise<Record<string, any> | null> {
 
 function getUserPaymentMethods(user: any): any[] {
   const prefs = (user.preferences as Record<string, any>) || {};
-  return prefs['paymentMethods'] || [];
+  // Cards saved before cards were refused could never be charged; they are
+  // not offered as a way to pay.
+  return (prefs['paymentMethods'] || []).filter((m: any) => m?.type !== 'card');
 }
 
 async function updateUserPaymentMethods(user: any, methods: any[]): Promise<void> {
@@ -73,62 +75,23 @@ export class PaymentController {
     }
   }
 
-  async addCard(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const userId = req.user?.id;
-      if (!userId) { res.status(401).json({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() }); return; }
-
-      const { cardNumber, expiryMonth, expiryYear, cvv, cardholderName, setAsDefault } = req.body;
-      if (!cardNumber || !expiryMonth || !expiryYear || !cvv || !cardholderName) {
-        res.status(400).json({ success: false, error: 'All card fields are required', code: 'MISSING_FIELDS', timestamp: new Date().toISOString() });
-        return;
-      }
-
-      const user = await User.findByPk(userId, { attributes: ['id', 'preferences'] });
-      if (!user) { res.status(404).json({ success: false, error: 'User not found', code: 'USER_NOT_FOUND', timestamp: new Date().toISOString() }); return; }
-
-      // In production: tokenise via Stripe and store the token, never raw card data
-      const stripe = getStripe();
-      let stripePaymentMethodId: string | null = null;
-
-      if (stripe) {
-        try {
-          const pm = await stripe.paymentMethods.create({
-            type: 'card',
-            card: { number: cardNumber, exp_month: expiryMonth, exp_year: expiryYear, cvc: cvv },
-            billing_details: { name: cardholderName },
-          });
-          stripePaymentMethodId = pm.id;
-        } catch (stripeErr: any) {
-          res.status(400).json({ success: false, error: stripeErr.message || 'Card declined', code: 'CARD_DECLINED', timestamp: new Date().toISOString() });
-          return;
-        }
-      }
-
-      const last4 = String(cardNumber).slice(-4);
-      const methods = getUserPaymentMethods(user);
-      const newMethod = {
-        id: stripePaymentMethodId || `card_${crypto.randomBytes(8).toString('hex')}`,
-        type: 'card' as const,
-        provider: 'stripe' as const,
-        label: `•••• ${last4}`,
-        last4,
-        expiryDate: `${String(expiryMonth).padStart(2, '0')}/${expiryYear}`,
-        isDefault: setAsDefault || methods.length === 0,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (newMethod.isDefault) {
-        methods.forEach((m) => { m.isDefault = false; });
-      }
-      methods.push(newMethod);
-      await updateUserPaymentMethods(user, methods);
-
-      res.status(201).json({ success: true, data: newMethod, timestamp: new Date().toISOString() });
-    } catch (error) {
-      logger.error('addCard error', { error: (error as Error).message });
-      res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
-    }
+  /**
+   * Cards are not accepted, and this endpoint no longer takes card details.
+   *
+   * It used to receive the full card number and CVV in the request body and
+   * pass them on to Stripe's raw card API, which puts this server in scope for
+   * card-data compliance. With no Stripe key set it saved a pretend card that
+   * nothing could ever charge. ARYV takes cash and mobile money; if card
+   * payments come, the provider's own SDK must collect the card so the number
+   * never reaches us. The body is deliberately never read.
+   */
+  async addCard(_req: AuthenticatedRequest, res: Response): Promise<void> {
+    res.status(410).json({
+      success: false,
+      error: 'Cards are not accepted. Pay your driver in cash, or add a mobile money account.',
+      code: 'CARDS_NOT_ACCEPTED',
+      timestamp: new Date().toISOString(),
+    });
   }
 
   async addMobileMoney(req: AuthenticatedRequest, res: Response): Promise<void> {

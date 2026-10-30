@@ -55,15 +55,6 @@ export interface ConfirmPaymentData {
   mobileMoneyProvider?: PaymentProvider;
 }
 
-export interface AddCardData {
-  cardNumber: string;
-  expiryMonth: number;
-  expiryYear: number;
-  cvv: string;
-  cardholderName: string;
-  setAsDefault?: boolean;
-}
-
 export interface AddMobileMoneyData {
   phone: string;
   provider: PaymentProvider;
@@ -102,10 +93,6 @@ class PaymentApiService extends BaseApiService {
 
   async getPaymentMethods(): Promise<ApiResponse<SavedPaymentMethod[]>> {
     return this.get<SavedPaymentMethod[]>('/payments/methods');
-  }
-
-  async addCard(data: AddCardData): Promise<ApiResponse<SavedPaymentMethod>> {
-    return this.post<SavedPaymentMethod>('/payments/methods/card', data);
   }
 
   async addMobileMoney(data: AddMobileMoneyData): Promise<ApiResponse<SavedPaymentMethod>> {

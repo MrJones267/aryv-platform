@@ -1,5 +1,5 @@
 /**
- * @fileoverview Payment API routes — cards, mobile money, wallet, transactions
+ * @fileoverview Payment API routes — mobile money, wallet, transactions
  * @author Oabona-Majoko
  * @created 2026-03-28
  * @lastModified 2026-03-28
@@ -50,19 +50,9 @@ router.use(authenticateToken);
 
 router.get('/methods', paymentRateLimit, controller.getPaymentMethods.bind(controller));
 
-router.post(
-  '/methods/card',
-  paymentRateLimit,
-  [
-    body('cardNumber').notEmpty().withMessage('Card number is required'),
-    body('expiryMonth').isInt({ min: 1, max: 12 }),
-    body('expiryYear').isInt({ min: new Date().getFullYear() }),
-    body('cvv').isLength({ min: 3, max: 4 }).isNumeric(),
-    body('cardholderName').notEmpty(),
-  ],
-  validateInput,
-  controller.addCard.bind(controller),
-);
+// Refused without validating or reading the body: card details must never be
+// sent here. Kept so app builds already installed get a clear answer.
+router.post('/methods/card', paymentRateLimit, controller.addCard.bind(controller));
 
 router.post(
   '/methods/mobile-money',

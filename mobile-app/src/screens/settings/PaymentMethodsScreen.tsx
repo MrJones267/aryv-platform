@@ -2,7 +2,7 @@
  * @fileoverview Payment Methods management screen
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-10-30
  */
 
 import React, { useState, useEffect } from 'react';
@@ -40,13 +40,6 @@ interface PaymentMethod {
   icon: string;
 }
 
-interface AddCardFormData {
-  cardNumber: string;
-  expiryDate: string;
-  cvv: string;
-  cardholderName: string;
-}
-
 interface AddMobileMoneyFormData {
   phone: string;
   provider: PaymentProvider;
@@ -64,15 +57,8 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [isAddCardModalVisible, setIsAddCardModalVisible] = useState(false);
   const [isAddMobileMoneyVisible, setIsAddMobileMoneyVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [cardFormData, setCardFormData] = useState<AddCardFormData>({
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
-    cardholderName: '',
-  });
   const [mobileMoneyForm, setMobileMoneyForm] = useState<AddMobileMoneyFormData>({
     phone: '',
     provider: 'orange_money',
@@ -151,50 +137,6 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
     );
   };
 
-  const handleAddCard = async (): Promise<void> => {
-    if (!cardFormData.cardNumber || !cardFormData.expiryDate ||
-        !cardFormData.cvv || !cardFormData.cardholderName) {
-      Alert.alert('Error', 'Please fill in all fields.');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const [expiryMonth, expiryYear] = cardFormData.expiryDate.split('/');
-      const response = await paymentApi.addCard({
-        cardNumber: cardFormData.cardNumber.replace(/\s/g, ''),
-        expiryMonth: parseInt(expiryMonth, 10),
-        expiryYear: parseInt('20' + expiryYear, 10),
-        cvv: cardFormData.cvv,
-        cardholderName: cardFormData.cardholderName,
-        setAsDefault: paymentMethods.length === 0,
-      });
-
-      if (response.success && response.data) {
-        setPaymentMethods(prev => [...prev, mapSavedMethod(response.data!)]);
-      } else {
-        // Fallback: add locally
-        setPaymentMethods(prev => [...prev, {
-          id: Date.now().toString(),
-          type: 'card',
-          name: 'Card',
-          last4: cardFormData.cardNumber.slice(-4),
-          expiryDate: cardFormData.expiryDate,
-          isDefault: prev.length === 0,
-          icon: 'credit-card',
-        }]);
-      }
-
-      setIsAddCardModalVisible(false);
-      setCardFormData({ cardNumber: '', expiryDate: '', cvv: '', cardholderName: '' });
-      Alert.alert('Success', 'Card added successfully!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add card. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleAddMobileMoney = async (): Promise<void> => {
     if (!mobileMoneyForm.phone) {
       Alert.alert('Error', 'Please enter your mobile money phone number.');
@@ -241,7 +183,7 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         <Icon name="arrow-back" size={24} color={colors.text.primary} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Payment Methods</Text>
-      <TouchableOpacity onPress={() => setIsAddCardModalVisible(true)}>
+      <TouchableOpacity onPress={() => setIsAddMobileMoneyVisible(true)}>
         <Icon name="add" size={24} color={colors.primary} />
       </TouchableOpacity>
     </View>
@@ -299,89 +241,8 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
     </View>
   );
 
-  const renderAddCardModal = (): React.ReactNode => (
-    <Modal
-      visible={isAddCardModalVisible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-    >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => setIsAddCardModalVisible(false)}>
-            <Icon name="close" size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add New Card</Text>
-          <TouchableOpacity onPress={handleAddCard}>
-            <Text style={styles.modalSaveButton}>Save</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <ScrollView style={styles.modalContent}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Card Number</Text>
-            <TextInput
-              style={styles.input}
-              value={cardFormData.cardNumber}
-              onChangeText={(value) => setCardFormData(prev => ({ ...prev, cardNumber: value }))}
-              placeholder="1234 5678 9012 3456"
-              keyboardType="numeric"
-              maxLength={19}
-            />
-          </View>
-
-          <View style={styles.rowInputs}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-              <Text style={styles.label}>Expiry Date</Text>
-              <TextInput
-                style={styles.input}
-                value={cardFormData.expiryDate}
-                onChangeText={(value) => setCardFormData(prev => ({ ...prev, expiryDate: value }))}
-                placeholder="MM/YY"
-                keyboardType="numeric"
-                maxLength={5}
-              />
-            </View>
-
-            <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
-              <Text style={styles.label}>CVV</Text>
-              <TextInput
-                style={styles.input}
-                value={cardFormData.cvv}
-                onChangeText={(value) => setCardFormData(prev => ({ ...prev, cvv: value }))}
-                placeholder="123"
-                keyboardType="numeric"
-                maxLength={3}
-                secureTextEntry
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Cardholder Name</Text>
-            <TextInput
-              style={styles.input}
-              value={cardFormData.cardholderName}
-              onChangeText={(value) => setCardFormData(prev => ({ ...prev, cardholderName: value }))}
-              placeholder="John Doe"
-              autoCapitalize="words"
-            />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-
   const renderAddOptions = (): React.ReactNode => (
     <View style={styles.addOptions}>
-      <TouchableOpacity
-        style={styles.addOptionCard}
-        onPress={() => setIsAddCardModalVisible(true)}
-      >
-        <Icon name="credit-card" size={32} color={colors.primary} />
-        <Text style={styles.addOptionTitle}>Add Credit/Debit Card</Text>
-        <Text style={styles.addOptionSubtitle}>Visa, Mastercard, etc.</Text>
-      </TouchableOpacity>
-
       <TouchableOpacity
         style={styles.addOptionCard}
         onPress={() => setIsAddMobileMoneyVisible(true)}
@@ -405,11 +266,18 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
         )}
         
         <View style={styles.section}>
+          {/* Cards are not accepted. The card form that was here sent the full
+              card number and CVV to our server, which must never hold them. */}
+          <View style={styles.cashNote}>
+            <Icon name="payments" size={22} color={colors.primary} />
+            <Text style={styles.cashNoteText}>
+              Pay your driver in cash at the end of the ride, or add a mobile money account. Cards are not accepted.
+            </Text>
+          </View>
           <Text style={styles.sectionTitle}>Add New Payment Method</Text>
           {renderAddOptions()}
         </View>
       </ScrollView>
-      {renderAddCardModal()}
 
       {/* Add Mobile Money Modal */}
       <Modal
@@ -490,6 +358,21 @@ const PaymentMethodsScreen: React.FC<PaymentMethodsScreenProps> = ({ navigation 
 };
 
 const styles = StyleSheet.create({
+  cashNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  cashNoteText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    color: colors.text.secondary,
+    lineHeight: 20,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
