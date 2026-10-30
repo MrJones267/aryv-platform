@@ -21,8 +21,8 @@ import { UserRole, VehicleType } from '../../types';
 
 const GABORONE = { latitude: -24.6541, longitude: 25.9086, address: 'Main Mall, Gaborone' };
 const FRANCISTOWN = { latitude: -21.1700, longitude: 27.5100, address: 'Francistown bus rank' };
-const MAUN = { latitude: -19.9833, longitude: 23.4167, address: 'Maun' };
-const KASANE = { latitude: -17.8000, longitude: 25.1500, address: 'Kasane' };
+const MAUN = { latitude: -19.9833, longitude: 23.4167, address: 'Maun bus station' };
+const KASANE = { latitude: -17.8000, longitude: 25.1500, address: 'Kasane town centre' };
 
 describe('Ride requests', () => {
   let passenger: any;
