@@ -326,7 +326,7 @@ export class CashPaymentService {
   }
 
   /**
-   * Check if user can make cash payments (based on trust score and limits)
+   * Check if user can make cash payments (only a suspended account cannot)
    */
   static async canMakeCashPayment(amount: number): Promise<{ canPay: boolean; reason?: string; trustScore?: number }> {
     try {
@@ -347,24 +347,8 @@ export class CashPaymentService {
         };
       }
 
-      // Check daily limit
-      if (walletInfo.dailyCashUsed + amount > walletInfo.dailyCashLimit) {
-        return {
-          canPay: false,
-          reason: `Daily limit exceeded. Available: P${(walletInfo.dailyCashLimit - walletInfo.dailyCashUsed).toFixed(2)}`,
-          trustScore: walletInfo.trustScore,
-        };
-      }
-
-      // Check trust score requirements
-      const requiredTrust = this.calculateRequiredTrust(amount);
-      if (walletInfo.trustScore < requiredTrust) {
-        return {
-          canPay: false,
-          reason: `Trust score too low. Required: ${requiredTrust}, Current: ${walletInfo.trustScore}`,
-          trustScore: walletInfo.trustScore,
-        };
-      }
+      // No daily limit and no trust-score threshold: a long commute can cost
+      // more than any cap would allow. Only a suspended account is refused.
 
       return {
         canPay: true,
@@ -377,17 +361,6 @@ export class CashPaymentService {
         reason: 'Unable to verify payment eligibility',
       };
     }
-  }
-
-  /**
-   * Calculate required trust score for given amount
-   */
-  private static calculateRequiredTrust(amount: number): number {
-    if (amount <= 10) return 20;
-    if (amount <= 50) return 40;
-    if (amount <= 100) return 60;
-    if (amount <= 500) return 80;
-    return 90;
   }
 
   /**

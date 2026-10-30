@@ -139,7 +139,7 @@ export class CashPaymentService {
       }
 
       // Check if user can make cash payments
-      const canPay = await this.checkCashPaymentEligibility(riderId, amount, transaction);
+      const canPay = await this.checkCashPaymentEligibility(riderId, transaction);
       if (!canPay.eligible) {
         await transaction.rollback();
         return {
@@ -465,7 +465,6 @@ export class CashPaymentService {
    */
   private async checkCashPaymentEligibility(
     userId: string,
-    amount: number,
     transaction: Transaction,
   ): Promise<{ eligible: boolean; reason?: string; trustScore?: number }> {
     // Get or create user wallet
@@ -487,82 +486,15 @@ export class CashPaymentService {
       };
     }
 
-    // Check trust score requirements
-    const requiredTrust = this.calculateRequiredTrust(amount);
-    if (wallet.trustScore < requiredTrust) {
-      return {
-        eligible: false,
-        reason: `Insufficient trust score. Required: ${requiredTrust}, Current: ${wallet.trustScore}`,
-        trustScore: wallet.trustScore,
-      };
-    }
-
-    // Check daily/weekly/monthly limits
-    const limitCheck = await this.checkTransactionLimits(wallet, amount);
-    if (!limitCheck.withinLimits) {
-      return {
-        eligible: false,
-        reason: limitCheck.reason || 'Limit exceeded',
-        trustScore: wallet.trustScore,
-      };
-    }
+    // No trust-score threshold and no daily, weekly or monthly cap. Those
+    // were set as if fares were in US dollars: in pula a new rider (trust 50)
+    // could not pay cash for a P60 ride, nor for a long commute at any score.
+    // A rider is held back only when their account is suspended.
 
     return {
       eligible: true,
       trustScore: wallet.trustScore,
     };
-  }
-
-  /**
-   * Calculate required trust score based on amount
-   */
-  private calculateRequiredTrust(amount: number): number {
-    if (amount <= 10) return 20;
-    if (amount <= 50) return 40;
-    if (amount <= 100) return 60;
-    if (amount <= 500) return 80;
-    return 90; // High-value transactions
-  }
-
-  /**
-   * Check transaction limits
-   */
-  private async checkTransactionLimits(
-    wallet: any,
-    amount: number,
-  ): Promise<{ withinLimits: boolean; reason?: string }> {
-    // Reset counters if needed
-    await this.resetLimitCountersIfNeeded(wallet);
-
-    // DECIMAL columns arrive from Postgres as strings, so `used + amount`
-    // concatenated ("0.00" + 50 = "0.0050") and the limit was compared as
-    // text. The Number() calls below make these real sums.
-
-    // Check daily limit
-    if (Number(wallet.dailyCashUsed) + amount > Number(wallet.dailyCashLimit)) {
-      return {
-        withinLimits: false,
-        reason: `Daily cash limit exceeded. Used: ${wallet.dailyCashUsed}, limit: ${wallet.dailyCashLimit}` as string,
-      };
-    }
-
-    // Check weekly limit
-    if (Number(wallet.weeklyCashUsed) + amount > Number(wallet.weeklyCashLimit)) {
-      return {
-        withinLimits: false,
-        reason: `Weekly cash limit exceeded. Used: ${wallet.weeklyCashUsed}, limit: ${wallet.weeklyCashLimit}` as string,
-      };
-    }
-
-    // Check monthly limit
-    if (Number(wallet.monthlyCashUsed) + amount > Number(wallet.monthlyCashLimit)) {
-      return {
-        withinLimits: false,
-        reason: `Monthly cash limit exceeded. Used: ${wallet.monthlyCashUsed}, limit: ${wallet.monthlyCashLimit}` as string,
-      };
-    }
-
-    return { withinLimits: true };
   }
 
   /**
@@ -634,10 +566,6 @@ export class CashPaymentService {
         totalTransactionValue: round2(Number(riderWallet.totalTransactionValue) + Number(cashTransaction.amount)),
         trustScore: newTrustScore,
         lastTrustScoreUpdate: new Date(),
-        // Update usage limits
-        dailyCashUsed: round2(Number(riderWallet.dailyCashUsed) + Number(cashTransaction.amount)),
-        weeklyCashUsed: round2(Number(riderWallet.weeklyCashUsed) + Number(cashTransaction.amount)),
-        monthlyCashUsed: round2(Number(riderWallet.monthlyCashUsed) + Number(cashTransaction.amount)),
       }, { transaction });
     }
 
@@ -829,38 +757,6 @@ export class CashPaymentService {
     );
   }
 
-  /**
-   * Reset limit counters based on time periods
-   */
-  private async resetLimitCountersIfNeeded(wallet: any): Promise<void> {
-    const now = new Date();
-    const lastReset = new Date(wallet.lastResetDate);
-
-    // Check if we need to reset daily counter (new day)
-    if (now.getDate() !== lastReset.getDate() ||
-        now.getMonth() !== lastReset.getMonth() ||
-        now.getFullYear() !== lastReset.getFullYear()) {
-
-      wallet.dailyCashUsed = 0;
-
-      // Check if we need to reset weekly counter (new week)
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
-
-      if (lastReset < weekStart) {
-        wallet.weeklyCashUsed = 0;
-      }
-
-      // Check if we need to reset monthly counter (new month)
-      if (now.getMonth() !== lastReset.getMonth() ||
-          now.getFullYear() !== lastReset.getFullYear()) {
-        wallet.monthlyCashUsed = 0;
-      }
-
-      wallet.lastResetDate = now;
-      await wallet.save();
-    }
-  }
 }
 
 export default CashPaymentService;
