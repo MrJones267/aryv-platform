@@ -55,6 +55,7 @@ import {
 import { smsService } from '../services/SMSService';
 import { SOS_ESCALATION, reminderDueAfterMinutes } from '../services/EmergencyService';
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
+import contentReportService, { ReportError } from '../services/ContentReportService';
 
 const COMMISSION_KEY = 'platform:commission';
 
@@ -159,6 +160,7 @@ const AUDITED_ACTIONS: Record<string, { action: string; resourceType: string }> 
   'POST /verifications/documents/:id/review': { action: 'document.review', resourceType: 'driver_document' },
   'POST /commission/:id/settlements': { action: 'commission.payment_recorded', resourceType: 'driver' },
   'POST /cash-disputes/:id/resolve': { action: 'cash_dispute.resolve', resourceType: 'cash_dispute' },
+  'POST /reports/:id/resolve': { action: 'report.resolve', resourceType: 'content_report' },
 };
 
 router.use((req: any, res, next) => {
@@ -1081,12 +1083,13 @@ router.get('/alerts', authenticateAdminToken, async (_req, res) => {
           LIMIT 20`,
         { type: QueryTypes.SELECT },
       ),
-      sequelize.query<{ sos: number; disputes: number; verifications: number; cashDisputes: number }>(
+      sequelize.query<{ sos: number; disputes: number; verifications: number; cashDisputes: number; reports: number }>(
         `SELECT
            (SELECT COUNT(*)::int FROM emergency_alerts WHERE status IN ('raised', 'acknowledged')) AS sos,
            (SELECT COUNT(*)::int FROM delivery_disputes WHERE status::text IN ('open', 'under_review')) AS disputes,
            (SELECT COUNT(DISTINCT user_id)::int FROM driver_documents WHERE status::text IN ('uploaded', 'under_review')) AS verifications,
-           (SELECT COUNT(*)::int FROM cash_disputes WHERE status = 'open') AS "cashDisputes"`,
+           (SELECT COUNT(*)::int FROM cash_disputes WHERE status = 'open') AS "cashDisputes",
+           (SELECT COUNT(*)::int FROM content_reports WHERE status = 'open') AS reports`,
         { type: QueryTypes.SELECT },
       ),
       sequelize.query(
@@ -1103,7 +1106,7 @@ router.get('/alerts', authenticateAdminToken, async (_req, res) => {
     return res.json({
       success: true,
       data: {
-        counts: { ...counts, total: counts!.sos + counts!.disputes + counts!.verifications + counts!.cashDisputes },
+        counts: { ...counts, total: counts!.sos + counts!.disputes + counts!.verifications + counts!.cashDisputes + counts!.reports },
         sos,
         disputes,
         verifications,
@@ -1777,6 +1780,65 @@ router.get('/cash-disputes/:id', authenticateAdminToken, async (req, res) => {
   } catch (error) {
     logger.error(`Cash dispute read failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to load the dispute', code: 'CASH_DISPUTE_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/reports
+ * @desc    Reports of chat messages and people, oldest open first
+ * @access  Private (any admin role)
+ */
+router.get('/reports', authenticateAdminToken, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query['page'] || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query['limit'] || 25)));
+    const status = req.query['status'];
+    if (status !== undefined && !['open', 'actioned', 'dismissed'].includes(String(status))) {
+      return res.status(400).json({ success: false, error: 'status must be open, actioned or dismissed', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
+    }
+    const data = await contentReportService.list({ ...(status ? { status: String(status) } : {}), page, limit });
+    return res.json({ success: true, data, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Reports list failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load reports', code: 'REPORTS_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   GET /api/admin/reports/:id
+ * @desc    One report: the message as it read, both people, and how often
+ *          the reported person has been reported
+ * @access  Private (any admin role)
+ */
+router.get('/reports/:id', authenticateAdminToken, async (req, res) => {
+  try {
+    const report = await contentReportService.get(String(req.params['id']));
+    if (!report) {
+      return res.status(404).json({ success: false, error: 'Report not found', code: 'REPORT_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    return res.json({ success: true, data: { report }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error(`Report read failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to load the report', code: 'REPORT_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route   POST /api/admin/reports/:id/resolve
+ * @desc    Mark a report actioned or dismissed, with notes. Suspending the
+ *          person is done from their user page, as for any other reason.
+ * @access  Private (any admin role)
+ */
+router.post('/reports/:id/resolve', authenticateAdminToken, async (req: any, res) => {
+  try {
+    const report = await contentReportService.resolve(String(req.params['id']), req.user.id, req.body?.outcome, req.body?.notes);
+    return res.json({ success: true, data: { id: report.id, status: report.status }, timestamp: new Date().toISOString() });
+  } catch (error) {
+    if (error instanceof ReportError) {
+      return res.status(error.status).json({ success: false, error: error.message, code: error.code, timestamp: new Date().toISOString() });
+    }
+    logger.error(`Report resolve failed: ${(error as Error).message}`);
+    return res.status(500).json({ success: false, error: 'Failed to resolve the report', code: 'REPORT_RESOLVE_FAILED', timestamp: new Date().toISOString() });
   }
 });
 

@@ -36,6 +36,7 @@ import groupChatRoutes from './routes/groupChat';
 import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
+import reportRoutes from './routes/reports';
 import verificationRoutes from './routes/verification';
 import emergencyRoutes from './routes/emergency';
 import callRoutes from './routes/calls';
@@ -249,6 +250,7 @@ app.get('/', (_req, res) => {
       notifications: '/api/notifications',
       payments: '/api/payments',
       rideRequests: '/api/ride-requests',
+      reports: '/api/reports',
       docs: '/api/docs',
     },
     version: '1.0.0',
@@ -272,6 +274,7 @@ app.use('/api/countries', wrapRouterAsync(countryRoutes));
 app.use('/api/group-chats', wrapRouterAsync(groupChatRoutes));
 app.use('/api/notifications', wrapRouterAsync(notificationRoutes));
 app.use('/api/ride-requests', wrapRouterAsync(rideRequestRoutes));
+app.use('/api/reports', wrapRouterAsync(reportRoutes));
 app.use('/api/promos', wrapRouterAsync(promoRoutes));
 app.use('/api/verification', wrapRouterAsync(verificationRoutes));
 app.use('/api/emergency', wrapRouterAsync(emergencyRoutes));
@@ -357,6 +360,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
   const REQUIRED_TABLES: Array<{ table: string; migration: string }> = [
     // Ride requests drivers can see (replaced Redis-only requests).
     { table: 'ride_requests', migration: '033_ride_requests.sql' },
+    // Chat and user reports for admins to review.
+    { table: 'content_reports', migration: '034_content_reports.sql' },
     { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
     { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
     // Courier package creation prices through these two.

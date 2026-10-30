@@ -32,6 +32,7 @@ import CommissionLedger from './CommissionLedger';
 import TrustHold from './TrustHold';
 import CashDispute from './CashDispute';
 import RideRequest from './RideRequest';
+import ContentReport from './ContentReport';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -536,6 +537,7 @@ export {
   TrustHold,
   CashDispute,
   RideRequest,
+  ContentReport,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -584,6 +586,7 @@ export default {
   TrustHold,
   CashDispute,
   RideRequest,
+  ContentReport,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
