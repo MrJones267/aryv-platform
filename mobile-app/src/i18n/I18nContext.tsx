@@ -11,6 +11,25 @@ import { translations, TranslationKey, supportedLanguages } from './translations
 
 const LANGUAGE_KEY = '@aryv_language';
 
+// The language in use, for code that cannot call the hook (class components).
+let currentLanguage = 'en';
+
+function lookup(language: string, key: TranslationKey, params?: Record<string, string | number>): string {
+  const dict = translations[language] || translations.en;
+  let value = dict[key] || translations.en[key] || key;
+  if (params) {
+    Object.entries(params).forEach(([paramKey, paramValue]) => {
+      value = value.replace(`{{${paramKey}}}`, String(paramValue));
+    });
+  }
+  return value;
+}
+
+/** Translate outside a component that can use the hook. Prefer useI18n(). */
+export function translate(key: TranslationKey, params?: Record<string, string | number>): string {
+  return lookup(currentLanguage, key, params);
+}
+
 interface I18nContextType {
   language: string;
   setLanguage: (code: string) => Promise<void>;
@@ -43,19 +62,10 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  currentLanguage = language;
+
   const t = useCallback(
-    (key: TranslationKey, params?: Record<string, string | number>): string => {
-      const dict = translations[language] || translations.en;
-      let value = dict[key] || translations.en[key] || key;
-
-      if (params) {
-        Object.entries(params).forEach(([paramKey, paramValue]) => {
-          value = value.replace(`{{${paramKey}}}`, String(paramValue));
-        });
-      }
-
-      return value;
-    },
+    (key: TranslationKey, params?: Record<string, string | number>): string => lookup(language, key, params),
     [language],
   );
 

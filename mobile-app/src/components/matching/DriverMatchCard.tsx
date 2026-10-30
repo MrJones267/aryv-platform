@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { DriverMatch, CompatibilityFactor } from '../../services/AIMatchingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface DriverMatchCardProps {
   match: DriverMatch;
@@ -31,6 +32,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
   onMessage,
   style,
 }) => {
+  const { t } = useI18n();
   const [showDetails, setShowDetails] = useState(false);
 
   const getCompatibilityColor = (score: number): string => {
@@ -42,11 +44,11 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
   };
 
   const getCompatibilityLabel = (score: number): string => {
-    if (score >= 0.85) return 'Excellent';
-    if (score >= 0.70) return 'Good';
-    if (score >= 0.55) return 'Fair';
-    if (score >= 0.40) return 'Poor';
-    return 'Very Poor';
+    if (score >= 0.85) return t('rating.excellent');
+    if (score >= 0.70) return t('rating.good');
+    if (score >= 0.55) return t('ui.fair');
+    if (score >= 0.40) return t('rating.poor');
+    return t('ui.veryPoor');
   };
 
   const renderRankBadge = () => {
@@ -167,7 +169,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
 
     return (
       <View style={styles.factorsSection}>
-        <Text style={styles.factorsTitle}>Why this is a good match:</Text>
+        <Text style={styles.factorsTitle}>{t('ui.whyThisIsAGood')}</Text>
         {topFactors.map((factor, index) => (
           <View key={index} style={styles.factorItem}>
             <Icon 
@@ -192,7 +194,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Compatibility Details</Text>
+            <Text style={styles.modalTitle}>{t('ui.compatibilityDetails')}</Text>
             <TouchableOpacity onPress={() => setShowDetails(false)}>
               <Icon name="close" size={24} color="#333333" />
             </TouchableOpacity>
@@ -201,7 +203,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
           <ScrollView style={styles.modalContent}>
             {/* Overall Score */}
             <View style={styles.overallScoreSection}>
-              <Text style={styles.sectionTitle}>Overall Compatibility</Text>
+              <Text style={styles.sectionTitle}>{t('ui.overallCompatibility')}</Text>
               <View style={styles.overallScoreContainer}>
                 <View style={[styles.largeCompatibilityCircle, { borderColor: getCompatibilityColor(match.compatibility.overall) }]}>
                   <Text style={[styles.largeCompatibilityPercent, { color: getCompatibilityColor(match.compatibility.overall) }]}>
@@ -221,7 +223,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
 
             {/* Breakdown Scores */}
             <View style={styles.breakdownSection}>
-              <Text style={styles.sectionTitle}>Compatibility Breakdown</Text>
+              <Text style={styles.sectionTitle}>{t('ui.compatibilityBreakdown')}</Text>
               {Object.entries(match.compatibility.breakdown).map(([category, score]) => (
                 <View key={category} style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>
@@ -242,7 +244,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
 
             {/* Detailed Factors */}
             <View style={styles.factorsDetailSection}>
-              <Text style={styles.sectionTitle}>Compatibility Factors</Text>
+              <Text style={styles.sectionTitle}>{t('ui.compatibilityFactors')}</Text>
               {match.compatibility.factors.map((factor, index) => (
                 <View key={index} style={styles.factorDetailItem}>
                   <View style={styles.factorHeader}>
@@ -269,23 +271,23 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
 
             {/* Driver Preferences */}
             <View style={styles.preferencesSection}>
-              <Text style={styles.sectionTitle}>Driver Preferences</Text>
+              <Text style={styles.sectionTitle}>{t('ui.driverPreferences')}</Text>
               <View style={styles.preferencesList}>
                 <View style={styles.preferenceItem}>
                   <Icon name="smoke-free" size={20} color="#666666" />
                   <Text style={styles.preferenceText}>
-                    {match.driver.preferences.smokingPolicy === 'prohibited' ? 'No Smoking' :
-                     match.driver.preferences.smokingPolicy === 'outdoor_only' ? 'Outdoor Smoking Only' :
-                     'Smoking Allowed'}
+                    {match.driver.preferences.smokingPolicy === 'prohibited' ? t('ui.noSmoking') :
+                     match.driver.preferences.smokingPolicy === 'outdoor_only' ? t('ui.outdoorSmoking') :
+                     t('ui.smokingAllowed')}
                   </Text>
                 </View>
                 
                 <View style={styles.preferenceItem}>
                   <Icon name="music-note" size={20} color="#666666" />
                   <Text style={styles.preferenceText}>
-                    {match.driver.preferences.musicPolicy === 'driver_choice' ? 'Driver Chooses Music' :
-                     match.driver.preferences.musicPolicy === 'passenger_choice' ? 'Passenger Chooses Music' :
-                     'Music by Agreement'}
+                    {match.driver.preferences.musicPolicy === 'driver_choice' ? t('ui.driverMusic') :
+                     match.driver.preferences.musicPolicy === 'passenger_choice' ? t('ui.passengerMusic') :
+                     t('ui.musicAgreement')}
                   </Text>
                 </View>
                 
@@ -300,10 +302,10 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
                 <View style={styles.preferenceItem}>
                   <Icon name="pets" size={20} color="#666666" />
                   <Text style={styles.preferenceText}>
-                    {match.driver.preferences.petsPolicy === 'none' ? 'No Pets' :
-                     match.driver.preferences.petsPolicy === 'small_only' ? 'Small Pets Only' :
-                     match.driver.preferences.petsPolicy === 'medium_allowed' ? 'Small/Medium Pets' :
-                     'All Pets Welcome'}
+                    {match.driver.preferences.petsPolicy === 'none' ? t('ui.noPets') :
+                     match.driver.preferences.petsPolicy === 'small_only' ? t('ui.smallPets') :
+                     match.driver.preferences.petsPolicy === 'medium_allowed' ? t('ui.mediumPets') :
+                     t('ui.allPets')}
                   </Text>
                 </View>
               </View>
@@ -333,7 +335,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
             setShowDetails(true);
           }}
         >
-          <Text style={styles.detailsButtonText}>View Compatibility Details</Text>
+          <Text style={styles.detailsButtonText}>{t('ui.viewCompatibilityDetails')}</Text>
           <Icon name="chevron-right" size={16} color="#2196F3" />
         </TouchableOpacity>
       </TouchableOpacity>

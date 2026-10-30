@@ -20,6 +20,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import EmergencyService, { EmergencyAlert } from '../../services/EmergencyService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('EmergencyAlertModal');
 
@@ -36,6 +37,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
   onClose,
   onEmergencyTriggered,
 }) => {
+  const { t } = useI18n();
   const [selectedType, setSelectedType] = useState<EmergencyAlert['alertType']>('panic');
   const [isTriggering, setIsTriggering] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -85,26 +87,26 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
   };
 
   const emergencyTypes = [
-    { type: 'panic' as const, label: 'General Emergency', icon: 'warning', color: '#F44336' },
-    { type: 'medical' as const, label: 'Medical Emergency', icon: 'local-hospital', color: '#E91E63' },
-    { type: 'accident' as const, label: 'Accident', icon: 'car-crash', color: '#FF5722' },
-    { type: 'harassment' as const, label: 'Harassment', icon: 'report-problem', color: '#9C27B0' },
-    { type: 'other' as const, label: 'Other Emergency', icon: 'emergency', color: '#607D8B' },
+    { type: 'panic' as const, label: t('ui.generalEmergency'), icon: 'warning', color: '#F44336' },
+    { type: 'medical' as const, label: t('ui.medicalEmergency'), icon: 'local-hospital', color: '#E91E63' },
+    { type: 'accident' as const, label: t('ui.accident'), icon: 'car-crash', color: '#FF5722' },
+    { type: 'harassment' as const, label: t('ui.harassment'), icon: 'report-problem', color: '#9C27B0' },
+    { type: 'other' as const, label: t('ui.otherEmergency'), icon: 'emergency', color: '#607D8B' },
   ];
 
   const handleEmergencyPress = (): void => {
     Alert.alert(
-      '🚨 Emergency Alert',
-      'This will immediately notify your emergency contacts and share your location. Are you sure?',
+      t('ui.emergencyAlert'),
+      t('ui.thisWillImmediatelyNotifyYour'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         { 
-          text: 'Start Countdown', 
+          text: t('ui.startCountdown'), 
           style: 'destructive',
           onPress: startCountdown 
         },
         { 
-          text: 'Emergency Now!', 
+          text: t('ui.emergencyNow'), 
           style: 'destructive',
           onPress: () => triggerEmergency(true) 
         }
@@ -150,11 +152,11 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
     } catch (error) {
       log.error('Emergency trigger failed:', error);
       Alert.alert(
-        'Emergency alert failed',
-        'Call 999 now if you are in danger.',
+        t('ui.emergencyAlertFailed'),
+        t('ui.call999NowIfYou'),
         [
           { text: 'Call 999', onPress: () => EmergencyService.callEmergencyServices() },
-          { text: 'Close', style: 'cancel' },
+          { text: t('common.close'), style: 'cancel' },
         ],
       );
       setIsTriggering(false);
@@ -177,13 +179,13 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
             Emergency Alert in {countdown} second{countdown !== 1 ? 's' : ''}
           </Text>
           <Text style={styles.countdownSubtext}>
-            Your emergency contacts will be notified and your location will be shared
+            {t('ui.yourEmergencyContactsWillBe')}
           </Text>
           <TouchableOpacity
             style={styles.cancelCountdownButton}
             onPress={cancelCountdown}
           >
-            <Text style={styles.cancelCountdownText}>Cancel</Text>
+            <Text style={styles.cancelCountdownText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -230,7 +232,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Icon name="warning" size={32} color="#F44336" />
-            <Text style={styles.modalTitle}>Emergency Alert</Text>
+            <Text style={styles.modalTitle}>{t('ui.emergencyAlert2')}</Text>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={onClose}
@@ -241,11 +243,11 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
 
           <View style={styles.modalBody}>
             <Text style={styles.instructionText}>
-              Select emergency type and press the emergency button. Your location will be shared with emergency contacts.
+              {t('ui.selectEmergencyTypeAndPress')}
             </Text>
 
             <View style={styles.typesContainer}>
-              <Text style={styles.sectionTitle}>Emergency Type</Text>
+              <Text style={styles.sectionTitle}>{t('ui.emergencyType')}</Text>
               {emergencyTypes.map(renderEmergencyType)}
             </View>
 
@@ -263,7 +265,7 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
                 onPress={() => EmergencyService.callPrimaryContact()}
               >
                 <Icon name="contacts" size={20} color="#FFFFFF" />
-                <Text style={styles.quickActionText}>Call Contact</Text>
+                <Text style={styles.quickActionText}>{t('ui.callContact')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -285,13 +287,13 @@ const EmergencyAlertModal: React.FC<EmergencyAlertModalProps> = ({
                   color="#FFFFFF" 
                 />
                 <Text style={styles.emergencyButtonText}>
-                  {isTriggering ? 'TRIGGERING...' : 'EMERGENCY ALERT'}
+                  {isTriggering ? 'TRIGGERING...' : t('ui.emergencyAlert3')}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
             
             <Text style={styles.footerNote}>
-              Hold and press to trigger emergency alert
+              {t('ui.holdAndPressToTrigger')}
             </Text>
           </View>
         </View>

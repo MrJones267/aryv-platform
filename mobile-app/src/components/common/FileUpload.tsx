@@ -17,6 +17,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { launchImageLibrary, launchCamera, Asset } from 'react-native-image-picker';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface FileUploadProps {
   onFileSelected: (file: Asset) => void;
@@ -37,10 +38,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
   accept = 'image',
   maxSize = 10,
   label,
-  placeholder = 'Tap to select a file',
+  placeholder: placeholderProp,
   showPreview = true,
   disabled = false,
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('ui.tapToSelectAFile');
   const [selectedFile, setSelectedFile] = useState<Asset | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -65,20 +68,20 @@ const FileUpload: React.FC<FileUploadProps> = ({
       }
 
       if (result.errorCode) {
-        onError?.(result.errorMessage || 'Failed to select file');
+        onError?.(result.errorMessage || t('ui.failedToSelectFile'));
         return;
       }
 
       const file = result.assets?.[0];
       if (!file) {
-        onError?.('No file selected');
+        onError?.(t('ui.noFileSelected'));
         return;
       }
 
       // Check file size
       const fileSizeMB = (file.fileSize || 0) / (1024 * 1024);
       if (fileSizeMB > maxSize) {
-        onError?.(`File size exceeds ${maxSize}MB limit`);
+        onError?.(t('ui.fileTooBig', { size: maxSize }));
         return;
       }
 
@@ -104,7 +107,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         }, 200);
       }
     } catch (error: unknown) {
-      onError?.(error instanceof Error ? error.message : 'Failed to select file');
+      onError?.(error instanceof Error ? error.message: t('ui.failedToSelectFile'));
     }
   };
 
@@ -125,7 +128,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
             <View style={styles.filePreview}>
               <Icon name="insert-drive-file" size={40} color={colors.primary} />
               <Text style={styles.fileName} numberOfLines={1}>
-                {selectedFile.fileName || 'Selected file'}
+                {selectedFile.fileName || t('ui.selectedFile')}
               </Text>
             </View>
           )}

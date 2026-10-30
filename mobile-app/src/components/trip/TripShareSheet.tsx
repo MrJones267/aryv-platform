@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import TripSharingService, { TripShareData } from '../../services/TripSharingService';
 import { useToast } from '../ui/Toast';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface TripShareSheetProps {
   visible: boolean;
@@ -36,6 +37,7 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
   onClose,
   tripData,
 }) => {
+  const { t } = useI18n();
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [isSharing, setIsSharing] = useState(false);
   const sharingService = TripSharingService.getInstance();
@@ -56,10 +58,10 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
     setIsSharing(true);
     try {
       await sharingService.shareTrip(tripData);
-      toast.success('Trip Shared', 'Your trip details have been shared.');
+      toast.success(t('ui.tripShared'), t('ui.yourTripDetailsHaveBeen'));
       onClose();
     } catch (error) {
-      toast.error('Share Failed', 'Could not share trip. Please try again.');
+      toast.error(t('ui.shareFailed'), t('ui.couldNotShareTripPlease'));
     } finally {
       setIsSharing(false);
     }
@@ -70,10 +72,10 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
     try {
       const success = await sharingService.shareTripViaSMS(tripData, contact.phoneNumber);
       if (success) {
-        toast.success('Shared', `Trip shared with ${contact.name} via SMS.`);
+        toast.success(t('ui.tripShared'), t('ui.tripSharedVia', { name: contact.name }));
       }
     } catch (error) {
-      toast.error('SMS Failed', 'Could not send SMS.');
+      toast.error(t('ui.smsFailed'), t('ui.couldNotSendSms'));
     } finally {
       setIsSharing(false);
     }
@@ -84,7 +86,7 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
     try {
       await sharingService.shareTripViaWhatsApp(tripData, contact.phoneNumber);
     } catch (error) {
-      toast.error('WhatsApp Failed', 'Could not open WhatsApp.');
+      toast.error(t('ui.whatsappFailed'), t('ui.couldNotOpenWhatsapp'));
     } finally {
       setIsSharing(false);
     }
@@ -103,7 +105,7 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
             <Text style={styles.contactName}>{item.name}</Text>
             {item.isPrimary && (
               <View style={styles.primaryBadge}>
-                <Text style={styles.primaryBadgeText}>Primary</Text>
+                <Text style={styles.primaryBadgeText}>{t('ui.primary')}</Text>
               </View>
             )}
           </View>
@@ -145,9 +147,9 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.headerTitle}>Share Your Trip</Text>
+              <Text style={styles.headerTitle}>{t('ui.shareYourTrip')}</Text>
               <Text style={styles.headerSubtitle}>
-                Let someone know where you are
+                {t('ui.letSomeoneKnowWhereYou')}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -181,14 +183,14 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
           >
             <Icon name="share" size={20} color="#FFFFFF" />
             <Text style={styles.shareAllBtnText}>
-              {isSharing ? 'Sharing...' : 'Share Trip Details'}
+              {isSharing ? 'Sharing...' : t('ui.shareTripDetails')}
             </Text>
           </TouchableOpacity>
 
           {/* Emergency contacts */}
           {contacts.length > 0 ? (
             <View style={styles.contactsSection}>
-              <Text style={styles.contactsSectionTitle}>Emergency Contacts</Text>
+              <Text style={styles.contactsSectionTitle}>{t('nav.emergencyContacts')}</Text>
               <FlatList
                 data={contacts}
                 renderItem={renderContact}
@@ -200,10 +202,10 @@ const TripShareSheet: React.FC<TripShareSheetProps> = ({
             <View style={styles.noContacts}>
               <Icon name="people-outline" size={32} color={colors.border.medium} />
               <Text style={styles.noContactsText}>
-                No emergency contacts set up yet.
+                {t('ui.noEmergencyContactsSetUp')}
               </Text>
               <Text style={styles.noContactsSubtext}>
-                Add contacts in Settings to quickly share trips.
+                {t('ui.addContactsInSettingsTo')}
               </Text>
             </View>
           )}

@@ -83,7 +83,7 @@ const SecuritySettingsScreen: React.FC<SecuritySettingsScreenProps> = ({ navigat
     Alert.alert(
       t('st.activeDevices'),
       t('st.thisDeviceCurrentNNno'),
-      [{ text: 'OK' }]
+      [{ text: t('common.ok') }]
     );
   };
 

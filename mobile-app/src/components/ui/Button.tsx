@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n/I18nContext';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 export type ButtonSize = 'small' | 'medium' | 'large';
@@ -48,6 +49,7 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
   testID,
 }) => {
+  const { t } = useI18n();
   const buttonStyles = [
     styles.button,
     styles[variant],
@@ -90,7 +92,7 @@ export const Button: React.FC<ButtonProps> = ({
             color={getSpinnerColor(variant)}
             style={styles.spinner}
           />
-          <Text style={textStyles}>Loading...</Text>
+          <Text style={textStyles}>{t('common.loading')}</Text>
         </>
       );
     }

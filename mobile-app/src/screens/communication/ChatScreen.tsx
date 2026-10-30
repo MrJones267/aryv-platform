@@ -31,6 +31,7 @@ import {
   ChatInput,
   MessageData,
 } from '../../components/communication';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ChatScreenParams {
   packageId: string;
@@ -41,6 +42,7 @@ interface ChatScreenParams {
 }
 
 const ChatScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const route = useRoute();
   const params = route.params as ChatScreenParams;
@@ -96,7 +98,7 @@ const ChatScreen: React.FC = () => {
       }
     } catch (error) {
       log.error('Error loading messages:', error);
-      Alert.alert('Error', 'Failed to load conversation history');
+      Alert.alert(t('common.error'), t('ui.failedToLoadConversationHistory'));
     }
   };
 
@@ -118,7 +120,7 @@ const ChatScreen: React.FC = () => {
       const newMessage: MessageData = {
         id: `msg_${Date.now()}`,
         senderId: currentUserId,
-        senderName: userType === 'courier' ? 'You (Courier)' : 'You',
+        senderName: userType === 'courier' ? t('ui.youCourier') : t('ui.you'),
         senderType: userType,
         message,
         messageType: type,
@@ -146,18 +148,18 @@ const ChatScreen: React.FC = () => {
 
     } catch (error) {
       log.error('Error sending message:', error);
-      Alert.alert('Error', 'Failed to send message');
+      Alert.alert(t('common.error'), t('ui.failedToSendMessage'));
     }
   };
 
   const handleSendImage = () => {
     Alert.alert(
-      'Send Image',
-      'Choose an option',
+      t('ui.sendImage'),
+      t('ui.chooseAnOption'),
       [
-        { text: 'Camera', onPress: () => openCamera() },
-        { text: 'Gallery', onPress: () => openGallery() },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('rf.camera'), onPress: () => openCamera() },
+        { text: t('rf.gallery'), onPress: () => openGallery() },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
@@ -174,18 +176,18 @@ const ChatScreen: React.FC = () => {
 
   const handleSendLocation = () => {
     Alert.alert(
-      'Share Location',
-      'This will share your current location with the other party.',
+      t('ui.shareLocation'),
+      t('ui.thisWillShareYourCurrent'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Share', onPress: () => shareCurrentLocation() },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('common.share'), onPress: () => shareCurrentLocation() },
       ]
     );
   };
 
   const shareCurrentLocation = () => {
     // Get current location and send
-    const locationMessage = 'Shared current location';
+    const locationMessage = t('ui.sharedCurrentLocation');
     handleSendMessage(locationMessage, 'location');
   };
 
@@ -196,11 +198,11 @@ const ChatScreen: React.FC = () => {
   const handleLocationPress = (location: MessageData['location']) => {
     if (location) {
       Alert.alert(
-        'Location',
+        t('ui.location'),
         location.address,
         [
-          { text: 'Close', style: 'cancel' },
-          { text: 'Open in Maps', onPress: () => openInMaps(location) },
+          { text: t('common.close'), style: 'cancel' },
+          { text: t('ui.openInMaps'), onPress: () => openInMaps(location) },
         ]
       );
     }
@@ -213,11 +215,11 @@ const ChatScreen: React.FC = () => {
 
   const handleResendMessage = (message: MessageData) => {
     Alert.alert(
-      'Resend Message',
-      'Do you want to resend this message?',
+      t('ui.resendMessage'),
+      t('ui.doYouWantToResend'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Resend', onPress: () => resendMessage(message) },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('ui.resend'), onPress: () => resendMessage(message) },
       ]
     );
   };
@@ -229,11 +231,11 @@ const ChatScreen: React.FC = () => {
 
   const handleCallPress = () => {
     Alert.alert(
-      'Call User',
-      `Do you want to call ${params.otherUserName}?`,
+      t('ui.callUser'),
+      t('ui.callName', { name: params.otherUserName }),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => initiateCall() },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('cf.call'), onPress: () => initiateCall() },
       ]
     );
   };
@@ -255,11 +257,11 @@ const ChatScreen: React.FC = () => {
   };
 
   const getLastSeenText = () => {
-    if (onlineStatus === 'online') return 'Online';
+    if (onlineStatus === 'online') {return t('ui.online');}
     if (onlineStatus === 'offline' && lastSeen) {
-      return `Last seen ${new Date(lastSeen).toLocaleTimeString()}`;
+      return t('ui.lastSeen', { time: new Date(lastSeen).toLocaleTimeString() });
     }
-    return 'Offline';
+    return t('ui.offline');
   };
 
   const renderImageModal = () => (
@@ -357,7 +359,7 @@ const ChatScreen: React.FC = () => {
         onSendLocation={handleSendLocation}
         userType={userType}
         isDeliveryActive={deliveryActive}
-        placeholder={`Message ${params.otherUserName}...`}
+        placeholder={t('ui.messageName', { name: params.otherUserName })}
       />
 
       {/* Image Modal */}

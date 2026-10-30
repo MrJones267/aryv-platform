@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import TippingService from '../../services/TippingService';
 import { haptic } from '../../services/HapticService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface TipSelectorProps {
   rideId: string;
@@ -36,6 +37,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
   onTipSubmitted,
   onSkip,
 }) => {
+  const { t } = useI18n();
   const tippingService = TippingService.getInstance();
   const suggestions = tippingService.getSuggestedAmounts(rideFare);
 
@@ -81,7 +83,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
           <View style={styles.checkCircle}>
             <Icon name="favorite" size={24} color="#FFFFFF" />
           </View>
-          <Text style={styles.thankYouTitle}>Thank you!</Text>
+          <Text style={styles.thankYouTitle}>{t('tip.thankYou')}</Text>
           <Text style={styles.thankYouDesc}>
             Your {currency} {effectiveAmount} tip has been sent to the driver
           </Text>
@@ -94,7 +96,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
     <View style={styles.container}>
       <View style={styles.header}>
         <Icon name="volunteer-activism" size={22} color={colors.primary} />
-        <Text style={styles.headerTitle}>Add a tip?</Text>
+        <Text style={styles.headerTitle}>{t('tip.addTip')}</Text>
       </View>
       <Text style={styles.headerDesc}>
         100% of tips go directly to your driver
@@ -167,7 +169,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
             <Text style={styles.submitBtnText}>
               {effectiveAmount > 0
                 ? `Tip ${currency} ${effectiveAmount}`
-                : 'Select tip amount'}
+                : t('tip.selectAmount')}
             </Text>
           )}
         </TouchableOpacity>
@@ -176,7 +178,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
           onPress={onSkip}
           activeOpacity={0.7}
         >
-          <Text style={styles.skipBtnText}>No thanks</Text>
+          <Text style={styles.skipBtnText}>{t('tip.noThanks')}</Text>
         </TouchableOpacity>
       </View>
     </View>

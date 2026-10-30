@@ -31,8 +31,10 @@ import {
 } from '../../components/payment';
 import CashPaymentService from '../../services/CashPaymentService';
 import { paymentApi } from '../../services/api/paymentApi';
+import { useI18n } from '../../i18n/I18nContext';
 
 const PaymentScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'escrow' | 'history'>('overview');
@@ -60,14 +62,14 @@ const PaymentScreen: React.FC = () => {
           id: m.id,
           type: m.type,
           title: m.nickname || m.type,
-          subtitle: m.isDefault ? 'Default' : '',
+          subtitle: m.isDefault ? t('st.default') : '',
           icon: m.type === 'card' ? 'credit-card' : 'account-balance-wallet',
           isDefault: m.isDefault,
           isAvailable: true,
           lastFour: m.lastFour,
           expiryDate: m.expiryDate,
           balance: m.balance,
-          estimatedTime: 'Instant',
+          estimatedTime: t('ui.instant'),
         }));
         setPaymentMethods(mapped);
       }
@@ -97,7 +99,7 @@ const PaymentScreen: React.FC = () => {
       // is wired up rather than torn out and rebuilt later.
       setActiveEscrows([]);
     } catch {
-      Alert.alert('Error', 'Failed to load payment data.');
+      Alert.alert(t('common.error'), t('ui.failedToLoadPaymentData'));
     } finally {
       setLoading(false);
     }
@@ -109,20 +111,20 @@ const PaymentScreen: React.FC = () => {
 
   const handlePaymentMethodSelect = (method: string) => {
     setSelectedPaymentMethod(method);
-    Alert.alert('Payment Method Selected', `${method} has been selected as your payment method.`);
+    Alert.alert(t('ui.paymentMethodSelected'), `${method} has been selected as your payment method.`);
   };
 
   const handleTransactionPress = (transaction: Transaction) => {
     Alert.alert(
-      'Transaction Details',
-      `Transaction ID: ${transaction.id}\nAmount: P${transaction.amount}\nStatus: ${transaction.status}`
+      t('ui.transactionDetails'),
+      t('ui.txDetailsBody', { id: transaction.id, amount: transaction.amount, status: transaction.status })
     );
   };
 
   const handleEscrowPress = (escrow: EscrowData) => {
     Alert.alert(
-      'Escrow Details',
-      `Escrow ID: ${escrow.id}\nAmount: P${escrow.amount}\nStatus: ${escrow.status}`
+      t('ui.escrowDetails'),
+      t('ui.escrowDetailsBody', { id: escrow.id, amount: escrow.amount, status: escrow.status })
     );
   };
 
@@ -151,11 +153,11 @@ const PaymentScreen: React.FC = () => {
       <View style={styles.balanceCard}>
         <View style={styles.balanceHeader}>
           <Icon name="account-balance-wallet" size={24} color={colors.primary} />
-          <Text style={styles.balanceTitle}>Wallet Balance</Text>
+          <Text style={styles.balanceTitle}>{t('ui.walletBalance')}</Text>
         </View>
         <Text style={styles.balanceAmount}>P{getWalletBalance().toFixed(2)}</Text>
         <TouchableOpacity style={styles.topUpButton}>
-          <Text style={styles.topUpButtonText}>Top Up Wallet</Text>
+          <Text style={styles.topUpButtonText}>{t('ui.topUpWallet')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -163,7 +165,7 @@ const PaymentScreen: React.FC = () => {
       {activeEscrows.length > 0 && (
         <View style={styles.escrowSummary}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Active Escrows</Text>
+            <Text style={styles.sectionTitle}>{t('ui.activeEscrows')}</Text>
             <Text style={styles.escrowTotal}>P{getTotalEscrowAmount().toFixed(2)}</Text>
           </View>
           <Text style={styles.escrowSubtitle}>
@@ -174,7 +176,7 @@ const PaymentScreen: React.FC = () => {
 
       {/* Payment Method Selector */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Default Payment Method</Text>
+        <Text style={styles.sectionTitle}>{t('ui.defaultPaymentMethod')}</Text>
         <PaymentMethodSelector
           selectedMethod={null}
           onMethodSelect={handlePaymentMethodSelect}
@@ -185,9 +187,9 @@ const PaymentScreen: React.FC = () => {
       {/* Recent Payments */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Payments</Text>
+          <Text style={styles.sectionTitle}>{t('ui.recentPayments')}</Text>
           <TouchableOpacity onPress={() => setActiveTab('history')}>
-            <Text style={styles.viewAllText}>View All</Text>
+            <Text style={styles.viewAllText}>{t('ui.viewAll')}</Text>
           </TouchableOpacity>
         </View>
         {recentPayments.slice(0, 3).map(payment => (
@@ -216,13 +218,13 @@ const PaymentScreen: React.FC = () => {
     >
       <View style={styles.section}>
         <Text style={styles.sectionDescription}>
-          Escrow protects both senders and couriers by holding payments until delivery is confirmed.
+          {t('ui.escrowProtectsBothSendersAnd')}
         </Text>
         
         {activeEscrows.length === 0 ? (
           <View style={styles.emptyState}>
             <Icon name="security" size={64} color={colors.text.secondary} />
-            <Text style={styles.emptyTitle}>Nothing held in escrow</Text>
+            <Text style={styles.emptyTitle}>{t('ui.nothingHeldInEscrow')}</Text>
             <Text style={styles.emptySubtitle}>
               Deliveries are paid in cash to the courier on arrival, so nothing
               is held up front. This is where funds would appear if a delivery
@@ -234,7 +236,7 @@ const PaymentScreen: React.FC = () => {
             <EscrowStatusDisplay
               key={escrow.id}
               escrow={escrow}
-              packageTitle={`Package #${escrow.packageId.slice(-3)}`}
+              packageTitle={t('ui.packageNumber', { n: escrow.packageId.slice(-3) })}
               onPress={() => handleEscrowPress(escrow)}
               showTimeline={true}
             />
@@ -261,7 +263,7 @@ const PaymentScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Icon name="arrow-back" size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payments</Text>
+        <Text style={styles.headerTitle}>{t('ui.payments')}</Text>
         <TouchableOpacity>
           <Icon name="more-vert" size={24} color={colors.text.primary} />
         </TouchableOpacity>

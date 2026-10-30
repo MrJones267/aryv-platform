@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface UserProfileData {
   id: string;
@@ -57,6 +58,7 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
   showVerification = true,
   style,
 }) => {
+  const { t } = useI18n();
   const renderStars = (rating: number): React.ReactNode => {
     const stars = [];
     const fullStars = Math.floor(rating);
@@ -89,17 +91,17 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
     if (user.totalRides > 50) score++;
     if (user.rating >= 4.5) score++;
 
-    if (score >= 5) return { label: 'Highly Trusted', color: '#10B981', icon: 'verified-user' };
-    if (score >= 3) return { label: 'Verified', color: '#2563EB', icon: 'verified' };
-    if (score >= 1) return { label: 'Basic', color: '#6B7280', icon: 'shield' };
-    return { label: 'New', color: '#9CA3AF', icon: 'person-outline' };
+    if (score >= 5) return { label: t('ui.highlyTrusted'), color: '#10B981', icon: 'verified-user' };
+    if (score >= 3) return { label: t('profile.verified'), color: '#2563EB', icon: 'verified' };
+    if (score >= 1) return { label: t('ui.basic'), color: '#6B7280', icon: 'shield' };
+    return { label: t('ui.new'), color: '#9CA3AF', icon: 'person-outline' };
   };
 
   const verificationBadges = [
-    { key: 'email', verified: user.isEmailVerified, icon: 'email', label: 'Email' },
-    { key: 'phone', verified: user.isPhoneVerified, icon: 'phone', label: 'Phone' },
+    { key: 'email', verified: user.isEmailVerified, icon: 'email', label: t('auth.email') },
+    { key: 'phone', verified: user.isPhoneVerified, icon: 'phone', label: t('cf.phone') },
     { key: 'id', verified: user.isIdentityVerified, icon: 'badge', label: 'ID' },
-    { key: 'driver', verified: user.isDriverVerified, icon: 'directions-car', label: 'Driver' },
+    { key: 'driver', verified: user.isDriverVerified, icon: 'directions-car', label: t('rideDetails.driver') },
   ];
 
   const verifiedCount = verificationBadges.filter(b => b.verified).length;
@@ -292,26 +294,26 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{user.totalRides}</Text>
-            <Text style={styles.statLabel}>Rides</Text>
+            <Text style={styles.statLabel}>{t('st.rides')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{user.rating.toFixed(1)}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
+            <Text style={styles.statLabel}>{t('rf.rating')}</Text>
           </View>
           {user.totalDeliveries !== undefined && user.totalDeliveries > 0 && (
             <>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Text style={styles.statValue}>{user.totalDeliveries}</Text>
-                <Text style={styles.statLabel}>Deliveries</Text>
+                <Text style={styles.statLabel}>{t('st.deliveries')}</Text>
               </View>
             </>
           )}
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{verifiedCount}/{verificationBadges.length}</Text>
-            <Text style={styles.statLabel}>Verified</Text>
+            <Text style={styles.statLabel}>{t('profile.verified')}</Text>
           </View>
         </View>
       )}

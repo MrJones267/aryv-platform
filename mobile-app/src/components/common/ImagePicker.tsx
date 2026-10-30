@@ -26,6 +26,7 @@ import {
 } from 'react-native-image-picker';
 
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ImagePickerProps {
   onImagesSelected: (images: string[]) => void;
@@ -40,28 +41,29 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   existingImages = [],
   placeholder = "Add photos of your package"
 }) => {
+  const { t } = useI18n();
   const [selectedImages, setSelectedImages] = useState<string[]>(existingImages);
 
   const handleAddImage = () => {
     if (selectedImages.length >= maxImages) {
-      Alert.alert('Limit Reached', `You can only add up to ${maxImages} images.`);
+      Alert.alert(t('ui.limitReached'), `You can only add up to ${maxImages} images.`);
       return;
     }
 
     Alert.alert(
-      'Add Photo',
-      'Choose how to add a photo of your package',
+      t('rf.addPhoto'),
+      t('ui.chooseHowToAddA'),
       [
         {
-          text: 'Camera',
+          text: t('rf.camera'),
           onPress: () => openImagePicker('camera'),
         },
         {
-          text: 'Gallery',
+          text: t('rf.gallery'),
           onPress: () => openImagePicker('gallery'),
         },
         {
-          text: 'Cancel',
+          text: t('common.cancel'),
           style: 'cancel',
         },
       ]
@@ -71,7 +73,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   const handlePickerResponse = (response: ImagePickerResponse) => {
     if (response.didCancel || response.errorCode) {
       if (response.errorCode && response.errorCode !== 'camera_unavailable') {
-        Alert.alert('Error', response.errorMessage || 'Failed to select image.');
+        Alert.alert(t('common.error'), response.errorMessage || t('ui.failedToSelectImage'));
       }
       return;
     }
@@ -102,15 +104,15 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
 
   const handleRemoveImage = (index: number) => {
     Alert.alert(
-      'Remove Photo',
-      'Are you sure you want to remove this photo?',
+      t('st.removePhoto'),
+      t('ui.areYouSureYouWant4'),
       [
         {
-          text: 'Cancel',
+          text: t('common.cancel'),
           style: 'cancel',
         },
         {
-          text: 'Remove',
+          text: t('st.remove'),
           style: 'destructive',
           onPress: () => {
             const newImages = selectedImages.filter((_, i) => i !== index);
@@ -140,13 +142,13 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
       onPress={handleAddImage}
     >
       <Icon name="add-a-photo" size={32} color={colors.text.secondary} />
-      <Text style={styles.addImageText}>Add Photo</Text>
+      <Text style={styles.addImageText}>{t('rf.addPhoto')}</Text>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Package Photos</Text>
+      <Text style={styles.label}>{t('ui.packagePhotos')}</Text>
       <Text style={styles.description}>{placeholder}</Text>
       
       <ScrollView
@@ -169,7 +171,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
         </View>
         
         <Text style={styles.imageHint}>
-          Clear photos help couriers identify your package
+          {t('ui.clearPhotosHelpCouriersIdentify')}
         </Text>
       </View>
 
@@ -177,7 +179,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
         <View style={styles.tipContainer}>
           <Icon name="lightbulb" size={16} color={colors.warning} />
           <Text style={styles.tipText}>
-            Include photos showing packaging, size, and any identifying marks
+            {t('ui.includePhotosShowingPackagingSize')}
           </Text>
         </View>
       )}

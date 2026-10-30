@@ -20,6 +20,7 @@ import { Input, Button } from '../ui';
 import HitchMapView from './MapView';
 import locationService, { LocationCoordinates, LocationData } from '../../services/LocationService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('LocationPicker');
 
@@ -37,9 +38,12 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   onClose,
   onLocationSelect,
   initialLocation,
-  title = 'Select Location',
-  placeholder = 'Search for a location or tap on the map',
+  title: titleProp,
+  placeholder: placeholderProp,
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('ui.searchForALocationOr');
+  const title = titleProp ?? t('ui.selectLocation');
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(initialLocation || null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +68,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       }
     } catch (error: unknown) {
       log.error('Failed to get current location:', error);
-      Alert.alert('Location Error', error instanceof Error ? error.message : 'Unable to get current location');
+      Alert.alert(t('ui.locationError'), error instanceof Error ? error.message: t('ui.unableToGetCurrentLocation'));
     } finally {
       setIsLoadingCurrentLocation(false);
     }
@@ -114,10 +118,10 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         const [longitude, latitude] = results;
         await handleMapPress({ latitude, longitude });
       } else {
-        Alert.alert('No Results', 'No locations found for your search');
+        Alert.alert(t('ui.noResults'), t('ui.noLocationsFoundForYour'));
       }
     } catch (error: unknown) {
-      Alert.alert('Search Error', error instanceof Error ? error.message : 'Failed to search location');
+      Alert.alert(t('rf.searchError'), error instanceof Error ? error.message: t('ui.failedToSearchLocation'));
     } finally {
       setIsSearching(false);
     }
@@ -128,7 +132,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       onLocationSelect(selectedLocation);
       onClose();
     } else {
-      Alert.alert('No Location Selected', 'Please select a location on the map or search for one');
+      Alert.alert(t('ui.noLocationSelected'), t('ui.pleaseSelectALocationOn'));
     }
   };
 
@@ -251,7 +255,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               <Icon name="location-on" size={20} color="#2196F3" />
               <View style={styles.locationText}>
                 <Text style={styles.locationAddress}>
-                  {selectedLocation.address?.fullAddress || 'Selected Location'}
+                  {selectedLocation.address?.fullAddress || t('ui.selectedLocation')}
                 </Text>
                 <Text style={styles.locationCoordinates}>
                   {selectedLocation.latitude.toFixed(6)}, {selectedLocation.longitude.toFixed(6)}
@@ -265,7 +269,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         <View style={styles.actions}>
           {searchQuery.trim() && (
             <Button
-              title={isSearching ? 'Searching...' : 'Search'}
+              title={isSearching ? 'Searching...' : t('common.search')}
               onPress={handleSearchSubmit}
               disabled={isSearching}
               loading={isSearching}
@@ -277,7 +281,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           )}
           
           <Button
-            title="Confirm Location"
+            title={t('ui.confirmLocation')}
             onPress={handleConfirmSelection}
             disabled={!selectedLocation}
             variant="primary"

@@ -130,7 +130,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
           t('rf.noCompatibleDriversFoundFor'),
           [
             { text: t('rf.adjustPreferences'), onPress: () => setShowPreferences(true) },
-            { text: 'OK' },
+            { text: t('common.ok') },
           ]
         );
       }
@@ -177,7 +177,7 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
               });
             },
           },
-          { text: 'OK' },
+          { text: t('common.ok') },
         ]
       );
     } catch (error: unknown) {

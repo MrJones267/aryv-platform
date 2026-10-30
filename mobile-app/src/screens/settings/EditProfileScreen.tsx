@@ -104,7 +104,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
       Alert.alert(
         t('common.success'),
         t('st.yourProfileHasBeenUpdated'),
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+        [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
       );
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);

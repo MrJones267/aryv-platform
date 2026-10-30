@@ -20,6 +20,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface QuickReply {
   id: string;
@@ -45,10 +46,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onSendLocation,
   userType,
   isDeliveryActive = false,
-  placeholder = 'Type a message...',
+  placeholder: placeholderProp,
   disabled = false,
   maxLength = 1000,
 }) => {
+  const { t } = useI18n();
+  const placeholder = placeholderProp ?? t('messages.typeMessage');
   const [message, setMessage] = useState('');
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
@@ -56,21 +59,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const quickRepliesAnimation = useRef(new Animated.Value(0)).current;
 
   const courierQuickReplies: QuickReply[] = [
-    { id: 'pickup_arrived', text: "I've arrived for pickup", icon: 'location-on', category: 'courier' },
-    { id: 'on_way', text: 'On my way to delivery location', icon: 'directions', category: 'courier' },
-    { id: 'delivered', text: 'Package delivered successfully', icon: 'check-circle', category: 'courier' },
-    { id: 'delay', text: 'Running a bit late, will update soon', icon: 'schedule', category: 'courier' },
-    { id: 'contact_recipient', text: 'Trying to contact the recipient', icon: 'phone', category: 'courier' },
-    { id: 'issue', text: 'Encountered an issue with delivery', icon: 'warning', category: 'courier' },
+    { id: 'pickup_arrived', text: t('ui.arrivedForPickup'), icon: 'location-on', category: 'courier' },
+    { id: 'on_way', text: t('ui.onMyWayToDelivery'), icon: 'directions', category: 'courier' },
+    { id: 'delivered', text: t('ui.packageDeliveredSuccessfully'), icon: 'check-circle', category: 'courier' },
+    { id: 'delay', text: t('ui.runningABitLateWill'), icon: 'schedule', category: 'courier' },
+    { id: 'contact_recipient', text: t('ui.tryingToContactTheRecipient'), icon: 'phone', category: 'courier' },
+    { id: 'issue', text: t('ui.encounteredAnIssueWithDelivery'), icon: 'warning', category: 'courier' },
   ];
 
   const senderQuickReplies: QuickReply[] = [
-    { id: 'thanks', text: 'Thank you!', icon: 'thumb-up', category: 'sender' },
-    { id: 'ready', text: 'Package is ready for pickup', icon: 'check', category: 'sender' },
-    { id: 'location_shared', text: 'Shared my location', icon: 'location-on', category: 'sender' },
-    { id: 'instructions', text: 'Please check delivery instructions', icon: 'info', category: 'sender' },
-    { id: 'urgent', text: 'This is urgent delivery', icon: 'priority-high', category: 'sender' },
-    { id: 'fragile', text: 'Handle with care - fragile items', icon: 'warning', category: 'sender' },
+    { id: 'thanks', text: t('tip.thankYou'), icon: 'thumb-up', category: 'sender' },
+    { id: 'ready', text: t('ui.packageIsReadyForPickup'), icon: 'check', category: 'sender' },
+    { id: 'location_shared', text: t('ui.sharedMyLocation'), icon: 'location-on', category: 'sender' },
+    { id: 'instructions', text: t('ui.pleaseCheckDeliveryInstructions'), icon: 'info', category: 'sender' },
+    { id: 'urgent', text: t('ui.thisIsUrgentDelivery'), icon: 'priority-high', category: 'sender' },
+    { id: 'fragile', text: t('ui.handleWithCareFragileItems'), icon: 'warning', category: 'sender' },
   ];
 
   const getQuickReplies = () => {
@@ -168,7 +171,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <View style={styles.attachmentIconContainer}>
               <Icon name="photo-camera" size={24} color={colors.primary} />
             </View>
-            <Text style={styles.attachmentText}>Camera</Text>
+            <Text style={styles.attachmentText}>{t('rf.camera')}</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -178,7 +181,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <View style={styles.attachmentIconContainer}>
               <Icon name="photo-library" size={24} color={colors.success} />
             </View>
-            <Text style={styles.attachmentText}>Gallery</Text>
+            <Text style={styles.attachmentText}>{t('rf.gallery')}</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -188,7 +191,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <View style={styles.attachmentIconContainer}>
               <Icon name="location-on" size={24} color={colors.warning} />
             </View>
-            <Text style={styles.attachmentText}>Location</Text>
+            <Text style={styles.attachmentText}>{t('ui.location')}</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -251,7 +254,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         {isDeliveryActive && (
           <View style={styles.deliveryStatus}>
             <View style={styles.pulseIndicator} />
-            <Text style={styles.deliveryStatusText}>Delivery in progress</Text>
+            <Text style={styles.deliveryStatusText}>{t('ui.deliveryInProgress')}</Text>
           </View>
         )}
         

@@ -29,6 +29,7 @@ import { useSocket, useSocketEvent, useChatMessages } from '../../hooks/useSocke
 import locationService from '../../services/LocationService';
 import logger from '../../services/LoggingService';
 import chatApi from '../../services/api/chatApi';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ChatScreen');
 
@@ -48,6 +49,7 @@ interface ChatMessage {
 }
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
+  const { t } = useI18n();
   const { chatId, recipientName } = route.params;
   const rideId = (route.params as Record<string, unknown>)?.rideId as string | undefined;
   const bookingId = (route.params as Record<string, unknown>)?.bookingId as string | undefined;
@@ -160,7 +162,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     const message: ChatMessage = {
       id: Date.now().toString(),
       senderId: user?.id || 'current-user',
-      senderName: user?.firstName || 'You',
+      senderName: user?.firstName || t('ui.you'),
       message: newMessage.trim(),
       timestamp: new Date().toISOString(),
       type: 'text',
@@ -217,8 +219,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         const locationMsg: ChatMessage = {
           id: Date.now().toString(),
           senderId: user?.id || 'current-user',
-          senderName: user?.firstName || 'You',
-          message: `📍 Shared location: ${addressStr}`,
+          senderName: user?.firstName || t('ui.you'),
+          message: t('ui.sharedLocationMsg', { address: addressStr }),
           timestamp: new Date().toISOString(),
           type: 'location',
           isRead: false,
@@ -237,11 +239,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
         scrollToBottom();
       } else {
-        Alert.alert('Location Unavailable', 'Unable to get your current location. Please check location permissions.');
+        Alert.alert(t('ui.locationUnavailable'), t('ui.unableToGetYourCurrent'));
       }
     } catch (error) {
       log.error('Error sharing location:', error);
-      Alert.alert('Error', 'Failed to share location. Please try again.');
+      Alert.alert(t('common.error'), t('ui.failedToShareLocationPlease'));
     } finally {
       setIsSharingLocation(false);
     }
@@ -252,7 +254,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     const message: ChatMessage = {
       id: Date.now().toString(),
       senderId: user?.id || 'current-user',
-      senderName: user?.firstName || 'You',
+      senderName: user?.firstName || t('ui.you'),
       message: text,
       timestamp: new Date().toISOString(),
       type: 'text',
@@ -276,7 +278,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     });
     if (url) {
       Linking.openURL(url).catch(() => {
-        Alert.alert('Error', 'Unable to open maps application.');
+        Alert.alert(t('common.error'), t('ui.unableToOpenMapsApplication'));
       });
     }
   };
@@ -295,16 +297,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
     if (isCurrentUser) {
       actions.push({
-        text: 'Delete Message',
+        text: t('ui.deleteMessage'),
         style: 'destructive' as const,
         onPress: () => {
           Alert.alert(
-            'Delete Message',
-            'Are you sure you want to delete this message?',
+            t('ui.deleteMessage'),
+            t('ui.areYouSureYouWant'),
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: t('common.cancel'), style: 'cancel' },
               {
-                text: 'Delete',
+                text: t('common.delete'),
                 style: 'destructive',
                 onPress: () => handleDeleteMessage(message.id),
               },
@@ -316,47 +318,47 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
     actions.push(
       {
-        text: 'Copy Message',
+        text: t('ui.copyMessage'),
         onPress: () => {
           Clipboard.setString(message.message);
-          Alert.alert('Copied', 'Message copied to clipboard');
+          Alert.alert(t('ui.copied'), t('ui.messageCopiedToClipboard'));
         },
       },
       {
-        text: 'Report Message',
+        text: t('ui.reportMessage'),
         style: 'destructive' as const,
         onPress: () => {
-          Alert.alert('Report Message', 'Thank you for reporting. We will review this message.');
+          Alert.alert(t('ui.reportMessage'), t('ui.thankYouForReportingWe'));
         },
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     );
 
-    Alert.alert('Message Options', 'Choose an action', actions);
+    Alert.alert(t('messagesList.options'), t('messagesList.chooseAction'), actions);
   };
 
   const handleMoreOptions = (): void => {
     Alert.alert(
-      'Options',
-      'Choose an action',
+      t('ui.options'),
+      t('messagesList.chooseAction'),
       [
-        { text: 'Share Location', onPress: handleShareLocation },
-        { text: 'Clear Chat History', onPress: handleClearChat, style: 'destructive' },
-        { text: 'Report User', onPress: handleReportUser, style: 'destructive' },
-        { text: 'Block User', onPress: handleBlockUser, style: 'destructive' },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('ui.shareLocation'), onPress: handleShareLocation },
+        { text: t('ui.clearChatHistory'), onPress: handleClearChat, style: 'destructive' },
+        { text: t('ui.reportUser'), onPress: handleReportUser, style: 'destructive' },
+        { text: t('ui.blockUser'), onPress: handleBlockUser, style: 'destructive' },
+        { text: t('common.cancel'), style: 'cancel' },
       ],
     );
   };
 
   const handleClearChat = (): void => {
     Alert.alert(
-      'Clear Chat History',
-      'Are you sure you want to clear all messages? This action cannot be undone.',
+      t('ui.clearChatHistory'),
+      t('ui.areYouSureYouWant2'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear All',
+          text: t('ui.clearAll'),
           style: 'destructive',
           onPress: () => {
             setLocalMessages([]);
@@ -367,16 +369,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   };
 
   const handleReportUser = (): void => {
-    Alert.alert('Report User', 'Please contact support to report this user.');
+    Alert.alert(t('ui.reportUser'), t('ui.pleaseContactSupportToReport'));
   };
 
   const handleBlockUser = (): void => {
     Alert.alert(
-      'Block User',
-      'Are you sure you want to block this user? You won\'t be able to receive messages from them.',
+      t('ui.blockUser'),
+      t('ui.areYouSureYouWant3'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Block', style: 'destructive', onPress: () => navigation.goBack() },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('ui.block'), style: 'destructive', onPress: () => navigation.goBack() },
       ],
     );
   };
@@ -401,10 +403,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   };
 
   const quickActions = [
-    { icon: 'schedule', label: 'On my way', message: "I'm on my way!" },
-    { icon: 'hourglass-empty', label: 'Running late', message: "I'm running a few minutes late, sorry!" },
-    { icon: 'check-circle', label: 'I\'m here', message: "I've arrived at the pickup point." },
-    { icon: 'thumb-up', label: 'Thanks', message: 'Thank you! See you soon.' },
+    { icon: 'schedule', label: t('ui.onMyWay'), message: t('ui.onMyWayMsg') },
+    { icon: 'hourglass-empty', label: t('ui.runningLate'), message: t('ui.runningLateMsg') },
+    { icon: 'check-circle', label: t('ui.imHere'), message: t('ui.arrivedPickupMsg') },
+    { icon: 'thumb-up', label: t('ui.thanks'), message: t('ui.thankYouSeeYouSoon') },
   ];
 
   const renderRideContext = (): React.ReactNode => {
@@ -421,7 +423,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       >
         <Icon name="directions-car" size={16} color="#2196F3" />
         <Text style={styles.rideContextText} numberOfLines={1}>
-          {bookingId ? 'Booking' : 'Ride'} conversation
+          {bookingId ? t('messagesList.filter.booking') : t('messagesList.filter.ride')} conversation
         </Text>
         <Icon name="chevron-right" size={16} color="#999999" />
       </TouchableOpacity>
@@ -458,7 +460,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
             <Icon name="my-location" size={18} color="#2196F3" />
           )}
           <Text style={styles.quickActionText}>
-            {isSharingLocation ? 'Getting location...' : 'Share my location'}
+            {isSharingLocation ? t('ui.gettingLocation') : t('ui.shareMyLocation')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -535,7 +537,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
               styles.locationTapHint,
               { color: isCurrentUser ? 'rgba(255,255,255,0.6)' : '#999999' },
             ]}>
-              Tap to open in maps
+              {t('ui.tapToOpenInMaps')}
             </Text>
           )}
 
@@ -578,7 +580,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
         <TextInput
           style={styles.textInput}
-          placeholder="Type a message..."
+          placeholder={t('messages.typeMessage')}
           placeholderTextColor="#999999"
           value={newMessage}
           onChangeText={handleTextChange}
@@ -623,7 +625,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
             <View style={styles.onlineStatus}>
               <View style={[styles.statusDot, isOnline ? styles.onlineDot : styles.offlineDot]} />
               <Text style={styles.statusText}>
-                {isOnline ? `${recipientName} is online` : 'Offline'}
+                {isOnline ? `${recipientName} is online` : t('ui.offline')}
               </Text>
             </View>
           ) : (

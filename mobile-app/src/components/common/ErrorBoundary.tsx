@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import logger from '../../services/LoggingService';
+import { translate } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ErrorBoundary');
 
@@ -67,14 +68,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               <Icon name="error-outline" size={64} color="#EF4444" />
             </View>
 
-            <Text style={styles.title}>Something Went Wrong</Text>
+            <Text style={styles.title}>{translate('ui.somethingWentWrong')}</Text>
             <Text style={styles.subtitle}>
-              ARYV encountered an unexpected error. We apologise for the inconvenience.
+              {translate('ui.aryvEncounteredAnUnexpectedError')}
             </Text>
 
             {__DEV__ && this.state.error && (
               <View style={styles.errorBox}>
-                <Text style={styles.errorTitle}>Error Details:</Text>
+                <Text style={styles.errorTitle}>{translate('ui.errorDetails')}</Text>
                 <Text style={styles.errorText}>
                   {this.state.error.toString()}
                 </Text>
@@ -92,7 +93,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               activeOpacity={0.8}
             >
               <Icon name="refresh" size={20} color="#FFFFFF" />
-              <Text style={styles.restartBtnText}>Try Again</Text>
+              <Text style={styles.restartBtnText}>{translate('ui.tryAgain')}</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

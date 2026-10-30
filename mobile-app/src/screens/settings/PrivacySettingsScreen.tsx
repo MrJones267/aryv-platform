@@ -119,7 +119,7 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
         Alert.alert(
           t('st.downloadData'),
           t('st.yourDataWillBePrepared'),
-          [{ text: 'OK' }]
+          [{ text: t('common.ok') }]
         );
         break;
       case 'delete':

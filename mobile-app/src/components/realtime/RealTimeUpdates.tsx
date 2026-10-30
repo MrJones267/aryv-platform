@@ -14,6 +14,7 @@ const log = logger.createLogger('RealTimeUpdates');
 import { useSocket, useSocketEvent } from '../../hooks/useSocket';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { MessageData, RideUpdate, BookingUpdate } from '../../services/SocketService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface RideUpdateWithDetails extends RideUpdate {
   rideId: string;
@@ -31,6 +32,7 @@ interface RealTimeUpdatesProps {
  * Should be placed high in the component tree to handle global updates
  */
 export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<{ navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void }>();
   const { isAuthenticated } = useAppSelector(state => state.auth);
@@ -71,23 +73,23 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     switch (rideUpdate.status) {
       case 'confirmed':
         Alert.alert(
-          'Ride Confirmed',
-          rideUpdate.message || 'Your ride has been confirmed!'
+          t('ui.rideConfirmed'),
+          rideUpdate.message || t('ui.yourRideHasBeenConfirmed')
         );
         break;
       case 'in_progress':
         Alert.alert(
-          'Ride Started',
-          rideUpdate.message || 'Your ride has started. Have a safe journey!'
+          t('rideDetails.started'),
+          rideUpdate.message || t('ui.yourRideHasStartedHave')
         );
         break;
       case 'completed':
         Alert.alert(
-          'Ride Completed',
-          rideUpdate.message || 'Your ride has been completed. Would you like to rate your trip?',
+          t('rideDetails.completed'),
+          rideUpdate.message || t('ui.yourRideHasBeenCompleted'),
           [
             {
-              text: 'Rate Now',
+              text: t('ui.rateNow'),
               onPress: () => {
                 try {
                   const details = rideUpdate as RideUpdateWithDetails;
@@ -102,14 +104,14 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
                 }
               },
             },
-            { text: 'Later', style: 'cancel' },
+            { text: t('ui.later'), style: 'cancel' },
           ]
         );
         break;
       case 'cancelled':
         Alert.alert(
-          'Ride Cancelled',
-          rideUpdate.message || 'Your ride has been cancelled.'
+          t('rideDetails.cancelled'),
+          rideUpdate.message || t('ui.yourRideHasBeenCancelled')
         );
         break;
     }
@@ -126,14 +128,14 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     switch (bookingUpdate.status) {
       case 'confirmed':
         Alert.alert(
-          'Booking Confirmed',
-          bookingUpdate.message || 'Your booking has been confirmed!'
+          t('ui.bookingConfirmed'),
+          bookingUpdate.message || t('ui.yourBookingHasBeenConfirmed')
         );
         break;
       case 'cancelled':
         Alert.alert(
-          'Booking Cancelled',
-          bookingUpdate.message || 'A booking has been cancelled.'
+          t('ui.bookingCancelled'),
+          bookingUpdate.message || t('ui.aBookingHasBeenCancelled')
         );
         break;
     }
@@ -159,11 +161,11 @@ export const RealTimeUpdates: React.FC<RealTimeUpdatesProps> = ({ children }) =>
     // Only show for critical errors
     if (error.code === 'AUTHENTICATION_FAILED') {
       Alert.alert(
-        'Connection Error',
-        'Authentication failed. Please log in again.',
+        t('ui.connectionError'),
+        t('ui.authenticationFailedPleaseLogIn'),
         [
           {
-            text: 'OK',
+            text: t('common.ok'),
             onPress: () => {
               // dispatch(logout());
             },

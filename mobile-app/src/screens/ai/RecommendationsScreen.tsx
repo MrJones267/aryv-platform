@@ -29,6 +29,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import RideRecommendationService, {
   RideRecommendation,
 } from '../../services/RideRecommendationService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface RecommendationsScreenProps {
   navigation?: {
@@ -46,6 +47,7 @@ const formatDeparture = (iso: string): string => {
 };
 
 const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [recommendations, setRecommendations] = useState<RideRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,7 +88,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
 
         {upcoming.length === 0 ? (
           <Text style={styles.emptyRoute}>
-            No upcoming rides on this route yet.
+            {t('ui.noUpcomingRidesOnThis')}
           </Text>
         ) : (
           upcoming.map((ride) => (
@@ -116,7 +118,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
         <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color="#333333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Rides for You</Text>
+        <Text style={styles.headerTitle}>{t('ui.ridesForYou')}</Text>
       </View>
 
       <ScrollView
@@ -132,7 +134,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
           // screen with journeys they have never made.
           <View style={styles.centred}>
             <Icon name="explore" size={48} color="#CCCCCC" />
-            <Text style={styles.emptyTitle}>Nothing to suggest yet</Text>
+            <Text style={styles.emptyTitle}>{t('ui.nothingToSuggestYet')}</Text>
             <Text style={styles.emptyBody}>
               Once you have taken a few rides, the journeys you make regularly
               will show up here with the next available seats on them.
@@ -141,7 +143,7 @@ const RecommendationsScreen: React.FC<RecommendationsScreenProps> = ({ navigatio
               style={styles.searchButton}
               onPress={() => navigation?.navigate('Search')}
             >
-              <Text style={styles.searchButtonText}>Find a ride</Text>
+              <Text style={styles.searchButtonText}>{t('ui.findARide')}</Text>
             </TouchableOpacity>
           </View>
         ) : (

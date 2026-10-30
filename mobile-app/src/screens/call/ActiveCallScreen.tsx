@@ -24,6 +24,7 @@ import { colors } from '../../theme';
 import CallService, { Call, CallEventCallback } from '../../services/CallService';
 import { ActiveCallScreenProps } from '../../navigation/types';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('ActiveCallScreen');
 
@@ -48,6 +49,7 @@ interface ConnectionStateData {
 }
 
 const ActiveCallScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const route = useRoute();
   const { callId, callType, isIncoming } = route.params as ActiveCallParams;
@@ -111,11 +113,11 @@ const ActiveCallScreen: React.FC = () => {
   const handleBackPress = (): boolean => {
     // Show confirmation before ending call
     Alert.alert(
-      'End Call',
-      'Are you sure you want to end this call?',
+      t('ui.endCall'),
+      t('ui.areYouSureYouWant5'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End Call', style: 'destructive', onPress: handleEndCall },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('ui.endCall'), style: 'destructive', onPress: handleEndCall },
       ]
     );
     return true;
@@ -136,9 +138,9 @@ const ActiveCallScreen: React.FC = () => {
     log.error('Call error:', error);
     const errMsg = error instanceof Error ? error.message : String(error);
     Alert.alert(
-      'Call Error',
-      errMsg || 'An error occurred during the call',
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
+      t('ui.callError'),
+      errMsg || t('ui.anErrorOccurredDuringThe'),
+      [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
     );
   };
 
@@ -199,13 +201,13 @@ const ActiveCallScreen: React.FC = () => {
     if (callType === 'video') {
       const success = await CallService.switchCamera();
       if (!success) {
-        Alert.alert('Error', 'Failed to switch camera');
+        Alert.alert(t('common.error'), t('ui.failedToSwitchCamera'));
       }
     }
   };
 
   const handleAddParticipant = (): void => {
-    Alert.alert('Add Participant', 'This feature will be available in a future update');
+    Alert.alert(t('ui.addParticipant'), t('ui.thisFeatureWillBeAvailable'));
   };
 
   const formatCallDuration = (seconds: number): string => {
@@ -226,9 +228,9 @@ const ActiveCallScreen: React.FC = () => {
       case 'connected':
         return formatCallDuration(callDuration);
       case 'disconnected':
-        return 'Connection lost';
+        return t('ui.connectionLost');
       default:
-        return 'Unknown';
+        return t('cf2.unknown');
     }
   };
 
@@ -262,7 +264,7 @@ const ActiveCallScreen: React.FC = () => {
               />
             ) : (
               <Text style={styles.videoPlaceholder}>
-                {connectionStatus === 'connected' ? 'Remote Video' : 'Connecting...'}
+                {connectionStatus === 'connected' ? t('ui.remoteVideo') : t('ui.connecting')}
               </Text>
             )}
           </View>
@@ -278,7 +280,7 @@ const ActiveCallScreen: React.FC = () => {
                   mirror={true}
                 />
               ) : (
-                <Text style={styles.localVideoPlaceholder}>You</Text>
+                <Text style={styles.localVideoPlaceholder}>{t('ui.you')}</Text>
               )}
               
               {/* Switch Camera Button */}
@@ -300,12 +302,12 @@ const ActiveCallScreen: React.FC = () => {
           {call?.isEmergency && (
             <View style={styles.emergencyBadge}>
               <Icon name="warning" size={16} color="#FFFFFF" />
-              <Text style={styles.emergencyText}>Emergency Call</Text>
+              <Text style={styles.emergencyText}>{t('ui.emergencyCall')}</Text>
             </View>
           )}
           
           <Text style={styles.participantName}>
-            {call?.caller?.name || call?.callee?.name || 'Unknown'}
+            {call?.caller?.name || call?.callee?.name || t('cf2.unknown')}
           </Text>
           
           <View style={styles.statusContainer}>

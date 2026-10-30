@@ -148,7 +148,7 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
         Alert.alert(
           t('rf.permissionRequired'),
           t('rf.thisPermissionIsRequiredFor'),
-          [{ text: 'OK' }]
+          [{ text: t('common.ok') }]
         );
       }
     } catch (error: unknown) {

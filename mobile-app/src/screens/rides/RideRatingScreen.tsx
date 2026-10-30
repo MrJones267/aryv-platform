@@ -165,7 +165,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
         await generateReceipt();
       } else {
         Alert.alert(t('rating.thankYou'), t('rating.submitted'), [
-          { text: 'OK', onPress: () => navigation?.popToTop() },
+          { text: t('common.ok'), onPress: () => navigation?.popToTop() },
         ]);
       }
     } catch (error) {
@@ -175,7 +175,7 @@ const RideRatingScreen: React.FC<RideRatingScreenProps> = ({ navigation, route }
         await generateReceipt();
       } else {
         Alert.alert(t('rf.ratingSaved'), t('rf.yourRatingWillBeSubmitted'), [
-          { text: 'OK', onPress: () => navigation?.popToTop() },
+          { text: t('common.ok'), onPress: () => navigation?.popToTop() },
         ]);
       }
     } finally {

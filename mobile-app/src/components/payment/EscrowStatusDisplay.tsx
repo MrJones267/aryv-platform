@@ -16,6 +16,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface EscrowData {
   id: string;
@@ -48,6 +49,7 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
   showTimeline = true,
   compact = false,
 }) => {
+  const { t } = useI18n();
   const pulseAnimation = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
@@ -97,13 +99,13 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
 
   const getStatusMessage = (status: EscrowData['status']) => {
     switch (status) {
-      case 'created': return 'Escrow created, awaiting payment';
-      case 'funded': return 'Payment secured in escrow';
-      case 'held': return 'Funds held pending delivery confirmation';
-      case 'disputed': return 'Payment under dispute review';
-      case 'released': return 'Payment released to courier';
-      case 'refunded': return 'Payment refunded to sender';
-      default: return 'Unknown status';
+      case 'created': return t('ui.escrowCreated');
+      case 'funded': return t('ui.escrowFunded');
+      case 'held': return t('ui.escrowHeld');
+      case 'disputed': return t('ui.escrowDisputed');
+      case 'released': return t('ui.escrowReleased');
+      case 'refunded': return t('ui.escrowRefunded');
+      default: return t('ui.unknownStatus');
     }
   };
 
@@ -130,7 +132,7 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
     const releaseDate = new Date(escrow.expectedReleaseAt);
     const diff = releaseDate.getTime() - now.getTime();
     
-    if (diff <= 0) return 'Release time passed';
+    if (diff <= 0) return t('ui.releaseTimePassed');
     
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -185,17 +187,17 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
 
       <View style={styles.amountBreakdown}>
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>Total Amount:</Text>
+          <Text style={styles.amountLabel}>{t('ui.totalAmount')}</Text>
           <Text style={styles.amountValue}>{formatCurrency(escrow.amount)}</Text>
         </View>
         
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>Platform Fee:</Text>
+          <Text style={styles.amountLabel}>{t('ui.platformFee')}</Text>
           <Text style={styles.amountValue}>-{formatCurrency(escrow.platformFee)}</Text>
         </View>
         
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>Courier Earnings:</Text>
+          <Text style={styles.amountLabel}>{t('ui.courierEarnings')}</Text>
           <Text style={[styles.amountValue, styles.courierEarnings]}>
             {formatCurrency(escrow.courierEarnings)}
           </Text>
@@ -230,7 +232,7 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
               styles.verificationText,
               { color: escrow.qrCodeVerified ? colors.success : colors.text.secondary }
             ]}>
-              QR Code Verified
+              {t('ui.qrCodeVerified')}
             </Text>
           </View>
           
@@ -244,7 +246,7 @@ const EscrowStatusDisplay: React.FC<EscrowStatusDisplayProps> = ({
               styles.verificationText,
               { color: escrow.deliveryConfirmed ? colors.success : colors.text.secondary }
             ]}>
-              Delivery Confirmed
+              {t('ui.deliveryConfirmed')}
             </Text>
           </View>
         </View>

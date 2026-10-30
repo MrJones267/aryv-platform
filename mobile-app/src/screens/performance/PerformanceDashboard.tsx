@@ -22,6 +22,7 @@ import { colors } from '../../theme';
 import { Card, Button } from '../../components/ui';
 import memoryManager, { MemoryWarning } from '../../utils/performance/MemoryManager';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PerformanceDashboard');
 
@@ -34,6 +35,7 @@ interface MemoryStats {
 }
 
 const PerformanceDashboard: React.FC = () => {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [performanceMetrics, setPerformanceMetrics] = useState({
@@ -102,12 +104,12 @@ const PerformanceDashboard: React.FC = () => {
 
   const handleClearMemoryWarnings = (): void => {
     Alert.alert(
-      'Clear Warnings',
-      'Are you sure you want to clear all memory warnings?',
+      t('ui.clearWarnings'),
+      t('ui.areYouSureYouWant6'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear',
+          text: t('st.clear'),
           onPress: () => {
             memoryManager.clearMemoryWarnings();
             loadPerformanceData();
@@ -119,12 +121,12 @@ const PerformanceDashboard: React.FC = () => {
 
   const handleForceCleanup = (): void => {
     Alert.alert(
-      'Force Memory Cleanup',
-      'This will attempt to free up memory by cleaning up unused resources. Continue?',
+      t('ui.forceMemoryCleanup'),
+      t('ui.thisWillAttemptToFree'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Cleanup',
+          text: t('ui.cleanup'),
           onPress: () => {
             memoryManager.forceCleanup();
             setTimeout(() => {
@@ -152,10 +154,10 @@ const PerformanceDashboard: React.FC = () => {
   };
 
   const getPerformanceStatus = (fps: number): { text: string; color: string } => {
-    if (fps >= 58) return { text: 'Excellent', color: '#4CAF50' };
-    if (fps >= 45) return { text: 'Good', color: '#8BC34A' };
-    if (fps >= 30) return { text: 'Fair', color: '#FF9800' };
-    return { text: 'Poor', color: '#F44336' };
+    if (fps >= 58) return { text: t('rating.excellent'), color: '#4CAF50' };
+    if (fps >= 45) return { text: t('rating.good'), color: '#8BC34A' };
+    if (fps >= 30) return { text: t('ui.fair'), color: '#FF9800' };
+    return { text: t('rating.poor'), color: '#F44336' };
   };
 
   const formatBytes = (bytes: number): string => {
@@ -168,7 +170,7 @@ const PerformanceDashboard: React.FC = () => {
 
   const renderMemoryOverview = (): JSX.Element => (
     <Card style={styles.card}>
-      <Text style={styles.cardTitle}>Memory Usage</Text>
+      <Text style={styles.cardTitle}>{t('ui.memoryUsage')}</Text>
       
       {memoryStats && (
         <>
@@ -188,15 +190,15 @@ const PerformanceDashboard: React.FC = () => {
           
           <View style={styles.memoryStats}>
             <View style={styles.memoryStat}>
-              <Text style={styles.memoryLabel}>Used</Text>
+              <Text style={styles.memoryLabel}>{t('ui.used')}</Text>
               <Text style={styles.memoryValue}>{formatBytes(memoryStats.usedMemory * 1024 * 1024)}</Text>
             </View>
             <View style={styles.memoryStat}>
-              <Text style={styles.memoryLabel}>Free</Text>
+              <Text style={styles.memoryLabel}>{t('ui.free')}</Text>
               <Text style={styles.memoryValue}>{formatBytes(memoryStats.freeMemory * 1024 * 1024)}</Text>
             </View>
             <View style={styles.memoryStat}>
-              <Text style={styles.memoryLabel}>Pressure</Text>
+              <Text style={styles.memoryLabel}>{t('ui.pressure')}</Text>
               <Text style={[
                 styles.memoryValue,
                 { color: getMemoryPressureColor(memoryStats.memoryPressure) }
@@ -215,7 +217,7 @@ const PerformanceDashboard: React.FC = () => {
     
     return (
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Performance Metrics</Text>
+        <Text style={styles.cardTitle}>{t('ui.performanceMetrics')}</Text>
         
         <View style={styles.metricsGrid}>
           <View style={styles.metric}>
@@ -229,29 +231,29 @@ const PerformanceDashboard: React.FC = () => {
           
           <View style={styles.metric}>
             <Icon name="timer" size={24} color={colors.text.secondary} />
-            <Text style={styles.metricLabel}>Render Time</Text>
+            <Text style={styles.metricLabel}>{t('ui.renderTime')}</Text>
             <Text style={styles.metricValue}>
               {performanceMetrics.renderTime.toFixed(1)}ms
             </Text>
-            <Text style={styles.metricSubtext}>Per Frame</Text>
+            <Text style={styles.metricSubtext}>{t('ui.perFrame')}</Text>
           </View>
           
           <View style={styles.metric}>
             <Icon name="storage" size={24} color={colors.text.secondary} />
-            <Text style={styles.metricLabel}>JS Heap</Text>
+            <Text style={styles.metricLabel}>{t('ui.jsHeap')}</Text>
             <Text style={styles.metricValue}>
               {performanceMetrics.jsHeapSize.toFixed(1)}MB
             </Text>
-            <Text style={styles.metricSubtext}>JavaScript</Text>
+            <Text style={styles.metricSubtext}>{t('ui.javascript')}</Text>
           </View>
           
           <View style={styles.metric}>
             <Icon name="memory" size={24} color={colors.text.secondary} />
-            <Text style={styles.metricLabel}>Native</Text>
+            <Text style={styles.metricLabel}>{t('ui.native')}</Text>
             <Text style={styles.metricValue}>
               {performanceMetrics.nativeMemory.toFixed(1)}MB
             </Text>
-            <Text style={styles.metricSubtext}>Native Memory</Text>
+            <Text style={styles.metricSubtext}>{t('ui.nativeMemory')}</Text>
           </View>
         </View>
       </Card>
@@ -261,13 +263,13 @@ const PerformanceDashboard: React.FC = () => {
   const renderMemoryWarnings = (): JSX.Element => (
     <Card style={styles.card}>
       <View style={styles.warningsHeader}>
-        <Text style={styles.cardTitle}>Memory Warnings</Text>
+        <Text style={styles.cardTitle}>{t('ui.memoryWarnings')}</Text>
         {memoryStats?.warnings && memoryStats.warnings.length > 0 && (
           <TouchableOpacity
             style={styles.clearButton}
             onPress={handleClearMemoryWarnings}
           >
-            <Text style={styles.clearButtonText}>Clear All</Text>
+            <Text style={styles.clearButtonText}>{t('ui.clearAll')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -286,7 +288,7 @@ const PerformanceDashboard: React.FC = () => {
                 color={getMemoryPressureColor(warning.level)}
               />
               <View style={styles.warningContent}>
-                <Text style={styles.warningMessage}>{warning.message || 'Memory warning'}</Text>
+                <Text style={styles.warningMessage}>{warning.message || t('ui.memoryWarning')}</Text>
                 <Text style={styles.warningTime}>
                   {new Date(warning.timestamp).toLocaleTimeString()}
                 </Text>
@@ -297,8 +299,8 @@ const PerformanceDashboard: React.FC = () => {
       ) : (
         <View style={styles.noWarnings}>
           <Icon name="check-circle" size={48} color="#4CAF50" />
-          <Text style={styles.noWarningsText}>No memory warnings</Text>
-          <Text style={styles.noWarningsSubtext}>System is running smoothly</Text>
+          <Text style={styles.noWarningsText}>{t('ui.noMemoryWarnings')}</Text>
+          <Text style={styles.noWarningsSubtext}>{t('ui.systemIsRunningSmoothly')}</Text>
         </View>
       )}
     </Card>
@@ -306,11 +308,11 @@ const PerformanceDashboard: React.FC = () => {
 
   const renderActions = (): JSX.Element => (
     <Card style={styles.card}>
-      <Text style={styles.cardTitle}>Performance Actions</Text>
+      <Text style={styles.cardTitle}>{t('ui.performanceActions')}</Text>
       
       <View style={styles.actionsGrid}>
         <Button
-          title="Force Cleanup"
+          title={t('ui.forceCleanup')}
           onPress={handleForceCleanup}
           variant="outline"
           size="medium"
@@ -318,7 +320,7 @@ const PerformanceDashboard: React.FC = () => {
         />
         
         <Button
-          title="Refresh Data"
+          title={t('ui.refreshData')}
           onPress={loadPerformanceData}
           variant="outline"
           size="medium"
@@ -341,7 +343,7 @@ const PerformanceDashboard: React.FC = () => {
       }
     >
       <View style={styles.content}>
-        <Text style={styles.screenTitle}>Performance Monitor</Text>
+        <Text style={styles.screenTitle}>{t('ui.performanceMonitor')}</Text>
         
         {renderMemoryOverview()}
         {renderPerformanceMetrics()}

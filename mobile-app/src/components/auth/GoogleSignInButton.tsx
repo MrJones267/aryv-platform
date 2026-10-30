@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { googleAuthService, AuthUser } from '../../services/googleAuthService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('GoogleSignInButton');
 
@@ -35,6 +36,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   size = 'medium',
   variant = 'contained',
 }) => {
+  const { t } = useI18n();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleGoogleSignIn = async () => {
@@ -57,35 +59,35 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         
         // Show success message
         Alert.alert(
-          'Success',
-          `Welcome, ${result.user.firstName}!`,
-          [{ text: 'OK' }]
+          t('common.success'),
+          t('ui.welcomeName', { name: result.user.firstName ?? '' }),
+          [{ text: t('common.ok') }]
         );
       } else {
         log.error('❌ Google Sign-In failed:', result.error);
         
         // Call error callback
         if (onError) {
-          onError(result.error || 'Sign in failed');
+          onError(result.error || t('ui.signInFailed'));
         }
         
         // Show error message
         Alert.alert(
-          'Sign In Failed',
-          result.error || 'Unable to sign in with Google. Please try again.',
-          [{ text: 'OK' }]
+          t('ui.signInFailed2'),
+          result.error || t('ui.unableToSignInWith'),
+          [{ text: t('common.ok') }]
         );
       }
     } catch (error) {
       log.error('❌ Unexpected Google Sign-In error:', error);
       
-      const errorMessage = 'An unexpected error occurred. Please try again.';
+      const errorMessage = t('ui.anUnexpectedErrorOccurredPlease');
       
       if (onError) {
         onError(errorMessage);
       }
       
-      Alert.alert('Error', errorMessage, [{ text: 'OK' }]);
+      Alert.alert(t('common.error'), errorMessage, [{ text: t('common.ok') }]);
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +132,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         )}
         
         <Text style={textStyles}>
-          {isLoading ? 'Signing in...' : 'Sign in with Google'}
+          {isLoading ? t('ui.signingIn') : t('ui.signInWithGoogle')}
         </Text>
       </View>
     </TouchableOpacity>

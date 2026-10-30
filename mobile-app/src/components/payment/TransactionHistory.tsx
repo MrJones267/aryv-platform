@@ -21,6 +21,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import PaymentStatusCard, { PaymentStatus } from './PaymentStatusCard';
+import type { TranslationKey } from '../../i18n/translations';
+import { useI18n } from '../../i18n/I18nContext';
 
 export interface Transaction extends PaymentStatus {
   type: 'ride' | 'delivery' | 'refund' | 'fee' | 'earning';
@@ -54,33 +56,33 @@ type ChipFilterKey = 'type' | 'category' | 'status';
 const FILTER_GROUPS: Array<{ key: ChipFilterKey; title: string; options: Array<{ value: string; label: string }> }> = [
   {
     key: 'category',
-    title: 'Money',
+    title: 'ui.money',
     options: [
-      { value: 'income', label: 'Money in' },
-      { value: 'expense', label: 'Money out' },
+      { value: 'income', label: 'ui.moneyIn' },
+      { value: 'expense', label: 'ui.moneyOut' },
     ],
   },
   {
     key: 'type',
-    title: 'Type',
+    title: 'ui.type',
     options: [
-      { value: 'ride', label: 'Rides' },
-      { value: 'delivery', label: 'Deliveries' },
-      { value: 'earning', label: 'Earnings' },
-      { value: 'fee', label: 'Fees' },
-      { value: 'refund', label: 'Refunds' },
+      { value: 'ride', label: 'st.rides' },
+      { value: 'delivery', label: 'st.deliveries' },
+      { value: 'earning', label: 'cf.earnings' },
+      { value: 'fee', label: 'ui.fees' },
+      { value: 'refund', label: 'ui.refunds' },
     ],
   },
   {
     key: 'status',
-    title: 'Status',
+    title: 'rideDetails.status',
     options: [
-      { value: 'completed', label: 'Completed' },
-      { value: 'pending', label: 'Pending' },
-      { value: 'processing', label: 'Processing' },
-      { value: 'failed', label: 'Failed' },
-      { value: 'refunded', label: 'Refunded' },
-      { value: 'cancelled', label: 'Cancelled' },
+      { value: 'completed', label: 'status.completed' },
+      { value: 'pending', label: 'status.pending' },
+      { value: 'processing', label: 'ui.processing' },
+      { value: 'failed', label: 'ui.failed' },
+      { value: 'refunded', label: 'ui.refunded' },
+      { value: 'cancelled', label: 'status.cancelled' },
     ],
   },
 ];
@@ -93,6 +95,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   showFilters = true,
   compact = false,
 }) => {
+  const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -266,11 +269,11 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Icon name="receipt-long" size={64} color={colors.text.secondary} />
-      <Text style={styles.emptyTitle}>No Transactions Found</Text>
+      <Text style={styles.emptyTitle}>{t('ui.noTransactionsFound')}</Text>
       <Text style={styles.emptySubtitle}>
         {searchQuery || getFilterCount() > 0
-          ? "Try adjusting your search or filters"
-          : "Your transaction history will appear here"}
+          ? t('ui.tryAdjustingFilters')
+          : t('ui.historyAppearsHere')}
       </Text>
       {(searchQuery || getFilterCount() > 0) && (
         <TouchableOpacity
@@ -280,7 +283,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             clearFilters();
           }}
         >
-          <Text style={styles.clearButtonText}>Clear Search & Filters</Text>
+          <Text style={styles.clearButtonText}>{t('ui.clearSearchFilters')}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -290,7 +293,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     <View style={styles.header}>
       {!compact && (
         <View style={styles.balanceSection}>
-          <Text style={styles.balanceLabel}>Net Balance</Text>
+          <Text style={styles.balanceLabel}>{t('ui.netBalance')}</Text>
           <Text style={[
             styles.balanceAmount,
             { color: getTotalBalance() >= 0 ? colors.success : colors.error }
@@ -305,7 +308,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
           <Icon name="search" size={20} color={colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search transactions..."
+            placeholder={t('ui.searchTransactions')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholderTextColor={colors.text.secondary}
@@ -335,7 +338,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 
           {getFilterCount() > 0 && (
             <TouchableOpacity style={styles.clearFilterButton} onPress={clearFilters}>
-              <Text style={styles.clearFilterText}>Clear</Text>
+              <Text style={styles.clearFilterText}>{t('st.clear')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -377,16 +380,16 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
               <Icon name="close" size={24} color={colors.text.primary} />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Filter Transactions</Text>
+            <Text style={styles.modalTitle}>{t('ui.filterTransactions')}</Text>
             <TouchableOpacity onPress={clearFilters}>
-              <Text style={styles.modalClearText}>Clear All</Text>
+              <Text style={styles.modalClearText}>{t('ui.clearAll')}</Text>
             </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.modalContent}>
             {FILTER_GROUPS.map(group => (
               <View key={group.key} style={styles.filterGroup}>
-                <Text style={styles.filterSectionTitle}>{group.title}</Text>
+                <Text style={styles.filterSectionTitle}>{t(group.title as TranslationKey)}</Text>
                 <View style={styles.chipRow}>
                   {group.options.map(option => {
                     const selected = filters[group.key].includes(option.value);
@@ -397,7 +400,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                         onPress={() => toggleFilter(group.key, option.value)}
                         accessibilityState={{ selected }}
                       >
-                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{option.label}</Text>
+                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{t(option.label as TranslationKey)}</Text>
                       </TouchableOpacity>
                     );
                   })}

@@ -34,6 +34,8 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DemandService, { DemandSnapshot } from '../services/DemandService';
 import locationService from '../services/LocationService';
+import type { TranslationKey } from '../i18n/translations';
+import { useI18n } from '../i18n/I18nContext';
 
 interface AIDashboardScreenProps {
   navigation?: {
@@ -48,35 +50,36 @@ const LEVELS: Record<
   { label: string; colour: string; advice: string }
 > = {
   very_busy: {
-    label: 'Very busy',
+    label: 'ui.veryBusy',
     colour: '#C62828',
-    advice: 'Most seats near you are already taken. A ride listed now is likely to fill.',
+    advice: 'ui.mostSeatsNearYouAre',
   },
   busy: {
-    label: 'Busy',
+    label: 'ui.busy',
     colour: '#EF6C00',
-    advice: 'Seats are filling faster than usual nearby.',
+    advice: 'ui.seatsAreFillingFasterThan',
   },
   steady: {
-    label: 'Steady',
+    label: 'ui.steady',
     colour: '#2E7D32',
-    advice: 'A normal amount of travel near you.',
+    advice: 'ui.aNormalAmountOfTravel',
   },
   quiet: {
-    label: 'Quiet',
+    label: 'ui.quiet',
     colour: '#546E7A',
-    advice: 'Plenty of seats are going unbooked nearby.',
+    advice: 'ui.plentyOfSeatsAreGoing',
   },
   unknown: {
-    label: 'Not enough data',
+    label: 'ui.notEnoughData',
     colour: '#757575',
     // Said plainly rather than defaulting to "quiet", which would send a
     // driver home on the strength of two rides.
-    advice: 'There are too few rides near you right now to say how busy it is.',
+    advice: 'ui.thereAreTooFewRides',
   },
 };
 
 const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => {
+  const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<DemandSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -123,12 +126,12 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
 
     return (
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>When people travel</Text>
+        <Text style={styles.cardTitle}>{t('ui.whenPeopleTravel')}</Text>
 
         {hasAny ? (
           <>
             <Text style={styles.cardSubtitle}>
-              Seats booked by departure hour, over the last two months
+              {t('ui.seatsBookedByDepartureHour')}
             </Text>
 
             <View style={styles.chart}>
@@ -159,7 +162,7 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
           </>
         ) : (
           <Text style={styles.emptyBody}>
-            No completed bookings near here yet, so there is no pattern to show.
+            {t('ui.noCompletedBookingsNearHere')}
           </Text>
         )}
       </View>
@@ -174,25 +177,25 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
         <View style={styles.card}>
           <View style={styles.levelRow}>
             <View style={[styles.levelDot, { backgroundColor: level.colour }]} />
-            <Text style={[styles.levelLabel, { color: level.colour }]}>{level.label}</Text>
+            <Text style={[styles.levelLabel, { color: level.colour }]}>{t(level.label as TranslationKey)}</Text>
           </View>
 
           <Text style={styles.cardSubtitle}>
             Within {data.radiusKm} km, next 24 hours
           </Text>
 
-          <Text style={styles.advice}>{level.advice}</Text>
+          <Text style={styles.advice}>{t(level.advice as TranslationKey)}</Text>
 
           {/* The raw counts are shown alongside the verdict so a driver can
               judge it rather than take it on faith. */}
           <View style={styles.figures}>
             <View style={styles.figure}>
               <Text style={styles.figureValue}>{data.seatsTaken}</Text>
-              <Text style={styles.figureLabel}>seats booked</Text>
+              <Text style={styles.figureLabel}>{t('ui.seatsBooked')}</Text>
             </View>
             <View style={styles.figure}>
               <Text style={styles.figureValue}>{data.seatsOffered}</Text>
-              <Text style={styles.figureLabel}>seats offered</Text>
+              <Text style={styles.figureLabel}>{t('ui.seatsOffered')}</Text>
             </View>
             <View style={styles.figure}>
               <Text style={styles.figureValue}>{data.ridesConsidered}</Text>
@@ -212,7 +215,7 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
         <TouchableOpacity onPress={() => navigation?.goBack()} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color="#333333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Demand Near You</Text>
+        <Text style={styles.headerTitle}>{t('ui.demandNearYou')}</Text>
       </View>
 
       <ScrollView
@@ -227,7 +230,7 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
         ) : locationError ? (
           <View style={styles.centred}>
             <Icon name="location-off" size={48} color="#CCCCCC" />
-            <Text style={styles.emptyTitle}>Location unavailable</Text>
+            <Text style={styles.emptyTitle}>{t('ui.locationUnavailable2')}</Text>
             <Text style={styles.emptyBody}>
               Demand is worked out from where you are. Turn on location access
               and pull down to try again.
@@ -236,8 +239,8 @@ const AIDashboardScreen: React.FC<AIDashboardScreenProps> = ({ navigation }) => 
         ) : !snapshot ? (
           <View style={styles.centred}>
             <Icon name="insights" size={48} color="#CCCCCC" />
-            <Text style={styles.emptyTitle}>Could not load demand</Text>
-            <Text style={styles.emptyBody}>Pull down to try again.</Text>
+            <Text style={styles.emptyTitle}>{t('ui.couldNotLoadDemand')}</Text>
+            <Text style={styles.emptyBody}>{t('ui.pullDownToTryAgain')}</Text>
           </View>
         ) : (
           renderDemand(snapshot)

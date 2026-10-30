@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import ChatMessage, { MessageData } from './ChatMessage';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ChatListProps {
   messages: MessageData[];
@@ -48,6 +49,7 @@ const ChatList: React.FC<ChatListProps> = ({
   onLoadMore,
   onScrollToTop,
 }) => {
+  const { t } = useI18n();
   const flatListRef = useRef<FlatList>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
@@ -132,14 +134,14 @@ const ChatList: React.FC<ChatListProps> = ({
     return (
       <View style={styles.loadMoreContainer}>
         {isLoading ? (
-          <Text style={styles.loadMoreText}>Loading more messages...</Text>
+          <Text style={styles.loadMoreText}>{t('ui.loadingMoreMessages')}</Text>
         ) : (
           <TouchableOpacity
             style={styles.loadMoreButton}
             onPress={handleLoadMore}
           >
             <Icon name="keyboard-arrow-up" size={20} color={colors.primary} />
-            <Text style={styles.loadMoreButtonText}>Load more messages</Text>
+            <Text style={styles.loadMoreButtonText}>{t('ui.loadMoreMessages')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -149,11 +151,11 @@ const ChatList: React.FC<ChatListProps> = ({
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Icon name="chat-bubble-outline" size={64} color={colors.text.secondary} />
-      <Text style={styles.emptyTitle}>Start a conversation</Text>
+      <Text style={styles.emptyTitle}>{t('ui.startAConversation')}</Text>
       <Text style={styles.emptySubtitle}>
         {userType === 'courier' 
-          ? 'Send a message to update the sender about the delivery'
-          : 'Send a message to communicate with your courier'
+          ? t('ui.sendAMessageToUpdate')
+          : t('ui.sendAMessageToCommunicate')
         }
       </Text>
     </View>
@@ -199,9 +201,9 @@ const ChatList: React.FC<ChatListProps> = ({
     yesterday.setDate(today.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return 'Today';
+      return t('ui.today');
     } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
+      return t('st.yesterday');
     } else {
       return date.toLocaleDateString('en-US', {
         month: 'short',
