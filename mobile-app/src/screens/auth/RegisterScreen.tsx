@@ -35,6 +35,7 @@ interface PhoneCountry {
   flag: string;
 }
 import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
+import { googleAuthService } from '../../services/googleAuthService';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -230,14 +231,21 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     }
   };
 
+  // Google first, then keep the session it returns, as the Login screen's
+  // button does. This handed googleLogin empty tokens and relied on it
+  // signing in by itself, which it no longer does.
   const handleGoogleSignUp = async (): Promise<void> => {
     try {
-      await dispatch(googleLogin({ user: {}, tokens: { accessToken: '', refreshToken: '', expiresIn: 0 } } as any)).unwrap();
+      const result = await googleAuthService.signIn();
+      if (result.cancelled) return;
+      if (!result.success || !result.user || !result.tokens) {
+        Alert.alert(t('login.googleFailed'), result.error || t('ui.unableToSignInWith'));
+        return;
+      }
+      await dispatch(googleLogin({ user: result.user, tokens: result.tokens })).unwrap();
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg !== 'Sign in cancelled') {
-        Alert.alert('Google Sign-In Failed', errMsg || 'Could not sign in with Google. Please try again.');
-      }
+      Alert.alert(t('login.googleFailed'), errMsg || t('ui.unableToSignInWith'));
     }
   };
 

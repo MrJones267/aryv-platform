@@ -707,8 +707,24 @@ export class AuthController {
         return;
       }
 
-      const otp = (100000 + crypto.randomInt(0, 900000)).toString();
-      await redisClient.set(`email_otp:${user.email}`, otp, 600);
+      // Through OtpService like every other code, so wrong guesses are counted
+      // and the code is destroyed after five. The hand-rolled key here had no
+      // limit at all: a million guesses in ten minutes would always land.
+      if (!process.env['SMTP_HOST'] && process.env['NODE_ENV'] === 'production') {
+        res.status(503).json({ success: false, error: 'Email is not available right now', code: 'EMAIL_UNAVAILABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const issued = await otpService.issue('email', user.email.toLowerCase(), 'email_verification');
+      if (issued.throttled) {
+        res.status(429).json({ success: false, error: 'Too many codes requested. Please wait before trying again.', code: 'OTP_REQUEST_THROTTLED', timestamp: new Date().toISOString() });
+        return;
+      }
+      if (!issued.ok || !issued.code) {
+        res.status(503).json({ success: false, error: 'Verification codes are temporarily unavailable', code: 'OTP_UNAVAILABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+      const otp = issued.code;
 
       if (process.env['SMTP_HOST']) {
         const transporter = nodemailer.createTransport({
@@ -718,12 +734,13 @@ export class AuthController {
           auth: { user: process.env['SMTP_USER'], pass: process.env['SMTP_PASS'] },
         });
         await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@hitch.app',
+          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
           to: user.email,
           subject: 'Verify your email',
           text: `Your verification code is: ${otp}. Valid for 10 minutes.`,
         });
       } else {
+        // Development only: production refused above rather than log a code.
         logger.info('Email OTP (dev mode)', { email: user.email, otp });
       }
 
@@ -756,13 +773,17 @@ export class AuthController {
         return;
       }
 
-      const storedOtp = await redisClient.get(`email_otp:${user.email}`);
-      if (!storedOtp || storedOtp !== token) {
-        res.status(400).json({ success: false, error: 'Invalid or expired verification code', code: 'INVALID_OTP', timestamp: new Date().toISOString() });
+      const result = await otpService.verify('email', user.email.toLowerCase(), 'email_verification', token);
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 400).json({
+          success: false,
+          error: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'],
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
-      await redisClient.del(`email_otp:${user.email}`);
       await user.update({ isEmailVerified: true });
 
       res.status(200).json({ success: true, message: 'Email verified successfully', timestamp: new Date().toISOString() });
@@ -786,9 +807,14 @@ export class AuthController {
       }
 
       const { smsService } = await import('../services/SMSService');
-      const { sent } = await smsService.sendVerificationCode(phone);
+      const { sent, throttled } = await smsService.sendVerificationCode(phone, 'phone_verification');
 
-      logger.info('Phone verification OTP sent', { phone, sent, userId });
+      if (throttled) {
+        res.status(429).json({ success: false, error: 'Too many codes requested for this number. Please wait before trying again.', code: 'OTP_REQUEST_THROTTLED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      logger.info('Phone verification OTP sent', { sent, userId });
 
       res.status(200).json({ success: true, message: 'Verification code sent', timestamp: new Date().toISOString() });
     } catch (error) {
@@ -814,10 +840,17 @@ export class AuthController {
       }
 
       const { smsService } = await import('../services/SMSService');
-      const isValid = await smsService.verifyCode(phone, code);
+      const result = await smsService.verifyCode(phone, code, 'phone_verification');
 
-      if (!isValid) {
-        res.status(400).json({ success: false, error: 'Invalid or expired verification code', code: 'INVALID_OTP', timestamp: new Date().toISOString() });
+      // verifyCode returns { ok, reason }. This tested the object itself,
+      // which is always truthy, so any code verified any number.
+      if (!result.ok) {
+        res.status(result.reason === 'too_many_attempts' ? 429 : 400).json({
+          success: false,
+          error: OTP_FAILURE_MESSAGE[result.reason ?? 'not_found'],
+          code: result.reason === 'too_many_attempts' ? 'OTP_ATTEMPTS_EXCEEDED' : 'INVALID_OTP',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
@@ -927,6 +960,14 @@ export class AuthController {
         return;
       }
 
+      // Without a mail server nothing reaches the person, and production used
+      // to answer "OTP sent via email" anyway. Say so instead, before a code
+      // is issued and counted against them.
+      if (!process.env['SMTP_HOST'] && process.env['NODE_ENV'] === 'production') {
+        res.status(503).json({ success: false, error: 'Email codes are not available right now. Use your phone number instead.', code: 'EMAIL_UNAVAILABLE', timestamp: new Date().toISOString() });
+        return;
+      }
+
       const recipient = email.trim().toLowerCase();
       const issued = await otpService.issue('email', recipient, purpose);
 
@@ -1021,6 +1062,14 @@ export class AuthController {
           timestamp: new Date().toISOString(),
         });
         return;
+      }
+
+      // Proving control of the address or number is what verifying it means,
+      // so record it on the account it belongs to. This only answered
+      // "verified" and changed nothing.
+      const owner = await AuthController.findUserByRecipient(type, recipient);
+      if (owner) {
+        await owner.update(type === 'email' ? { isEmailVerified: true } : { isPhoneVerified: true });
       }
 
       res.status(200).json({
@@ -1319,15 +1368,18 @@ export class AuthController {
         });
 
         await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@hitch.app',
+          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
           to: email,
           subject: 'Password Reset Request',
           text: `Click the link below to reset your password. This link expires in 1 hour.\n\n${resetUrl}`,
           html: `<p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
         });
-      } else {
-        // Dev mode: log the link instead of sending
+      } else if (process.env['NODE_ENV'] !== 'production') {
+        // Development only. In production this wrote the link, token and all,
+        // into the logs, so anyone who could read them could reset any account.
         logger.info('Password reset link (dev mode — SMTP not configured)', { email, resetUrl });
+      } else {
+        logger.warn('Password reset requested but SMTP is not configured; nothing was sent');
       }
 
       successResponse();
@@ -1353,8 +1405,11 @@ export class AuthController {
         return;
       }
 
-      if (newPassword.length < 8) {
-        res.status(400).json({ success: false, error: 'Password must be at least 8 characters', code: 'PASSWORD_TOO_SHORT', timestamp: new Date().toISOString() });
+      // The same rules as registration and the code-based reset; this only
+      // checked the length.
+      const strength = validatePasswordStrength(newPassword);
+      if (!strength.ok) {
+        res.status(400).json({ success: false, error: strength.message, code: 'WEAK_PASSWORD', timestamp: new Date().toISOString() });
         return;
       }
 

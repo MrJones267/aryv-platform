@@ -426,7 +426,8 @@ router.post('/verify-email', authenticateToken, AuthController.verifyEmailToken)
  * @desc    Send phone verification OTP
  * @access  Private
  */
-router.post('/send-phone-verification', authenticateToken, AuthController.sendPhoneVerification);
+// Rate-limited like the public OTP routes: each request is an SMS we pay for.
+router.post('/send-phone-verification', authLimiter, authenticateToken, otpRecipientLimiter('phone'), AuthController.sendPhoneVerification);
 
 /**
  * @route   POST /api/auth/verify-phone
