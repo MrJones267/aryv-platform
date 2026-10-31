@@ -98,6 +98,15 @@ describe('Cash ride payments', () => {
     expect(Number(riderWallet!.totalTransactionValue)).toBe(26.25);
   });
 
+  it('lists the payment for both people, with the ride and who it is with', async () => {
+    const { transactionId } = await start();
+    const asRiderGet = await request(app).get('/api/payments/cash/history').set('Authorization', `Bearer ${riderToken}`).expect(200);
+    const asDriverGet = await request(app).get('/api/payments/cash/history').set('Authorization', `Bearer ${driverToken}`).expect(200);
+    const mine = (res: any) => (res.body.data.transactions ?? res.body.data).find((t: any) => t.id === transactionId);
+    expect(mine(asRiderGet)).toMatchObject({ userRole: 'rider', bookingId: booking.id, rideId: booking.rideId, otherPersonName: 'Kabo' });
+    expect(mine(asDriverGet)).toMatchObject({ userRole: 'driver', otherPersonName: 'Lesedi', status: 'pending_verification' });
+  });
+
   it('takes cash for a long, expensive ride from a brand-new rider: there is no limit', async () => {
     // P1,850 is far above the old P100 daily cap and the trust score it used to demand.
     await booking.update({ totalAmount: 1850, platformFee: 88.1 });

@@ -22,6 +22,7 @@ import { fetchMyRides } from '../../store/slices/ridesSlice';
 import { ridesApi } from '../../services/api';
 import { RidesScreenProps } from '../../navigation/types';
 import logger from '../../services/LoggingService';
+import CashPaymentService from '../../services/CashPaymentService';
 import { useI18n } from '../../i18n/I18nContext';
 import type { TranslationKey } from '../../i18n/translations';
 
@@ -60,13 +61,27 @@ interface RideRecord {
   bookings?: RideBooking[];
 }
 
+/** A cash payment as the history lists it, for either person. */
+interface CashTx {
+  id: string;
+  bookingId: string;
+  rideId: string | null;
+  amount: number | string;
+  status: string;
+  userRole: 'rider' | 'driver';
+  otherPersonName: string | null;
+}
+
 interface BookingRecord {
   id: string;
   status: string;
   seatsBooked: number;
   totalAmount: number;
+  /** Set when the booking was paid digitally; cash bookings have none. */
+  paymentIntentId?: string | null;
   ride: {
     id: string;
+    status?: string;
     departureTime: string;
     origin?: RideLocation;
     destination?: RideLocation;
@@ -84,6 +99,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<TabType>('driving');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [cashTx, setCashTx] = useState<CashTx[]>([]);
   const [filterStatus, setFilterStatus] = useState<RideStatus | 'all'>('all');
 
   useEffect(() => {
@@ -91,6 +107,11 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
   }, [activeTab]);
 
   const loadData = useCallback(async (): Promise<void> => {
+    // Cash payments for both tabs: what a rider still has to pay or
+    // confirm, and what a driver still has to confirm receiving.
+    CashPaymentService.getTransactionHistory(50)
+      .then(history => setCashTx(((history as unknown as { transactions?: CashTx[] })?.transactions) ?? []))
+      .catch(error => log.info('Could not load cash payments', error));
     try {
       if (activeTab === 'driving') {
         await dispatch(fetchMyRides()).unwrap();
@@ -360,7 +381,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.actionContainer}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => nav.navigate('RideDetails', { rideId: ride.id })}
+            onPress={() => nav.navigate('RideTracking', { rideId: ride.id, userId: user?.id, isDriver: true })}
           >
             <Text style={styles.primaryButtonText}>{t('myRides.viewActive')}</Text>
           </TouchableOpacity>
@@ -491,8 +512,10 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
               nav.navigate('Messages', {
                 screen: 'Chat',
                 params: {
-                  chatId: `ride_${booking.ride.id}_${booking.id}`,
+                  // The chat screen opens the ride's own chat from rideId.
+                  chatId: `ride-${booking.ride.id}`,
                   recipientName: driverName,
+                  recipientId: booking.ride.driver?.id,
                   rideId: booking.ride.id,
                   bookingId: booking.id,
                 },
@@ -504,17 +527,20 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         </View>
       )}
 
-      {/* In-progress booking actions */}
-      {booking.status === 'in_progress' && (
+      {/* While the ride is under way. Bookings never have an in_progress
+          status, only rides do, so this used to never show. */}
+      {booking.ride.status === 'in_progress' && booking.status !== 'cancelled' && (
         <View style={styles.actionContainer}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
+            onPress={() => nav.navigate('RideTracking', { rideId: booking.ride.id, userId: user?.id, isDriver: false })}
           >
             <Text style={styles.primaryButtonText}>{t('myRides.trackRide')}</Text>
           </TouchableOpacity>
         </View>
       )}
+
+      {renderCashForBooking(booking)}
 
       {/* Rate ride for completed bookings */}
       {booking.status === 'completed' && (
@@ -545,6 +571,72 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
     </View>
   );
 
+  /**
+   * Paying the driver in cash: start it, finish confirming it, or show that
+   * it is done. The cash payment screens existed but nothing opened them,
+   * so no cash ride was ever settled in the app and no commission recorded.
+   */
+  const renderCashForBooking = (booking: BookingRecord): React.ReactNode => {
+    const payable = ['confirmed', 'completed'].includes(booking.status) && !booking.paymentIntentId
+      && ['in_progress', 'completed'].includes(booking.ride.status ?? '');
+    if (!payable) {return null;}
+    const tx = cashTx.find(c => c.bookingId === booking.id && c.userRole === 'rider' && !['failed', 'expired'].includes(c.status));
+    const driverName = `${booking.ride.driver?.firstName || ''} ${booking.ride.driver?.lastName || ''}`.trim();
+    if (tx && ['completed', 'both_confirmed'].includes(tx.status)) {
+      return <Text style={styles.cashDone}>{t('cash.paid')}</Text>;
+    }
+    if (tx && tx.status === 'disputed') {
+      return <Text style={styles.cashNote}>{t('cash.underReview')}</Text>;
+    }
+    if (tx && tx.status === 'rider_confirmed') {
+      return <Text style={styles.cashNote}>{t('cash.waitingDriver', { name: tx.otherPersonName ?? driverName })}</Text>;
+    }
+    return (
+      <View style={styles.actionContainer}>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={() => nav.navigate('CashPayment', {
+            bookingId: booking.id,
+            driverId: booking.ride.driver?.id,
+            amount: Number(booking.totalAmount),
+            driverName,
+            ...(tx ? { transactionId: tx.id } : {}),
+          })}
+        >
+          <Icon name="payments" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryButtonText}>{tx ? t('cash.confirmPaid') : t('cash.payDriver')}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  /** Cash a driver still has to confirm receiving, across their rides. */
+  const renderCashToConfirm = (): React.ReactNode => {
+    const waiting = cashTx.filter(c => c.userRole === 'driver' && ['pending_verification', 'rider_confirmed'].includes(c.status));
+    if (waiting.length === 0) {return null;}
+    return (
+      <View style={styles.cashBox}>
+        <Text style={styles.cashBoxTitle}>{t('cash.toConfirm')}</Text>
+        {waiting.map(c => (
+          <TouchableOpacity
+            key={c.id}
+            style={styles.cashRow}
+            onPress={() => nav.navigate('DriverCashReceipt', {
+              transactionId: c.id,
+              expectedAmount: Number(c.amount),
+              riderName: c.otherPersonName ?? '',
+              bookingId: c.bookingId,
+            })}
+          >
+            <Icon name="payments" size={20} color="#2E7D32" />
+            <Text style={styles.cashRowText}>{t('cash.fromRider', { name: c.otherPersonName ?? t('rideDetails.passenger'), amount: Number(c.amount).toFixed(2) })}</Text>
+            <Icon name="chevron-right" size={20} color="#666666" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   const renderEmptyState = (): React.ReactNode => (
     <View style={styles.emptyState}>
       <Icon 
@@ -570,6 +662,8 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
       {renderFilterBar()}
 
       {/* Passengers who found no ride post what they need; drivers see it here. */}
+      {activeTab === 'driving' && renderCashToConfirm()}
+
       {activeTab === 'driving' && (
         <TouchableOpacity style={styles.requestsBanner} onPress={() => nav.navigate('RideRequestsNearby')}>
           <Icon name="campaign" size={20} color="#2196F3" />
@@ -615,6 +709,12 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  cashDone: { marginTop: 10, fontSize: 14, fontWeight: '600', color: '#2E7D32' },
+  cashNote: { marginTop: 10, fontSize: 14, color: '#666666' },
+  cashBox: { marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 10, backgroundColor: '#E8F5E9' },
+  cashBoxTitle: { fontSize: 15, fontWeight: '700', color: '#1B5E20', marginBottom: 6 },
+  cashRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  cashRowText: { flex: 1, marginLeft: 8, fontSize: 14, color: '#1B5E20' },
   requestsBanner: {
     flexDirection: 'row',
     alignItems: 'center',

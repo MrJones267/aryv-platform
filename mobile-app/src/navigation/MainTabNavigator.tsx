@@ -17,6 +17,9 @@ import CreateRideScreen from '../screens/rides/CreateRideScreen';
 import BookingScreen from '../screens/rides/BookingScreen';
 import RideRequestScreen from '../screens/rides/RideRequestScreen';
 import RideRequestsNearbyScreen from '../screens/rides/RideRequestsNearbyScreen';
+import CashPaymentScreen from '../screens/payment/CashPaymentScreen';
+import DriverCashReceiptScreen from '../screens/payment/DriverCashReceiptScreen';
+import RideTrackingScreen from '../screens/RideTrackingScreen';
 import RideRatingScreen from '../screens/rides/RideRatingScreen';
 import RecommendationsScreen from '../screens/ai/RecommendationsScreen';
 import DriverOnboardingScreen from '../screens/onboarding/DriverOnboardingScreen';
@@ -59,6 +62,9 @@ export type HomeStackParamList = {
   Booking: { rideId: string };
   RideRequest: { origin?: any; destination?: any };
   RideRequestsNearby: undefined;
+  CashPayment: { bookingId: string; driverId: string; amount: number; driverName: string; transactionId?: string };
+  DriverCashReceipt: { transactionId: string; expectedAmount: number; riderName: string; bookingId: string };
+  RideTracking: { rideId: string; userId: string; isDriver: boolean };
   RideRating: { rideId: string; driverName?: string; origin?: string; destination?: string; role?: 'passenger' | 'driver' };
   AIRecommendations: undefined;
   DriverOnboarding: undefined;
@@ -138,6 +144,21 @@ const HomeNavigator: React.FC = () => {
       name="RideRequest"
       component={RideRequestScreen}
       options={{ title: t('nav.requestRide'), headerShown: false }}
+    />
+    <HomeStack.Screen
+      name="CashPayment"
+      component={CashPaymentScreen}
+      options={{ title: t('cash.payTitle') }}
+    />
+    <HomeStack.Screen
+      name="DriverCashReceipt"
+      component={DriverCashReceiptScreen}
+      options={{ title: t('cash.receiveTitle') }}
+    />
+    <HomeStack.Screen
+      name="RideTracking"
+      component={RideTrackingScreen}
+      options={{ title: t('myRides.trackRide'), headerShown: false }}
     />
     <HomeStack.Screen
       name="RideRequestsNearby"

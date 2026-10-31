@@ -2,7 +2,7 @@
  * @fileoverview Driver Cash Receipt Screen for confirming cash received
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-31
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,6 +25,7 @@ import { Button } from '../../components/ui';
 import { useAppSelector } from '../../store/hooks';
 import { CashPaymentService } from '../../services/CashPaymentService';
 import logger from '../../services/LoggingService';
+import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('DriverCashReceiptScreen');
 
@@ -39,7 +40,8 @@ interface DriverCashReceiptScreenProps {
   };
 }
 
-const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
+const DriverCashReceiptScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const route = useRoute();
   const { transactionId, expectedAmount, riderName, bookingId } = route.params as DriverCashReceiptScreenProps['route']['params'];
@@ -49,7 +51,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
   const [locationLoading, setLocationLoading] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const currentUser = useAppSelector((state) => (state.auth as { user?: Record<string, unknown> }).user);
+  const currentUser = useAppSelector((state) => state.user.profile);
 
   useEffect(() => {
     getCurrentLocation();
@@ -78,7 +80,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
     const amount = parseFloat(receivedAmount);
     
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+      Alert.alert(t('common.error'), t('cash.pleaseEnterAValidAmount'));
       return;
     }
 
@@ -86,12 +88,12 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
     
     if (amountDifference > 0.50) {
       Alert.alert(
-        'Amount Discrepancy',
-        `Expected: P${expectedAmount.toFixed(2)}\\nReceived: P${amount.toFixed(2)}\\nDifference: P${amountDifference.toFixed(2)}\\n\\nContinue anyway?`,
+        t('cash.amountDiscrepancy'),
+        t('cash.mismatchBody', { expected: expectedAmount.toFixed(2), received: amount.toFixed(2), diff: amountDifference.toFixed(2) }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           { 
-            text: 'Continue', 
+            text: t('verify.continue'), 
             onPress: () => submitConfirmation(amount),
             style: 'destructive'
           }
@@ -116,32 +118,32 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
       if (result.success) {
         if (result.status === 'completed') {
           Alert.alert(
-            'Payment Completed',
-            'Cash payment has been confirmed by both parties!',
+            t('cash.paymentCompleted'),
+            t('cash.cashPaymentHasBeenConfirmed'),
             [
               {
-                text: 'OK',
-                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideInProgress'),
+                text: t('common.ok'),
+                onPress: () => navigation.goBack(),
               },
             ]
           );
         } else {
           Alert.alert(
-            'Receipt Confirmed',
-            'Cash receipt confirmed. Waiting for rider to enter their confirmation code.',
+            t('cash.receiptConfirmed'),
+            t('cash.cashReceiptConfirmedWaitingFor'),
             [
               {
-                text: 'OK',
-                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideInProgress'),
+                text: t('common.ok'),
+                onPress: () => navigation.goBack(),
               },
             ]
           );
         }
       } else {
-        Alert.alert('Error', result.error || 'Failed to confirm cash receipt');
+        Alert.alert(t('common.error'), result.error || t('cash.failedToConfirmCashReceipt'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to confirm cash receipt. Please try again.');
+      Alert.alert(t('common.error'), t('cash.failedToConfirmCashReceipt2'));
     } finally {
       setLoading(false);
     }
@@ -149,22 +151,22 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
 
   const handleReportProblem = () => {
     Alert.alert(
-      'Report Problem',
-      'What type of problem are you experiencing?',
+      t('cash.reportProblem'),
+      t('cash.whatTypeOfProblemAre'),
       [
         {
-          text: 'Rider not paying',
+          text: t('cash.riderNotPaying'),
           onPress: () => reportDispute('no_payment_received'),
         },
         {
-          text: 'Rider paying wrong amount',
+          text: t('cash.riderPayingWrongAmount'),
           onPress: () => reportDispute('wrong_amount'),
         },
         {
-          text: 'Other issue',
+          text: t('cash.otherIssue'),
           onPress: () => reportDispute('other'),
         },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
@@ -178,15 +180,15 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
 
       if (result.success) {
         Alert.alert(
-          'Dispute Reported',
-          'Your dispute has been reported and will be reviewed within 24-48 hours.',
-          [{ text: 'OK' }]
+          t('cash.disputeReported'),
+          t('cash.yourDisputeHasBeenReported'),
+          [{ text: t('common.ok') }]
         );
       } else {
-        Alert.alert('Error', 'Failed to report dispute');
+        Alert.alert(t('common.error'), t('cash.failedToReportDispute'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to report dispute. Please try again.');
+      Alert.alert(t('common.error'), t('cash.failedToReportDisputePlease'));
     }
   };
 
@@ -209,17 +211,17 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Icon name="attach-money" size={60} color={colors.success} />
-        <Text style={styles.title}>Confirm Cash Received</Text>
+        <Text style={styles.title}>{t('cash.confirmCashReceived')}</Text>
         <Text style={styles.subtitle}>Confirm cash payment from {riderName}</Text>
       </View>
 
       <View style={styles.paymentDetails}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Rider:</Text>
+          <Text style={styles.detailLabel}>{t('cash.rider')}</Text>
           <Text style={styles.detailValue}>{riderName}</Text>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Expected Amount:</Text>
+          <Text style={styles.detailLabel}>{t('cash.expectedAmount')}</Text>
           <Text style={styles.expectedAmountValue}>P{expectedAmount.toFixed(2)}</Text>
         </View>
       </View>
@@ -232,16 +234,16 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
         />
         <Text style={styles.locationText}>
           {locationLoading 
-            ? 'Getting location...' 
+            ? t('ui.gettingLocation') 
             : location 
-              ? 'Location verified' 
-              : 'Location unavailable'
+              ? t('cash.locationVerified') 
+              : t('ui.locationUnavailable2')
           }
         </Text>
       </View>
 
       <View style={styles.amountInputContainer}>
-        <Text style={styles.amountInputLabel}>Amount Received:</Text>
+        <Text style={styles.amountInputLabel}>{t('cash.amountReceived')}</Text>
         <View style={styles.amountInputWrapper}>
           <Text style={styles.dollarSign}>$</Text>
           <TextInput
@@ -258,7 +260,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
           <View style={styles.amountWarning}>
             <Icon name="warning" size={16} color={colors.warning} />
             <Text style={styles.amountWarningText}>
-              Amount differs from expected by $
+              {t('cash.amountDiffersFromExpectedBy')}
               {Math.abs(parseFloat(receivedAmount) - expectedAmount).toFixed(2)}
             </Text>
           </View>
@@ -266,13 +268,13 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
       </View>
 
       <View style={styles.instructionsContainer}>
-        <Text style={styles.instructionsTitle}>Confirmation Steps:</Text>
+        <Text style={styles.instructionsTitle}>{t('cash.confirmationSteps')}</Text>
         <View style={styles.instructionStep}>
           <View style={styles.stepNumber}>
             <Text style={styles.stepNumberText}>1</Text>
           </View>
           <Text style={styles.stepText}>
-            Verify the amount received matches the expected amount
+            {t('cash.verifyTheAmountReceivedMatches')}
           </Text>
         </View>
         <View style={styles.instructionStep}>
@@ -280,7 +282,7 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
             <Text style={styles.stepNumberText}>2</Text>
           </View>
           <Text style={styles.stepText}>
-            Confirm receipt to notify the rider
+            {t('cash.confirmReceiptToNotifyThe')}
           </Text>
         </View>
         <View style={styles.instructionStep}>
@@ -288,13 +290,13 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
             <Text style={styles.stepNumberText}>3</Text>
           </View>
           <Text style={styles.stepText}>
-            Rider will enter their confirmation code to complete payment
+            {t('cash.riderWillEnterTheirConfirmation')}
           </Text>
         </View>
       </View>
 
       <Button
-        title={loading ? 'Confirming...' : 'Confirm Cash Received'}
+        title={loading ? 'Confirming...' : t('cash.confirmCashReceived')}
         onPress={handleConfirmReceipt}
         disabled={loading || !receivedAmount || parseFloat(receivedAmount) <= 0}
         style={styles.confirmButton}
@@ -307,14 +309,13 @@ const DriverCashReceiptScreen: React.FC<DriverCashReceiptScreenProps> = () => {
         disabled={loading}
       >
         <Icon name="report-problem" size={20} color={colors.warning} />
-        <Text style={styles.reportButtonText}>Report Problem</Text>
+        <Text style={styles.reportButtonText}>{t('cash.reportProblem')}</Text>
       </TouchableOpacity>
 
       <View style={styles.securityNote}>
         <Icon name="security" size={16} color={colors.text.secondary} />
         <Text style={styles.securityNoteText}>
-          Confirming will notify the rider and start the payment completion process.
-          Only confirm if you have actually received the cash payment.
+          {t('cash.onlyConfirmIfPaid')}
         </Text>
       </View>
     </ScrollView>
