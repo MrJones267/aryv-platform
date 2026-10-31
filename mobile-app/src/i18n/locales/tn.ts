@@ -1961,4 +1961,15 @@ export const tn: Record<TranslationKey, string> = {
   'track.driverLocation': 'Lefelo la Mokgweetsi',
   'track.speed': 'Bonako: {{speed}} km/h',
   'track.back': '← Morago',
+
+  // Blocking
+  'blk.confirm': 'Thibela {{name}}? Ga lo kitla lo kgona go bukela mesepele ya mongwe le mongwe, mme ga o kitla o bona melaetsa ya gagwe. Ga a bolelelwe.',
+  'blk.doneTitle': 'O Thibetswe',
+  'blk.doneBody': 'O thibetse {{name}}. O ka mo golola mo Dipeakanyong > Sephiri.',
+  'blk.failed': 'Ga re a kgona go dira seo. Leka gape.',
+  'blk.listTitle': 'Batho ba o ba Thibetseng',
+  'blk.none': 'Ga o ise o thibele ope.',
+  'blk.unblock': 'Golola',
+  'blk.unblockTitle': 'Golola?',
+  'blk.unblockBody': '{{name}} o tla kgona go bukela mesepele ya gago le go go romelela melaetsa gape.',
 };

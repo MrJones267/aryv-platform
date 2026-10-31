@@ -140,9 +140,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     return () => SocketService.getInstance().emit('leave_group_chat', { groupChatId });
   }, [groupChatId, connected]);
 
+  // People I have blocked: the server leaves their messages out of the
+  // history, and live ones are dropped here.
+  const blockedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    chatApi.listBlocks()
+      .then(res => { blockedRef.current = new Set((res.data?.blocks ?? []).map(b => b.userId)); })
+      .catch(() => {});
+  }, []);
+
   useSocketEvent('group_message', (data: { groupChatId?: string; message?: Record<string, any> }) => {
     const m = data?.message;
-    if (!m || data.groupChatId !== groupChatId) {return;}
+    if (!m || data.groupChatId !== groupChatId || blockedRef.current.has(m.senderId)) {return;}
     setLocalMessages(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, toChatMessage(m)]));
     scrollToBottom();
   }, [groupChatId]);
@@ -347,9 +356,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       [
         { text: t('ui.shareLocation'), onPress: handleShareLocation },
         ...(otherUserId ? [{ text: t('ui.reportUser'), onPress: handleReportUser, style: 'destructive' as const }] : []),
+        ...(otherUserId ? [{ text: t('ui.blockUser'), onPress: handleBlockUser, style: 'destructive' as const }] : []),
         { text: t('common.cancel'), style: 'cancel' as const },
       ],
     );
+  };
+
+  // Blocking stops the two booking each other's rides and hides their
+  // messages from you. It used to say so and only leave the screen.
+  const handleBlockUser = (): void => {
+    if (!otherUserId) {return;}
+    Alert.alert(t('ui.blockUser'), t('blk.confirm', { name: recipientName }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('ui.block'),
+        style: 'destructive',
+        onPress: async () => {
+          const res = await chatApi.block(otherUserId);
+          if (!res.success) {
+            Alert.alert(t('common.error'), res.error || t('blk.failed'));
+            return;
+          }
+          Alert.alert(t('blk.doneTitle'), t('blk.doneBody', { name: recipientName }), [
+            { text: t('common.ok'), onPress: () => navigation.goBack() },
+          ]);
+        },
+      },
+    ]);
   };
 
   const handleReportUser = (): void => {

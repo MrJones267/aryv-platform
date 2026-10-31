@@ -1960,6 +1960,17 @@ export const en = {
   'track.driverLocation': 'Driver Location',
   'track.speed': 'Speed: {{speed}} km/h',
   'track.back': '← Back',
+
+  // Blocking
+  'blk.confirm': 'Block {{name}}? You won\'t be able to book each other\'s rides, and you won\'t see their messages. They are not told.',
+  'blk.doneTitle': 'Blocked',
+  'blk.doneBody': 'You\'ve blocked {{name}}. You can unblock them in Settings > Privacy.',
+  'blk.failed': 'Could not do that. Try again.',
+  'blk.listTitle': 'Blocked people',
+  'blk.none': 'You haven\'t blocked anyone.',
+  'blk.unblock': 'Unblock',
+  'blk.unblockTitle': 'Unblock?',
+  'blk.unblockBody': '{{name}} will be able to book your rides and message you again.',
 };
 
 export type TranslationKey = keyof typeof en;

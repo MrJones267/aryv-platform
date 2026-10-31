@@ -74,7 +74,20 @@ class ChatApiService extends BaseApiService {
   /**
    * Report a message (messageId) or a person (reportedUserId) to ARYV
    */
-  async report(body: { messageId?: string; reportedUserId?: string; reason: ReportReason; details?: string }): Promise<ApiResponse<{ reportId: string; duplicate: boolean }>> {
+  /** Block someone: neither can book the other, and you stop seeing their messages */
+  async block(userId: string): Promise<ApiResponse<{ userId: string; blocked: boolean }>> {
+    return this.post<{ userId: string; blocked: boolean }>('/blocks', { userId });
+  }
+
+  async unblock(userId: string): Promise<ApiResponse<{ userId: string; blocked: boolean }>> {
+    return this.delete<{ userId: string; blocked: boolean }>(`/blocks/${userId}`);
+  }
+
+  async listBlocks(): Promise<ApiResponse<{ blocks: Array<{ userId: string; firstName: string | null; blockedAt: string }> }>> {
+    return this.get<{ blocks: Array<{ userId: string; firstName: string | null; blockedAt: string }> }>('/blocks');
+  }
+
+    async report(body: { messageId?: string; reportedUserId?: string; reason: ReportReason; details?: string }): Promise<ApiResponse<{ reportId: string; duplicate: boolean }>> {
     return this.post<{ reportId: string; duplicate: boolean }>('/reports', body);
   }
 
