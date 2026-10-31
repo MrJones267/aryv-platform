@@ -39,6 +39,8 @@ export interface AuthResponse {
     expiresIn: number;
   };
   error?: string;
+  /** The person closed the account picker: not an error to show them. */
+  cancelled?: boolean;
 }
 
 class GoogleAuthService {
@@ -56,9 +58,9 @@ class GoogleAuthService {
       GoogleSignin.configure({
         webClientId: process.env.GOOGLE_WEB_CLIENT_ID || '306893979998-g6oetretorc1smcuc9lkiuc3hnjhvtet.apps.googleusercontent.com',
         scopes: ['email', 'profile'],
-        offlineAccess: true,
-        hostedDomain: '',
-        forceCodeForRefreshToken: true,
+        // The server verifies the ID token and issues its own session, so no
+        // server auth code is needed. Asking for one with
+        // forceCodeForRefreshToken put the consent screen up on every sign-in.
       });
       
       this.isConfigured = true;
@@ -103,9 +105,15 @@ class GoogleAuthService {
         };
       }
 
-      // Sign in to Google
+      // Sign in to Google. Since v13 closing the picker returns
+      // { type: 'cancelled' } rather than throwing, and was being reported as
+      // "Sign in failed".
       const userInfo = await GoogleSignin.signIn();
-      
+
+      if (userInfo.type === 'cancelled') {
+        return { success: false, cancelled: true, error: 'Sign in cancelled' };
+      }
+
       if (!userInfo.data?.idToken) {
         throw new Error('No ID token received from Google');
       }
@@ -156,10 +164,12 @@ class GoogleAuthService {
             tokens: localTokens,
           };
         }
-        // In production, fail properly so user can retry
+        // In production, fail properly so user can retry. The server's reason
+        // is worth showing: "already registered, sign in with your password"
+        // tells the person what to do, where a generic retry message doesn't.
         return {
           success: false,
-          error: 'Google sign-in could not be verified. Please try again.',
+          error: authResponse.error || 'Google sign-in could not be verified. Please try again.',
         };
       }
 
@@ -170,7 +180,12 @@ class GoogleAuthService {
       const errorCode = (error as { code?: string })?.code;
 
       if (errorCode === statusCodes.SIGN_IN_CANCELLED) {
-        errorMessage = 'Sign in cancelled';
+        return { success: false, cancelled: true, error: 'Sign in cancelled' };
+      } else if (errorCode === 'DEVELOPER_ERROR' || errorCode === '10') {
+        // Google refused this build of the app: no Android OAuth client for
+        // its package name and signing certificate's SHA-1.
+        log.error('Google Sign-In DEVELOPER_ERROR: register this build\'s package name and SHA-1 as an Android OAuth client');
+        errorMessage = 'Google sign-in is not set up for this version of the app';
       } else if (errorCode === statusCodes.IN_PROGRESS) {
         errorMessage = 'Sign in already in progress';
       } else if (errorCode === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
@@ -218,10 +233,11 @@ class GoogleAuthService {
           }
         };
       } else {
-        log.error('❌ Backend verification failed:', result.message);
+        // The server reports its reason in `error`, not `message`.
+        log.error('❌ Backend verification failed:', result.code, result.error);
         return {
           success: false,
-          error: result.message || 'Backend verification failed'
+          error: result.error || result.message || 'Backend verification failed'
         };
       }
 
@@ -261,13 +277,10 @@ class GoogleAuthService {
   /**
    * Check if user is signed in to Google
    */
-  async isSignedIn(): Promise<boolean> {
-    try {
-      await GoogleSignin.signInSilently();
-      return true;
-    } catch (error) {
-      return false;
-    }
+  isSignedIn(): boolean {
+    // signInSilently() no longer throws when nobody is signed in, so this
+    // was always true.
+    return GoogleSignin.hasPreviousSignIn();
   }
 
   /**
