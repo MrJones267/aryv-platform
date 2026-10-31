@@ -52,31 +52,33 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       if (result.success && result.user && result.tokens) {
         log.info('Google Sign-In completed successfully');
         
-        // Call success callback
+        // A screen that handles the result says what to say; the button only
+        // speaks for itself when nobody else will. It used to do both, so
+        // every failure showed two alerts.
         if (onSuccess) {
           onSuccess(result.user, result.tokens);
+        } else {
+          Alert.alert(
+            t('common.success'),
+            t('ui.welcomeName', { name: result.user.firstName ?? '' }),
+            [{ text: t('common.ok') }]
+          );
         }
-        
-        // Show success message
-        Alert.alert(
-          t('common.success'),
-          t('ui.welcomeName', { name: result.user.firstName ?? '' }),
-          [{ text: t('common.ok') }]
-        );
+      } else if (result.cancelled) {
+        // Closing the picker is a choice, not a failure.
+        log.info('Google Sign-In cancelled');
       } else {
         log.error('❌ Google Sign-In failed:', result.error);
         
-        // Call error callback
         if (onError) {
           onError(result.error || t('ui.signInFailed'));
+        } else {
+          Alert.alert(
+            t('ui.signInFailed2'),
+            result.error || t('ui.unableToSignInWith'),
+            [{ text: t('common.ok') }]
+          );
         }
-        
-        // Show error message
-        Alert.alert(
-          t('ui.signInFailed2'),
-          result.error || t('ui.unableToSignInWith'),
-          [{ text: t('common.ok') }]
-        );
       }
     } catch (error) {
       log.error('❌ Unexpected Google Sign-In error:', error);
@@ -85,9 +87,9 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       
       if (onError) {
         onError(errorMessage);
+      } else {
+        Alert.alert(t('common.error'), errorMessage, [{ text: t('common.ok') }]);
       }
-      
-      Alert.alert(t('common.error'), errorMessage, [{ text: t('common.ok') }]);
     } finally {
       setIsLoading(false);
     }

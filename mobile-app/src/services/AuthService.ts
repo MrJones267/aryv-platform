@@ -204,49 +204,9 @@ export class AuthService {
     }
   }
 
-  async loginWithGoogle(): Promise<{
-    success: boolean;
-    data?: { user: User; token: string; refreshToken: string };
-    error?: string;
-  }> {
-    try {
-      log.info('🔐 AuthService: Starting Google login...');
-      
-      const result = await googleAuthService.signIn();
-      
-      if (result.success && result.user && result.tokens) {
-        // Store the authentication data - cast AuthUser to User for compatibility
-        const userAsUser = result.user as unknown as User;
-        await this.setAuthData(
-          result.tokens.accessToken,
-          result.tokens.refreshToken,
-          userAsUser
-        );
-
-        log.info('✅ AuthService: Google login successful');
-
-        return {
-          success: true,
-          data: {
-            user: userAsUser,
-            token: result.tokens.accessToken,
-            refreshToken: result.tokens.refreshToken
-          }
-        };
-      } else {
-        log.error('❌ AuthService: Google login failed:', result.error);
-        return {
-          success: false,
-          error: result.error || 'Google authentication failed'
-        };
-      }
-    } catch (error) {
-      log.error('❌ AuthService: Google login error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Google authentication error'
-      };
-    }
+  /** Keep a session the Google button already obtained from the server. */
+  async storeGoogleSession(user: User, accessToken: string, refreshToken: string): Promise<void> {
+    await this.setAuthData(accessToken, refreshToken, user);
   }
 
   async register(userData: RegisterData): Promise<{
@@ -307,11 +267,11 @@ export class AuthService {
     try {
       log.info('🚪 AuthService: Starting logout...');
       
-      // Check if user was signed in with Google
-      const isGoogleUser = (this.userData as any)?.authProvider === 'google';
-      
-      // Sign out from Google if applicable
-      if (isGoogleUser) {
+      // Sign out of Google whenever Google remembers an account. This checked
+      // userData.authProvider, which the server never sends, so the account
+      // stayed remembered and the next "Sign in with Google" could pick it
+      // without asking.
+      if (googleAuthService.isSignedIn()) {
         log.info('🔐 AuthService: Signing out from Google...');
         await googleAuthService.signOut();
       }

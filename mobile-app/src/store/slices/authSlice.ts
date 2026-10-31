@@ -312,28 +312,30 @@ export const googleLogin = createAsyncThunk(
   async (googleData: GoogleLoginData, { rejectWithValue }) => {
     try {
       log.info('🔐 Redux: Processing Google login...');
-      
-      const result = await AuthService.loginWithGoogle();
-      
-      if (result.success && result.data) {
-        log.info('✅ Redux: Google login successful');
-        
-        // Store tokens in AsyncStorage
-        await AsyncStorage.setItem('accessToken', result.data.token);
-        await AsyncStorage.setItem('refreshToken', result.data.refreshToken);
-        
-        return {
-          success: true,
-          data: {
-            accessToken: result.data.token,
-            refreshToken: result.data.refreshToken,
-            expiresIn: 3600, // Default to 1 hour
-            user: result.data.user
-          }
-        };
-      } else {
-        return rejectWithValue(result.error || 'Google authentication failed');
+
+      // The button has already been through Google and the server; this
+      // keeps the session it got. It used to call loginWithGoogle(), which
+      // ran the whole sign-in a second time: a second account picker, and a
+      // second session issued by the server.
+      const { user, tokens } = googleData;
+      if (!tokens?.accessToken || !tokens?.refreshToken) {
+        return rejectWithValue('Google authentication failed');
       }
+
+      await AuthService.storeGoogleSession(user, tokens.accessToken, tokens.refreshToken);
+      await AsyncStorage.setItem('accessToken', tokens.accessToken);
+      await AsyncStorage.setItem('refreshToken', tokens.refreshToken);
+
+      log.info('✅ Redux: Google login successful');
+      return {
+        success: true,
+        data: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
+          user,
+        },
+      };
     } catch (error: any) {
       log.error('❌ Redux: Google login error:', error);
       return rejectWithValue(error.message || 'Google authentication error');
