@@ -140,7 +140,12 @@ export const DeliveryLocationService = {
         taskTitle: 'Sharing your location',
         taskDesc: 'The sender can follow their package until you hand it over.',
         taskIcon: { name: 'ic_launcher', type: 'mipmap' },
-        foregroundServiceType: ['location'],
+        // The service's type comes from AndroidManifest.xml
+        // (foregroundServiceType="location"): on Android 10+ starting a
+        // foreground service without a type uses the manifest's, which is
+        // what Android 14 requires. 4.1.0 took the type here instead, but it
+        // needs compileSdk 35 and androidx.core 1.12, and this app builds
+        // against 34 with core pinned at 1.8, so release builds failed.
       });
     } catch (error) {
       log.error('Could not start background location sharing', error);
