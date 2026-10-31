@@ -258,15 +258,20 @@ export class PriceSuggestionService {
         // Like for like: a premium sedan should not be advised to charge what
         // a shared minibus does on the same road.
         tier,
+        // In metres on geography (4326 geometry counts degrees), naming the
+        // columns as stored, since col() does not translate attribute names.
         [Op.and]: [
           sequelize.where(
             sequelize.fn(
               'ST_DWithin',
-              sequelize.col('originCoordinates'),
-              sequelize.fn(
-                'ST_SetSRID',
-                sequelize.fn('ST_MakePoint', origin.longitude, origin.latitude),
-                4326,
+              sequelize.cast(sequelize.col('origin_coordinates'), 'geography'),
+              sequelize.cast(
+                sequelize.fn(
+                  'ST_SetSRID',
+                  sequelize.fn('ST_MakePoint', origin.longitude, origin.latitude),
+                  4326,
+                ),
+                'geography',
               ),
               ROUTE_MATCH_RADIUS_METRES,
             ),
@@ -275,11 +280,14 @@ export class PriceSuggestionService {
           sequelize.where(
             sequelize.fn(
               'ST_DWithin',
-              sequelize.col('destinationCoordinates'),
-              sequelize.fn(
-                'ST_SetSRID',
-                sequelize.fn('ST_MakePoint', destination.longitude, destination.latitude),
-                4326,
+              sequelize.cast(sequelize.col('destination_coordinates'), 'geography'),
+              sequelize.cast(
+                sequelize.fn(
+                  'ST_SetSRID',
+                  sequelize.fn('ST_MakePoint', destination.longitude, destination.latitude),
+                  4326,
+                ),
+                'geography',
               ),
               ROUTE_MATCH_RADIUS_METRES,
             ),

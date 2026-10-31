@@ -83,8 +83,8 @@ export class SurgeService {
               OR (
                 :lng::float8 IS NOT NULL
                 AND ST_DWithin(
-                      centre,
-                      ST_SetSRID(ST_MakePoint(:lng::float8, :lat::float8), 4326),
+                      centre::geography,
+                      ST_SetSRID(ST_MakePoint(:lng::float8, :lat::float8), 4326)::geography,
                       radius_metres)
               )
             )

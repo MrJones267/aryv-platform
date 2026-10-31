@@ -176,12 +176,14 @@ export class RideRecommendationService {
     route: FrequentRoute,
     userId: string,
   ): Promise<unknown[]> {
+    // In metres on geography (4326 geometry counts degrees). The column is
+    // named as stored, since col() does not translate attribute names.
     const near = (column: string, lng: number, lat: number) =>
       sequelize.where(
         sequelize.fn(
           'ST_DWithin',
-          sequelize.col(column),
-          sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', lng, lat), 4326),
+          sequelize.cast(sequelize.col(column), 'geography'),
+          sequelize.cast(sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', lng, lat), 4326), 'geography'),
           SAME_ROUTE_RADIUS_METRES,
         ),
         true,
@@ -194,8 +196,8 @@ export class RideRecommendationService {
         // Recommending someone their own ride would be nonsense.
         driverId: { [Op.ne]: userId },
         [Op.and]: [
-          near('originCoordinates', route.origin.longitude, route.origin.latitude),
-          near('destinationCoordinates', route.destination.longitude, route.destination.latitude),
+          near('origin_coordinates', route.origin.longitude, route.origin.latitude),
+          near('destination_coordinates', route.destination.longitude, route.destination.latitude),
         ],
       },
       order: [['departureTime', 'ASC']],

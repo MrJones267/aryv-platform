@@ -2064,8 +2064,9 @@ export class RideController {
         attributes: [
           'originAddress', 'destinationAddress',
           'originCoordinates', 'destinationCoordinates',
-          [sequelize.fn('COUNT', sequelize.col('Ride.id')), 'count'],
-          [sequelize.fn('AVG', sequelize.col('pricePerSeat')), 'averagePrice'],
+          // col() takes the stored column name, not the attribute name.
+          [sequelize.fn('COUNT', sequelize.col('rides.id')), 'count'],
+          [sequelize.fn('AVG', sequelize.col('price_per_seat')), 'averagePrice'],
         ],
         group: ['originAddress', 'destinationAddress', 'originCoordinates', 'destinationCoordinates'],
         order: [[sequelize.literal('count'), 'DESC']],
