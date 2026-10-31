@@ -321,7 +321,8 @@ export class RideController {
         parsedOriginLat < -90 || parsedOriginLat > 90 ||
         parsedDestLat < -90 || parsedDestLat > 90 ||
         parsedOriginLng < -180 || parsedOriginLng > 180 ||
-        parsedDestLng < -180 || parsedDestLng > 180
+        parsedDestLng < -180 || parsedDestLng > 180 ||
+        !isFinite(searchRadius) || searchRadius <= 0
       ) {
         res.status(400).json({ success: false, error: 'Invalid coordinates', code: 'INVALID_COORDINATES', timestamp: new Date().toISOString() });
         return;
@@ -343,44 +344,28 @@ export class RideController {
       // Coordinates are interpolated rather than bound because Sequelize will
       // not carry replacements into a subquery here. They are safe to inline:
       // every one is a finite number inside its valid range, checked above.
+      // Distances are measured on geography, in metres. On plain 4326
+      // geometry ST_DWithin counts degrees, so a 20 km radius matched the
+      // whole planet. The columns are named as stored: sequelize.col() does
+      // not translate attribute names, and "originCoordinates" does not
+      // exist, which made every search fail.
+      const near = (column: string, lng: number, lat: number) =>
+        `ST_DWithin(${column}::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${searchRadius})`;
+
       const stopMatch = sequelize.literal(`EXISTS (
         SELECT 1 FROM ride_stops boarding
         JOIN ride_stops alighting
           ON alighting.ride_id = boarding.ride_id
          AND alighting.sequence > boarding.sequence
         WHERE boarding.ride_id = "rides"."id"
-          AND ST_DWithin(
-                boarding.coordinates,
-                ST_SetSRID(ST_MakePoint(${parsedOriginLng}, ${parsedOriginLat}), 4326),
-                ${searchRadius})
-          AND ST_DWithin(
-                alighting.coordinates,
-                ST_SetSRID(ST_MakePoint(${parsedDestLng}, ${parsedDestLat}), 4326),
-                ${searchRadius})
+          AND ${near('boarding.coordinates', parsedOriginLng, parsedOriginLat)}
+          AND ${near('alighting.coordinates', parsedDestLng, parsedDestLat)}
       )`);
 
-      const endpointMatch = {
-        [Op.and]: [
-          sequelize.where(
-            sequelize.fn(
-              'ST_DWithin',
-              sequelize.col('originCoordinates'),
-              sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedOriginLng, parsedOriginLat), 4326),
-              searchRadius,
-            ),
-            true,
-          ),
-          sequelize.where(
-            sequelize.fn(
-              'ST_DWithin',
-              sequelize.col('destinationCoordinates'),
-              sequelize.fn('ST_SetSRID', sequelize.fn('ST_MakePoint', parsedDestLng, parsedDestLat), 4326),
-              searchRadius,
-            ),
-            true,
-          ),
-        ],
-      };
+      const endpointMatch = sequelize.literal(`(
+        ${near('"rides"."origin_coordinates"', parsedOriginLng, parsedOriginLat)}
+        AND ${near('"rides"."destination_coordinates"', parsedDestLng, parsedDestLat)}
+      )`);
 
       const rides = await Ride.findAndCountAll({
         where: {
