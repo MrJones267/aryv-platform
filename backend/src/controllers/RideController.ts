@@ -1222,6 +1222,7 @@ export class RideController {
           code: 'BLOCKED',
           timestamp: new Date().toISOString(),
         });
+        await transaction.rollback();
         return;
       }
 
