@@ -1971,6 +1971,28 @@ export const en = {
   'blk.unblock': 'Unblock',
   'blk.unblockTitle': 'Unblock?',
   'blk.unblockBody': '{{name}} will be able to book your rides and message you again.',
+
+  // Password reset by code
+  'rst.introCode': 'Enter your phone number or email and we\'ll send you a code to reset your password.',
+  'rst.byPhone': 'Phone',
+  'rst.byEmail': 'Email',
+  'rst.phoneLabel': 'Phone number',
+  'rst.phonePlaceholder': 'e.g. 71 234 567',
+  'rst.invalidPhone': 'Enter a valid phone number.',
+  'rst.sendCode': 'Send code',
+  'rst.codeSentTo': 'We sent a 6-digit code to {{recipient}}.',
+  'rst.codeLabel': 'Code',
+  'rst.newPassword': 'New password',
+  'rst.confirmPassword': 'Confirm new password',
+  'rst.passwordRules': 'At least 8 characters, with upper and lower case letters, a number and a symbol.',
+  'rst.passwordsDiffer': 'The passwords don\'t match.',
+  'rst.enterCode': 'Enter the 6-digit code.',
+  'rst.resetButton': 'Reset password',
+  'rst.resetting': 'Resetting...',
+  'rst.doneTitle': 'Password changed',
+  'rst.doneBody': 'Sign in with your new password. You\'ve been signed out everywhere else.',
+  'rst.resend': 'Send a new code',
+  'rst.changeRecipient': 'Use a different number or email',
 };
 
 export type TranslationKey = keyof typeof en;
