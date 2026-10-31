@@ -69,6 +69,7 @@ export const MOUNTS: Array<{ path: string; module: string }> = [
   { path: '/api/notifications', module: '../../routes/notifications' },
   { path: '/api/ride-requests', module: '../../routes/rideRequests' },
   { path: '/api/reports', module: '../../routes/reports' },
+  { path: '/api/blocks', module: '../../routes/blocks' },
   { path: '/api/promos', module: '../../routes/promos' },
   { path: '/api/verification', module: '../../routes/verification' },
   { path: '/api/emergency', module: '../../routes/emergency' },

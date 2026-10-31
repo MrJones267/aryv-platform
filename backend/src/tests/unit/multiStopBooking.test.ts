@@ -27,6 +27,14 @@ jest.mock('../../utils/logger', () => ({
   logInfo: jest.fn(),
   logError: jest.fn(),
   logWarning: jest.fn(),
+  getErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  getErrorStack: (e: unknown) => (e instanceof Error ? e.stack : undefined),
+}));
+// Blocking has its own tests; here nobody has blocked anybody.
+jest.mock('../../services/BlockService', () => ({
+  __esModule: true,
+  default: { isBlockedEitherWay: jest.fn().mockResolvedValue(false) },
+  blockService: { isBlockedEitherWay: jest.fn().mockResolvedValue(false) },
 }));
 jest.mock('../../services/NotificationService', () => ({
   notificationService: { notifyNewBookingRequest: jest.fn().mockResolvedValue(undefined) },

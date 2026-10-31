@@ -5,7 +5,7 @@
  * @lastModified 2026-02-04
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,8 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { fetchUserProfile } from '../../store/slices/userSlice';
 import { getCurrentLocation } from '../../store/slices/locationSlice';
 import { ridesApi } from '../../services/api';
+import notificationsApi from '../../services/api/notificationsApi';
+import { useFocusEffect } from '@react-navigation/native';
 import { HomeScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import { haptic } from '../../services/HapticService';
@@ -230,6 +232,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       [{ text: t('common.ok') }]
     );
   };
+
+  // Unread count for the bell, refreshed whenever Home is shown.
+  const [unread, setUnread] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      notificationsApi.getNotifications({ unreadOnly: true, limit: 1 })
+        .then(res => setUnread(res.success ? Number(res.data?.pagination?.unreadCount ?? 0) : 0))
+        .catch(() => {});
+    }, []),
+  );
 
   const getGreeting = (): string => {
     const hour = new Date().getHours();
@@ -542,6 +554,19 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             </View>
           )}
         </View>
+        {/* The Notifications inbox, which nothing used to open. */}
+        <TouchableOpacity
+          style={styles.headerBellBtn}
+          onPress={() => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Profile', { screen: 'NotificationsInbox' })}
+          accessibilityLabel={t('nav.notifications')}
+        >
+          <Icon name="notifications-none" size={24} color={colors.text.primary} />
+          {unread > 0 && (
+            <View style={styles.headerBellBadge}>
+              <Text style={styles.headerBellBadgeText}>{unread > 9 ? '9+' : unread}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerProfileBtn}
           onPress={() => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Profile')}
@@ -589,6 +614,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  headerBellBtn: { marginLeft: 'auto', marginRight: 12, padding: 6 },
+  headerBellBadge: { position: 'absolute', top: 0, right: 0, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#E53935', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  headerBellBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,

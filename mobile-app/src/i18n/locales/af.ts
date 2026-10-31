@@ -1960,4 +1960,15 @@ export const af: Record<TranslationKey, string> = {
   'track.driverLocation': 'Bestuurder se ligging',
   'track.speed': 'Spoed: {{speed}} km/h',
   'track.back': '← Terug',
+
+  // Blocking
+  'blk.confirm': 'Blokkeer {{name}}? Julle sal nie mekaar se ritte kan bespreek nie, en jy sal nie hul boodskappe sien nie. Hulle word nie vertel nie.',
+  'blk.doneTitle': 'Geblokkeer',
+  'blk.doneBody': 'Jy het {{name}} geblokkeer. Jy kan hulle onder Instellings > Privaatheid deblokkeer.',
+  'blk.failed': 'Kon nie dit doen nie. Probeer weer.',
+  'blk.listTitle': 'Geblokkeerde mense',
+  'blk.none': 'Jy het niemand geblokkeer nie.',
+  'blk.unblock': 'Deblokkeer',
+  'blk.unblockTitle': 'Deblokkeer?',
+  'blk.unblockBody': '{{name}} sal weer jou ritte kan bespreek en vir jou boodskappe stuur.',
 };

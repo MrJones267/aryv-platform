@@ -5,7 +5,7 @@
  * @lastModified 2026-10-30
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import { useAppDispatch } from '../../store/hooks';
 import { deleteAccount } from '../../store/slices/userSlice';
 import { logoutUser } from '../../store/slices/authSlice';
 import { authApi } from '../../services/api';
+import chatApi from '../../services/api/chatApi';
 import { useI18n } from '../../i18n/I18nContext';
 
 const log = logger.createLogger('PrivacySettingsScreen');
@@ -42,6 +43,25 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [blocked, setBlocked] = useState<Array<{ userId: string; firstName: string | null }>>([]);
+
+  useEffect(() => {
+    chatApi.listBlocks().then(res => setBlocked(res.data?.blocks ?? [])).catch(() => {});
+  }, []);
+
+  const unblock = (person: { userId: string; firstName: string | null }): void => {
+    Alert.alert(t('blk.unblockTitle'), t('blk.unblockBody', { name: person.firstName ?? '' }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('blk.unblock'),
+        onPress: async () => {
+          const res = await chatApi.unblock(person.userId);
+          if (res.success) {setBlocked(prev => prev.filter(b => b.userId !== person.userId));}
+          else {Alert.alert(t('common.error'), res.error || t('blk.failed'));}
+        },
+      },
+    ]);
+  };
 
   // A copy of the person's data, handed to the share sheet so they can
   // save or send it. This used to promise an email within 48 hours and do
@@ -231,6 +251,21 @@ const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ navigatio
           ))}
         </View>
         
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('blk.listTitle')}</Text>
+          {blocked.length === 0 ? (
+            <Text style={styles.factText}>{t('blk.none')}</Text>
+          ) : blocked.map(person => (
+            <View key={person.userId} style={styles.factRow}>
+              <Icon name="block" size={20} color={colors.error} />
+              <Text style={styles.factText}>{person.firstName ?? t('rideDetails.passenger')}</Text>
+              <TouchableOpacity onPress={() => unblock(person)}>
+                <Text style={{ color: colors.primary, fontWeight: '600' }}>{t('blk.unblock')}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+
         {renderDataManagement()}
         
         <View style={styles.section}>

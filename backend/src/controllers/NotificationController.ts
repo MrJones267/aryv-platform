@@ -46,7 +46,17 @@ export class NotificationController {
       res.json({
         success: true,
         data: {
-          notifications: rows,
+          // As the app reads them: the real type (stored in data, since the
+          // table's type column is a fixed list) and the text as `message`.
+          notifications: rows.map((n: any) => ({
+            id: n.id,
+            type: n.data?.originalType ?? n.type,
+            title: n.title,
+            message: n.body,
+            data: n.data ?? {},
+            readAt: n.readAt ?? null,
+            createdAt: n.createdAt,
+          })),
           pagination: {
             page,
             limit,

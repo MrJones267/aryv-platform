@@ -37,6 +37,7 @@ import notificationRoutes from './routes/notifications';
 import paymentRoutes from './routes/payments';
 import rideRequestRoutes from './routes/rideRequests';
 import reportRoutes from './routes/reports';
+import blockRoutes from './routes/blocks';
 import verificationRoutes from './routes/verification';
 import emergencyRoutes from './routes/emergency';
 import callRoutes from './routes/calls';
@@ -275,6 +276,7 @@ app.use('/api/group-chats', wrapRouterAsync(groupChatRoutes));
 app.use('/api/notifications', wrapRouterAsync(notificationRoutes));
 app.use('/api/ride-requests', wrapRouterAsync(rideRequestRoutes));
 app.use('/api/reports', wrapRouterAsync(reportRoutes));
+app.use('/api/blocks', wrapRouterAsync(blockRoutes));
 app.use('/api/promos', wrapRouterAsync(promoRoutes));
 app.use('/api/verification', wrapRouterAsync(verificationRoutes));
 app.use('/api/emergency', wrapRouterAsync(emergencyRoutes));
@@ -362,6 +364,8 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     { table: 'ride_requests', migration: '033_ride_requests.sql' },
     // Chat and user reports for admins to review.
     { table: 'content_reports', migration: '034_content_reports.sql' },
+    // Blocks, checked on booking, search, ride requests and chat.
+    { table: 'user_blocks', migration: '035_user_blocks.sql' },
     { table: 'driver_documents', migration: '013_driver_document_verification.sql' },
     { table: 'promo_redemptions', migration: '019_promo_redemption_at_booking.sql' },
     // Courier package creation prices through these two.
