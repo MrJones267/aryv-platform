@@ -26,10 +26,14 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
 import { ChatScreenProps } from '../../navigation/types';
 import { useSocket, useSocketEvent, useChatMessages } from '../../hooks/useSocket';
+import SocketService from '../../services/SocketService';
 import locationService from '../../services/LocationService';
 import logger from '../../services/LoggingService';
 import chatApi, { ReportReason } from '../../services/api/chatApi';
 import { useI18n } from '../../i18n/I18nContext';
+
+// A chat's id, as opposed to `ride-<id>`.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const log = logger.createLogger('ChatScreen');
 
@@ -54,6 +58,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const rideId = (route.params as Record<string, unknown>)?.rideId as string | undefined;
   const bookingId = (route.params as Record<string, unknown>)?.bookingId as string | undefined;
   const otherUserId = (route.params as Record<string, unknown>)?.recipientId as string | undefined;
+  // Ride details and booking open a ride's chat by ride. That used to pass
+  // `ride-<id>` straight through as if it were a chat, so the chat never
+  // loaded, and messages went over the socket only and were never saved.
+  const rideForChat = rideId ?? (chatId?.startsWith('ride-') ? chatId.slice(5) : undefined);
+  const [groupChatId, setGroupChatId] = useState<string | null>(UUID.test(chatId ?? '') ? chatId : null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const { profile: user } = useAppSelector((state) => state.user);
 
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -69,9 +79,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
   const { connected, joinRide, leaveRide } = useSocket();
   const chatRoom = rideId || chatId;
   const {
-    messages: socketMessages,
     typing: typingUsers,
-    sendMessage: sendSocketMessage,
     sendTyping: sendSocketTyping,
   } = useChatMessages(chatRoom);
 
@@ -95,28 +103,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     }
   });
 
-  // Merge socket messages into local state
-  useEffect(() => {
-    if (socketMessages.length > 0) {
-      const newSocketMsgs: ChatMessage[] = socketMessages
-        .filter((sm: Record<string, unknown>) => !localMessages.find(lm => lm.id === sm.id))
-        .map((sm: Record<string, unknown>) => ({
-          id: (sm.id as string) || Date.now().toString(),
-          senderId: (sm.senderId as string) || (sm.userId as string) || '',
-          senderName: (sm.senderName as string) || recipientName,
-          message: (sm.message as string) || (sm.content as string) || '',
-          timestamp: (sm.timestamp as string) || new Date().toISOString(),
-          type: (sm.type as ChatMessage['type']) || 'text',
-          isRead: false,
-          location: sm.location as ChatMessage['location'],
-        }));
-
-      if (newSocketMsgs.length > 0) {
-        setLocalMessages(prev => [...prev, ...newSocketMsgs]);
-        scrollToBottom();
-      }
-    }
-  }, [socketMessages]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -130,26 +116,57 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
       ),
     });
 
-    loadMessages();
   }, []);
 
-  const loadMessages = async (): Promise<void> => {
+  // Find (or make) the ride's chat when opened from a ride.
+  useEffect(() => {
+    if (groupChatId || !rideForChat) {
+      if (!groupChatId) {setChatError(t('chat.notAvailable'));}
+      return;
+    }
+    chatApi.openRideChat(rideForChat)
+      .then(res => (res.success && res.data ? setGroupChatId(res.data.groupChatId) : setChatError(res.error || t('chat.notAvailable'))))
+      .catch(() => setChatError(t('chat.notAvailable')));
+  }, [rideForChat]);
+
+  useEffect(() => {
+    if (groupChatId) {loadMessages(groupChatId);}
+  }, [groupChatId]);
+
+  // Live messages for this chat, from its room.
+  useEffect(() => {
+    if (!groupChatId || !connected) {return undefined;}
+    SocketService.getInstance().emit('join_group_chat', { groupChatId });
+    return () => SocketService.getInstance().emit('leave_group_chat', { groupChatId });
+  }, [groupChatId, connected]);
+
+  useSocketEvent('group_message', (data: { groupChatId?: string; message?: Record<string, any> }) => {
+    const m = data?.message;
+    if (!m || data.groupChatId !== groupChatId) {return;}
+    setLocalMessages(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, toChatMessage(m)]));
+    scrollToBottom();
+  }, [groupChatId]);
+
+  const toChatMessage = (m: Record<string, any>): ChatMessage => ({
+    id: m.id,
+    senderId: m.senderId,
+    senderName: m.senderName ?? recipientName,
+    message: m.content ?? '',
+    timestamp: m.timestamp ?? m.createdAt,
+    type: (m.type === 'location' || m.type === 'system' ? m.type : 'text') as ChatMessage['type'],
+    isRead: !!m.isRead,
+    location: m.location ?? m.metadata?.location,
+  });
+
+  const loadMessages = async (id: string): Promise<void> => {
     try {
-      const response = await chatApi.getGroupMessages(chatId, { limit: 50 });
+      const response = await chatApi.getGroupMessages(id, { limit: 50 });
       if (response.success && response.data?.messages) {
-        const history: ChatMessage[] = response.data.messages.map((m) => ({
-          id: m.id,
-          senderId: m.senderId,
-          senderName: m.senderName,
-          message: m.content,
-          timestamp: m.timestamp,
-          type: (m.type === 'image' ? 'text' : m.type) as ChatMessage['type'],
-          isRead: m.isRead,
-          location: m.location,
-        }));
+        // Oldest first, as the list is drawn.
+        const history = response.data.messages.map(m => toChatMessage(m as unknown as Record<string, any>))
+          .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         setLocalMessages(history);
-        // Mark messages as read
-        chatApi.markAsRead(chatId).catch(() => {});
+        chatApi.markAsRead(id).catch(() => {});
       }
     } catch (error) {
       log.warn('Failed to load message history', { error: String(error) });
@@ -157,26 +174,40 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
     }
   };
 
+  /**
+   * Show the message straight away, save it, then swap in the saved id so
+   * the copy that comes back over the socket is not shown twice. If it
+   * cannot be saved it is taken back off the screen and the person told.
+   */
+  const deliver = async (text: string, type: 'text' | 'location' = 'text', location?: ChatMessage['location']): Promise<void> => {
+    if (!groupChatId) {
+      Alert.alert(t('common.error'), chatError || t('chat.notAvailable'));
+      return;
+    }
+    const tempId = `local-${Date.now()}`;
+    setLocalMessages(prev => [...prev, {
+      id: tempId, senderId: user?.id || 'current-user', senderName: user?.firstName || t('ui.you'),
+      message: text, timestamp: new Date().toISOString(), type, isRead: false, location,
+    }]);
+    scrollToBottom();
+    try {
+      const res = await chatApi.sendGroupMessage(groupChatId, text, type, location ? { location } : undefined);
+      if (!res.success || !res.data?.id) {throw new Error(res.error);}
+      const savedId = res.data.id;
+      setLocalMessages(prev => (prev.some(m => m.id === savedId)
+        ? prev.filter(m => m.id !== tempId)
+        : prev.map(m => (m.id === tempId ? { ...m, id: savedId } : m))));
+    } catch {
+      setLocalMessages(prev => prev.filter(m => m.id !== tempId));
+      Alert.alert(t('common.error'), t('ui.failedToSendMessage'));
+    }
+  };
+
   const handleSendMessage = (): void => {
     if (!newMessage.trim()) return;
-
-    const message: ChatMessage = {
-      id: Date.now().toString(),
-      senderId: user?.id || 'current-user',
-      senderName: user?.firstName || t('ui.you'),
-      message: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      type: 'text',
-      isRead: false,
-    };
-
-    setLocalMessages(prev => [...prev, message]);
+    const text = newMessage.trim();
     setNewMessage('');
-
-    // Send via socket
-    if (connected && chatRoom) {
-      sendSocketMessage(newMessage.trim(), 'text');
-    }
+    deliver(text);
 
     // Clear typing indicator
     if (typingTimeoutRef.current) {
@@ -217,28 +248,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         );
         const addressStr = addressData?.fullAddress || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
 
-        const locationMsg: ChatMessage = {
-          id: Date.now().toString(),
-          senderId: user?.id || 'current-user',
-          senderName: user?.firstName || t('ui.you'),
-          message: t('ui.sharedLocationMsg', { address: addressStr }),
-          timestamp: new Date().toISOString(),
-          type: 'location',
-          isRead: false,
-          location: {
-            latitude: location.latitude,
-            longitude: location.longitude,
-            address: addressStr,
-          },
-        };
-
-        setLocalMessages(prev => [...prev, locationMsg]);
-
-        if (connected && chatRoom) {
-          sendSocketMessage(locationMsg.message, 'location');
-        }
-
-        scrollToBottom();
+        await deliver(t('ui.sharedLocationMsg', { address: addressStr }), 'location', {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          address: addressStr,
+        });
       } else {
         Alert.alert(t('ui.locationUnavailable'), t('ui.unableToGetYourCurrent'));
       }
@@ -252,23 +266,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 
   const handleSendQuickMessage = (text: string): void => {
     setShowQuickActions(false);
-    const message: ChatMessage = {
-      id: Date.now().toString(),
-      senderId: user?.id || 'current-user',
-      senderName: user?.firstName || t('ui.you'),
-      message: text,
-      timestamp: new Date().toISOString(),
-      type: 'text',
-      isRead: false,
-    };
-
-    setLocalMessages(prev => [...prev, message]);
-
-    if (connected && chatRoom) {
-      sendSocketMessage(text, 'text');
-    }
-
-    scrollToBottom();
+    deliver(text);
   };
 
   const handleOpenLocationInMaps = (location: ChatMessage['location']): void => {
@@ -614,6 +612,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
         </View>
 
         {/* Messages List */}
+        {chatError && !groupChatId && (
+          <Text style={styles.chatError}>{chatError}</Text>
+        )}
         <FlatList
           ref={flatListRef}
           data={localMessages}
@@ -648,6 +649,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
+  chatError: {
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#FDECEA',
+    color: '#B71C1C',
+    fontSize: 14,
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

@@ -11,6 +11,8 @@ import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
 import GroupChatController, { groupChatValidationRules } from '../controllers/GroupChatController';
 import { authenticateToken } from '../middleware/auth';
+import { param } from 'express-validator';
+import { validateInput } from '../middleware/validation';
 
 // Rate limiters for different operations
 const createGroupLimit = rateLimit({
@@ -68,6 +70,17 @@ router.post(
   joinGroupLimit,
   groupChatValidationRules.joinGroup,
   (req: Request, res: Response) => groupChatController.joinGroup(req as any, res),
+);
+
+// The chat for a ride, made on first use, for its driver and passengers.
+// Declared before '/:groupChatId/...' routes.
+router.post(
+  '/rides/:rideId/open',
+  authenticateToken,
+  joinGroupLimit,
+  [param('rideId').isUUID().withMessage('Invalid ride ID')],
+  validateInput,
+  (req: Request, res: Response) => groupChatController.openRideChat(req as any, res),
 );
 
 // Get user's group chats

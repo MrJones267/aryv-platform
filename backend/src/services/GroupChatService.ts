@@ -11,9 +11,18 @@ import GroupChat, { GroupChatType, GroupChatStatus } from '../models/GroupChat';
 import GroupChatParticipant, { ParticipantRole, ParticipantStatus } from '../models/GroupChatParticipant';
 import GroupChatMessage, { MessageType, MessageStatus } from '../models/GroupChatMessage';
 import User from '../models/User';
+import Ride from '../models/Ride';
+import Booking from '../models/Booking';
+import { BookingStatus } from '../types';
 import { SocketService } from './SocketService';
 import { AdvancedNotificationService } from './AdvancedNotificationService';
 import logger from '../utils/logger';
+
+export class GroupChatAccessError extends Error {
+  constructor(public code: string, message: string, public status = 400) {
+    super(message);
+  }
+}
 
 export interface CreateGroupChatRequest {
   name: string;
@@ -176,7 +185,7 @@ export class GroupChatService {
       // Create welcome system message
       await GroupChatMessage.create({
         groupChatId: groupChat.id,
-        senderId: 'system',
+        senderId: request.createdBy,
         type: MessageType.SYSTEM,
         content: `${creator.firstName} created the group`,
         metadata: {
@@ -272,8 +281,9 @@ export class GroupChatService {
       // Emit real-time message
       const socketService = this.getSocketService();
       if (socketService) {
+        const author = await User.findByPk(request.senderId, { attributes: ['firstName', 'lastName'] });
         socketService.emitToRoom(`group_${request.groupChatId}`, 'group_message', {
-          message: (message as any).formatForApi(request.senderId),
+          message: { ...(message as any).formatForApi(request.senderId), senderName: author ? `${author.firstName} ${author.lastName}`.trim() : undefined },
           groupChatId: request.groupChatId,
         });
       }
@@ -388,7 +398,7 @@ export class GroupChatService {
       const user = await User.findByPk(request.userId);
       await GroupChatMessage.create({
         groupChatId: groupChat.id,
-        senderId: 'system',
+        senderId: request.userId,
         type: MessageType.SYSTEM,
         content: `${user?.firstName} joined the group`,
         metadata: {
@@ -482,7 +492,7 @@ export class GroupChatService {
       const user = await User.findByPk(userId);
       await GroupChatMessage.create({
         groupChatId,
-        senderId: 'system',
+        senderId: userId,
         type: MessageType.SYSTEM,
         content: `${user?.firstName} left the group`,
         metadata: {
@@ -560,7 +570,7 @@ export class GroupChatService {
 
         await GroupChatMessage.create({
           groupChatId: request.groupChatId,
-          senderId: 'system',
+          senderId: request.requesterId,
           type: MessageType.SYSTEM,
           content: `${requesterUser?.firstName} changed ${user?.firstName}'s role to ${request.role}`,
           metadata: {
@@ -892,6 +902,58 @@ export class GroupChatService {
   }
 
   /**
+   * The chat for a ride: the driver and everyone with a live booking on it.
+   * Opened (and made on first use) by any of them. Ride details and
+   * booking used to open a chat called `ride-<id>`, which is not a chat at
+   * all, and nothing ever made a ride's chat. People who book after the
+   * chat was made are added when anyone opens it.
+   */
+  async openRideChat(rideId: string, userId: string): Promise<GroupChat> {
+    const ride = await Ride.findByPk(rideId, { attributes: ['id', 'driverId', 'originAddress', 'destinationAddress'] });
+    if (!ride) {throw new GroupChatAccessError('RIDE_NOT_FOUND', 'Ride not found', 404);}
+    const bookings = await Booking.findAll({
+      where: { rideId, status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.COMPLETED] } },
+      attributes: ['passengerId'],
+    });
+    const members = [...new Set([ride.driverId as string, ...bookings.map(b => b.passengerId as string)])];
+    if (!members.includes(userId)) {
+      throw new GroupChatAccessError('NOT_ON_RIDE', 'Only the driver and passengers of this ride can open its chat', 403);
+    }
+
+    const existing = await GroupChat.findOne({
+      where: { rideId, type: GroupChatType.RIDE_GROUP, status: GroupChatStatus.ACTIVE },
+      order: [['createdAt', 'ASC']],
+    });
+    if (!existing) {
+      const name = `${ride.originAddress} → ${ride.destinationAddress}`.slice(0, 100);
+      return this.createGroupChat({
+        name, type: GroupChatType.RIDE_GROUP, createdBy: ride.driverId as string, rideId, initialParticipants: members,
+      });
+    }
+
+    const present = await GroupChatParticipant.findAll({ where: { groupChatId: existing.id }, attributes: ['userId', 'status'] });
+    const have = new Set(present.map(p => p.userId));
+    for (const memberId of members.filter(id => !have.has(id))) {
+      await GroupChatParticipant.create({
+        groupChatId: existing.id, userId: memberId, role: ParticipantRole.MEMBER, status: ParticipantStatus.ACTIVE, joinedAt: new Date(),
+      } as any);
+    }
+    return existing;
+  }
+
+  /**
+   * Who a system notice is filed under when no one in particular caused it.
+   * group_chat_messages.sender_id must be a real user; these notices were
+   * written with 'system', which the column refuses, so creating, joining
+   * and leaving a chat all failed. They stay type SYSTEM and the app shows
+   * them as notices, not as that person speaking.
+   */
+  private async chatCreator(groupChatId: string, transaction?: Transaction): Promise<string> {
+    const chat = await GroupChat.findByPk(groupChatId, { attributes: ['createdBy'], ...(transaction ? { transaction } : {}) });
+    return chat!.createdBy;
+  }
+
+  /**
    * Handle ride completion and group lifecycle management
    */
   async handleRideCompletion(rideId: string): Promise<void> {
@@ -966,7 +1028,7 @@ export class GroupChatService {
   private async sendRideCompletionMessage(groupChatId: string, transaction: Transaction): Promise<void> {
     await GroupChatMessage.create({
       groupChatId,
-      senderId: 'system',
+      senderId: await this.chatCreator(groupChatId, transaction),
       type: MessageType.SYSTEM,
       content: '🎉 Trip completed! Thank you for riding together. This group will be archived in 2 hours unless you choose to keep it active.',
       metadata: {
@@ -1092,7 +1154,7 @@ export class GroupChatService {
     // Send final system message
     await GroupChatMessage.create({
       groupChatId,
-      senderId: 'system',
+      senderId: await this.chatCreator(groupChatId, transaction),
       type: MessageType.SYSTEM,
       content: '📁 Group has been archived after trip completion. Chat history is preserved.',
       metadata: {
@@ -1136,7 +1198,7 @@ export class GroupChatService {
     // Send conversion notification
     await GroupChatMessage.create({
       groupChatId,
-      senderId: 'system',
+      senderId: await this.chatCreator(groupChatId, transaction),
       type: MessageType.SYSTEM,
       content: '🔄 Group converted to custom group and will remain active.',
       metadata: {
@@ -1207,7 +1269,7 @@ export class GroupChatService {
       // Send voting update message
       await GroupChatMessage.create({
         groupChatId,
-        senderId: 'system',
+        senderId: userId,
         type: MessageType.SYSTEM,
         content: `📊 Vote to keep group: ${keepVotes}/${totalVotes} votes to keep active (need ${Math.floor(activeParticipants / 2) + 1})`,
         metadata: {

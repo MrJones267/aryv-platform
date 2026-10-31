@@ -78,6 +78,25 @@ class ChatApiService extends BaseApiService {
     return this.post<{ reportId: string; duplicate: boolean }>('/reports', body);
   }
 
+  /**
+   * The chat for a ride: made on first use, for its driver and passengers
+   */
+  async openRideChat(rideId: string): Promise<ApiResponse<{ groupChatId: string; name: string }>> {
+    return this.post<{ groupChatId: string; name: string }>(`/group-chats/rides/${rideId}/open`);
+  }
+
+  /**
+   * Send a message; it is saved, and delivered live to everyone in the chat
+   */
+  async sendGroupMessage(
+    groupChatId: string,
+    content: string,
+    type: 'text' | 'location' = 'text',
+    metadata?: Record<string, unknown>,
+  ): Promise<ApiResponse<{ id: string }>> {
+    return this.post<{ id: string }>(`/group-chats/${groupChatId}/messages`, { content, type, ...(metadata ? { metadata } : {}) });
+  }
+
     async markAsRead(groupChatId: string): Promise<ApiResponse<{ updatedCount: number }>> {
     return this.post(`/group-chats/${groupChatId}/read`, {});
   }

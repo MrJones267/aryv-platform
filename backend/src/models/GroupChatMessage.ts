@@ -284,17 +284,23 @@ export class GroupChatMessage extends Model<GroupChatMessageAttributes, GroupCha
       previewText: this.getPreviewText(),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
+      // What the app shows: who wrote it and when. Present when the
+      // sender was loaded with the message.
+      senderName: (this as any).sender ? `${(this as any).sender.firstName ?? ''} ${(this as any).sender.lastName ?? ''}`.trim() : undefined,
+      timestamp: this.createdAt,
     };
   }
 
+  /** senderId must be a real user: sender_id references users. */
   public static createSystemMessage(
     groupChatId: string,
+    senderId: string,
     content: string,
     metadata: any = {},
   ): GroupChatMessageCreationAttributes {
     return {
       groupChatId,
-      senderId: 'system',
+      senderId,
       type: MessageType.SYSTEM,
       content,
       metadata,

@@ -1871,4 +1871,7 @@ export const tn: Record<TranslationKey, string> = {
   'rp.sentBody': 'Re a leboga. Setlhopha sa ARYV se tla e sekaseka mme se dire se se tlhokegang. Fa o le mo kotsing, leletsa 999.',
   'rp.alreadySent': 'O setse o begile se. Setlhopha sa ARYV se a se sekaseka.',
   'rp.failed': 'Ga re a kgona go romela pego ya gago. Leka gape.',
+
+  // Chat
+  'chat.notAvailable': 'Puisano e ga e a kgona go bulwa. Lebelela kgolagano mme o leke gape.',
 };
