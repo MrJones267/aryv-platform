@@ -2,7 +2,7 @@
  * @fileoverview Cash Payment Screen for riders
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-10-31
  */
 
 import React, { useState, useEffect } from 'react';
@@ -23,6 +23,7 @@ import { colors } from '../../theme';
 import { Button } from '../../components/ui';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { CashPaymentService } from '../../services/CashPaymentService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface CashPaymentScreenProps {
   route: {
@@ -35,10 +36,11 @@ interface CashPaymentScreenProps {
   };
 }
 
-const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
+const CashPaymentScreen: React.FC = () => {
+  const { t } = useI18n();
   const navigation = useNavigation();
   const route = useRoute();
-  const { bookingId, driverId, amount, driverName } = route.params as CashPaymentScreenProps['route']['params'];
+  const { bookingId, driverId, amount, driverName, transactionId: existingTransactionId } = route.params as CashPaymentScreenProps['route']['params'] & { transactionId?: string };
   
   const [confirmationCode, setConfirmationCode] = useState('');
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -48,11 +50,34 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'driver_confirmed' | 'completed' | 'failed'>('pending');
   const [trustScore, setTrustScore] = useState<number>(50);
 
-  const currentUser = useAppSelector((state) => (state.auth as { user?: Record<string, unknown> }).user);
+  const currentUser = useAppSelector((state) => state.user.profile);
 
+  // Opened again for a payment already started: carry on with it rather
+  // than start another, which the server refuses.
   useEffect(() => {
-    createCashPayment();
+    if (existingTransactionId) {
+      resumeCashPayment(existingTransactionId);
+    } else {
+      createCashPayment();
+    }
   }, []);
+
+  const resumeCashPayment = async (id: string) => {
+    setLoading(true);
+    try {
+      const tx = await CashPaymentService.getCashTransaction(id);
+      if (tx) {
+        setTransactionId(id);
+        setRiderCode((tx as unknown as { confirmationCode?: string }).confirmationCode ?? null);
+        setPaymentCreated(true);
+        const status = (tx as unknown as { status?: string }).status;
+        if (status === 'driver_confirmed') {setPaymentStatus('driver_confirmed');}
+        if (status === 'completed' || status === 'both_confirmed') {setPaymentStatus('completed');}
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const createCashPayment = async () => {
     if (!currentUser) return;
@@ -72,11 +97,11 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
         setTrustScore(result.trustScore || 50);
       } else {
         Alert.alert(
-          'Payment Error',
-          result.error || 'Failed to create cash payment',
+          t('cash.paymentError'),
+          result.error || t('cash.failedToCreateCashPayment'),
           [
             {
-              text: 'OK',
+              text: t('common.ok'),
               onPress: () => navigation.goBack(),
             },
           ]
@@ -84,11 +109,11 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
       }
     } catch (error) {
       Alert.alert(
-        'Error',
-        'Failed to create cash payment. Please try again.',
+        t('common.error'),
+        t('cash.failedToCreateCashPayment2'),
         [
           {
-            text: 'OK',
+            text: t('common.ok'),
             onPress: () => navigation.goBack(),
           },
         ]
@@ -100,7 +125,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
 
   const handleConfirmPayment = async () => {
     if (!transactionId || confirmationCode.length !== 6) {
-      Alert.alert('Error', 'Please enter the complete 6-digit confirmation code');
+      Alert.alert(t('common.error'), t('cash.pleaseEnterTheComplete6'));
       return;
     }
 
@@ -115,28 +140,28 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
         if (result.status === 'completed') {
           setPaymentStatus('completed');
           Alert.alert(
-            'Payment Completed',
-            'Your cash payment has been confirmed successfully!',
+            t('cash.paymentCompleted'),
+            t('cash.yourCashPaymentHasBeen'),
             [
               {
-                text: 'OK',
-                onPress: () => (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('RideComplete'),
+                text: t('common.ok'),
+                onPress: () => navigation.goBack(),
               },
             ]
           );
         } else {
           setPaymentStatus('driver_confirmed');
           Alert.alert(
-            'Confirmation Received',
-            'Your confirmation has been recorded. Waiting for driver confirmation.',
-            [{ text: 'OK' }]
+            t('cash.confirmationReceived'),
+            t('cash.yourConfirmationHasBeenRecorded'),
+            [{ text: t('common.ok') }]
           );
         }
       } else {
-        Alert.alert('Error', result.error || 'Failed to confirm payment');
+        Alert.alert(t('common.error'), result.error || t('cash.failedToConfirmPayment'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to confirm payment. Please try again.');
+      Alert.alert(t('common.error'), t('cash.failedToConfirmPaymentPlease'));
     } finally {
       setLoading(false);
     }
@@ -146,22 +171,22 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
     if (!transactionId) return;
 
     Alert.alert(
-      'Report Problem',
-      'What type of problem are you experiencing?',
+      t('cash.reportProblem'),
+      t('cash.whatTypeOfProblemAre'),
       [
         {
-          text: 'Driver asking for wrong amount',
+          text: t('cash.driverAskingForWrongAmount'),
           onPress: () => reportDispute('wrong_amount'),
         },
         {
-          text: 'Driver not confirming payment',
+          text: t('cash.driverNotConfirmingPayment'),
           onPress: () => reportDispute('driver_issue'),
         },
         {
-          text: 'Other issue',
+          text: t('cash.otherIssue'),
           onPress: () => reportDispute('other'),
         },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
@@ -177,15 +202,15 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
 
       if (result.success) {
         Alert.alert(
-          'Dispute Reported',
-          'Your dispute has been reported and will be reviewed within 24-48 hours.',
-          [{ text: 'OK' }]
+          t('cash.disputeReported'),
+          t('cash.yourDisputeHasBeenReported'),
+          [{ text: t('common.ok') }]
         );
       } else {
-        Alert.alert('Error', 'Failed to report dispute');
+        Alert.alert(t('common.error'), t('cash.failedToReportDispute'));
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to report dispute. Please try again.');
+      Alert.alert(t('common.error'), t('cash.failedToReportDisputePlease'));
     }
   };
 
@@ -193,7 +218,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Creating cash payment...</Text>
+        <Text style={styles.loadingText}>{t('cash.creatingCashPayment')}</Text>
       </View>
     );
   }
@@ -202,17 +227,17 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Icon name="account-balance-wallet" size={60} color={colors.primary} />
-        <Text style={styles.title}>Cash Payment</Text>
-        <Text style={styles.subtitle}>Pay with cash directly to your driver</Text>
+        <Text style={styles.title}>{t('paySel.cash')}</Text>
+        <Text style={styles.subtitle}>{t('cash.payWithCashDirectlyTo')}</Text>
       </View>
 
       <View style={styles.paymentDetails}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Driver:</Text>
+          <Text style={styles.detailLabel}>{t('cash.driver')}</Text>
           <Text style={styles.detailValue}>{driverName}</Text>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Amount to Pay:</Text>
+          <Text style={styles.detailLabel}>{t('cash.amountToPay')}</Text>
           <Text style={styles.amountValue}>P{amount.toFixed(2)}</Text>
         </View>
       </View>
@@ -234,18 +259,18 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
 
       {riderCode && (
         <View style={styles.confirmationCodeContainer}>
-          <Text style={styles.confirmationCodeLabel}>Your Confirmation Code:</Text>
+          <Text style={styles.confirmationCodeLabel}>{t('cash.yourConfirmationCode')}</Text>
           <View style={styles.confirmationCodeBox}>
             <Text style={styles.confirmationCodeText}>{riderCode}</Text>
           </View>
           <Text style={styles.confirmationCodeNote}>
-            Show this code to your driver after payment
+            {t('cash.showThisCodeToYour')}
           </Text>
         </View>
       )}
 
       <View style={styles.instructionsContainer}>
-        <Text style={styles.instructionsTitle}>Payment Instructions:</Text>
+        <Text style={styles.instructionsTitle}>{t('cash.paymentInstructions')}</Text>
         <View style={styles.instructionStep}>
           <View style={styles.stepNumber}>
             <Text style={styles.stepNumberText}>1</Text>
@@ -259,7 +284,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
             <Text style={styles.stepNumberText}>2</Text>
           </View>
           <Text style={styles.stepText}>
-            Driver will confirm receipt on their app
+            {t('cash.driverWillConfirmReceiptOn')}
           </Text>
         </View>
         <View style={styles.instructionStep}>
@@ -267,13 +292,13 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
             <Text style={styles.stepNumberText}>3</Text>
           </View>
           <Text style={styles.stepText}>
-            Enter your confirmation code below to complete payment
+            {t('cash.enterYourConfirmationCodeBelow')}
           </Text>
         </View>
       </View>
 
       <View style={styles.confirmationSection}>
-        <Text style={styles.confirmationLabel}>Enter Confirmation Code:</Text>
+        <Text style={styles.confirmationLabel}>{t('cash.enterConfirmationCode')}</Text>
         <TextInput
           style={styles.codeInput}
           placeholder="123456"
@@ -286,7 +311,7 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
         />
         
         <Button
-          title={loading ? 'Confirming...' : 'Confirm Cash Payment'}
+          title={loading ? 'Confirming...' : t('cash.confirmCashPayment')}
           onPress={handleConfirmPayment}
           disabled={loading || confirmationCode.length !== 6}
           style={styles.confirmButton}
@@ -299,13 +324,13 @@ const CashPaymentScreen: React.FC<CashPaymentScreenProps> = () => {
         disabled={loading}
       >
         <Icon name="report-problem" size={20} color={colors.warning} />
-        <Text style={styles.reportButtonText}>Report Problem</Text>
+        <Text style={styles.reportButtonText}>{t('cash.reportProblem')}</Text>
       </TouchableOpacity>
 
       <View style={styles.securityNote}>
         <Icon name="security" size={16} color={colors.textSecondary} />
         <Text style={styles.securityNoteText}>
-          Your payment is protected by our trust system and dispute resolution process
+          {t('cash.yourPaymentIsProtectedBy')}
         </Text>
       </View>
     </ScrollView>

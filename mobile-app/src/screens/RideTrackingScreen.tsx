@@ -33,6 +33,7 @@ import { Skeleton, SkeletonCircle, ScreenSkeleton } from '../components/ui/Skele
 import RouteDeviationService, { DeviationAlert } from '../services/RouteDeviationService';
 import locationService from '../services/LocationService';
 import logger from '../services/LoggingService';
+import { useI18n } from '../i18n/I18nContext';
 
 const log = logger.createLogger('RideTrackingScreen');
 
@@ -85,7 +86,8 @@ type RideTrackingParamList = {
   };
 };
 
-const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
+const RideTrackingScreen: React.FC = () => {
+  const { t } = useI18n();
   const route = useRoute<RideTrackingScreenProps['route']>();
   const navigation = useNavigation<StackNavigationProp<RideTrackingParamList>>();
 
@@ -138,7 +140,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
       }
     } catch (error) {
       log.error('Failed to load ride data:', error);
-      Alert.alert('Error', 'Failed to load ride details');
+      Alert.alert(t('common.error'), t('cash.failedToLoadRideDetails'));
     } finally {
       setLoading(false);
     }
@@ -165,10 +167,10 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
       setRideStatus(newStatus);
 
       // Show confirmation
-      Alert.alert('Success', `Ride status updated to ${newStatus}`);
+      Alert.alert(t('common.success'), t('track.statusUpdated'));
     } catch (error) {
       log.error('Failed to update ride status:', error);
-      Alert.alert('Error', 'Failed to update ride status');
+      Alert.alert(t('common.error'), t('cash.failedToUpdateRideStatus'));
     }
   };
 
@@ -234,7 +236,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
       
       // Show notification for status changes
       if (latestRideUpdate.message) {
-        Alert.alert('Ride Update', latestRideUpdate.message);
+        Alert.alert(t('cash.rideUpdate'), latestRideUpdate.message);
       }
     }
   }, [latestRideUpdate, rideId]);
@@ -337,7 +339,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
       { backgroundColor: connected ? '#4CAF50' : connecting ? '#FF9800' : '#F44336' }
     ]}>
       <Text style={styles.connectionText}>
-        {connected ? '🟢 Real-time Connected' : connecting ? '🟡 Connecting...' : '🔴 Disconnected'}
+        {connected ? t('cash.realTimeConnected') : connecting ? '🟡 Connecting...' : '🔴 Disconnected'}
       </Text>
       {error && <Text style={styles.errorText}>Error: {error}</Text>}
     </View>
@@ -347,14 +349,14 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
     if (!pinVerified) {
       setShowPinEntry(true);
     } else {
-      updateRideStatus('in_progress', 'Ride started!');
+      updateRideStatus('in_progress', t('cash.rideStarted'));
     }
   };
 
   const handlePinVerified = () => {
     setPinVerified(true);
     setShowPinEntry(false);
-    updateRideStatus('in_progress', 'PIN verified. Ride started!');
+    updateRideStatus('in_progress', t('cash.pinVerifiedRideStarted'));
   };
 
   const renderDriverActions = () => {
@@ -362,29 +364,29 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
 
     return (
       <View style={styles.driverActions}>
-        <Text style={styles.sectionTitle}>Driver Controls</Text>
+        <Text style={styles.sectionTitle}>{t('cash.driverControls')}</Text>
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.startButton]}
             onPress={handleStartRide}
           >
             <Text style={styles.buttonText}>
-              {pinVerified ? 'Start Ride' : 'Verify PIN & Start'}
+              {pinVerified ? t('rideDetails.startRide') : t('cash.verifyPinStart')}
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={[styles.actionButton, styles.arriveButton]}
-            onPress={() => updateRideStatus('driver_arrived', 'Driver has arrived')}
+            onPress={() => updateRideStatus('driver_arrived', t('cash.driverHasArrived'))}
           >
-            <Text style={styles.buttonText}>Mark Arrived</Text>
+            <Text style={styles.buttonText}>{t('cash.markArrived')}</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={[styles.actionButton, styles.completeButton]}
-            onPress={() => updateRideStatus('completed', 'Ride completed successfully!')}
+            onPress={() => updateRideStatus('completed', t('cash.rideCompletedSuccessfully'))}
           >
-            <Text style={styles.buttonText}>Complete Ride</Text>
+            <Text style={styles.buttonText}>{t('rideDetails.completeRide')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -393,7 +395,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
 
   const renderRideInfo = () => (
     <View style={styles.rideInfo}>
-      <Text style={styles.sectionTitle}>Ride Information</Text>
+      <Text style={styles.sectionTitle}>{t('rideDetails.info')}</Text>
 
       {/* Driver verification card (compact) */}
       {!isDriver && rideData?.driver && (
@@ -401,7 +403,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
           <DriverVerificationCard
             driver={{
               id: rideData.driver.id || 'unknown',
-              firstName: rideData.driver.firstName || 'Driver',
+              firstName: rideData.driver.firstName || t('rideDetails.driver'),
               lastName: rideData.driver.lastName || '',
               rating: rideData.driver.rating || 0,
               totalRides: rideData.driver.totalRides || 0,
@@ -442,7 +444,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
           </View>
         ))}
         {rideUpdates.length === 0 && (
-          <Text style={styles.noUpdates}>No updates yet</Text>
+          <Text style={styles.noUpdates}>{t('cash.noUpdatesYet')}</Text>
         )}
       </ScrollView>
     </View>
@@ -466,19 +468,19 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
     rideId,
     driverName: rideData?.driver?.firstName
       ? `${rideData.driver.firstName} ${rideData.driver.lastName || ''}`
-      : 'Driver',
+      : t('rideDetails.driver'),
     vehicleInfo: rideData?.vehicle
       ? `${rideData.vehicle.color || ''} ${rideData.vehicle.make || ''} ${rideData.vehicle.model || ''} (${rideData.vehicle.licensePlate || ''})`.trim()
       : undefined,
-    origin: rideData?.origin?.address || 'Origin',
-    destination: rideData?.destination?.address || 'Destination',
+    origin: rideData?.origin?.address || t('home.origin'),
+    destination: rideData?.destination?.address || t('home.destination'),
     departureTime: rideData?.departureTime
       ? new Date(rideData.departureTime).toLocaleString()
       : undefined,
     estimatedArrival: estimatedArrival || undefined,
     passengerName: userProfile
       ? `${userProfile.firstName || ''} ${userProfile.lastName || ''}`.trim()
-      : 'Passenger',
+      : t('rideDetails.passenger'),
     currentLocation: driverLocation
       ? { latitude: driverLocation.latitude, longitude: driverLocation.longitude }
       : undefined,
@@ -505,10 +507,10 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
           ]}
           onPress={() => {
             Alert.alert(
-              'Route Deviation Detected',
-              `The vehicle is ${routeDeviation.deviationDistance}m off the expected route. If you feel unsafe, tap SOS or call emergency services.`,
+              t('cash.routeDeviationDetected'),
+              t('track.deviationBody', { metres: routeDeviation.deviationDistance }),
               [
-                { text: 'Dismiss', onPress: () => setRouteDeviation(null) },
+                { text: t('cash.dismiss'), onPress: () => setRouteDeviation(null) },
                 { text: 'Call 999', onPress: () => Linking.openURL('tel:999'), style: 'destructive' },
               ],
             );
@@ -536,8 +538,8 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
           {driverLocation && (
             <Marker
               coordinate={driverLocation}
-              title={isDriver ? "Your Location" : "Driver Location"}
-              description={`Speed: ${driverLocation.speed?.toFixed(0) || 0} km/h`}
+              title={isDriver ? t('track.yourLocation') : t('track.driverLocation')}
+              description={t('track.speed', { speed: driverLocation.speed?.toFixed(0) || 0 })}
             />
           )}
         </MapView>
@@ -553,7 +555,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
         style={styles.backButton}
         onPress={() => navigation.goBack()}
       >
-        <Text style={styles.backButtonText}>← Back</Text>
+        <Text style={styles.backButtonText}>{t('track.back')}</Text>
       </TouchableOpacity>
 
       {/* Share trip button */}
@@ -564,7 +566,7 @@ const RideTrackingScreen: React.FC<RideTrackingScreenProps> = () => {
           activeOpacity={0.8}
         >
           <Icon name="share" size={20} color="#FFFFFF" />
-          <Text style={styles.shareButtonText}>Share Trip</Text>
+          <Text style={styles.shareButtonText}>{t('rides.shareTrip')}</Text>
         </TouchableOpacity>
       )}
 

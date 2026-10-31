@@ -14,6 +14,8 @@ import UserWallet from '../models/UserWallet';
 import { AuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
 import { sequelize } from '../config/database';
+import User from '../models/User';
+import Booking from '../models/Booking';
 
 export class CashPaymentController {
   private cashPaymentService: CashPaymentService;
@@ -327,22 +329,30 @@ export class CashPaymentController {
         limit: parseInt(limit as string),
         offset: parseInt(offset as string),
         order: [['createdAt', 'DESC']],
-        include: [
-          {
-            association: 'booking',
-            attributes: ['id', 'rideId'],
-          },
-        ],
+        // No 'booking' association is defined on CashTransaction, so
+        // including it failed every history request with a 500. The ride
+        // comes from the bookings, looked up below.
       });
+
+      // The other person's first name, so the app can say who to confirm
+      // cash with; the ride, so it can show the payment on the right card.
+      const otherIds = [...new Set(transactions.rows.map(tx => (tx.riderId === userId ? tx.driverId : tx.riderId)))];
+      const others = await User.findAll({ where: { id: otherIds }, attributes: ['id', 'firstName'] });
+      const firstNameOf = new Map(others.map(u => [u.id, u.firstName]));
+      const bookings = await Booking.findAll({ where: { id: transactions.rows.map(tx => tx.bookingId) }, attributes: ['id', 'rideId'] });
+      const rideOf = new Map(bookings.map(b => [b.id, b.rideId]));
 
       const transactionsWithRole = transactions.rows.map(tx => ({
         id: tx.id,
         bookingId: tx.bookingId,
+        rideId: rideOf.get(tx.bookingId) ?? null,
         amount: tx.amount,
+        currency: (tx as unknown as { currency?: string }).currency,
         status: tx.status,
         platformFee: tx.platformFee,
         createdAt: tx.createdAt,
         userRole: tx.riderId === userId ? 'rider' : 'driver',
+        otherPersonName: firstNameOf.get(tx.riderId === userId ? tx.driverId : tx.riderId) ?? null,
         riskScore: tx.riskScore,
       }));
 
