@@ -92,14 +92,19 @@ export class DemandService {
     try {
       const until = new Date(Date.now() + LOOKAHEAD_HOURS * 60 * 60 * 1000);
 
+      // Measured on geography, in metres: on plain 4326 geometry the unit is
+      // degrees. And the column by its stored name, which col() needs.
       const nearHere = sequelize.where(
         sequelize.fn(
           'ST_DWithin',
-          sequelize.col('originCoordinates'),
-          sequelize.fn(
-            'ST_SetSRID',
-            sequelize.fn('ST_MakePoint', location.longitude, location.latitude),
-            4326,
+          sequelize.cast(sequelize.col('origin_coordinates'), 'geography'),
+          sequelize.cast(
+            sequelize.fn(
+              'ST_SetSRID',
+              sequelize.fn('ST_MakePoint', location.longitude, location.latitude),
+              4326,
+            ),
+            'geography',
           ),
           radiusMetres,
         ),
@@ -179,8 +184,8 @@ export class DemandService {
           WHERE b.status IN (:statuses)
             AND r.departure_time >= :since
             AND ST_DWithin(
-                  r.origin_coordinates,
-                  ST_SetSRID(ST_MakePoint(:lng, :lat), 4326),
+                  r.origin_coordinates::geography,
+                  ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
                   :radius)
           GROUP BY 1`,
         {

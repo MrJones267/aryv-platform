@@ -1043,7 +1043,7 @@ export class UserController {
           attributes: [
             'status',
             [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-            [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalSpent'],
+            [sequelize.fn('SUM', sequelize.col('total_amount')), 'totalSpent'],
           ],
           group: ['status'],
         }),
