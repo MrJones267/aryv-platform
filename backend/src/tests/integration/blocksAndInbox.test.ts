@@ -68,7 +68,7 @@ describe('Blocking and the inbox', () => {
       });
 
     it('hides a blocked driver\'s rides from a signed-in passenger, not from everyone', async () => {
-      const search = (headers: object) => request(app).get('/api/rides/search').set(headers).query({
+      const search = (headers: Record<string, string>) => request(app).get('/api/rides/search').set(headers).query({
         originLat: -24.6541, originLng: 25.9086, destinationLat: -21.17, destinationLng: 27.51,
         departureDate: tomorrow.toISOString(), radius: 20,
       });
