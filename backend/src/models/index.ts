@@ -33,6 +33,7 @@ import TrustHold from './TrustHold';
 import CashDispute from './CashDispute';
 import RideRequest from './RideRequest';
 import ContentReport from './ContentReport';
+import UserBlock from './UserBlock';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -538,6 +539,7 @@ export {
   CashDispute,
   RideRequest,
   ContentReport,
+  UserBlock,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -587,6 +589,7 @@ export default {
   CashDispute,
   RideRequest,
   ContentReport,
+  UserBlock,
   // Driver verification models
   DriverDocument,
   PromoRedemption,

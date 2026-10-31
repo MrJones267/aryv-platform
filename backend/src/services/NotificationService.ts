@@ -15,6 +15,7 @@ import { BookingStatus, RideStatus } from '../types';
 import { logInfo, logError } from '../utils/logger';
 import fcmService, { StalePushTokenError } from './FCMService';
 import { pushAllowed } from '../utils/notificationPreferences';
+import Notification, { NotificationType, NotificationPriority, NotificationStatus, NotificationChannel } from '../models/Notification';
 
 export interface NotificationData {
   type: string;
@@ -47,6 +48,41 @@ export function pushData(notification: NotificationData): Record<string, string>
     }
   }
   return out;
+}
+
+/** The stored type must be one the notifications table accepts. */
+export function inboxTypeFor(type: string): NotificationType {
+  if (/^chat|^message|^group_chat/.test(type)) {return NotificationType.CHAT_MESSAGE;}
+  if (/^emergency/.test(type)) {return NotificationType.EMERGENCY_ALERT;}
+  if (/^(incoming_call|call_)/.test(type)) {return NotificationType.INCOMING_CALL;}
+  if (/^(cash_|payment|escrow|commission|rider_confirmation|wallet)/.test(type)) {return NotificationType.PAYMENT_RECEIVED;}
+  if (/^(delivery|agreement|package)/.test(type)) {return NotificationType.DELIVERY_REQUEST;}
+  if (/^(promo|offer)/.test(type)) {return NotificationType.PROMOTION;}
+  if (/^(ride|booking|new_booking)/.test(type)) {return NotificationType.RIDE_REQUEST;}
+  return NotificationType.SYSTEM_UPDATE;
+}
+
+async function saveToInbox(userId: string, notification: NotificationData): Promise<void> {
+  try {
+    await (Notification as any).create({
+      userId,
+      type: inboxTypeFor(notification.type),
+      priority: NotificationPriority.NORMAL,
+      status: NotificationStatus.SENT,
+      channel: [NotificationChannel.IN_APP, NotificationChannel.PUSH],
+      title: notification.title || 'ARYV',
+      body: notification.message || '',
+      // The real type, which decides where tapping it leads in the app.
+      data: { ...pushData(notification), originalType: notification.type },
+      metadata: {},
+      actionable: false,
+      actions: [],
+      deliveryAttempts: 1,
+      sentAt: new Date(),
+    });
+  } catch (error) {
+    logError('Could not save notification to the inbox', error as Error, { userId, type: notification.type });
+  }
 }
 
 export interface BookingNotification extends NotificationData {
@@ -139,6 +175,10 @@ export class NotificationService {
    * Send notification to a specific user
    */
   async sendToUser(userId: string, notification: NotificationData): Promise<void> {
+    // Keep a copy for the in-app Notifications inbox, which only ever listed
+    // the few notifications saved elsewhere. Never lets a failure here stop
+    // the notification itself.
+    await saveToInbox(userId, notification);
     try {
       // Send via socket (real-time, works when app is open)
       if (this.io) {

@@ -17,6 +17,7 @@ import { BookingStatus } from '../types';
 import { SocketService } from './SocketService';
 import { AdvancedNotificationService } from './AdvancedNotificationService';
 import logger from '../utils/logger';
+import blockService from './BlockService';
 
 export class GroupChatAccessError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -702,6 +703,12 @@ export class GroupChatService {
 
       if (options.senderId) {
         whereClause['senderId'] = options.senderId;
+      }
+
+      // Messages from people this user has blocked are not shown to them.
+      const blocked = await blockService.blockedBy(options.userId);
+      if (blocked.length > 0 && !options.senderId) {
+        whereClause['senderId'] = { [Op.notIn]: blocked };
       }
 
       if (options.beforeDate) {

@@ -25,6 +25,7 @@ const mockIO = {
 jest.mock('../../models/Booking');
 jest.mock('../../models/Ride');
 jest.mock('../../models/User');
+jest.mock('../../models/Notification');
 
 describe('NotificationService', () => {
   let notificationService: NotificationService;

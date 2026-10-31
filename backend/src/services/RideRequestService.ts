@@ -180,6 +180,9 @@ class RideRequestService {
           AND r.available_seats >= :seats
           AND (CAST(:maxPrice AS NUMERIC) IS NULL OR r.price_per_seat <= CAST(:maxPrice AS NUMERIC))
           AND r.driver_id <> :passengerId
+          AND NOT EXISTS (SELECT 1 FROM user_blocks b
+                           WHERE (b.blocker_id = :passengerId AND b.blocked_id = r.driver_id)
+                              OR (b.blocker_id = r.driver_id AND b.blocked_id = :passengerId))
           AND ${RIDE_PASSES('r', 'ST_SetSRID(ST_MakePoint(:olng, :olat), 4326)', 'ST_SetSRID(ST_MakePoint(:dlng, :dlat), 4326)')}
         ORDER BY r.departure_time
         LIMIT :limit`,
@@ -223,6 +226,9 @@ class RideRequestService {
           AND q.expires_at > now()
           AND q.departure_time > now()
           AND q.passenger_id <> :driverId
+          AND NOT EXISTS (SELECT 1 FROM user_blocks b
+                           WHERE (b.blocker_id = :driverId AND b.blocked_id = q.passenger_id)
+                              OR (b.blocker_id = q.passenger_id AND b.blocked_id = :driverId))
           AND ST_DWithin(q.origin_coordinates::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :metres)
         ORDER BY q.departure_time
         LIMIT :limit`,
@@ -262,6 +268,9 @@ class RideRequestService {
             AND q.seats <= r.available_seats
             AND (q.max_price IS NULL OR q.max_price >= r.price_per_seat)
             AND q.passenger_id <> r.driver_id
+            AND NOT EXISTS (SELECT 1 FROM user_blocks b
+                             WHERE (b.blocker_id = r.driver_id AND b.blocked_id = q.passenger_id)
+                                OR (b.blocker_id = q.passenger_id AND b.blocked_id = r.driver_id))
             AND NOT (q.notified_ride_ids @> jsonb_build_array(CAST(:rideId AS text)))
             AND ${RIDE_PASSES('r', 'q.origin_coordinates', 'q.destination_coordinates')}
         RETURNING q.id, q.passenger_id`,

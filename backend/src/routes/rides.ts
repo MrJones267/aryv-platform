@@ -238,6 +238,9 @@ router.post(
 router.get(
   '/search',
   rideRateLimit,
+  // Optional: a signed-in passenger does not see rides from people on either
+  // side of a block with them. Search stays open to everyone.
+  optionalAuth,
   searchRidesValidation,
   validateInput,
   rideController.searchRides.bind(rideController),

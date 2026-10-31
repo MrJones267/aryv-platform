@@ -32,6 +32,7 @@ import rideRequestService from '../services/RideRequestService';
 import GroupChatService from '../services/GroupChatService';
 import toRideView from '../utils/rideView';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
+import blockService from '../services/BlockService';
 
 /**
  * The platform's cut of a booking. A promo is discounted from this, and only
@@ -299,6 +300,14 @@ export class RideController {
       // Filtering by tier, not choosing one: the tier belongs to the ride.
       if (req.query['tier']) {
         whereClause.tier = String(req.query['tier']);
+      }
+
+      // A signed-in passenger does not see rides from anyone on either side
+      // of a block with them.
+      const viewerId = (req as AuthenticatedRequest).user?.id;
+      if (viewerId) {
+        const blocked = await blockService.blockedEitherWay(viewerId);
+        if (blocked.length > 0) {whereClause.driverId = { [Op.notIn]: blocked };}
       }
 
       const parsedOriginLng = Number(originLng);
@@ -1202,6 +1211,17 @@ export class RideController {
           timestamp: new Date().toISOString(),
         });
         await transaction.rollback();
+        return;
+      }
+
+      // Neither can book the other's ride once either has blocked the other.
+      if (await blockService.isBlockedEitherWay(ride.driverId, passengerId)) {
+        res.status(403).json({
+          success: false,
+          error: 'You cannot book this ride',
+          code: 'BLOCKED',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 
