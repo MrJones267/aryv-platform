@@ -1870,4 +1870,7 @@ export const af: Record<TranslationKey, string> = {
   'rp.sentBody': 'Dankie. ARYV se span sal dit hersien en optree waar nodig. As jy in gevaar is, bel 999.',
   'rp.alreadySent': 'Jy het dit reeds gerapporteer. ARYV se span hersien dit.',
   'rp.failed': 'Kon nie jou verslag stuur nie. Probeer weer.',
+
+  // Chat
+  'chat.notAvailable': 'Hierdie klets kon nie oopgemaak word nie. Kontroleer jou verbinding en probeer weer.',
 };

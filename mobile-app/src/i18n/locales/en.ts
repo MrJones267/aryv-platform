@@ -1870,6 +1870,9 @@ export const en = {
   'rp.sentBody': 'Thank you. ARYV\'s team will review it and act where needed. If you are in danger, call 999.',
   'rp.alreadySent': 'You have already reported this. ARYV\'s team is reviewing it.',
   'rp.failed': 'Could not send your report. Try again.',
+
+  // Chat
+  'chat.notAvailable': 'This chat could not be opened. Check your connection and try again.',
 };
 
 export type TranslationKey = keyof typeof en;

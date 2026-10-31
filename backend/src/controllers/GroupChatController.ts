@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import GroupChatService, {
+  GroupChatAccessError,
   CreateGroupChatRequest,
   SendGroupMessageRequest,
   JoinGroupRequest,
@@ -271,6 +272,21 @@ export class GroupChatController {
   /**
    * Get user's group chats
    */
+  /** POST /api/group-chats/rides/:rideId/open — the ride's chat, made on first use */
+  async openRideChat(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const chat = await this.groupChatService.openRideChat(String(req.params['rideId']), req.user.id);
+      res.status(200).json({ success: true, data: { groupChatId: chat.id, name: chat.name }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      if (error instanceof GroupChatAccessError) {
+        res.status(error.status).json({ success: false, error: error.message, code: error.code, timestamp: new Date().toISOString() });
+        return;
+      }
+      logger.error('Error opening ride chat:', error);
+      res.status(500).json({ success: false, error: 'Failed to open the ride chat', code: 'RIDE_CHAT_FAILED', timestamp: new Date().toISOString() });
+    }
+  }
+
   async getUserGroupChats(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const userId = req.user.id;
