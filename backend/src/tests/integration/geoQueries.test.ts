@@ -93,6 +93,14 @@ describe('Queries that measure distance', () => {
   });
 
   it('a surge zone applies inside its radius and not 600 km away', async () => {
+    // The test schema is built from the models and surge_periods has none,
+    // so it is made here with migration 024's columns.
+    await sequelize.query(`CREATE TABLE IF NOT EXISTS surge_periods (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), name VARCHAR(120) NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL, ends_at TIMESTAMPTZ NOT NULL,
+      multiplier DECIMAL(4, 2) NOT NULL DEFAULT 1.00, centre GEOMETRY(POINT, 4326) NULL,
+      radius_metres INTEGER NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await sequelize.query(
       `INSERT INTO surge_periods (name, starts_at, ends_at, multiplier, centre, radius_metres)
        VALUES ('Gaborone test rush', NOW() - INTERVAL '1 hour', NOW() + INTERVAL '1 hour', 1.5,
@@ -103,8 +111,7 @@ describe('Queries that measure distance', () => {
       expect((await surgeService.getSurge(new Date(), { latitude: GABORONE.lat, longitude: GABORONE.lng })).multiplier).toBe(1.5);
       expect((await surgeService.getSurge(new Date(), { latitude: MAUN.lat, longitude: MAUN.lng })).multiplier).toBe(1);
     } finally {
-      // The setup only truncates tables that have a model; this one has none.
-      await sequelize.query(`DELETE FROM surge_periods WHERE name = 'Gaborone test rush'`);
+      await sequelize.query('DROP TABLE surge_periods');
     }
   });
 
@@ -118,8 +125,9 @@ describe('Queries that measure distance', () => {
 
   it('a passenger\'s statistics add up what they spent', async () => {
     const ride = await rideFrom(GABORONE);
+    const other = await rideFrom(GABORONE);
     await Booking.create({ rideId: ride.id, passengerId: passenger.id, seatsBooked: 1, totalAmount: 26.25, platformFee: 1.25, currency: 'BWP', status: BookingStatus.CONFIRMED } as any);
-    await Booking.create({ rideId: ride.id, passengerId: passenger.id, seatsBooked: 1, totalAmount: 30, platformFee: 1.5, currency: 'BWP', status: BookingStatus.CONFIRMED } as any);
+    await Booking.create({ rideId: other.id, passengerId: passenger.id, seatsBooked: 1, totalAmount: 30, platformFee: 1.5, currency: 'BWP', status: BookingStatus.CONFIRMED } as any);
     const res = await request(app).get('/api/users/statistics').set(as(passenger)).expect(200);
     expect(res.body.data.asPassenger[BookingStatus.CONFIRMED]).toEqual({ count: 2, totalSpent: 56.25 });
   });

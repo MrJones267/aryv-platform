@@ -353,6 +353,21 @@ router.get(
 );
 
 /**
+ * @route   GET /api/rides/popular-routes
+ * @desc    Get popular routes based on completed rides
+ * @access  Private
+ *
+ * Before /:id so 'popular-routes' is not read as a ride ID. It came after,
+ * and every request got a 400 for an invalid ride ID.
+ */
+router.get(
+  '/popular-routes',
+  rideRateLimit,
+  authenticateToken,
+  rideController.getPopularRoutes.bind(rideController),
+);
+
+/**
  * @route   GET /api/rides/:id
  * @desc    Get ride by ID
  * @access  Public
@@ -500,18 +515,6 @@ router.put(
   ],
   validateInput,
   rideController.updateRideStatus.bind(rideController),
-);
-
-/**
- * @route   GET /api/rides/popular-routes
- * @desc    Get popular routes based on completed rides
- * @access  Private
- */
-router.get(
-  '/popular-routes',
-  rideRateLimit,
-  authenticateToken,
-  rideController.getPopularRoutes.bind(rideController),
 );
 
 /**
