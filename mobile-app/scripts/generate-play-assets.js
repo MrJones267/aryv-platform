@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * @fileoverview Generates every Android launcher icon and Play Store graphic
- *               from the SVG masters in assets/.
+ *               from the ARYV logo in assets/icons/aryv-logo-full.png.
  * @author Oabona-Majoko
  * @created 2026-08-22
- * @lastModified 2026-08-22
+ * @lastModified 2026-11-03
  *
  * Replaces the previous state, where all six mipmap density buckets held the
  * same 1024x1024 PNG, ic_launcher_round was a square image, and there was no
@@ -19,8 +19,15 @@ const path = require('path');
 const sharp = require('sharp');
 
 const ROOT = path.resolve(__dirname, '..');
-const MASTER_ICON = path.join(ROOT, 'assets/icons/aryv-professional-master-1024.svg');
+// The ARYV logo: the teal-to-purple arrow above the word "ARYV", on white.
+// The launcher icon is the arrow alone; the word is unreadable at 48px.
+//
+// This used to render aryv-professional-master-1024.svg, an old placeholder
+// (a white "A" on a blue disc), which replaced the real logo on every build
+// from 2026-08-22 on.
+const MASTER_LOGO = path.join(ROOT, 'assets/icons/aryv-logo-full.png');
 const MASTER_FEATURE = path.join(ROOT, 'assets/app-store/play-store-feature-graphic.svg');
+
 const RES = path.join(ROOT, 'android/app/src/main/res');
 const STORE_OUT = path.join(ROOT, 'assets/app-store/generated');
 
@@ -35,7 +42,7 @@ const LEGACY_DENSITIES = {
 
 // Adaptive icon foregrounds are 108dp, of which only the centre 72dp is
 // guaranteed visible — the rest is reserved for the launcher's mask and
-// parallax. The master art is scaled to that safe zone and padded out.
+// parallax. The arrow is fitted well inside that, since masks are often round.
 const ADAPTIVE_DENSITIES = {
   'mipmap-mdpi': 108,
   'mipmap-hdpi': 162,
@@ -44,88 +51,150 @@ const ADAPTIVE_DENSITIES = {
   'mipmap-xxxhdpi': 432,
 };
 
-const SAFE_ZONE_RATIO = 72 / 108;
-const BACKGROUND_COLOR = '#1976D2'; // Matches the master's darkest gradient stop.
+const ADAPTIVE_ART_RATIO = 0.52; // of 108dp: inside the 72dp safe zone, clear of a circle mask
+const LEGACY_ART_RATIO = 0.62;   // of the square legacy icon
+const BACKGROUND_COLOR = '#FFFFFF'; // The logo's own background.
 
 const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 
-/** Square PNG at an exact pixel size, rendered from the SVG at that density. */
+/**
+ * The arrow on transparency, as a square PNG buffer.
+ *
+ * The logo is drawn on white, so transparency is recovered from how far each
+ * pixel is from white, and the colour is un-blended from the white behind
+ * it. That keeps the anti-aliased edge instead of leaving a white fringe.
+ */
+let markCache = null;
+async function arrowMark() {
+  if (markCache) return markCache;
+  const { data, info } = await sharp(MASTER_LOGO).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H } = info;
+
+  // Bands of rows that hold any ink; the first is the arrow, the second the word.
+  const inked = (y) => {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 3;
+      if (Math.min(data[i], data[i + 1], data[i + 2]) < 200) return true;
+    }
+    return false;
+  };
+  let top = 0;
+  while (top < H && !inked(top)) top++;
+  let bottom = top;
+  while (bottom < H && inked(bottom)) bottom++;
+
+  let left = W;
+  let right = 0;
+  for (let y = top; y < bottom; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 3;
+      if (Math.min(data[i], data[i + 1], data[i + 2]) < 245) {
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  const pad = 6;
+  const x0 = Math.max(0, left - pad);
+  const y0 = Math.max(0, top - pad);
+  const w = Math.min(W, right + pad) - x0;
+  const h = Math.min(H, bottom + pad) - y0;
+
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = ((y + y0) * W + (x + x0)) * 3;
+      const o = (y * w + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      // In the arrow every pixel's darkest channel is 125 or below; the
+      // paper is 240-254 (not quite white). Opaque at 125, clear from 248,
+      // blended between, so the edge stays smooth and the paper vanishes.
+      const a = Math.max(0, Math.min(1, (248 - Math.min(r, g, b)) / (248 - 125)));
+      const unblend = (c) => (a > 0 ? Math.max(0, Math.min(255, Math.round((c - 255 * (1 - a)) / a))) : 0);
+      rgba[o] = unblend(r);
+      rgba[o + 1] = unblend(g);
+      rgba[o + 2] = unblend(b);
+      rgba[o + 3] = Math.round(a * 255);
+    }
+  }
+
+  const side = Math.max(w, h);
+  markCache = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+    .extend({
+      top: Math.floor((side - h) / 2),
+      bottom: Math.ceil((side - h) / 2),
+      left: Math.floor((side - w) / 2),
+      right: Math.ceil((side - w) / 2),
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+  return markCache;
+}
+
+/** The arrow scaled to `art` pixels, centred on a transparent `size` square. */
+async function markOnCanvas(size, art) {
+  const scaled = await sharp(await arrowMark()).resize(art, art, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  const pad = Math.round((size - art) / 2);
+  return sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: scaled, top: pad, left: pad }])
+    .png()
+    .toBuffer();
+}
+
+/** Legacy square icon: the arrow on a white rounded square. */
 async function renderSquare(size, outPath) {
-  await sharp(MASTER_ICON, { density: 400 })
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  const radius = Math.round(size * 0.18);
+  const plate = Buffer.from(
+    `<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="${BACKGROUND_COLOR}"/></svg>`
+  );
+  await sharp(plate)
+    .composite([{ input: await markOnCanvas(size, Math.round(size * LEGACY_ART_RATIO)) }])
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
-/** Circular mask for ic_launcher_round, which must actually be round. */
+/** ic_launcher_round: the arrow on a white disc. */
 async function renderRound(size, outPath) {
   const r = size / 2;
-  const mask = Buffer.from(
-    `<svg width="${size}" height="${size}"><circle cx="${r}" cy="${r}" r="${r}" fill="#fff"/></svg>`
+  const disc = Buffer.from(
+    `<svg width="${size}" height="${size}"><circle cx="${r}" cy="${r}" r="${r}" fill="${BACKGROUND_COLOR}"/></svg>`
   );
-
-  const square = await sharp(MASTER_ICON, { density: 400 })
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
-
-  await sharp(square)
-    .composite([{ input: mask, blend: 'dest-in' }])
+  await sharp(disc)
+    .composite([{ input: await markOnCanvas(size, Math.round(size * LEGACY_ART_RATIO * 0.92)) }])
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
 /**
  * Themed ("monochrome") icons take only the alpha channel of the drawable they
- * point at. Reusing the colour foreground would hand Android a fully opaque
- * disc, so the whole icon would theme as a solid blob with no letter in it.
- * This renders the glyph alone on transparency instead.
+ * point at, so this is the arrow's shape in solid black on transparency.
  */
-const MONOCHROME_SVG = (size) => Buffer.from(
-  `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-     <text x="${size / 2}" y="${size * 0.74}"
-           font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-           font-size="${size * 0.68}" font-weight="700"
-           text-anchor="middle" fill="#000000">A</text>
-   </svg>`
-);
-
 async function renderMonochrome(size, outPath) {
-  // The explicit resize is load-bearing: `density` rasterises the SVG at
-  // 400/72 the nominal size, so without it every monochrome layer came out at
-  // 2400x2400 regardless of which density bucket it was written to.
-  await sharp(MONOCHROME_SVG(size), { density: 400 })
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  const art = await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO));
+  const { data, info } = await sharp(art).raw().toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 0;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+  }
+  await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
-/** Adaptive foreground: art confined to the 72/108 safe zone, transparent around it. */
+/** Adaptive foreground: the arrow inside the safe zone, transparent around it. */
 async function renderAdaptiveForeground(size, outPath) {
-  const art = Math.round(size * SAFE_ZONE_RATIO);
-  const pad = Math.round((size - art) / 2);
-
-  const scaled = await sharp(MASTER_ICON, { density: 400 })
-    .resize(art, art, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
-
-  await sharp({
-    create: {
-      width: size,
-      height: size,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite([{ input: scaled, top: pad, left: pad }])
+  await sharp(await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO)))
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
 async function main() {
-  if (!fs.existsSync(MASTER_ICON)) {
-    throw new Error(`Master icon not found: ${MASTER_ICON}`);
+  if (!fs.existsSync(MASTER_LOGO)) {
+    throw new Error(`Master logo not found: ${MASTER_LOGO}`);
   }
 
   // ── Legacy + round launcher icons, correctly sized per density ────────────
@@ -180,8 +249,7 @@ async function main() {
   ensureDir(STORE_OUT);
 
   // Play requires a 512x512 32-bit PNG with no transparency.
-  await sharp(MASTER_ICON, { density: 400 })
-    .resize(512, 512, { fit: 'contain', background: BACKGROUND_COLOR })
+  await sharp(await markOnCanvas(512, Math.round(512 * LEGACY_ART_RATIO)))
     .flatten({ background: BACKGROUND_COLOR })
     .png({ compressionLevel: 9 })
     .toFile(path.join(STORE_OUT, 'play-store-icon-512.png'));

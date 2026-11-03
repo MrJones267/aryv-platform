@@ -1993,4 +1993,9 @@ export const af: Record<TranslationKey, string> = {
   'rst.doneBody': 'Meld aan met jou nuwe wagwoord. Jy is oral elders afgemeld.',
   'rst.resend': 'Stuur \'n nuwe kode',
   'rst.changeRecipient': 'Gebruik \'n ander nommer of e-pos',
+
+  // Permissions screen
+  'perm.allGranted': 'Alle toestemmings is gegee. Jy is gereed.',
+  'perm.openSettings': 'Maak instellings oop',
+  'perm.blockedBody': 'Hierdie toestemming is vir ARYV afgeskakel. Jy kan dit in jou foon se instellings aanskakel.',
 };

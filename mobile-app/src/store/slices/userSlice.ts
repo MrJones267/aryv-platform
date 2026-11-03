@@ -28,9 +28,10 @@ const transformUserFromApi = (user: any): User => {
     createdAt: typeof user.createdAt === 'string' ? new Date(user.createdAt) : user.createdAt,
     updatedAt: typeof user.updatedAt === 'string' ? new Date(user.updatedAt) : user.updatedAt,
     lastLoginAt: user.lastLoginAt && typeof user.lastLoginAt === 'string' ? new Date(user.lastLoginAt) : user.lastLoginAt,
-    // Ensure required fields have defaults
-    roles: user.roles || [user.primaryRole || 'passenger'],
-    primaryRole: user.primaryRole || user.roles?.[0] || 'passenger',
+    // Ensure required fields have defaults. The server sends a single `role`;
+    // reading only roles/primaryRole made every driver a passenger here.
+    roles: user.roles || [user.primaryRole || user.role || 'passenger'],
+    primaryRole: user.primaryRole || user.roles?.[0] || user.role || 'passenger',
     vehicles: user.vehicles || [],
     rating: user.rating || 0,
     totalRides: user.totalRides || 0,
@@ -68,28 +69,25 @@ export const fetchUserProfile = createAsyncThunk(
   'user/fetchUserProfile',
   async (_, { rejectWithValue }) => {
     try {
-      // Try to get from UserManager first (cached data)
-      const cachedUser = userManager.getCurrentUser();
-      if (cachedUser) {
-        log.info('Using cached user profile');
-        return cachedUser;
-      }
-
-      // Fetch from API if no cached data
+      // The server first, the cache only when it can't be reached. This
+      // returned any cached profile without asking, and the cache outlived
+      // logout, so signing in as someone else could show the previous
+      // person's details, and nothing changed on the server ever appeared.
       const response = await userApi.getProfile();
-      
+
       if (response.success && response.data) {
         const user = transformUserFromApi(response.data);
-        
-        // Update UserManager with fresh data
         await userManager.setUser(user);
-        
         return user;
-      } else {
-        return rejectWithValue(response.error || 'Failed to fetch profile');
       }
+      return rejectWithValue(response.error || 'Failed to fetch profile');
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Network error');
+      const cachedUser = userManager.getCurrentUser();
+      if (cachedUser && error?.code === 'NETWORK_ERROR') {
+        log.info('Offline: using the cached profile');
+        return cachedUser;
+      }
+      return rejectWithValue(error.message || error.error || 'Network error');
     }
   }
 );

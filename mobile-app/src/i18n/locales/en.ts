@@ -1993,6 +1993,11 @@ export const en = {
   'rst.doneBody': 'Sign in with your new password. You\'ve been signed out everywhere else.',
   'rst.resend': 'Send a new code',
   'rst.changeRecipient': 'Use a different number or email',
+
+  // Permissions screen
+  'perm.allGranted': 'All permissions granted. You\'re ready to go.',
+  'perm.openSettings': 'Open settings',
+  'perm.blockedBody': 'This permission was turned off for ARYV. You can turn it on in your phone\'s settings.',
 };
 
 export type TranslationKey = keyof typeof en;

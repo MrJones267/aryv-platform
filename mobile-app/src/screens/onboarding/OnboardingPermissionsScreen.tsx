@@ -2,24 +2,47 @@
  * @fileoverview Onboarding permissions screen for requesting necessary permissions
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2026-11-03
+ *
+ * Every permission is now actually asked for. Notifications, camera and
+ * contacts were marked "granted" without asking Android, so the screen
+ * claimed permissions the app did not have. Contacts is gone: the app never
+ * declares or uses it. The screen also starts from what is already allowed,
+ * and offers the phone's settings for anything Android will no longer ask.
+ *
+ * The list scrolls and the actions stay at the bottom; on a typical phone the
+ * old fixed layout pushed the buttons off screen once a driver's four cards
+ * were shown.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
+  ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import {
+  check,
+  request,
+  checkNotifications,
+  requestNotifications,
+  openSettings,
+  PERMISSIONS,
+  RESULTS,
+  type Permission as NativePermission,
+  type PermissionStatus,
+} from 'react-native-permissions';
 import { Button, Card } from '../../components/ui';
-import locationService from '../../services/LocationService';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { updateOnboardingProgress, completeOnboardingStep, setOnboarded } from '../../store/slices/appSlice';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import type { TranslationKey } from '../../i18n/translations';
 
 const log = logger.createLogger('OnboardingPermissionsScreen');
 
@@ -32,179 +55,164 @@ interface OnboardingPermissionsScreenProps {
   };
 }
 
+type PermissionId = 'location' | 'notifications' | 'camera';
+
+interface PermissionState {
+  granted: boolean;
+  /** Android will not ask again; only the phone's settings can change it. */
+  blocked: boolean;
+}
+
+type Translate = (key: TranslationKey) => string;
+
+const DETAILS: Record<PermissionId, (t: Translate) => { title: string; description: string; icon: string; required: boolean }> = {
+  location: (t) => ({ title: t('rf.locationAccess'), description: t('rf.findNearbyRidesAndProvide'), icon: 'location-on', required: true }),
+  notifications: (t) => ({ title: t('rf.pushNotifications'), description: t('rf.getRealTimeUpdatesAbout'), icon: 'notifications', required: false }),
+  camera: (t) => ({ title: t('rf.cameraAccess'), description: t('rf.takePhotosForIdentityVerification'), icon: 'camera-alt', required: true }),
+};
+
 interface Permission {
-  id: string;
+  id: PermissionId;
   title: string;
   description: string;
   icon: string;
   required: boolean;
   granted: boolean;
+  /** Android will not ask again; only the phone's settings can change it. */
+  blocked: boolean;
 }
 
-const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = ({ navigation, route }) => {
+const NATIVE: Record<Exclude<PermissionId, 'notifications'>, NativePermission> = {
+  location: Platform.OS === 'ios' ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+  camera: Platform.OS === 'ios' ? PERMISSIONS.IOS.CAMERA : PERMISSIONS.ANDROID.CAMERA,
+};
+
+const isGranted = (status: PermissionStatus): boolean => status === RESULTS.GRANTED || status === RESULTS.LIMITED;
+
+/** Where a permission stands right now, without asking for it. */
+const statusOf = async (id: PermissionId): Promise<PermissionStatus> =>
+  id === 'notifications' ? (await checkNotifications()).status : check(NATIVE[id]);
+
+/** Ask for a permission; Android shows its dialog unless the person blocked it. */
+const ask = async (id: PermissionId): Promise<PermissionStatus> =>
+  id === 'notifications' ? (await requestNotifications(['alert', 'sound', 'badge'])).status : request(NATIVE[id]);
+
+const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = ({ route }) => {
   const { t } = useI18n();
   const dispatch = useAppDispatch();
   const { onboardingProgress } = useAppSelector((state) => state.app);
   const selectedRole = route?.params?.selectedRole || onboardingProgress.userRole || 'passenger';
-  
-  // Define role-specific permissions
-  const getRolePermissions = () => {
-    const basePermissions = [
-      {
-        id: 'location',
-        title: t('rf.locationAccess'),
-        description: t('rf.findNearbyRidesAndProvide'),
-        icon: 'location-on',
-        required: true,
-        granted: false,
-      },
-      {
-        id: 'notifications',
-        title: t('rf.pushNotifications'),
-        description: t('rf.getRealTimeUpdatesAbout'),
-        icon: 'notifications',
-        required: false,
-        granted: false,
-      },
-    ];
-    
-    const roleSpecificPermissions = selectedRole === 'driver' || selectedRole === 'courier' ? [
-      {
-        id: 'camera',
-        title: t('rf.cameraAccess'),
-        description: t('rf.takePhotosForIdentityVerification'),
-        icon: 'camera-alt',
-        required: true,
-        granted: false,
-      },
-      {
-        id: 'contacts',
-        title: t('rf.contactsAccess'),
-        description: t('rf.shareRideDetailsWithYour'),
-        icon: 'contacts',
-        required: false,
-        granted: false,
-      },
-    ] : [];
-    
-    return [...basePermissions, ...roleSpecificPermissions];
-  };
-  const [permissions, setPermissions] = useState<Permission[]>(getRolePermissions());
-  
-  useEffect(() => {
-    // Update permissions based on role
-    setPermissions(getRolePermissions());
-  }, [selectedRole]);
-  
-  const [isCompleting, setIsCompleting] = useState(false);
-  
 
+  // Which permissions to show depends only on the role. Titles are looked up
+  // while rendering, so a new `t` never restarts the status checks (that
+  // looped: the effect set state, the render made a new `t`, and round again).
+  const ids = useMemo<PermissionId[]>(
+    () => (selectedRole === 'driver' || selectedRole === 'courier'
+      ? ['location', 'notifications', 'camera']
+      : ['location', 'notifications']),
+    [selectedRole],
+  );
+  const [states, setStates] = useState<Partial<Record<PermissionId, PermissionState>>>({});
   const [isRequesting, setIsRequesting] = useState(false);
 
-  const handleRequestPermission = async (permissionId: string) => {
-    setIsRequesting(true);
-    
+  const permissions: Permission[] = ids.map((id) => ({
+    id,
+    ...DETAILS[id](t),
+    granted: states[id]?.granted ?? false,
+    blocked: states[id]?.blocked ?? false,
+  }));
+
+  const record = (id: PermissionId, status: PermissionStatus): void => {
+    setStates((prev) => ({ ...prev, [id]: { granted: isGranted(status), blocked: status === RESULTS.BLOCKED } }));
+  };
+
+  // Start from what the phone already allows, so nothing granted earlier is
+  // shown as missing.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const id of ids) {
+        try {
+          const status = await statusOf(id);
+          if (!cancelled) {record(id, status);}
+        } catch (error) {
+          log.warn(`Could not check ${id} permission`, error);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ids]);
+
+  const requestOne = async (permission: Permission): Promise<void> => {
+    if (permission.blocked) {
+      Alert.alert(permission.title, t('perm.blockedBody'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('perm.openSettings'), onPress: () => { openSettings().catch(() => undefined); } },
+      ]);
+      return;
+    }
     try {
-      let granted = false;
-      
-      switch (permissionId) {
-        case 'location':
-          granted = await locationService.requestLocationPermission();
-          if (granted) {
-            // Test location access
-            try {
-              await locationService.getCurrentLocation();
-            } catch (error) {
-              log.warn('Location access granted but unable to get location:', error);
-            }
-          }
-          break;
-          
-        case 'notifications':
-          // In a real app, you would request notification permissions here
-          // For now, we'll simulate granting the permission
-          granted = true;
-          break;
-          
-        case 'camera':
-          // Request camera permission for drivers/couriers
-          // In a real app, you would use PermissionsAndroid or react-native-permissions
-          granted = true;
-          break;
-          
-        case 'contacts':
-          // Request contacts permission
-          granted = true;
-          break;
-      }
-
-      setPermissions(prev =>
-        prev.map(p =>
-          p.id === permissionId ? { ...p, granted } : p
-        )
-      );
-
-      if (!granted && permissions.find(p => p.id === permissionId)?.required) {
-        Alert.alert(
-          t('rf.permissionRequired'),
-          t('rf.thisPermissionIsRequiredFor'),
-          [{ text: t('common.ok') }]
-        );
-      }
+      record(permission.id, await ask(permission.id));
     } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      Alert.alert(t('common.error'), errMsg || t('rf.failedToRequestPermission'));
+      log.error(`Requesting ${permission.id} failed`, error);
+      Alert.alert(t('common.error'), t('rf.failedToRequestPermission'));
+    }
+  };
+
+  const handleRequestPermission = async (permission: Permission): Promise<void> => {
+    setIsRequesting(true);
+    try {
+      await requestOne(permission);
     } finally {
       setIsRequesting(false);
     }
   };
 
-  const handleRequestAllPermissions = async () => {
-    const ungrantedPermissions = permissions.filter(p => !p.granted);
-    
-    for (const permission of ungrantedPermissions) {
-      await handleRequestPermission(permission.id);
-    }
-  };
-
-  const completeOnboarding = () => {
-    dispatch(completeOnboardingStep('permissions'));
-    dispatch(setOnboarded(true));
-    // AppNavigator will automatically show MainTab when isAuthenticated is true
-    // No explicit navigation needed — the auth state drives the navigator
-  };
-
-  const handleContinue = async () => {
-    setIsCompleting(true);
-
+  const handleRequestAllPermissions = async (): Promise<void> => {
+    setIsRequesting(true);
     try {
-      const requiredPermissionsGranted = permissions
-        .filter(p => p.required)
-        .every(p => p.granted);
-
-      dispatch(updateOnboardingProgress({
-        permissionsGranted: requiredPermissionsGranted,
-        currentStep: 'complete',
-      }));
-
-      if (!requiredPermissionsGranted) {
-        Alert.alert(
-          t('rf.requiredPermissions'),
-          t('rf.someRequiredPermissionsAreNot'),
-          [
-            { text: t('rideDetails.goBack'), style: 'cancel' },
-            { text: t('verify.continue'), onPress: completeOnboarding },
-          ]
-        );
-      } else {
-        completeOnboarding();
+      // One at a time: Android shows one dialog at a time anyway, and blocked
+      // ones are left for the person to open settings for deliberately.
+      for (const permission of permissions.filter((p) => !p.granted && !p.blocked)) {
+        await requestOne(permission);
       }
     } finally {
-      setIsCompleting(false);
+      setIsRequesting(false);
     }
   };
 
-  const handleSkip = () => {
+  const completeOnboarding = (): void => {
+    dispatch(completeOnboardingStep('permissions'));
+    dispatch(setOnboarded(true));
+    // AppNavigator shows the main tabs once onboarding is complete.
+  };
+
+  const allRequiredPermissionsGranted = permissions.filter((p) => p.required).every((p) => p.granted);
+  const allPermissionsGranted = permissions.every((p) => p.granted);
+  // Something Android will still show a dialog for.
+  const canAskForMore = permissions.some((p) => !p.granted && !p.blocked);
+
+  const handleContinue = (): void => {
+    dispatch(updateOnboardingProgress({
+      permissionsGranted: allRequiredPermissionsGranted,
+      currentStep: 'complete',
+    }));
+
+    if (!allRequiredPermissionsGranted) {
+      Alert.alert(
+        t('rf.requiredPermissions'),
+        t('rf.someRequiredPermissionsAreNot'),
+        [
+          { text: t('rideDetails.goBack'), style: 'cancel' },
+          { text: t('verify.continue'), onPress: completeOnboarding },
+        ]
+      );
+    } else {
+      completeOnboarding();
+    }
+  };
+
+  const handleSkip = (): void => {
     Alert.alert(
       t('rf.skipPermissions'),
       t('rf.youCanSetUpPermissions'),
@@ -219,55 +227,44 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
             }));
             dispatch(completeOnboardingStep('permissions_skipped'));
             dispatch(setOnboarded(true));
-          }
+          },
         },
       ]
     );
   };
 
-  const allRequiredPermissionsGranted = permissions
-    .filter(p => p.required)
-    .every(p => p.granted);
-
-  const allPermissionsGranted = permissions.every(p => p.granted);
-
   const renderPermissionCard = (permission: Permission) => (
     <Card key={permission.id} style={styles.permissionCard}>
       <View style={styles.permissionContent}>
-        <View style={styles.permissionLeft}>
-          <View style={[
-            styles.permissionIcon,
-            permission.granted && styles.permissionIconGranted
-          ]}>
-            <Icon
-              name={permission.granted ? 'check' : permission.icon}
-              size={24}
-              color={permission.granted ? '#4CAF50' : '#666666'}
+        <View style={[styles.permissionIcon, permission.granted && styles.permissionIconGranted]}>
+          <Icon
+            name={permission.granted ? 'check' : permission.icon}
+            size={24}
+            color={permission.granted ? '#4CAF50' : '#666666'}
+          />
+        </View>
+        <View style={styles.permissionText}>
+          <View style={styles.permissionTitleRow}>
+            <Text style={styles.permissionTitle}>{permission.title}</Text>
+            {permission.required && (
+              <View style={styles.requiredBadge}>
+                <Text style={styles.requiredText}>{t('rf.required')}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.permissionDescription}>{permission.description}</Text>
+        </View>
+        {!permission.granted && (
+          <View style={styles.permissionAction}>
+            <Button
+              title={permission.blocked ? t('perm.openSettings') : t('rf.allow')}
+              onPress={() => handleRequestPermission(permission)}
+              disabled={isRequesting}
+              variant="outline"
+              size="small"
+              testID={`allow-${permission.id}`}
             />
           </View>
-          <View style={styles.permissionText}>
-            <View style={styles.permissionTitleRow}>
-              <Text style={styles.permissionTitle}>{permission.title}</Text>
-              {permission.required && (
-                <View style={styles.requiredBadge}>
-                  <Text style={styles.requiredText}>{t('rf.required')}</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.permissionDescription}>
-              {permission.description}
-            </Text>
-          </View>
-        </View>
-        
-        {!permission.granted && (
-          <Button
-            title={t('rf.allow')}
-            onPress={() => handleRequestPermission(permission.id)}
-            disabled={isRequesting}
-            variant="outline"
-            size="small"
-          />
         )}
       </View>
     </Card>
@@ -275,67 +272,61 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Header */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.iconContainer}>
-            <Icon name="security" size={48} color="#2196F3" />
+            <Icon name="security" size={40} color="#2196F3" />
           </View>
           <Text style={styles.title}>{t('rf.appPermissions')}</Text>
-          <Text style={styles.subtitle}>
-            {t('rf.aryvNeedsAFewPermissions')}
-          </Text>
+          <Text style={styles.subtitle}>{t('rf.aryvNeedsAFewPermissions')}</Text>
         </View>
 
-        {/* Permissions List */}
         <View style={styles.permissionsList}>
           {permissions.map(renderPermissionCard)}
         </View>
 
-        {/* Grant All Button */}
-        {!allPermissionsGranted && (
-          <View style={styles.grantAllContainer}>
+        <View style={styles.statusMessage}>
+          {allPermissionsGranted ? (
+            <>
+              <Icon name="check-circle" size={20} color="#4CAF50" />
+              <Text style={[styles.statusText, styles.statusTextSuccess]}>{t('perm.allGranted')}</Text>
+            </>
+          ) : allRequiredPermissionsGranted ? (
+            <>
+              <Icon name="info" size={20} color="#2196F3" />
+              <Text style={styles.statusText}>{t('rf.requiredPermissionsGrantedOptionalPermissions')}</Text>
+            </>
+          ) : (
+            <>
+              <Icon name="warning" size={20} color="#FF9800" />
+              <Text style={[styles.statusText, styles.statusTextWarning]}>{t('rf.someRequiredPermissionsAreMissing')}</Text>
+            </>
+          )}
+        </View>
+      </ScrollView>
+
+      <View style={styles.footer}>
+        {canAskForMore ? (
+          <>
             <Button
               title={t('rf.allowAllPermissions')}
               onPress={handleRequestAllPermissions}
               disabled={isRequesting}
               loading={isRequesting}
               variant="primary"
-              size="medium"
+              size="large"
               icon="check-circle"
               fullWidth
             />
-          </View>
-        )}
-
-        {/* Status Message */}
-        <View style={styles.statusContainer}>
-          {allPermissionsGranted ? (
-            <View style={styles.statusMessage}>
-              <Icon name="check-circle" size={20} color="#4CAF50" />
-              <Text style={styles.statusTextSuccess}>
-                All permissions granted! You're ready to go.
-              </Text>
-            </View>
-          ) : allRequiredPermissionsGranted ? (
-            <View style={styles.statusMessage}>
-              <Icon name="info" size={20} color="#2196F3" />
-              <Text style={styles.statusText}>
-                {t('rf.requiredPermissionsGrantedOptionalPermissions')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.statusMessage}>
-              <Icon name="warning" size={20} color="#FF9800" />
-              <Text style={styles.statusTextWarning}>
-                {t('rf.someRequiredPermissionsAreMissing')}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actions}>
+            <Button
+              title={allRequiredPermissionsGranted ? t('verify.continue') : t('rf.skipSetup')}
+              onPress={allRequiredPermissionsGranted ? handleContinue : handleSkip}
+              variant="ghost"
+              size="medium"
+              style={styles.secondaryButton}
+            />
+          </>
+        ) : (
           <Button
             title={t('verify.continue')}
             onPress={handleContinue}
@@ -344,17 +335,8 @@ const OnboardingPermissionsScreen: React.FC<OnboardingPermissionsScreenProps> = 
             icon="arrow-forward"
             iconPosition="right"
             fullWidth
-            style={styles.continueButton}
           />
-          
-          <Button
-            title={t('rf.skipSetup')}
-            onPress={handleSkip}
-            variant="ghost"
-            size="medium"
-            style={styles.skipButton}
-          />
-        </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -365,60 +347,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
   header: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingTop: 24,
+    paddingBottom: 20,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#E3F2FD',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#333333',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#666666',
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 20,
+    lineHeight: 22,
   },
   permissionsList: {
-    flex: 1,
-    gap: 16,
-    paddingVertical: 16,
+    gap: 12,
   },
   permissionCard: {
-    padding: 20,
+    padding: 16,
   },
   permissionContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  permissionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 16,
+    gap: 12,
   },
   permissionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
@@ -428,17 +402,20 @@ const styles = StyleSheet.create({
   },
   permissionText: {
     flex: 1,
+    minWidth: 0,
   },
   permissionTitleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     marginBottom: 4,
   },
   permissionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333333',
+    flexShrink: 1,
   },
   requiredBadge: {
     backgroundColor: '#FFF3E0',
@@ -453,21 +430,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   permissionDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666666',
-    lineHeight: 20,
+    lineHeight: 19,
   },
-  grantAllContainer: {
-    paddingVertical: 16,
-  },
-  statusContainer: {
-    paddingVertical: 16,
+  permissionAction: {
+    alignSelf: 'center',
   },
   statusMessage: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 16,
+    padding: 14,
+    marginTop: 16,
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
   },
@@ -475,30 +450,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#666666',
-    lineHeight: 18,
+    lineHeight: 19,
   },
   statusTextSuccess: {
-    flex: 1,
-    fontSize: 14,
     color: '#4CAF50',
     fontWeight: '500',
-    lineHeight: 18,
   },
   statusTextWarning: {
-    flex: 1,
-    fontSize: 14,
     color: '#FF9800',
     fontWeight: '500',
-    lineHeight: 18,
   },
-  actions: {
-    paddingVertical: 24,
-    gap: 16,
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    gap: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
   },
-  continueButton: {
-    marginBottom: 8,
-  },
-  skipButton: {
+  secondaryButton: {
     alignSelf: 'center',
   },
 });
