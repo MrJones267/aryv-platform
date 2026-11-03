@@ -10,6 +10,7 @@ import { googleAuthService } from './googleAuthService';
 import { User, UserSession, LoginCredentials, RegisterData } from '../types/user';
 // jwt-decode is optional - token validation is done manually below
 import { authFetch } from './authFetch';
+import { getValidAccessToken, isExpired, saveTokens } from './sessionTokens';
 import logger from './LoggingService';
 
 const log = logger.createLogger('AuthService');
@@ -43,24 +44,17 @@ export class AuthService {
     }
   }
 
+  /**
+   * A usable access token, refreshed through the shared session only when it
+   * has expired. This used to call validateToken, which rejected every token
+   * the server issues (its issuer is 'hitch-api', and `atob` does not exist
+   * on React Native 0.72), so each call refreshed, kept the old refresh
+   * token, and soon ended the session.
+   */
   async getValidToken(): Promise<string | null> {
-    if (!this.token) {
-      await this.initializeAuth();
-    }
-
-    if (!this.token) {
-      return null;
-    }
-
-    // Check if token is expired by decoding JWT
-    const isValid = await this.validateToken(this.token);
-    if (!isValid) {
-      // Attempt to refresh token
-      const refreshed = await this.refreshAuthToken();
-      return refreshed ? this.token : null;
-    }
-
-    return this.token;
+    const token = await getValidAccessToken();
+    this.token = token;
+    return token;
   }
 
   /**
@@ -79,96 +73,15 @@ export class AuthService {
         return true;
       }
       
-      // For real JWT tokens
-      const tokenParts = token.split('.');
-      if (tokenParts.length !== 3) {
-        log.info('Invalid JWT format');
-        return false;
-      }
-      
-      const tokenPayload = JSON.parse(atob(tokenParts[1]));
-      const currentTime = Math.floor(Date.now() / 1000);
-      
-      // Check expiration
-      if (tokenPayload.exp && tokenPayload.exp < currentTime) {
-        log.info('Token expired');
-        return false;
-      }
-      
-      // Check issuer and other claims if needed
-      if (tokenPayload.iss && !this.isValidIssuer(tokenPayload.iss)) {
-        log.info('Invalid token issuer');
-        return false;
-      }
-      
-      // Check user role for courier operations
-      if (tokenPayload.role && !this.hasValidRole(tokenPayload.role)) {
-        log.info('Invalid user role for courier operations');
-        return false;
-      }
-      
-      return true;
+      // A real JWT: only whether it has expired. The issuer and role checks
+      // here rejected every token the server issues.
+      return token.split('.').length === 3 && !isExpired(token);
     } catch (error) {
       log.error('Error validating token', error);
       return false;
     }
   }
 
-  /**
-   * Check if issuer is valid
-   */
-  private isValidIssuer(issuer: string): boolean {
-    const validIssuers = [
-      'https://api.aryv-app.com',
-      'aryv-auth-service',
-      'localhost:3000' // for development
-    ];
-    return validIssuers.includes(issuer);
-  }
-
-  /**
-   * Check if user has valid role for operations
-   */
-  private hasValidRole(role: string): boolean {
-    const validRoles = ['passenger', 'driver', 'courier', 'admin'];
-    return validRoles.includes(role.toLowerCase());
-  }
-
-  private async refreshAuthToken(): Promise<boolean> {
-    if (!this.refreshToken) {
-      await this.logout();
-      return false;
-    }
-
-    try {
-      const response = await authFetch('/auth/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken: this.refreshToken }),
-      });
-
-      if (!response.ok) {
-        await this.logout();
-        return false;
-      }
-
-      const data = await response.json();
-      
-      if (data.success && data.data.accessToken) {
-        await this.setAuthData(data.data.accessToken, this.refreshToken, this.userData);
-        return true;
-      } else {
-        await this.logout();
-        return false;
-      }
-    } catch (error) {
-      log.error('Error refreshing token', error);
-      await this.logout();
-      return false;
-    }
-  }
 
   async login(email: string, password: string): Promise<{
     success: boolean;
@@ -254,8 +167,8 @@ export class AuthService {
 
     try {
       await Promise.all([
-        AsyncStorage.setItem(AUTH_TOKEN_KEY, token),
-        refreshToken ? AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken) : Promise.resolve(),
+        // Every copy of the tokens at once; see sessionTokens.
+        refreshToken ? saveTokens(token, refreshToken) : AsyncStorage.setItem(AUTH_TOKEN_KEY, token),
         user ? AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)) : Promise.resolve(),
       ]);
     } catch (error) {
@@ -329,10 +242,13 @@ export class AuthService {
     
     try {
       if (accessToken && refreshToken && user) {
-        await Promise.all([
-          AsyncStorage.setItem(AUTH_TOKEN_KEY, accessToken),
-          AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken),
-          AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)),
+        // Both sets of keys, so no reader is left with an older pair.
+        await AsyncStorage.multiSet([
+          ['accessToken', accessToken],
+          ['refreshToken', refreshToken],
+          [AUTH_TOKEN_KEY, accessToken],
+          [REFRESH_TOKEN_KEY, refreshToken],
+          [USER_DATA_KEY, JSON.stringify(user)],
         ]);
       }
     } catch (error) {

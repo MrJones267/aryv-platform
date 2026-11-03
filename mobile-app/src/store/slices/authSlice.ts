@@ -12,6 +12,7 @@ import AuthService from '../../services/AuthService';
 import { DemoAuthService } from '../../services/DemoAuthService';
 import { APP_CONFIG } from '../../config/api';
 import logger from '../../services/LoggingService';
+import { refreshSession, storeTokenKeys } from '../../services/sessionTokens';
 import userManager from '../../services/UserManager';
 
 const log = logger.createLogger('AuthSlice');
@@ -99,8 +100,7 @@ export const loginUser = createAsyncThunk(
       
       if (response.success && response.data) {
         // Store tokens in AsyncStorage
-        await AsyncStorage.setItem('accessToken', response.data.accessToken);
-        await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+        await storeTokenKeys(response.data.accessToken, response.data.refreshToken);
         
         return response;
       } else {
@@ -154,8 +154,7 @@ export const registerUser = createAsyncThunk(
       
       if (response.success && response.data) {
         // Store tokens in AsyncStorage
-        await AsyncStorage.setItem('accessToken', response.data.accessToken);
-        await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+        await storeTokenKeys(response.data.accessToken, response.data.refreshToken);
         
         return response;
       } else {
@@ -187,26 +186,22 @@ export const registerUser = createAsyncThunk(
 
 export const refreshTokens = createAsyncThunk(
   'auth/refreshTokens',
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { rejectWithValue }) => {
     try {
-      const state = getState() as { auth: AuthState };
-      const { refreshToken } = state.auth;
-      
-      if (!refreshToken) {
-        return rejectWithValue('No refresh token available');
+      // The shared refresh, which saves the new pair everywhere and signs the
+      // person out if the server refuses it.
+      const accessToken = await refreshSession();
+      if (!accessToken) {
+        return rejectWithValue('Token refresh failed');
       }
-      
-      const response = await authApi.refreshToken(refreshToken);
-      
-      if (response.success && response.data) {
-        // Store new tokens
-        await AsyncStorage.setItem('accessToken', response.data.accessToken);
-        await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
-        
-        return response;
-      } else {
-        return rejectWithValue(response.error || 'Token refresh failed');
-      }
+      return {
+        success: true,
+        data: {
+          accessToken,
+          refreshToken: (await AsyncStorage.getItem('refreshToken')) ?? '',
+          expiresIn: Math.max(0, Math.round((Number(await AsyncStorage.getItem('tokenExpiresAt')) - Date.now()) / 1000)),
+        },
+      };
     } catch (error: any) {
       return rejectWithValue(error.message || 'Network error');
     }
@@ -329,8 +324,7 @@ export const googleLogin = createAsyncThunk(
       }
 
       await AuthService.storeGoogleSession(user, tokens.accessToken, tokens.refreshToken);
-      await AsyncStorage.setItem('accessToken', tokens.accessToken);
-      await AsyncStorage.setItem('refreshToken', tokens.refreshToken);
+      await storeTokenKeys(tokens.accessToken, tokens.refreshToken);
 
       log.info('✅ Redux: Google login successful');
       return {
