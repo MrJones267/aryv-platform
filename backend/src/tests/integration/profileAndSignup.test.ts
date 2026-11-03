@@ -26,13 +26,13 @@ describe('Profile and sign-up', () => {
     } as any);
     await Vehicle.create({
       driverId: driver.id, make: 'Toyota', model: 'Quantum', year: 2020, color: 'White',
-      licensePlate: 'B789GHI', capacity: 14, type: VehicleType.MINIVAN, isVerified: true,
+      licensePlate: 'B789GHI', capacity: 7, type: VehicleType.MINIVAN, isVerified: true,
     } as any);
 
     const res = await request(app).get('/api/users/profile').set('Authorization', `Bearer ${token(driver)}`).expect(200);
 
     expect(res.body.data).toEqual(expect.objectContaining({ firstName: 'Kagiso', role: UserRole.DRIVER }));
-    expect(res.body.data.vehicles).toEqual([expect.objectContaining({ make: 'Toyota', capacity: 14 })]);
+    expect(res.body.data.vehicles).toEqual([expect.objectContaining({ make: 'Toyota', capacity: 7 })]);
     expect(res.body.data.password).toBeUndefined();
   });
 
