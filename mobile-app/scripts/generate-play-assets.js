@@ -19,8 +19,9 @@ const path = require('path');
 const sharp = require('sharp');
 
 const ROOT = path.resolve(__dirname, '..');
-// The ARYV logo: the teal-to-purple arrow above the word "ARYV", on white.
-// The launcher icon is the arrow alone; the word is unreadable at 48px.
+// The ARYV logo (ARYV3.png): the teal-to-purple arrow above the word
+// "ARYV", on white. Launcher and store icons show the whole logo, as ARYV3
+// does; the splash and in-app marks show the arrow alone.
 //
 // This used to render aryv-professional-master-1024.svg, an old placeholder
 // (a white "A" on a blue disc), which replaced the real logo on every build
@@ -51,22 +52,27 @@ const ADAPTIVE_DENSITIES = {
   'mipmap-xxxhdpi': 432,
 };
 
-const ADAPTIVE_ART_RATIO = 0.52; // of 108dp: inside the 72dp safe zone, clear of a circle mask
-const LEGACY_ART_RATIO = 0.62;   // of the square legacy icon
+// The whole logo is taller than wide (arrow over word), so its corners, not
+// its sides, meet a round mask first. 0.46 of 108dp keeps the corners inside
+// the 66dp circle every launcher mask contains.
+const ADAPTIVE_ART_RATIO = 0.46; // of 108dp
+const LEGACY_ART_RATIO = 0.66;   // of the square legacy icon
+const ROUND_ART_RATIO = 0.62;    // of the round legacy icon: corners inside the disc
 const BACKGROUND_COLOR = '#FFFFFF'; // The logo's own background.
 
 const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 
 /**
- * The arrow on transparency, as a square PNG buffer.
+ * Part of the logo on transparency, as a square PNG buffer: 'arrow' for the
+ * arrow alone, 'full' for the arrow and the word, as in ARYV3.
  *
  * The logo is drawn on white, so transparency is recovered from how far each
  * pixel is from white, and the colour is un-blended from the white behind
  * it. That keeps the anti-aliased edge instead of leaving a white fringe.
  */
-let markCache = null;
-async function arrowMark() {
-  if (markCache) return markCache;
+const markCache = {};
+async function logoMark(part) {
+  if (markCache[part]) return markCache[part];
   const { data, info } = await sharp(MASTER_LOGO).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H } = info;
 
@@ -82,6 +88,11 @@ async function arrowMark() {
   while (top < H && !inked(top)) top++;
   let bottom = top;
   while (bottom < H && inked(bottom)) bottom++;
+  if (part === 'full') {
+    // Down to the last inked row: the word below the arrow.
+    bottom = H;
+    while (bottom > top && !inked(bottom - 1)) bottom--;
+  }
 
   let left = W;
   let right = 0;
@@ -108,7 +119,7 @@ async function arrowMark() {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
-      // In the arrow every pixel's darkest channel is 125 or below; the
+      // In the logo every pixel's darkest channel is 125 or below; the
       // paper is 240-254 (not quite white). Opaque at 125, clear from 248,
       // blended between, so the edge stays smooth and the paper vanishes.
       const a = Math.max(0, Math.min(1, (248 - Math.min(r, g, b)) / (248 - 125)));
@@ -121,7 +132,7 @@ async function arrowMark() {
   }
 
   const side = Math.max(w, h);
-  markCache = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+  markCache[part] = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
     .extend({
       top: Math.floor((side - h) / 2),
       bottom: Math.ceil((side - h) / 2),
@@ -131,12 +142,12 @@ async function arrowMark() {
     })
     .png()
     .toBuffer();
-  return markCache;
+  return markCache[part];
 }
 
-/** The arrow scaled to `art` pixels, centred on a transparent `size` square. */
-async function markOnCanvas(size, art) {
-  const scaled = await sharp(await arrowMark()).resize(art, art, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+/** Part of the logo scaled to `art` pixels, centred on a transparent `size` square. */
+async function markOnCanvas(size, art, part = 'arrow') {
+  const scaled = await sharp(await logoMark(part)).resize(art, art, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
   const pad = Math.round((size - art) / 2);
   return sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([{ input: scaled, top: pad, left: pad }])
@@ -144,36 +155,36 @@ async function markOnCanvas(size, art) {
     .toBuffer();
 }
 
-/** Legacy square icon: the arrow on a white rounded square. */
+/** Legacy square icon: the logo on a white rounded square. */
 async function renderSquare(size, outPath) {
   const radius = Math.round(size * 0.18);
   const plate = Buffer.from(
     `<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="${BACKGROUND_COLOR}"/></svg>`
   );
   await sharp(plate)
-    .composite([{ input: await markOnCanvas(size, Math.round(size * LEGACY_ART_RATIO)) }])
+    .composite([{ input: await markOnCanvas(size, Math.round(size * LEGACY_ART_RATIO), 'full') }])
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
-/** ic_launcher_round: the arrow on a white disc. */
+/** ic_launcher_round: the logo on a white disc. */
 async function renderRound(size, outPath) {
   const r = size / 2;
   const disc = Buffer.from(
     `<svg width="${size}" height="${size}"><circle cx="${r}" cy="${r}" r="${r}" fill="${BACKGROUND_COLOR}"/></svg>`
   );
   await sharp(disc)
-    .composite([{ input: await markOnCanvas(size, Math.round(size * LEGACY_ART_RATIO * 0.92)) }])
+    .composite([{ input: await markOnCanvas(size, Math.round(size * ROUND_ART_RATIO), 'full') }])
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
 
 /**
  * Themed ("monochrome") icons take only the alpha channel of the drawable they
- * point at, so this is the arrow's shape in solid black on transparency.
+ * point at, so this is the logo's shape in solid black on transparency.
  */
 async function renderMonochrome(size, outPath) {
-  const art = await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO));
+  const art = await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO), 'full');
   const { data, info } = await sharp(art).raw().toBuffer({ resolveWithObject: true });
   for (let i = 0; i < data.length; i += 4) {
     data[i] = 0;
@@ -185,9 +196,9 @@ async function renderMonochrome(size, outPath) {
     .toFile(outPath);
 }
 
-/** Adaptive foreground: the arrow inside the safe zone, transparent around it. */
+/** Adaptive foreground: the logo inside the safe zone, transparent around it. */
 async function renderAdaptiveForeground(size, outPath) {
-  await sharp(await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO)))
+  await sharp(await markOnCanvas(size, Math.round(size * ADAPTIVE_ART_RATIO), 'full'))
     .png({ compressionLevel: 9 })
     .toFile(outPath);
 }
@@ -279,7 +290,7 @@ async function main() {
   ensureDir(STORE_OUT);
 
   // Play requires a 512x512 32-bit PNG with no transparency.
-  await sharp(await markOnCanvas(512, Math.round(512 * LEGACY_ART_RATIO)))
+  await sharp(await markOnCanvas(512, Math.round(512 * LEGACY_ART_RATIO), 'full'))
     .flatten({ background: BACKGROUND_COLOR })
     .png({ compressionLevel: 9 })
     .toFile(path.join(STORE_OUT, 'play-store-icon-512.png'));

@@ -634,31 +634,66 @@ export class GroupChatService {
         groupWhereClause['name'] = { [Op.iLike]: `%${options.search}%` };
       }
 
+      // GroupChat has no `lastMessage` association (only `messages`), so
+      // including one made every call fail with a 500. Its lastMessageId
+      // column is never written either, so each chat's newest message is
+      // looked up directly: one small query per chat on this page.
       const { count, rows } = await GroupChatParticipant.findAndCountAll({
         where: whereClause,
         include: [{
           model: GroupChat,
           as: 'groupChat',
           where: groupWhereClause,
-          include: [{
-            model: GroupChatMessage,
-            as: 'lastMessage',
-            required: false,
-            limit: 1,
-            order: [['createdAt', 'DESC']],
-          }],
         }],
         limit: options.limit || 20,
         offset: options.offset || 0,
         order: [['lastSeenAt', 'DESC']],
       });
 
-      const groupChats = rows.map(participant => ({
-        // @ts-ignore - Association exists
-        ...participant.groupChat,
-        participantInfo: (participant as any).formatForApi(),
-        unreadCount: this.calculateUnreadCount(participant),
-      }));
+      const chatIds = rows
+        .map(participant => ((participant as any).groupChat as GroupChat | undefined)?.id)
+        .filter((id): id is string => !!id);
+
+      const [lastMessages, participantCounts] = await Promise.all([
+        Promise.all(chatIds.map(groupChatId => GroupChatMessage.findOne({
+          where: { groupChatId, status: { [Op.ne]: MessageStatus.DELETED }, deletedAt: null as any },
+          include: [{ model: User, as: 'sender', attributes: ['id', 'firstName', 'lastName'] }],
+          order: [['createdAt', 'DESC']],
+        }))),
+        chatIds.length
+          ? GroupChatParticipant.count({
+            where: { groupChatId: chatIds, status: ParticipantStatus.ACTIVE },
+            group: ['groupChatId'],
+          }) as unknown as Promise<Array<{ groupChatId: string; count: number }>>
+          : Promise.resolve([]),
+      ]);
+      const messageByChat = new Map(chatIds.map((id, i) => [id, lastMessages[i]]));
+      const countByChat = new Map(participantCounts.map(row => [row.groupChatId, Number(row.count)]));
+
+      // Plain objects: spreading the Sequelize instance sent its internals
+      // (`dataValues`, ...) rather than the chat's name and type.
+      const groupChats = rows
+        .filter(participant => (participant as any).groupChat)
+        .map(participant => {
+          const chat = (participant as any).groupChat as GroupChat;
+          const message = messageByChat.get(chat.id);
+          const sender = message ? (message as any).sender as { firstName?: string; lastName?: string } | undefined : undefined;
+          return {
+            ...chat.formatForApi(),
+            participantCount: countByChat.get(chat.id) ?? 0,
+            lastMessage: message
+              ? {
+                content: message.content,
+                type: message.type,
+                senderId: message.senderId,
+                senderName: sender ? [sender.firstName, sender.lastName].filter(Boolean).join(' ') : '',
+                createdAt: message.createdAt,
+              }
+              : undefined,
+            participantInfo: (participant as any).formatForApi(),
+            unreadCount: this.calculateUnreadCount(participant),
+          };
+        });
 
       return { groupChats, total: count };
     } catch (error) {

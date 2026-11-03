@@ -340,7 +340,7 @@ class PackageService {
       }
 
       const response = await this.apiClient.get(
-        `/courier/available/packages?${queryParams.toString()}`,
+        `/courier/packages/available?${queryParams.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`

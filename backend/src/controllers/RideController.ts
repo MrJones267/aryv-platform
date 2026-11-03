@@ -813,7 +813,7 @@ export class RideController {
         return;
       }
 
-      // Get rides as driver
+      // Get rides as driver, with who has booked each
       const driverRidesResult = await Ride.findAndCountAll({
         where: { driverId: userId },
         include: [
@@ -822,10 +822,17 @@ export class RideController {
             as: 'vehicle',
             attributes: ['id', 'make', 'model', 'year', 'color'],
           },
+          {
+            model: Booking,
+            as: 'bookings',
+            required: false,
+            attributes: ['id', 'passengerId', 'seatsBooked', 'status', 'totalAmount'],
+          },
         ],
         order: [['departureTime', 'DESC']],
         limit,
         offset,
+        distinct: true,
       });
 
       // Get rides as passenger
@@ -842,7 +849,10 @@ export class RideController {
             attributes: ['id', 'make', 'model', 'year', 'color'],
           },
           {
+            // Without the alias the association defines, Sequelize refused
+            // the query and My Rides answered 500 for everyone.
             model: Booking,
+            as: 'bookings',
             where: { passengerId: userId },
             attributes: ['id', 'seatsBooked', 'status', 'totalAmount'],
           },
@@ -850,16 +860,22 @@ export class RideController {
         order: [['departureTime', 'DESC']],
         limit,
         offset,
+        distinct: true,
       });
 
       res.json({
         success: true,
         data: {
+          // The app's My Rides reads `rides` (the rides this person drives)
+          // and `pagination.total`; their bookings come from /bookings.
+          rides: driverRidesResult.rows,
           asDriver: driverRidesResult.rows,
           asPassenger: passengerRidesResult.rows,
           pagination: {
             page,
             limit,
+            total: driverRidesResult.count,
+            totalPages: Math.ceil(driverRidesResult.count / limit),
             totalAsDriver: driverRidesResult.count,
             totalAsPassenger: passengerRidesResult.count,
           },

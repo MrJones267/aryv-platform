@@ -2,10 +2,11 @@
  * @fileoverview Application state slice for global app settings
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2026-11-03
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Types
 export interface NotificationSettings {
@@ -75,6 +76,16 @@ const initialState: AppState = {
   locationTrackingEnabled: true,
   autoBackupEnabled: true,
   dataUsageOptimized: false,
+};
+
+// Onboarding (role, then permissions) happens once, at setup. This slice was
+// not persisted at all, so `isOnboarded` was false on every launch and each
+// sign-in went through role selection and the permissions screen again.
+// Only onboarding is kept; the rest of the slice is runtime state.
+export const appPersistConfig = {
+  key: 'app',
+  storage: AsyncStorage,
+  whitelist: ['isOnboarded', 'onboardingProgress'],
 };
 
 // App slice

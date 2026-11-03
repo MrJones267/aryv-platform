@@ -9,9 +9,19 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { ridesApi } from '../../services/api/ridesApi';
 
 // Utility function to transform ride data from API
+// The server's Ride sends `originAddress` and a GeoJSON point
+// (`coordinates: [lng, lat]`); the app's Ride reads `origin.address`.
+const locationFromApi = (address?: string, point?: { coordinates?: [number, number] }): Location | undefined => {
+  if (!address) {return undefined;}
+  const [longitude, latitude] = point?.coordinates ?? [0, 0];
+  return { address, latitude, longitude };
+};
+
 const transformRideFromApi = (ride: any): Ride => {
   return {
     ...ride,
+    origin: ride.origin ?? locationFromApi(ride.originAddress, ride.originCoordinates),
+    destination: ride.destination ?? locationFromApi(ride.destinationAddress, ride.destinationCoordinates),
     departureTime: typeof ride.departureTime === 'string' ? new Date(ride.departureTime) : ride.departureTime,
     createdAt: typeof ride.createdAt === 'string' ? new Date(ride.createdAt) : ride.createdAt,
     updatedAt: typeof ride.updatedAt === 'string' ? new Date(ride.updatedAt) : ride.updatedAt,
