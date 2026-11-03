@@ -39,7 +39,7 @@ describe('My Rides and my chats', () => {
     ride = await Ride.create({
       driverId: driver.id, vehicleId: vehicle.id,
       originAddress: 'Main Mall, Gaborone', originCoordinates: { type: 'Point', coordinates: [25.9086, -24.6541] },
-      destinationAddress: 'Mahalapye', destinationCoordinates: { type: 'Point', coordinates: [26.81, -23.1] },
+      destinationAddress: 'Mahalapye bus rank', destinationCoordinates: { type: 'Point', coordinates: [26.81, -23.1] },
       departureTime: new Date(Date.now() + 86400000), availableSeats: 3, pricePerSeat: 120, status: RideStatus.PENDING, currency: 'BWP',
     } as any);
     await Booking.create({ rideId: ride.id, passengerId: passenger.id, seatsBooked: 1, totalAmount: 126, platformFee: 6, currency: 'BWP', status: BookingStatus.CONFIRMED } as any);
@@ -69,7 +69,7 @@ describe('My Rides and my chats', () => {
     const res = await request(app).get('/api/group-chats/my-chats').set(as(driver)).expect(200);
 
     const chat = res.body.data.groupChats.find((c: any) => c.id === id);
-    expect(chat).toEqual(expect.objectContaining({ name: 'Main Mall, Gaborone → Mahalapye', participantCount: 2 }));
+    expect(chat).toEqual(expect.objectContaining({ name: 'Main Mall, Gaborone → Mahalapye bus rank', participantCount: 2 }));
     expect(chat.dataValues).toBeUndefined();
     expect(chat.lastMessage).toEqual(expect.objectContaining({
       content: 'Leaving from the Main Mall entrance?', senderId: passenger.id, senderName: 'Lorato Test',

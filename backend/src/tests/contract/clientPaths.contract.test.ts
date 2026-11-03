@@ -153,11 +153,10 @@ describe('mobile client / backend path contract', () => {
     'POST /api/payments/escrow/create  (EscrowPaymentService.ts)',
     'POST /api/payments/escrow/eligibility-check  (EscrowPaymentService.ts)',
 
-    // Courier. Some are genuine shape mismatches against routes that do
-    // exist (the server has /packages/available, the client asks for
-    // /available/packages); others have no route. Left until the courier
+    // Courier. Most have no route. Left until the courier
     // delivery-confirmation design is settled, since the client will change.
-    'GET /api/courier/available/packages  (PackageService.ts)',
+    // (Available packages asked for /available/packages; it now asks for
+    // the server's /packages/available.)
     'GET /api/courier/deliveries/available  (CourierService.ts)',
     'GET /api/courier/notifications  (CourierService.ts)',
     'GET /api/courier/packages/:param  (PackageService.ts)',
