@@ -34,13 +34,12 @@ import { validatePasswordStrength } from '../utils/password';
 import CommissionService from '../services/CommissionService';
 import { SettlementMethod } from '../models/CommissionLedger';
 import { adminTwoFactorService, isTwoFactorConfigured } from '../services/AdminTwoFactorService';
-import path from 'path';
 import DriverDocument from '../models/DriverDocument';
 import { verificationService } from '../services/VerificationService';
 import { cashDisputeService } from '../services/CashDisputeService';
 import { closureBlockers, eraseAccount } from '../services/AccountClosureService';
 import { deliveryDisputeService } from '../services/DeliveryDisputeService';
-import { UPLOADS_DIR } from '../middleware/upload';
+import { fileStorageService } from '../services/FileStorageService';
 import {
   ADMIN_SESSION_HOURS,
   MAX_ONCALL_PHONES,
@@ -1282,13 +1281,13 @@ router.get('/verifications/documents/:id/file', authenticateAdminToken, requireA
     }
     // storageKey is a bare filename from the upload middleware; basename
     // still guards against a crafted value walking out of the directory.
-    const filePath = path.resolve(UPLOADS_DIR, 'documents', path.basename(document.storageKey));
     res.setHeader('Cache-Control', 'no-store');
-    return res.sendFile(filePath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(404).json({ success: false, error: 'The file is no longer on the server', code: 'FILE_NOT_FOUND', timestamp: new Date().toISOString() });
-      }
-    });
+    // From disk if it is there, otherwise from R2, where uploads are kept.
+    const sent = await fileStorageService.sendFile(res, 'documents', document.storageKey);
+    if (!sent) {
+      return res.status(404).json({ success: false, error: 'The file is no longer on the server', code: 'FILE_NOT_FOUND', timestamp: new Date().toISOString() });
+    }
+    return undefined;
   } catch (error) {
     logger.error(`Admin document file failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to load the file', code: 'DOCUMENT_FILE_FAILED', timestamp: new Date().toISOString() });

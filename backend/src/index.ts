@@ -14,8 +14,7 @@ import { resolveTrustProxyHops, rateLimitKey } from './config/rateLimitKey';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
-import { UPLOADS_DIR } from './middleware/upload';
-import { fileStorageService } from './services/FileStorageService';
+import { fileStorageService, FileCategory } from './services/FileStorageService';
 
 // Import custom modules
 import { testConnection, sequelize } from './models';
@@ -170,10 +169,15 @@ app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) =>
     return res.status(403).json({ success: false, error: 'Access denied', code: 'FORBIDDEN' });
   }
 
-  const filePath = path.resolve(UPLOADS_DIR, type, safe);
-  return res.sendFile(filePath, (err) => {
-    if (err) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
-  });
+  // From disk if it is there, otherwise from R2, where uploads are kept.
+  return fileStorageService.sendFile(res, type as FileCategory, safe)
+    .then((sent) => {
+      if (!sent) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+    })
+    .catch((error: Error) => {
+      logError('Could not serve an upload', error, { type });
+      if (!res.headersSent) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+    });
 });
 
 // Body parsing middleware

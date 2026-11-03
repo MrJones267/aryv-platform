@@ -17,7 +17,7 @@ import { AuthController } from '../controllers/AuthController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 import path from 'path';
-import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError, UPLOADS_DIR } from '../middleware/upload';
+import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError, UPLOADS_DIR, keptInStorage } from '../middleware/upload';
 import User from '../models/User';
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
@@ -701,7 +701,7 @@ router.post(
 
 /** POST /driver-verification — upload docs for driver verification */
 const ALLOWED_DV_FIELDS = new Set(['driverLicense', 'vehicleRegistration', 'insurance']);
-const driverVerificationUpload = multer({ storage: multer.diskStorage({
+const driverVerificationUpload = keptInStorage(multer({ storage: multer.diskStorage({
   destination: path.join(UPLOADS_DIR, 'documents'),
   filename: (req: any, _file, cb) => {
     const uid = (req.user?.id || 'unknown').replace(/[^a-zA-Z0-9-]/g, '');
@@ -715,7 +715,7 @@ const driverVerificationUpload = multer({ storage: multer.diskStorage({
   { name: 'driverLicense', maxCount: 1 },
   { name: 'vehicleRegistration', maxCount: 1 },
   { name: 'insurance', maxCount: 1 },
-]);
+]));
 router.post('/driver-verification', userRateLimit, authenticateToken, driverVerificationUpload, handleMulterError, userController.submitDriverVerification.bind(userController));
 
 // ─── Parameterised routes (must come after static routes) ────────────────────

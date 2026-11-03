@@ -28,6 +28,7 @@ import User from '../models/User';
 import EmergencyContact from '../models/EmergencyContact';
 import DriverDocument from '../models/DriverDocument';
 import { UPLOADS_DIR } from '../middleware/upload';
+import { fileStorageService, FileCategory } from './FileStorageService';
 import { UserStatus } from '../types';
 import { logInfo, logError } from '../utils/logger';
 
@@ -88,6 +89,8 @@ const removeUpload = async (folder: string, storedName: string): Promise<void> =
       logError('Could not remove an uploaded file during account closure', error as Error, { folder });
     }
   }
+  // Uploads are kept in R2 when it is configured; the disk copy is only staging.
+  await fileStorageService.removeUpload(folder as FileCategory, storedName);
 };
 
 /**
