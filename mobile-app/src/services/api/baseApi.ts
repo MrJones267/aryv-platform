@@ -33,6 +33,7 @@ export interface ApiError {
 // Base API configuration
 import { Platform } from 'react-native';
 import { getApiConfig } from '../../config/api';
+import { refreshSession } from '../sessionTokens';
 
 // Get dynamic API configuration that supports local database backend
 const apiConfig = getApiConfig();
@@ -112,48 +113,19 @@ apiClient.interceptors.response.use(
       });
     }
     
-    // Handle 401 Unauthorized - Token expired
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Handle 401 Unauthorized - Token expired. One shared refresh: this used
+    // to refresh on its own and update only its own copy of the tokens, which
+    // retired the refresh token the rest of the app held.
+    if (error.response?.status === 401 && !originalRequest._retry && !String(originalRequest.url ?? '').includes('/auth/refresh')) {
       originalRequest._retry = true;
-      
-      try {
-        const refreshToken = await AsyncStorage.getItem('refreshToken');
-        
-        if (refreshToken) {
-          // Attempt to refresh the token
-          const refreshResponse = await axios.post(`${BASE_URL}/auth/refresh`, {
-            refreshToken,
-          });
-          
-          if (refreshResponse.data.success) {
-            const { accessToken, refreshToken: newRefreshToken } = refreshResponse.data.data;
-            
-            // Store new tokens
-            await AsyncStorage.multiSet([
-              ['accessToken', accessToken],
-              ['refreshToken', newRefreshToken],
-            ]);
-            
-            // Update the original request with new token
-            originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-            
-            // Retry the original request
-            return apiClient(originalRequest);
-          }
-        }
-        
-        // If refresh fails, clear tokens and redirect to login
-        await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
-        
-        // You might want to use a navigation service here instead
-        // navigationService.navigate('Auth');
-        
-      } catch (refreshError) {
-        log.error('Token refresh failed', refreshError);
-        await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
+      const accessToken = await refreshSession();
+      if (accessToken) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        return apiClient(originalRequest);
       }
+      // refreshSession has signed the person out if the server refused it.
     }
-    
+
     // Handle network errors
     if (!error.response) {
       // In development, try fallback URL if local database backend fails

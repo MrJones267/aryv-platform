@@ -6,6 +6,7 @@
 import { GoogleSignin, statusCodes, type SignInResponse } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authFetch } from './authFetch';
+import { refreshSession, saveTokens } from './sessionTokens';
 import logger from './LoggingService';
 
 const log = logger.createLogger('GoogleAuthService');
@@ -288,11 +289,8 @@ class GoogleAuthService {
    */
   private async storeTokens(tokens: { accessToken: string; refreshToken: string; expiresIn: number }) {
     try {
-      await AsyncStorage.multiSet([
-        ['accessToken', tokens.accessToken],
-        ['refreshToken', tokens.refreshToken],
-        ['tokenExpiresAt', (Date.now() + tokens.expiresIn * 1000).toString()]
-      ]);
+      // Every copy of the tokens at once; see sessionTokens.
+      await saveTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresIn);
     } catch (error) {
       log.error('Token storage error:', error);
     }
@@ -337,41 +335,9 @@ class GoogleAuthService {
    * Refresh access token using refresh token
    */
   async refreshAccessToken(): Promise<string | null> {
-    try {
-      const refreshToken = await AsyncStorage.getItem('refreshToken');
-      
-      if (!refreshToken) {
-        return null;
-      }
-
-      const response = await authFetch('/auth/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        await this.storeTokens({
-          accessToken: result.data.accessToken,
-          refreshToken: result.data.refreshToken,
-          expiresIn: result.data.expiresIn
-        });
-        
-        return result.data.accessToken;
-      } else {
-        // Refresh failed, clear tokens
-        await this.clearStoredTokens();
-        return null;
-      }
-    } catch (error) {
-      log.error('Token refresh error:', error);
-      await this.clearStoredTokens();
-      return null;
-    }
+    // The shared refresh: refreshing here on its own retired the refresh
+    // token the rest of the app held, which ended the session.
+    return refreshSession();
   }
 }
 
