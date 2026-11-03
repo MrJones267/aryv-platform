@@ -11,7 +11,7 @@
     <color name="warning">#FF9800</color>
     
     <!-- Launch Screen Colors -->
-    <color name="launch_screen_background">@color/primary</color>
+    <color name="launch_screen_background">#FFFFFF</color>
     <color name="launch_screen_text">#FFFFFF</color>
     
     <!-- Status Bar Colors -->

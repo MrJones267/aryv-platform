@@ -1,6 +1,13 @@
 <resources>
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        
+
+    </style>
+
+    <!-- The ARYV arrow on white while the app starts. It stays as the window
+         background, so it remains on screen until React Native draws the
+         first screen over it, rather than a blank gap while JavaScript loads. -->
+    <style name="LaunchTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
     </style>
 </resources>
