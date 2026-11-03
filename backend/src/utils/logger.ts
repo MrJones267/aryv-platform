@@ -45,11 +45,25 @@ const fileFormat = winston.format.combine(
 );
 
 // Transports
+// In production the console is the only log anyone reads (Railway), and the
+// printf format above dropped every detail: errors logged as "Error in
+// getProfile" with no message or stack. One JSON line per entry keeps them,
+// and Railway indexes the fields. Info by default: debug there ran into
+// Railway's 500 lines/second limit and lost entries.
+const isProduction = process.env['NODE_ENV'] === 'production';
+const consoleFormat = isProduction
+  ? winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json(),
+  )
+  : format;
+
 const transports = [
   // Console transport
   new winston.transports.Console({
-    format,
-    level: process.env['LOG_LEVEL'] || 'debug',
+    format: consoleFormat,
+    level: process.env['LOG_LEVEL'] || (isProduction ? 'info' : 'debug'),
   }),
 
   // Error log file
@@ -72,7 +86,7 @@ const transports = [
 
 // Create logger instance
 const Logger = winston.createLogger({
-  level: process.env['LOG_LEVEL'] || 'debug',
+  level: process.env['LOG_LEVEL'] || (isProduction ? 'info' : 'debug'),
   levels,
   transports,
   exitOnError: false,

@@ -1994,4 +1994,9 @@ export const tn: Record<TranslationKey, string> = {
   'rst.doneBody': 'Tsena ka lefoko la gago le lešwa la sephiri. O ntshitswe mo mafelong otlhe a mangwe.',
   'rst.resend': 'Romela khoutu e ntšhwa',
   'rst.changeRecipient': 'Dirisa nomoro kgotsa imeile e sele',
+
+  // Permissions screen
+  'perm.allGranted': 'Ditetla tsotlhe di neilwe. O siametse go simolola.',
+  'perm.openSettings': 'Bula di-setting',
+  'perm.blockedBody': 'Tetla eno e timilwe mo ARYV. O ka e bulela mo di-setting tsa founu ya gago.',
 };

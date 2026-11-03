@@ -12,6 +12,7 @@ import AuthService from '../../services/AuthService';
 import { DemoAuthService } from '../../services/DemoAuthService';
 import { APP_CONFIG } from '../../config/api';
 import logger from '../../services/LoggingService';
+import userManager from '../../services/UserManager';
 
 const log = logger.createLogger('AuthSlice');
 
@@ -269,7 +270,11 @@ export const logoutUser = createAsyncThunk(
       
       await AsyncStorage.multiRemove(keysToRemove);
       log.info('✅ AsyncStorage cleared');
-      
+
+      // The profile cache is also held in memory, which removing its storage
+      // key did not touch.
+      await userManager.clearUser();
+
       // Clear user profile data from userSlice 
       dispatch({ type: 'user/clearUser' });
       log.info('✅ User profile cleared');
@@ -296,6 +301,7 @@ export const logoutUser = createAsyncThunk(
         ];
         
         await AsyncStorage.multiRemove(keysToRemove);
+        await userManager.clearUser();
         dispatch({ type: 'user/clearUser' });
         log.info('✅ Force cleanup completed');
       } catch (cleanupError) {

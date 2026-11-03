@@ -39,7 +39,9 @@ export class UserController {
           {
             model: Vehicle,
             as: 'vehicles',
-            attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'seatingCapacity', 'status'],
+            // `capacity`: there is no seatingCapacity attribute, and naming it
+            // made Postgres reject the query, so every profile load was a 500.
+            attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'capacity', 'status'],
           },
         ],
       });

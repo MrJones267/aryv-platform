@@ -304,4 +304,30 @@ describe('AuthController.verifyGoogleToken', () => {
     expect(body.code).toBe('INTERNAL_SERVER_ERROR');
     expect(JSON.stringify(body)).not.toContain('connection terminated');
   });
+
+  // ── filling the profile from Google ─────────────────────────────────────────
+  it('fills what an existing account is missing from Google, and nothing it already has', async () => {
+    mockVerifyIdToken.mockResolvedValue(ticketFor(GOOGLE_PAYLOAD));
+    const existing = {
+      id: 'u-existing',
+      email: 'rider@example.com',
+      firstName: 'Kabelo', // set by the person: kept
+      lastName: '',
+      profilePicture: null,
+      isEmailVerified: false,
+      role: 'passenger',
+      status: 'active',
+      update: jest.fn(),
+      toSafeObject: () => ({ id: 'u-existing' }),
+    };
+    findOneSpy.mockResolvedValue(existing as any);
+
+    await AuthController.verifyGoogleToken(mockReq({ idToken: 'good' }), mockRes());
+
+    expect(existing.update).toHaveBeenCalledWith({
+      lastName: 'One',
+      profilePicture: 'https://example.com/p.png',
+      isEmailVerified: true,
+    });
+  });
 });
