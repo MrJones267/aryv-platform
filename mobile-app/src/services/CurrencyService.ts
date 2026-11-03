@@ -7,6 +7,7 @@
 
 import { ApiClient } from './ApiClient';
 import logger from './LoggingService';
+import { fixed } from '../utils/fixed';
 
 const log = logger.createLogger('CurrencyService');
 
@@ -435,7 +436,7 @@ export class CurrencyService {
       return `${currency.symbol}${formatter.format(amount)}`;
     } catch (error) {
       log.error('Error formatting amount:', error);
-      return `${currency.symbol}${amount.toFixed(currency.decimalPlaces)}`;
+      return `${currency.symbol}${fixed(amount, currency.decimalPlaces)}`;
     }
   }
 

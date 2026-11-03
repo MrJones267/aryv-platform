@@ -16,6 +16,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import ReceiptService, { RideReceipt } from '../../services/ReceiptService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 interface RideReceiptCardProps {
   receipt: RideReceipt;
@@ -146,7 +147,7 @@ const RideReceiptCard: React.FC<RideReceiptCardProps> = ({ receipt, onShare }) =
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t('receipt.total')}</Text>
         <Text style={styles.totalAmount}>
-          {receipt.currency} {receipt.totalAmount.toFixed(0)}
+          {receipt.currency} {fixed(receipt.totalAmount, 0)}
         </Text>
       </View>
 

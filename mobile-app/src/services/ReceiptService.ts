@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Share } from 'react-native';
 import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
+import { fixed } from '../utils/fixed';
 
 const log = logger.createLogger('ReceiptService');
 
@@ -192,7 +193,7 @@ class ReceiptService {
     }
 
     text += `${'─'.repeat(30)}\n`;
-    text += `TOTAL${' '.repeat(17)} ${receipt.currency} ${receipt.totalAmount.toFixed(0)}\n`;
+    text += `TOTAL${' '.repeat(17)} ${receipt.currency} ${fixed(receipt.totalAmount, 0)}\n`;
     text += `Payment: ${receipt.paymentMethod}\n\n`;
     text += `Thank you for riding with ARYV!`;
 

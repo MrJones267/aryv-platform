@@ -32,6 +32,7 @@ import { useAppDispatch } from '../../store/hooks';
 import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('CreatePackageScreen');
 
@@ -688,7 +689,7 @@ const CreatePackageScreen: React.FC = () => {
           <Text style={[styles.reviewValue, styles.priceValue]}>
             {currency
               ? CurrencyService.formatAmount(formData.senderPriceOffer, currency)
-              : formData.senderPriceOffer.toFixed(2)}
+              : fixed(formData.senderPriceOffer, 2)}
           </Text>
         </View>
         {selectedTierSuggestion && (

@@ -18,6 +18,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { DriverMatch, CompatibilityFactor } from '../../services/AIMatchingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 interface DriverMatchCardProps {
   match: DriverMatch;
@@ -118,7 +119,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
           </Text>
           <View style={styles.driverRating}>
             <Icon name="star" size={16} color="#FF9800" />
-            <Text style={styles.ratingText}>{driver.rating.toFixed(1)}</Text>
+            <Text style={styles.ratingText}>{fixed(driver.rating, 1, '–')}</Text>
             <Text style={styles.ridesText}>• {driver.totalRides} rides</Text>
           </View>
           <Text style={styles.vehicleInfo}>
@@ -149,7 +150,7 @@ export const DriverMatchCard: React.FC<DriverMatchCardProps> = ({
         </View>
         <View style={styles.tripInfo}>
           <Icon name="attach-money" size={16} color="#666666" />
-          <Text style={styles.tripText}>P{match.pricing.finalPrice.toFixed(2)}</Text>
+          <Text style={styles.tripText}>P{fixed(match.pricing.finalPrice, 2)}</Text>
         </View>
         <View style={styles.tripInfo}>
           <Icon name="airline-seat-recline-normal" size={16} color="#666666" />

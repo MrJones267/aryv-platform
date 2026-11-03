@@ -22,6 +22,7 @@ import { Currency, CurrencyService } from '../../services/CurrencyService';
 import CurrencySelector from '../currency/CurrencySelector';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('PaymentMethodSelector');
 
@@ -198,7 +199,7 @@ const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
   const currentCurrency = selectedCurrency || primaryCurrency;
   const displayAmount = currentCurrency 
     ? CurrencyService.formatAmount(amount, currentCurrency)
-    : `P${amount.toFixed(2)}`;
+    : `P${fixed(amount, 2)}`;
 
   return (
     <View style={styles.container}>

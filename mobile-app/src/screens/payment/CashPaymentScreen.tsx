@@ -24,6 +24,7 @@ import { Button } from '../../components/ui';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { CashPaymentService } from '../../services/CashPaymentService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 interface CashPaymentScreenProps {
   route: {
@@ -238,7 +239,7 @@ const CashPaymentScreen: React.FC = () => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{t('cash.amountToPay')}</Text>
-          <Text style={styles.amountValue}>P{amount.toFixed(2)}</Text>
+          <Text style={styles.amountValue}>P{fixed(amount, 2)}</Text>
         </View>
       </View>
 
@@ -276,7 +277,7 @@ const CashPaymentScreen: React.FC = () => {
             <Text style={styles.stepNumberText}>1</Text>
           </View>
           <Text style={styles.stepText}>
-            Pay exactly P{amount.toFixed(2)} in cash to your driver
+            Pay exactly P{fixed(amount, 2)} in cash to your driver
           </Text>
         </View>
         <View style={styles.instructionStep}>

@@ -2,13 +2,32 @@
  * @fileoverview Database configuration for Sequelize with PostGIS support
  * @author Oabona-Majoko
  * @created 2025-01-20
- * @lastModified 2025-01-20
+ * @lastModified 2026-11-03
  */
 
-import { Sequelize } from 'sequelize';
+import { Sequelize, DataTypes } from 'sequelize';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+/**
+ * Read Postgres NUMERIC (every DECIMAL column) as a number.
+ *
+ * Sequelize hands them back as strings ("150.00"), so prices, totals,
+ * ratings and distances reached the app as text, and the app's
+ * `price.toFixed(2)` threw: opening a ride showed "Something went wrong"
+ * and tapping Book closed the app. Every amount here has a few decimal
+ * places, well inside a double's exact range.
+ */
+export const parseNumeric = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
+};
+// Sequelize registers this parser for the `numeric` type over pg's own, and
+// calls it for model and raw queries alike.
+(DataTypes as unknown as { postgres: { DECIMAL: { parse: (value: unknown) => unknown } } })
+  .postgres.DECIMAL.parse = parseNumeric;
 
 const isProduction = process.env['NODE_ENV'] === 'production';
 
