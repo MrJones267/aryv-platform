@@ -21,6 +21,8 @@ import { WelcomeScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import { useI18n } from '../../i18n/I18nContext';
 
+const ARYV_MARK = require('../../assets/images/aryv-mark.png');
+
 const { width, height } = Dimensions.get('window');
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
@@ -42,9 +44,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ navigation }) => {
         {/* Header Section */}
         <View style={styles.headerSection}>
           <View style={styles.logoContainer}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>A</Text>
-            </View>
+            {/* The ARYV arrow, the same mark as the app icon and splash. */}
+            <Image source={ARYV_MARK} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />
             <Text style={styles.appName}>ARYV</Text>
             <Text style={styles.tagline}>{t('welcome.tagline')}</Text>
           </View>
@@ -133,24 +134,10 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
   },
-  logoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
+  logo: {
+    width: 96,
+    height: 96,
     marginBottom: 16,
-    elevation: 6,
-    shadowColor: '#2196F3',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  logoText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   appName: {
     fontSize: 28,

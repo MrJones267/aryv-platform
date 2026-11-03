@@ -245,6 +245,36 @@ async function main() {
   );
   console.log(`  values/ic_launcher_background.xml       ${BACKGROUND_COLOR}`);
 
+  // ── Splash logo (Android 11 and earlier draw it from the launch theme) ────
+  // 120dp square, the arrow filling most of it, transparent around.
+  const SPLASH_DENSITIES = {
+    'drawable-mdpi': 120,
+    'drawable-hdpi': 180,
+    'drawable-xhdpi': 240,
+    'drawable-xxhdpi': 360,
+    'drawable-xxxhdpi': 480,
+  };
+  for (const [dir, size] of Object.entries(SPLASH_DENSITIES)) {
+    const target = path.join(RES, dir);
+    ensureDir(target);
+    await sharp(await markOnCanvas(size, Math.round(size * 0.9)))
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(target, 'launch_screen_logo.png'));
+    console.log(`  ${dir}/launch_screen_logo.png    ${size}x${size}`);
+  }
+
+  // ── The arrow for the app's own screens (Welcome, loading) ────────────────
+  // 96pt, at 1x/2x/3x so React Native picks the right one per screen.
+  const IMAGES = path.join(ROOT, 'src/assets/images');
+  ensureDir(IMAGES);
+  for (const [suffix, scale] of [['', 1], ['@2x', 2], ['@3x', 3]]) {
+    const size = 96 * scale;
+    await sharp(await markOnCanvas(size, size))
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(IMAGES, `aryv-mark${suffix}.png`));
+    console.log(`  src/assets/images/aryv-mark${suffix}.png      ${size}x${size}`);
+  }
+
   // ── Play Store listing graphics ───────────────────────────────────────────
   ensureDir(STORE_OUT);
 

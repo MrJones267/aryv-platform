@@ -1,19 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The splash on Android 11 and earlier: the ARYV arrow on white.
+     Android 12+ uses the splash attributes in values-v31/styles.xml. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Background color -->
     <item android:drawable="@color/launch_screen_background" />
-    
-    <!-- Logo -->
     <item>
         <bitmap
             android:gravity="center"
             android:src="@drawable/launch_screen_logo" />
-    </item>
-    
-    <!-- Loading indicator area -->
-    <item android:gravity="bottom|center_horizontal">
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-        </shape>
     </item>
 </layer-list>
