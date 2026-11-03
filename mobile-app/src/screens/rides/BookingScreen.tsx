@@ -27,6 +27,7 @@ import { paymentApi } from '../../services/api';
 import { CurrencyService, Currency } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('BookingScreen');
 
@@ -309,7 +310,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     const currency = selectedCurrency?.code || 'BWP';
     const displayAmount = selectedCurrency
       ? CurrencyService.formatAmount(bookingDetails.totalAmount, selectedCurrency)
-      : `P${bookingDetails.totalAmount.toFixed(2)}`;
+      : `P${fixed(bookingDetails.totalAmount, 2)}`;
 
     Alert.alert(
       t('booking.confirmTitle'),

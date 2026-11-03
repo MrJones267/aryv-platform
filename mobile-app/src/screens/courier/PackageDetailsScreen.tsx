@@ -25,6 +25,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import CurrencyService from '../../services/CurrencyService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 type PackageDetailsRouteProp = RouteProp<CourierStackParamList, 'PackageDetails'>;
 
@@ -234,7 +235,7 @@ const PackageDetailsScreen: React.FC = () => {
               <View style={styles.tripItem}>
                 <Icon name="straighten" size={20} color={colors.text.secondary} />
                 <Text style={styles.tripLabel}>{t('cf.distance')}</Text>
-                <Text style={styles.tripValue}>{package_.distance.toFixed(1)} km</Text>
+                <Text style={styles.tripValue}>{fixed(package_.distance, 1)} km</Text>
               </View>
               
               <View style={styles.tripItem}>

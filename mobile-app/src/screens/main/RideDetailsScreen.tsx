@@ -33,6 +33,7 @@ import logger from '../../services/LoggingService';
 import { driverDisplayName } from '../../utils/driverName';
 import { useI18n } from '../../i18n/I18nContext';
 import type { TranslationKey } from '../../i18n/translations';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('RideDetailsScreen');
 
@@ -135,7 +136,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
 
     Alert.alert(
       t('rideDetails.bookTitle'),
-      t('rideDetails.bookBody', { price: ride.pricePerSeat.toFixed(2) }),
+      t('rideDetails.bookBody', { price: fixed(ride.pricePerSeat, 2) }),
       [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -422,7 +423,7 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
           <View style={styles.infoItem}>
             <Icon name="attach-money" size={20} color="#666666" />
             <Text style={styles.infoLabel}>{t('rideDetails.price')}</Text>
-            <Text style={styles.infoValue}>P{ride?.pricePerSeat?.toFixed(2)} per seat</Text>
+            <Text style={styles.infoValue}>P{fixed(ride?.pricePerSeat, 2)} per seat</Text>
           </View>
         </View>
         
@@ -627,8 +628,8 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
                 {isBooking
                   ? t('rideDetails.booking')
                   : promoDiscount > 0
-                    ? t('rideDetails.bookForWas', { price: finalPrice.toFixed(2), was: ride.pricePerSeat.toFixed(2) })
-                    : t('rideDetails.bookFor', { price: ride.pricePerSeat.toFixed(2) })}
+                    ? t('rideDetails.bookForWas', { price: fixed(finalPrice, 2), was: fixed(ride.pricePerSeat, 2) })
+                    : t('rideDetails.bookFor', { price: fixed(ride.pricePerSeat, 2) })}
               </Text>
             </TouchableOpacity>
           </>

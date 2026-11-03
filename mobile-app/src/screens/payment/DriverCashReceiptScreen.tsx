@@ -26,6 +26,7 @@ import { useAppSelector } from '../../store/hooks';
 import { CashPaymentService } from '../../services/CashPaymentService';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('DriverCashReceiptScreen');
 
@@ -89,7 +90,7 @@ const DriverCashReceiptScreen: React.FC = () => {
     if (amountDifference > 0.50) {
       Alert.alert(
         t('cash.amountDiscrepancy'),
-        t('cash.mismatchBody', { expected: expectedAmount.toFixed(2), received: amount.toFixed(2), diff: amountDifference.toFixed(2) }),
+        t('cash.mismatchBody', { expected: fixed(expectedAmount, 2), received: fixed(amount, 2), diff: fixed(amountDifference, 2) }),
         [
           { text: t('common.cancel'), style: 'cancel' },
           { 
@@ -222,7 +223,7 @@ const DriverCashReceiptScreen: React.FC = () => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{t('cash.expectedAmount')}</Text>
-          <Text style={styles.expectedAmountValue}>P{expectedAmount.toFixed(2)}</Text>
+          <Text style={styles.expectedAmountValue}>P{fixed(expectedAmount, 2)}</Text>
         </View>
       </View>
 

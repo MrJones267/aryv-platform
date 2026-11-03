@@ -16,6 +16,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 interface DriverInfo {
   id: string;
@@ -123,7 +124,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
           </Text>
           <View style={styles.compactRating}>
             <Icon name="star" size={12} color="#F59E0B" />
-            <Text style={styles.compactRatingText}>{driver.rating.toFixed(1)}</Text>
+            <Text style={styles.compactRatingText}>{fixed(driver.rating, 1, '–')}</Text>
           </View>
         </View>
         {vehicle && (
@@ -169,7 +170,7 @@ const DriverVerificationCard: React.FC<DriverVerificationCardProps> = ({
 
           <View style={styles.ratingRow}>
             <View style={styles.stars}>{renderStars(driver.rating)}</View>
-            <Text style={styles.ratingValue}>{driver.rating.toFixed(1)}</Text>
+            <Text style={styles.ratingValue}>{fixed(driver.rating, 1, '–')}</Text>
             <Text style={styles.rideCount}>({driver.totalRides} rides)</Text>
           </View>
 

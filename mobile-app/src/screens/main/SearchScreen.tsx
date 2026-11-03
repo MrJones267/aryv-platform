@@ -43,6 +43,7 @@ const TIER_LABELS: Record<RideTier, TranslationKey> = {
 import logger from '../../services/LoggingService';
 import type { TranslationKey } from '../../i18n/translations';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('SearchScreen');
 
@@ -234,7 +235,7 @@ const SearchScreen: React.FC = () => {
   };
 
   const formatPrice = (amount: number): string => {
-    return `P${amount.toFixed(2)}`;
+    return `P${fixed(amount, 2)}`;
   };
 
   const renderFilters = (): React.ReactNode => (

@@ -23,6 +23,7 @@ import { colors } from '../../theme';
 import PackageService, { Package, DeliveryAgreement } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const CourierScreen: React.FC = () => {
   const { t } = useI18n();
@@ -117,7 +118,7 @@ const CourierScreen: React.FC = () => {
           <Text style={styles.packageSize}>Size: {package_.packageSize}</Text>
           {package_.distance && (
             <Text style={styles.distanceText}>
-              {package_.distance.toFixed(1)} km
+              {fixed(package_.distance, 1)} km
             </Text>
           )}
         </View>

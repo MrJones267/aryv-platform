@@ -26,6 +26,7 @@ import { colors } from '../../theme';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -345,7 +346,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{profile.rating?.toFixed(1) || '0.0'}</Text>
+            <Text style={styles.statValue}>{fixed(profile.rating, 1, '–')}</Text>
             <Text style={styles.statLabel}>{t('rf.rating')}</Text>
           </View>
           <View style={styles.statDivider} />

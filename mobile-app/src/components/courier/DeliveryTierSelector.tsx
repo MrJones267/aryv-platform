@@ -21,6 +21,7 @@ import packageService, { DeliveryTier, PricingSuggestion, DemandInfo } from '../
 import CurrencyService, { Currency } from '../../services/CurrencyService';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 const log = logger.createLogger('DeliveryTierSelector');
 
@@ -62,7 +63,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
   const [pricedCurrency, setPricedCurrency] = useState<Currency | null>(null);
   const currency = pricedCurrency ?? initialCurrency ?? null;
   const money = (amount: number) =>
-    currency ? CurrencyService.formatAmount(amount, currency) : amount.toFixed(2);
+    currency ? CurrencyService.formatAmount(amount, currency) : fixed(amount, 2);
 
   const [deliveryTiers, setDeliveryTiers] = useState<DeliveryTier[]>([]);
   const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestion[]>([]);

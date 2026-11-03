@@ -7,6 +7,8 @@
  * - GET /api/rides/my-rides joined bookings without the `bookings` alias the
  *   association defines, so Sequelize refused it and every call was a 500.
  *   It also answered `asDriver`/`asPassenger` while the app reads `rides`.
+ * - Prices and totals (DECIMAL columns) were sent as strings, which the
+ *   app's toFixed() threw on.
  * - GET /api/group-chats/my-chats included a `lastMessage` association that
  *   does not exist (500 for everyone), and spread Sequelize instances into
  *   the response, so a chat arrived without its name.
@@ -59,6 +61,17 @@ describe('My Rides and my chats', () => {
     expect(res.body.data.rides).toEqual([]);
     expect(res.body.data.asPassenger).toEqual([expect.objectContaining({ id: ride.id })]);
     expect(res.body.data.pagination.totalAsPassenger).toBe(1);
+  });
+
+  it('sends prices, totals and ratings as numbers, which the app formats', async () => {
+    // DECIMAL columns came back as strings ("120.00"); the app's
+    // pricePerSeat.toFixed(2) then threw on Ride Details and on Book.
+    const details = await request(app).get(`/api/rides/${ride.id}`).set(as(passenger)).expect(200);
+    expect(details.body.data.pricePerSeat).toBe(120);
+
+    const mine = await request(app).get('/api/rides/my-rides').set(as(driver)).expect(200);
+    expect(mine.body.data.rides[0].pricePerSeat).toBe(120);
+    expect(mine.body.data.rides[0].bookings[0].totalAmount).toBe(126);
   });
 
   it('lists my chats with their name, members and latest message', async () => {

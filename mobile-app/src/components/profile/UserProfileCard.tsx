@@ -17,6 +17,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import { useI18n } from '../../i18n/I18nContext';
+import { fixed } from '../../utils/fixed';
 
 export interface UserProfileData {
   id: string;
@@ -140,7 +141,7 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
           <View style={styles.inlineRating}>
             <Icon name="star" size={12} color="#F59E0B" />
             <Text style={styles.inlineRatingText}>
-              {user.rating.toFixed(1)}
+              {fixed(user.rating, 1, '–')}
             </Text>
             {verifiedCount > 0 && (
               <>
@@ -184,7 +185,7 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
           </Text>
           <View style={styles.compactRatingRow}>
             <View style={styles.starsRow}>{renderStars(user.rating)}</View>
-            <Text style={styles.compactRatingValue}>{user.rating.toFixed(1)}</Text>
+            <Text style={styles.compactRatingValue}>{fixed(user.rating, 1, '–')}</Text>
             <Text style={styles.compactRideCount}>({user.totalRides} rides)</Text>
           </View>
           {showVerification && (
@@ -229,7 +230,7 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
           </Text>
           <View style={styles.fullRatingRow}>
             <View style={styles.starsRow}>{renderStars(user.rating)}</View>
-            <Text style={styles.fullRatingValue}>{user.rating.toFixed(1)}</Text>
+            <Text style={styles.fullRatingValue}>{fixed(user.rating, 1, '–')}</Text>
           </View>
           {user.memberSince && (
             <Text style={styles.fullMemberSince}>
@@ -298,7 +299,7 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.rating.toFixed(1)}</Text>
+            <Text style={styles.statValue}>{fixed(user.rating, 1, '–')}</Text>
             <Text style={styles.statLabel}>{t('rf.rating')}</Text>
           </View>
           {user.totalDeliveries !== undefined && user.totalDeliveries > 0 && (
