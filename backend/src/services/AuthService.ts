@@ -184,7 +184,28 @@ export class AuthService {
         lastName: userData.lastName,
         role: safeRole,
         dateOfBirth: userData.dateOfBirth,
+        ...(userData.country ? { countryCode: userData.country.toUpperCase() } : {}),
       });
+
+      // Fill in what the sign-up form told us, without letting either step
+      // fail the registration: the account exists either way.
+      if (userData.country) {
+        try {
+          const { CountryService } = await import('./CountryService');
+          const country = await CountryService.getCountryByCode(userData.country.toUpperCase());
+          if (country) {await user.update({ countryName: country.name });}
+        } catch (error) {
+          logger.warn('Could not record the country at registration', { error: (error as Error).message });
+        }
+      }
+      if (userData.currency) {
+        try {
+          const { CurrencyService } = await import('./CurrencyService');
+          await CurrencyService.setUserPrimaryCurrency(user.id, userData.currency.toUpperCase());
+        } catch (error) {
+          logger.warn('Could not set the primary currency at registration', { error: (error as Error).message });
+        }
+      }
 
       // Generate tokens
       const accessToken = this.generateAccessToken({

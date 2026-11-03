@@ -160,6 +160,10 @@ export interface RegisterRequest {
   lastName: string;
   role: UserRole;
   dateOfBirth?: Date;
+  /** ISO 3166-1 alpha-2, from the phone number's country. */
+  country?: string;
+  /** ISO 4217, the currency suggested for that country. */
+  currency?: string;
 }
 
 export interface AuthResponse {

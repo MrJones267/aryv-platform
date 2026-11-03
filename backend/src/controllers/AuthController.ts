@@ -1600,6 +1600,20 @@ export class AuthController {
           });
           return;
         }
+
+        // Google vouches for this address, so fill in what the account is
+        // missing from the Google profile. Never overwrite what the person
+        // set themselves.
+        const fromGoogle: Record<string, unknown> = {};
+        if (!user.firstName && (payload.given_name || payload.name)) {
+          fromGoogle['firstName'] = payload.given_name || payload.name?.split(' ')[0];
+        }
+        if (!user.lastName && (payload.family_name || payload.name)) {
+          fromGoogle['lastName'] = payload.family_name || payload.name?.split(' ').slice(1).join(' ');
+        }
+        if (!user.profilePicture && payload.picture) {fromGoogle['profilePicture'] = payload.picture;}
+        if (!user.isEmailVerified) {fromGoogle['isEmailVerified'] = true;}
+        if (Object.keys(fromGoogle).length > 0) {await user.update(fromGoogle);}
       } else {
         if (!emailVerified) {
           res.status(403).json({

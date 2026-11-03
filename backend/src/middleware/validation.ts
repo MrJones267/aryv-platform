@@ -121,6 +121,11 @@ export const authSchemas = {
     // admin/courier are privileged and must never be self-assigned here.
     role: Joi.string().valid('passenger', 'driver').default('passenger'),
     dateOfBirth: Joi.date().iso().max('now').optional(),
+    // Sent by the app from the phone number's country. They were not listed,
+    // so every sign-up that picked a country was refused with
+    // '"country" is not allowed'.
+    country: Joi.string().trim().uppercase().length(2).pattern(/^[A-Z]{2}$/).optional(),
+    currency: Joi.string().trim().uppercase().length(3).pattern(/^[A-Z]{3}$/).optional(),
   }),
 
   login: Joi.object({
