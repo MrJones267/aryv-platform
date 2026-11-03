@@ -15,7 +15,7 @@ import authSlice, { AuthState } from './slices/authSlice';
 import userSlice, { UserState } from './slices/userSlice';
 import ridesSlice, { RidesState } from './slices/ridesSlice';
 import locationSlice, { LocationState } from './slices/locationSlice';
-import appSlice, { AppState } from './slices/appSlice';
+import appSlice, { AppState, appPersistConfig } from './slices/appSlice';
 import packageSlice, { PackageState } from './slices/packageSlice';
 import courierSlice, { CourierState } from './slices/courierSlice';
 
@@ -27,13 +27,14 @@ const persistConfig = {
   blacklist: ['rides', 'location', 'app', 'package'], // Don't persist temporary data
 };
 
+// The app slice keeps only onboarding; see appPersistConfig.
 // Root reducer
 const rootReducer = combineReducers({
   auth: authSlice.reducer,
   user: userSlice.reducer,
   rides: ridesSlice.reducer,
   location: locationSlice.reducer,
-  app: appSlice.reducer,
+  app: persistReducer(appPersistConfig, appSlice.reducer),
   package: packageSlice.reducer,
   courier: courierSlice.reducer,
 });

@@ -116,6 +116,9 @@ class SocketService {
    * Connect to the Socket.io server
    */
   connect(): Promise<void> {
+    if (this.socket?.connected) {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
       try {
         const state = store.getState();
@@ -131,7 +134,16 @@ class SocketService {
         const socketUrl = config.socketUrl || config.apiUrl.replace('/api', '');
         
         log.info('Connecting to Socket.io server', { socketUrl });
-        
+
+        // A failed attempt leaves its socket retrying on its own. Replacing it
+        // without closing it left every one running, so each retry added
+        // another, and the phone sent the server dozens of requests a minute.
+        if (this.socket) {
+          this.socket.removeAllListeners();
+          this.socket.disconnect();
+          this.socket = null;
+        }
+
         this.socket = io(socketUrl, {
           auth: {
             token,
@@ -181,6 +193,12 @@ class SocketService {
         });
 
         this.setupSocketEventHandlers();
+
+        // Screens subscribe through on(), which attaches to the socket of the
+        // moment; carry their subscriptions over to this one.
+        this.eventListeners.forEach((callbacks, event) => {
+          callbacks.forEach((callback) => this.socket?.on(event, callback));
+        });
       } catch (error) {
         log.error('Error connecting to socket', error);
         reject(error);

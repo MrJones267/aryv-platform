@@ -169,20 +169,39 @@ export class SocketService {
       : [];
 
     this.io = new SocketIOServer(server, {
-      cors: {
-        origin: (origin, callback) => {
-          // Allow no-origin requests (mobile apps) and all origins in development
-          if (!origin || nodeEnv === 'development') return callback(null, true);
-          if (corsOrigins.length === 0 || corsOrigins.includes(origin)) {
-            return callback(null, true);
-          }
-          return callback(new Error(`CORS: origin ${origin} not allowed`));
-        },
-        methods: ['GET', 'POST'],
-        credentials: true,
+      // engine.io applies this to WebSocket upgrades too, not only to polling.
+      // Android's WebSocket sends an Origin made from the URL it connects to
+      // (https://api.aryv-app.com), which is not in CORS_ORIGIN, so every
+      // connection from the app was refused with "400 Bad request" and live
+      // tracking, chat, calls and push set-up never started. A request from
+      // the server's own origin is same-origin: CORS has nothing to say.
+      cors: (req, callback) => {
+        const origin = req.headers.origin;
+        const allowed = !origin
+          || nodeEnv === 'development'
+          || corsOrigins.length === 0
+          || corsOrigins.includes(origin)
+          || SocketService.isSameOrigin(origin, req.headers);
+        callback(allowed ? null : new Error(`CORS: origin ${origin} not allowed`), {
+          origin: allowed,
+          methods: ['GET', 'POST'],
+          credentials: true,
+        });
       },
       pingTimeout: 60000,
       pingInterval: 25000,
+    });
+
+    // Refused handshakes and upgrades never reach a socket, so without this
+    // they leave no trace beyond a 400 in the HTTP log.
+    this.io.engine.on('connection_error', (err: { code: number; message: string; context?: unknown; req?: { headers?: Record<string, unknown>; url?: string } }) => {
+      logWarn('Socket.io connection refused', {
+        code: err.code,
+        message: err.message,
+        context: err.context,
+        origin: err.req?.headers?.['origin'],
+        url: err.req?.url,
+      });
     });
 
     this.callService = new CallService();
@@ -192,6 +211,21 @@ export class SocketService {
     this.startSessionRevalidation();
 
     logInfo('Socket.io service initialized with WebRTC support');
+  }
+
+  /** Whether `origin` names the host the request was sent to (directly or via the proxy). */
+  static isSameOrigin(origin: string, headers: Record<string, string | string[] | undefined>): boolean {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host.toLowerCase();
+    } catch {
+      return false;
+    }
+    const hosts = [headers['host'], headers['x-forwarded-host']]
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .flatMap((value) => (value ? value.split(',') : []))
+      .map((value) => value.trim().toLowerCase());
+    return hosts.includes(originHost);
   }
 
   private setupMiddleware(): void {
