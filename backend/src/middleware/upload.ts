@@ -156,12 +156,28 @@ export const keptInStorage = (receive: RequestHandler): RequestHandler =>
     });
   };
 
-// Avatar upload middleware (single file, 5MB limit)
-export const uploadAvatar = keptInStorage(multer({
+// Avatar upload middleware (single file, 5MB limit). The app sends the
+// photo as `profilePicture`; only `avatar` was accepted, so multer refused
+// every profile photo from the app as an unexpected field (400). Either
+// name is taken, and the file lands on req.file as before.
+const receiveAvatar = multer({
   storage: avatarStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: imageFilter,
-}).single('avatar'));
+}).fields([
+  { name: 'avatar', maxCount: 1 },
+  { name: 'profilePicture', maxCount: 1 },
+]);
+export const uploadAvatar = keptInStorage((req: Request, res: Response, next: NextFunction) => {
+  receiveAvatar(req, res, (error?: unknown) => {
+    if (!error) {
+      const files = (req as any).files as Record<string, Express.Multer.File[]> | undefined;
+      (req as any).file = files?.['avatar']?.[0] ?? files?.['profilePicture']?.[0];
+      delete (req as any).files;
+    }
+    next(error);
+  });
+});
 
 // Document upload middleware (single file, 10MB limit)
 export const uploadDocument = keptInStorage(multer({

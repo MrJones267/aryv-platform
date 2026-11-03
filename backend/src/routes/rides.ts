@@ -37,8 +37,8 @@ const createRideRateLimit = rateLimit({
 // Validation schemas
 const createRideValidation = [
   body('originAddress')
-    .isLength({ min: 10, max: 500 })
-    .withMessage('Origin address must be between 10 and 500 characters'),
+    .isLength({ min: 2, max: 500 })
+    .withMessage('Origin address must be between 2 and 500 characters'),
   body('originCoordinates.latitude')
     .isFloat({ min: -90, max: 90 })
     .withMessage('Origin latitude must be between -90 and 90'),
@@ -46,8 +46,8 @@ const createRideValidation = [
     .isFloat({ min: -180, max: 180 })
     .withMessage('Origin longitude must be between -180 and 180'),
   body('destinationAddress')
-    .isLength({ min: 10, max: 500 })
-    .withMessage('Destination address must be between 10 and 500 characters'),
+    .isLength({ min: 2, max: 500 })
+    .withMessage('Destination address must be between 2 and 500 characters'),
   body('destinationCoordinates.latitude')
     .isFloat({ min: -90, max: 90 })
     .withMessage('Destination latitude must be between -90 and 90'),
@@ -143,12 +143,12 @@ const updateRideValidation = [
   param('id').isUUID().withMessage('Ride ID must be a valid UUID'),
   body('originAddress')
     .optional()
-    .isLength({ min: 10, max: 500 })
-    .withMessage('Origin address must be between 10 and 500 characters'),
+    .isLength({ min: 2, max: 500 })
+    .withMessage('Origin address must be between 2 and 500 characters'),
   body('destinationAddress')
     .optional()
-    .isLength({ min: 10, max: 500 })
-    .withMessage('Destination address must be between 10 and 500 characters'),
+    .isLength({ min: 2, max: 500 })
+    .withMessage('Destination address must be between 2 and 500 characters'),
   body('departureTime')
     .optional()
     .isISO8601()

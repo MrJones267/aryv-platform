@@ -289,6 +289,19 @@ router.get('/packages/user', async (req: any, res: any): Promise<void> => {
   }
 });
 
+// One package, for its details screen. After /packages/available and
+// /packages/user, so those are not read as a package id.
+router.get('/packages/:packageId',
+  [
+    param('packageId')
+      .isUUID()
+      .withMessage('Package ID must be a valid UUID'),
+
+    validateInput,
+  ],
+  courierController.getPackage.bind(courierController) as any,
+);
+
 // Get package tracking information
 router.get('/packages/:packageId/tracking',
   [

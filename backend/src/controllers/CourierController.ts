@@ -502,7 +502,10 @@ export class CourierController {
           as: 'sender',
           attributes: ['id', 'firstName', 'lastName', 'email'],
         }],
-        lock: transaction.LOCK.UPDATE,
+        // Lock the package row only. Locking every joined table put FOR UPDATE
+        // on the sender, the nullable side of the LEFT JOIN, which Postgres
+        // refuses: every accept answered 500.
+        lock: { level: transaction.LOCK.UPDATE, of: Package },
         transaction,
       });
 
@@ -961,6 +964,69 @@ export class CourierController {
         code: 'INTERNAL_ERROR',
         timestamp: new Date().toISOString(),
       });
+    }
+  }
+
+  /**
+   * One package, for its details screen.
+   *
+   * The app opened every package with GET /courier/packages/:id, which did
+   * not exist, so the details screen always said "not found". The sender and
+   * the courier delivering it see all of it. While it is still open, any
+   * signed-in courier may see what the available list already shows, without
+   * the pickup and drop-off contacts.
+   */
+  async getPackage(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'Authentication required', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const packageData = await Package.findByPk(req.params['packageId'], {
+        include: [
+          { model: User, as: 'sender', attributes: ['id', 'firstName', 'lastName'] },
+          { model: DeliveryAgreement, as: 'deliveryAgreements', attributes: ['id', 'courierId', 'status', 'createdAt'] },
+        ],
+      });
+      if (!packageData) {
+        res.status(404).json({ success: false, error: 'Package not found', code: 'PACKAGE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const live = (packageData.deliveryAgreements || []).filter(
+        (agreement: any) => agreement.status !== DeliveryStatus.CANCELLED && agreement.status !== DeliveryStatus.DISPUTED,
+      );
+      const isSender = packageData.senderId === userId;
+      const isCourier = live.some((agreement: any) => agreement.courierId === userId);
+      const isOpen = packageData.isActive
+        && (!packageData.expiresAt || new Date(packageData.expiresAt) > new Date())
+        && live.length === 0;
+
+      if (!isSender && !isCourier && !isOpen) {
+        // As for a missing package, so an id cannot be confirmed to exist.
+        res.status(404).json({ success: false, error: 'Package not found', code: 'PACKAGE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      const view = packageData.toJSON() as Record<string, unknown>;
+      delete view['deliveryAgreements'];
+      if (!isSender && !isCourier) {
+        delete view['pickupContactName'];
+        delete view['pickupContactPhone'];
+        delete view['dropoffContactName'];
+        delete view['dropoffContactPhone'];
+      }
+
+      res.status(200).json({
+        success: true,
+        data: { ...view, isOpen, viewerRole: isSender ? 'sender' : isCourier ? 'courier' : 'browsing' },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error in getPackage', { error: (error as Error).message, packageId: req.params['packageId'], userId: req.user?.id });
+      res.status(500).json({ success: false, error: 'Failed to load the package', code: 'PACKAGE_FETCH_FAILED', timestamp: new Date().toISOString() });
     }
   }
 
