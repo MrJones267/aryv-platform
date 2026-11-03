@@ -1,14 +1,17 @@
 /**
- * @fileoverview Multer file upload middleware - local disk with optional S3 upload
+ * @fileoverview Multer file upload middleware: received on local disk, then
+ *               kept in Cloudflare R2 when it is configured
  * @author Oabona-Majoko
  * @created 2026-03-27
- * @lastModified 2026-03-27
+ * @lastModified 2026-11-03
  */
 
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { Request } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { fileStorageService, isR2Configured, FileCategory } from '../services/FileStorageService';
+import { logError } from '../utils/logger';
 
 /**
  * Where uploaded files live.
@@ -24,7 +27,7 @@ import { Request } from 'express';
  */
 const VOLUME_MOUNT_PATH = process.env['RAILWAY_VOLUME_MOUNT_PATH'];
 
-export const uploadsAreEphemeral = !process.env['UPLOADS_DIR'] && !VOLUME_MOUNT_PATH;
+export const uploadsAreEphemeral = !process.env['UPLOADS_DIR'] && !VOLUME_MOUNT_PATH && !isR2Configured();
 
 export const UPLOADS_DIR = process.env['UPLOADS_DIR']
   || (VOLUME_MOUNT_PATH ? path.join(VOLUME_MOUNT_PATH, 'uploads') : './uploads');
@@ -36,7 +39,7 @@ if (uploadsAreEphemeral && process.env['NODE_ENV'] === 'production') {
   console.error(
     '[uploads] No persistent storage configured. Files written to ./uploads will be '
     + 'DESTROYED on the next deploy, including driver verification documents. '
-    + 'Mount a Railway volume, or set UPLOADS_DIR to a persistent path.',
+    + 'Set the R2_* variables, mount a Railway volume, or set UPLOADS_DIR to a persistent path.',
   );
 }
 const AVATAR_DIR = path.join(UPLOADS_DIR, 'avatars');
@@ -103,33 +106,83 @@ const vehiclePhotoStorage = multer.diskStorage({
   },
 });
 
+/**
+ * Run a multer middleware, then copy what it wrote into R2.
+ *
+ * Multer writes each file to UPLOADS_DIR/<category>/; that copy is only a
+ * staging area once R2 is configured, and is deleted after the response.
+ * The stored URL stays /uploads/<category>/<filename>, which the /uploads
+ * route serves from disk or R2.
+ *
+ * If R2 refuses the file, the upload fails with 503 rather than reporting
+ * success for a file the next deploy will destroy.
+ */
+export const keptInStorage = (receive: RequestHandler): RequestHandler =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    receive(req, res, (receiveError?: unknown) => {
+      if (receiveError) {
+        next(receiveError);
+        return;
+      }
+      const received: Express.Multer.File[] = [
+        ...((req as any).file ? [(req as any).file as Express.Multer.File] : []),
+        ...(Array.isArray((req as any).files)
+          ? (req as any).files as Express.Multer.File[]
+          : Object.values(((req as any).files ?? {}) as Record<string, Express.Multer.File[]>).flat()),
+      ].filter((file) => file?.path);
+
+      Promise.all(received.map((file) => fileStorageService.persistUpload(
+        path.basename(file.destination) as FileCategory, file.filename, file.path, file.mimetype,
+      )))
+        .then((kept) => {
+          if (kept.some(Boolean)) {
+            // R2 has them now; the staged copies go once the request is done.
+            res.on('finish', () => {
+              received.forEach((file) => { fs.promises.unlink(file.path).catch(() => undefined); });
+            });
+          }
+          next();
+        })
+        .catch((error: unknown) => {
+          logError('Could not keep an upload in R2', error as Error, { files: received.map((f) => f.filename) });
+          received.forEach((file) => { fs.promises.unlink(file.path).catch(() => undefined); });
+          res.status(503).json({
+            success: false,
+            error: 'The file could not be saved. Please try again.',
+            code: 'UPLOAD_STORAGE_FAILED',
+            timestamp: new Date().toISOString(),
+          });
+        });
+    });
+  };
+
 // Avatar upload middleware (single file, 5MB limit)
-export const uploadAvatar = multer({
+export const uploadAvatar = keptInStorage(multer({
   storage: avatarStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: imageFilter,
-}).single('avatar');
+}).single('avatar'));
 
 // Document upload middleware (single file, 10MB limit)
-export const uploadDocument = multer({
+export const uploadDocument = keptInStorage(multer({
   storage: documentStorage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: documentFilter,
-}).single('document');
+}).single('document'));
 
 // Vehicle photo upload middleware (single file, 5MB limit)
-export const uploadVehiclePhoto = multer({
+export const uploadVehiclePhoto = keptInStorage(multer({
   storage: vehiclePhotoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: imageFilter,
-}).single('photo');
+}).single('photo'));
 
 // Vehicle document upload middleware (single file, 10MB limit)
-export const uploadVehicleDocument = multer({
+export const uploadVehicleDocument = keptInStorage(multer({
   storage: documentStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: documentFilter,
-}).single('document');
+}).single('document'));
 
 // Helper to get the public URL for an uploaded file
 export const getFileUrl = (filename: string, type: 'avatars' | 'documents'): string => {

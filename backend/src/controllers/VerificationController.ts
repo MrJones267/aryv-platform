@@ -11,7 +11,7 @@ import verificationService from '../services/VerificationService';
 import DriverDocument, { DocumentStatus, DocumentType } from '../models/DriverDocument';
 import { AuthenticatedRequest, UserRole } from '../types';
 import { logError, logWarning } from '../utils/logger';
-import { UPLOADS_DIR } from '../middleware/upload';
+import { fileStorageService } from '../services/FileStorageService';
 
 const ADMIN_ROLES = [UserRole.ADMIN];
 
@@ -296,15 +296,12 @@ export class VerificationController {
       // storageKey is a bare filename produced by the upload middleware, but
       // it is still passed through basename so a crafted value can never walk
       // out of the documents directory.
-      const path = await import('path');
-      const safeName = path.basename(document.storageKey);
-      const filePath = path.resolve(UPLOADS_DIR, 'documents', safeName);
-
-      res.sendFile(filePath, (err) => {
-        if (err) {
-          fail(res, 404, 'File not found', 'FILE_NOT_FOUND');
-        }
-      });
+      // sendFile takes the basename, so a crafted value cannot walk out of
+      // the documents folder; it reads from disk, otherwise from R2.
+      const sent = await fileStorageService.sendFile(res, 'documents', document.storageKey);
+      if (!sent) {
+        fail(res, 404, 'File not found', 'FILE_NOT_FOUND');
+      }
     } catch (error) {
       logError('Error in getDocumentFile', error as Error, { userId: req.user?.id });
       fail(res, 500, 'Internal server error', 'INTERNAL_SERVER_ERROR');

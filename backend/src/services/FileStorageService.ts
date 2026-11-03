@@ -2,7 +2,7 @@
  * @fileoverview Where uploaded files are kept.
  * @author Oabona-Majoko
  * @created 2026-08-24
- * @lastModified 2026-08-24
+ * @lastModified 2026-11-03
  *
  * The problem this solves:
  *
@@ -25,6 +25,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { Readable } from 'stream';
+import type { Response } from 'express';
 import {
   S3Client,
   PutObjectCommand,
@@ -179,6 +181,74 @@ export class FileStorageService {
       });
       return false;
     }
+  }
+
+  /**
+   * Copy a file the upload middleware wrote to disk into R2, under the same
+   * `<category>/<filename>` it is served from, so stored URLs and the
+   * ownership rule (filenames start with the owner's id) are unchanged.
+   *
+   * Until 2026-11-03 nothing called this service: every upload stayed on
+   * the container's disk and was lost on the next deploy, R2 or not.
+   *
+   * @returns true when the file is now in R2; false when R2 is not configured
+   */
+  async persistUpload(category: FileCategory, filename: string, filePath: string, contentType: string): Promise<boolean> {
+    if (!isR2Configured()) return false;
+    const body = await fs.promises.readFile(filePath);
+    const key = `${category}/${path.basename(filename)}`;
+    await this.getClient().send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }));
+    logInfo('Stored upload in R2', { key, bytes: body.length });
+    return true;
+  }
+
+  /**
+   * Send a stored file: from local disk if it is there (development, or a
+   * file from before R2), otherwise from R2. The caller has already checked
+   * that the requester may see it.
+   *
+   * @returns false when the file is in neither place; nothing has been sent
+   */
+  async sendFile(res: Response, category: FileCategory, filename: string): Promise<boolean> {
+    const safe = path.basename(filename);
+    const localPath = path.resolve(LOCAL_UPLOADS_DIR, category, safe);
+
+    if (await fs.promises.access(localPath).then(() => true, () => false)) {
+      await new Promise<void>((resolve, reject) => {
+        res.sendFile(localPath, (err) => (err ? reject(err) : resolve()));
+      });
+      return true;
+    }
+
+    if (!isR2Configured()) return false;
+
+    try {
+      const object = await this.getClient().send(
+        new GetObjectCommand({ Bucket: R2_BUCKET, Key: `${category}/${safe}` }),
+      );
+      if (!object.Body) return false;
+      if (object.ContentType) res.setHeader('Content-Type', object.ContentType);
+      if (object.ContentLength !== undefined) res.setHeader('Content-Length', String(object.ContentLength));
+      await new Promise<void>((resolve, reject) => {
+        (object.Body as Readable).on('error', reject).pipe(res).on('finish', resolve).on('error', reject);
+      });
+      return true;
+    } catch (error) {
+      const name = (error as { name?: string }).name;
+      if (name === 'NoSuchKey' || name === 'NotFound') return false;
+      throw error;
+    }
+  }
+
+  /** Remove a stored file from R2, if R2 is in use. Never throws. */
+  async removeUpload(category: FileCategory, filename: string): Promise<void> {
+    if (!isR2Configured()) return;
+    await this.remove(`${category}/${path.basename(filename)}`);
   }
 
   /**
