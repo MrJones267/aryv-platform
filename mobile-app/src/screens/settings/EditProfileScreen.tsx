@@ -269,28 +269,35 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
     );
   };
 
+  // The name on an approved national ID or passport is the name on the
+  // account; the server refuses changes to it, so it is shown read-only.
+  const nameLocked = Boolean((profile as { nameLocked?: boolean } | null)?.nameLocked);
+
   const renderForm = (): React.ReactNode => (
     <View style={styles.form}>
       <View style={styles.inputGroup}>
         <Text style={styles.label}>{t('register.firstName')}</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, nameLocked && styles.inputLocked]}
           value={formData.firstName}
           onChangeText={(value) => handleInputChange('firstName', value)}
           placeholder={t('st.enterYourFirstName')}
           placeholderTextColor={colors.text.secondary}
+          editable={!nameLocked}
         />
       </View>
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>{t('register.lastName')}</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, nameLocked && styles.inputLocked]}
           value={formData.lastName}
           onChangeText={(value) => handleInputChange('lastName', value)}
           placeholder={t('st.enterYourLastName')}
           placeholderTextColor={colors.text.secondary}
+          editable={!nameLocked}
         />
+        {nameLocked && <Text style={styles.lockedNote}>{t('profile.nameLockedNote')}</Text>}
       </View>
 
       <View style={styles.inputGroup}>
@@ -550,6 +557,14 @@ const styles = StyleSheet.create({
   },
   inputDisabled: {
     opacity: 0.6,
+  },
+  inputLocked: {
+    color: colors.text.secondary,
+  },
+  lockedNote: {
+    marginTop: 6,
+    fontSize: 13,
+    color: colors.text.secondary,
   },
   inputHint: {
     fontSize: 12,

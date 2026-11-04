@@ -463,6 +463,7 @@ export const af: Record<TranslationKey, string> = {
   'profile.noVehiclesBody': 'Jy het geen geregistreerde voertuie nie.',
   'profile.yourVehicles': 'Jou voertuie',
   'profile.addVehicle': 'Voeg voertuig by',
+  'profile.nameLockedNote': 'Geverifieer vanaf jou ID. Kontak ondersteuning as dit reggestel moet word.',
   'profile.roleSwitched': 'Rol verander',
   'profile.roleSwitchedBody': 'Jou aktiewe rol is nou: {{role}}',
   'profile.switchRole': 'Verander rol',

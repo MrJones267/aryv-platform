@@ -6,6 +6,7 @@
  */
 
 import Geolocation from '@react-native-community/geolocation';
+import { getPosition } from './position';
 import { PermissionsAndroid, Platform, Alert } from 'react-native';
 import logger from './LoggingService';
 
@@ -34,6 +35,16 @@ export interface LocationAddress {
 
 export interface LocationData extends LocationCoordinates {
   address?: LocationAddress;
+}
+
+/** A place offered while someone types, before its coordinates are known. */
+export interface PlaceSuggestion {
+  placeId: string;
+  /** "Game City Shopping Mall" */
+  name: string;
+  /** "Gaborone, Botswana" */
+  detail: string;
+  description: string;
 }
 
 export interface GeofenceOptions {
@@ -78,7 +89,8 @@ export class LocationService {
    * Get current location once
    */
   async getCurrentLocation(
-    options: {
+    // Kept for callers; getPosition chooses accuracy and timeouts itself.
+    _options: {
       timeout?: number;
       maximumAge?: number;
       enableHighAccuracy?: boolean;
@@ -89,45 +101,35 @@ export class LocationService {
       throw new Error('Location permission denied');
     }
 
-    return new Promise((resolve, reject) => {
-      Geolocation.getCurrentPosition(
-        async (position) => {
-          const locationData: LocationData = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            altitude: position.coords.altitude || undefined,
-            altitudeAccuracy: position.coords.altitudeAccuracy || undefined,
-            heading: position.coords.heading || undefined,
-            speed: position.coords.speed || undefined,
-            timestamp: position.timestamp,
-          };
+    // Fused provider, with a coarse fallback rather than a timeout: see services/position.
+    let position;
+    try {
+      position = await getPosition();
+    } catch (error) {
+      log.error('Error getting current location:', error);
+      throw this.handleLocationError(error);
+    }
 
-          try {
-            // Get address for the location
-            const address = await this.reverseGeocode(
-              locationData.latitude,
-              locationData.longitude
-            );
-            locationData.address = address;
-          } catch (error) {
-            log.warn('Failed to get address for location:', error);
-          }
+    const locationData: LocationData = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+      altitude: position.coords.altitude || undefined,
+      altitudeAccuracy: position.coords.altitudeAccuracy || undefined,
+      heading: position.coords.heading || undefined,
+      speed: position.coords.speed || undefined,
+      timestamp: position.timestamp,
+    };
 
-          this.currentLocation = locationData;
-          resolve(locationData);
-        },
-        (error) => {
-          log.error('Error getting current location:', error);
-          reject(this.handleLocationError(error));
-        },
-        {
-          enableHighAccuracy: options.enableHighAccuracy ?? true,
-          timeout: options.timeout ?? 15000,
-          maximumAge: options.maximumAge ?? 300000, // 5 minutes
-        }
-      );
-    });
+    try {
+      // Get address for the location
+      locationData.address = await this.reverseGeocode(locationData.latitude, locationData.longitude);
+    } catch (error) {
+      log.warn('Failed to get address for location:', error);
+    }
+
+    this.currentLocation = locationData;
+    return locationData;
   }
 
   /**
@@ -344,7 +346,7 @@ export class LocationService {
       
       const encodedAddress = encodeURIComponent(address);
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_GEOCODING_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}&region=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_GEOCODING_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}&region=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}&components=country:${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}`
       );
       
       const data = await response.json();
@@ -367,6 +369,98 @@ export class LocationService {
       log.error('Geocoding failed:', error);
       return this.fallbackGeocodeDetailed(address);
     }
+  }
+
+  /**
+   * Places that match what someone is typing, in Botswana, nearest first
+   * when their position is known.
+   *
+   * Search used to send the text to the Geocoding API, which wants a full
+   * address: "Main Mall" came back as Main Mall in Vancouver. Autocomplete
+   * knows shops, malls and landmarks, and matches partial names.
+   */
+  async searchPlaces(input: string, near?: LocationCoordinates | null): Promise<PlaceSuggestion[]> {
+    const query = input.trim();
+    if (query.length < 2) return [];
+    const { APP_CONFIG } = await import('../config/api');
+    const { PLACES_API_KEY, DEFAULT_REGION, DEFAULT_LANGUAGE } = APP_CONFIG.GOOGLE_SERVICES;
+    const params = new URLSearchParams({
+      input: query,
+      key: PLACES_API_KEY,
+      components: `country:${DEFAULT_REGION.toLowerCase()}`,
+      language: DEFAULT_LANGUAGE,
+      sessiontoken: this.placesSession(),
+    });
+    if (near) {
+      params.set('location', `${near.latitude},${near.longitude}`);
+      params.set('radius', '50000');
+    }
+    try {
+      const response = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`);
+      const data = await response.json() as {
+        status: string;
+        error_message?: string;
+        predictions?: Array<{ place_id: string; description: string; structured_formatting?: { main_text?: string; secondary_text?: string } }>;
+      };
+      if (data.status !== 'OK') {
+        if (data.status !== 'ZERO_RESULTS') log.warn('Place search failed', { status: data.status, error: data.error_message });
+        return [];
+      }
+      return (data.predictions ?? []).map((p) => ({
+        placeId: p.place_id,
+        name: p.structured_formatting?.main_text ?? p.description,
+        detail: p.structured_formatting?.secondary_text ?? '',
+        description: p.description,
+      }));
+    } catch (error) {
+      log.warn('Place search failed', error);
+      return [];
+    }
+  }
+
+  /** Where a suggested place is, with its name kept as the address. */
+  async getPlace(suggestion: PlaceSuggestion): Promise<LocationData | null> {
+    const { APP_CONFIG } = await import('../config/api');
+    const params = new URLSearchParams({
+      place_id: suggestion.placeId,
+      key: APP_CONFIG.GOOGLE_SERVICES.PLACES_API_KEY,
+      fields: 'geometry,name,formatted_address',
+      sessiontoken: this.placesSession(),
+    });
+    // A session ends when a place is chosen; Google bills it as one search.
+    this.placesSessionToken = null;
+    try {
+      const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`);
+      const data = await response.json() as {
+        status: string;
+        result?: { name?: string; formatted_address?: string; geometry?: { location?: { lat: number; lng: number } } };
+      };
+      const location = data.result?.geometry?.location;
+      if (data.status !== 'OK' || !location) return null;
+      const name = data.result?.name;
+      const formatted = data.result?.formatted_address ?? suggestion.description;
+      return {
+        latitude: location.lat,
+        longitude: location.lng,
+        address: {
+          // "Game City Shopping Mall, Gaborone", not only the street.
+          fullAddress: name && !formatted.startsWith(name) ? `${name}, ${formatted}` : formatted,
+        },
+      };
+    } catch (error) {
+      log.warn('Could not load the chosen place', error);
+      return null;
+    }
+  }
+
+  private placesSessionToken: string | null = null;
+
+  /** One token per search, from first keystroke to the place chosen. */
+  private placesSession(): string {
+    if (!this.placesSessionToken) {
+      this.placesSessionToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    }
+    return this.placesSessionToken;
   }
 
   /**

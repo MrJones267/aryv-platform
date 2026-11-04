@@ -79,11 +79,12 @@ export const HitchMapView: React.FC<MapViewProps> = ({
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
     } : {
-      // Default to center of world map if no location available
-      latitude: 0,
-      longitude: 0,
-      latitudeDelta: 90,
-      longitudeDelta: 180,
+      // Botswana, until the phone's position is known. This was 0,0, open
+      // ocean off West Africa, with the whole world in view.
+      latitude: -22.3,
+      longitude: 24.7,
+      latitudeDelta: 9,
+      longitudeDelta: 9,
     })
   );
   const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
@@ -101,6 +102,16 @@ export const HitchMapView: React.FC<MapViewProps> = ({
       mapRef.current?.animateToRegion(newRegion, 1000);
     }
   }, [currentLocation, initialRegion]);
+
+  // Follow the region the caller asks for, e.g. a place picked from search.
+  // Only the first initialRegion was ever used, so the map stayed put.
+  useEffect(() => {
+    if (initialRegion) {
+      setRegion(initialRegion);
+      mapRef.current?.animateToRegion(initialRegion, 600);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRegion?.latitude, initialRegion?.longitude]);
 
   // Load navigation route when destination changes
   useEffect(() => {

@@ -5,7 +5,7 @@
  * @lastModified 2025-01-21
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,11 +14,12 @@ import {
   Modal,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Input, Button } from '../ui';
 import HitchMapView from './MapView';
-import locationService, { LocationCoordinates, LocationData } from '../../services/LocationService';
+import locationService, { LocationCoordinates, LocationData, PlaceSuggestion } from '../../services/LocationService';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -49,6 +50,26 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingCurrentLocation, setIsLoadingCurrentLocation] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  // The latest query; an older search finishing late must not replace newer suggestions.
+  const latestQuery = useRef('');
+
+  // Suggestions as the person types, nearest first. Search used to wait for
+  // the search key and send the text to the Geocoding API, which wanted a
+  // full address and answered "Main Mall" with Main Mall in Vancouver.
+  useEffect(() => {
+    const query = searchQuery.trim();
+    latestQuery.current = query;
+    if (query.length < 2) {
+      setSuggestions([]);
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      const found = await locationService.searchPlaces(query, currentLocation);
+      if (latestQuery.current === query) setSuggestions(found);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, currentLocation]);
 
   useEffect(() => {
     if (visible) {
@@ -108,12 +129,36 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     }
   };
 
+  const handlePickSuggestion = async (suggestion: PlaceSuggestion) => {
+    setIsSearching(true);
+    try {
+      const place = await locationService.getPlace(suggestion);
+      if (place) {
+        setSelectedLocation(place);
+        setSearchQuery(suggestion.name);
+        setSuggestions([]);
+      } else {
+        Alert.alert(t('rf.searchError'), t('ui.failedToSearchLocation'));
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleSearchSubmit = async () => {
-    if (!searchQuery.trim()) return;
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    // The top suggestion, as the search key on any maps app does.
+    const found = suggestions.length > 0 ? suggestions : await locationService.searchPlaces(query, currentLocation);
+    if (found.length > 0) {
+      await handlePickSuggestion(found[0]!);
+      return;
+    }
 
     setIsSearching(true);
     try {
-      const results = await locationService.geocodeAddress(searchQuery.trim());
+      const results = await locationService.geocodeAddress(query);
       if (results && results.length > 0) {
         const [longitude, latitude] = results;
         await handleMapPress({ latitude, longitude });
@@ -231,6 +276,27 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           </TouchableOpacity>
         </View>
 
+        {(suggestions.length > 0 || isSearching) && (
+          <View style={styles.suggestions}>
+            {isSearching && <ActivityIndicator style={styles.suggestionSpinner} color="#2196F3" />}
+            {suggestions.map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.placeId}
+                style={styles.suggestion}
+                onPress={() => handlePickSuggestion(suggestion)}
+                accessibilityRole="button"
+                accessibilityLabel={suggestion.description}
+              >
+                <Icon name="place" size={20} color="#666666" />
+                <View style={styles.suggestionText}>
+                  <Text style={styles.suggestionName} numberOfLines={1}>{suggestion.name}</Text>
+                  {!!suggestion.detail && <Text style={styles.suggestionDetail} numberOfLines={1}>{suggestion.detail}</Text>}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* Map */}
         <View style={styles.mapContainer}>
           <HitchMapView
@@ -331,6 +397,36 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     marginBottom: 0,
+  },
+  suggestions: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    maxHeight: 280,
+  },
+  suggestionSpinner: {
+    paddingVertical: 8,
+  },
+  suggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  suggestionText: {
+    flex: 1,
+  },
+  suggestionName: {
+    fontSize: 15,
+    color: '#212121',
+  },
+  suggestionDetail: {
+    fontSize: 13,
+    color: '#757575',
+    marginTop: 2,
   },
   currentLocationButton: {
     width: 44,

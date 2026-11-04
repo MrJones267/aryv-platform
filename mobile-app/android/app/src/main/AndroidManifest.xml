@@ -7,6 +7,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Haptic feedback on every button (HapticService uses Vibration).
+         Without it Android throws a SecurityException from native code,
+         which JavaScript cannot catch: tapping Find ride, Offer ride, Send
+         parcel or Deliver closed the app ("keeps stopping"). Normal
+         permission: granted at install, nothing to ask. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Legacy storage only; a no-op from API 29 and refused by Play without a cap. -->
     <uses-permission

@@ -464,6 +464,7 @@ export const tn: Record<TranslationKey, string> = {
   'profile.noVehiclesBody': 'Ga o na dikoloi tse di kwadisitsweng.',
   'profile.yourVehicles': 'Dikoloi tsa Gago',
   'profile.addVehicle': 'Tsenya Koloi',
+  'profile.nameLockedNote': 'E netefaditswe ka ID ya gago. Ikgolaganye le thuso fa e tshwanetse go baakanngwa.',
   'profile.roleSwitched': 'Seabe se Fetotswe',
   'profile.roleSwitchedBody': 'Seabe sa gago jaanong ke: {{role}}',
   'profile.switchRole': 'Fetola Seabe',
