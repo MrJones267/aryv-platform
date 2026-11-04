@@ -10,6 +10,7 @@ import Joi from 'joi';
 import { validatePasswordStrength } from '../utils/password';
 import { validationResult } from 'express-validator';
 import { ValidationError } from '../types';
+import { logWarning } from '../utils/logger';
 
 /**
  * Middleware factory for request validation
@@ -249,15 +250,24 @@ export const validateInput = (
   const result = validationResult(req);
 
   if (!result.isEmpty()) {
+    const details = result.array().map((e) => ({
+      field: (e as { path?: string; param?: string }).path
+        ?? (e as { param?: string }).param,
+      message: e.msg,
+    }));
+    // Which fields, never their values: a refused request left only "400" in
+    // the logs, so a form failing for everyone could not be told apart from
+    // one person's typo.
+    logWarning('Request refused by validation', {
+      method: req.method,
+      route: req.baseUrl + (req.route?.path ?? req.path),
+      fields: details.map((d) => `${d.field}: ${d.message}`),
+    });
     res.status(400).json({
       success: false,
       error: 'Validation failed',
       code: 'VALIDATION_FAILED',
-      details: result.array().map((e) => ({
-        field: (e as { path?: string; param?: string }).path
-          ?? (e as { param?: string }).param,
-        message: e.msg,
-      })),
+      details,
       timestamp: new Date().toISOString(),
     });
     return;

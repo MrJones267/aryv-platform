@@ -159,7 +159,6 @@ describe('mobile client / backend path contract', () => {
     // the server's /packages/available.)
     'GET /api/courier/deliveries/available  (CourierService.ts)',
     'GET /api/courier/notifications  (CourierService.ts)',
-    'GET /api/courier/packages/:param  (PackageService.ts)',
     'GET /api/courier/stats  (CourierService.ts)',
     'GET /api/courier/user/packages  (PackageService.ts)',
     'POST /api/courier/availability  (CourierService.ts)',

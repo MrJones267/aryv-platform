@@ -94,8 +94,8 @@ const Ride = sequelize.define<RideModel>(
       field: 'origin_address',
       validate: {
         len: {
-          args: [10, 500],
-          msg: 'Origin address must be between 10 and 500 characters',
+          args: [2, 500],
+          msg: 'Origin address must be between 2 and 500 characters',
         },
       },
     },
@@ -124,8 +124,8 @@ const Ride = sequelize.define<RideModel>(
       field: 'destination_address',
       validate: {
         len: {
-          args: [10, 500],
-          msg: 'Destination address must be between 10 and 500 characters',
+          args: [2, 500],
+          msg: 'Destination address must be between 2 and 500 characters',
         },
       },
     },
