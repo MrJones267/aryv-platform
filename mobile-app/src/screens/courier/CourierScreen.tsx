@@ -41,10 +41,13 @@ const CourierScreen: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [packagesResponse, deliveriesResponse] = await Promise.all([
+      const [packagesResponse, deliveriesResponse, courierProfile] = await Promise.all([
         PackageService.getAvailablePackages(),
         PackageService.getCourierDeliveries(),
+        PackageService.getCourierProfile(),
       ]);
+      // What the server says, not a switch that starts off every time.
+      setIsOnline(Boolean(courierProfile?.isCourierActive && courierProfile?.isAvailableForDeliveries));
 
       if (packagesResponse.success && packagesResponse.data) {
         setAvailablePackages(packagesResponse.data);
@@ -61,6 +64,29 @@ const CourierScreen: React.FC = () => {
     }
   };
 
+  const openIdentityVerification = (): void => {
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void })
+      .navigate('Profile', { screen: 'VerificationWorkflow' });
+  };
+
+  // The switch only changed the screen: nobody ever became a courier, so
+  // every Accept was refused with "User is not an active courier".
+  const handleAvailabilityChange = async (available: boolean): Promise<void> => {
+    setIsOnline(available);
+    const result = await PackageService.setCourierAvailability(available);
+    if (result.success) return;
+
+    setIsOnline(!available);
+    if (result.code === 'IDENTITY_VERIFICATION_REQUIRED') {
+      Alert.alert(t('courier.verifyFirstTitle'), t('courier.verifyFirstBody'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('rf.verifyYourIdentity'), onPress: openIdentityVerification },
+      ]);
+    } else {
+      Alert.alert(t('common.error'), result.error || t('cf2.failedToLoadCourierData'));
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     loadData();
@@ -73,7 +99,12 @@ const CourierScreen: React.FC = () => {
         Alert.alert(t('common.success'), t('cf2.packageAcceptedCheckYourActive'));
         loadData(); // Refresh data
       } else {
-        Alert.alert(t('common.error'), response.error || t('cf2.failedToAcceptPackage'));
+        if (!isOnline) {
+          // Accepting needs an active courier: say how to become one.
+          Alert.alert(t('courier.goOnlineTitle'), t('courier.goOnlineBody'));
+        } else {
+          Alert.alert(t('common.error'), response.error || t('cf2.failedToAcceptPackage'));
+        }
       }
     } catch (error) {
       Alert.alert(t('common.error'), t('cf2.failedToAcceptPackage'));
@@ -231,7 +262,7 @@ const CourierScreen: React.FC = () => {
           <Text style={styles.statusLabel}>{t('cf.availableForDeliveries')}</Text>
           <Switch
             value={isOnline}
-            onValueChange={setIsOnline}
+            onValueChange={handleAvailabilityChange}
             trackColor={{ false: colors.border.light, true: colors.success }}
             thumbColor={isOnline ? colors.text.inverse : colors.text.secondary}
           />

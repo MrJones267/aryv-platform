@@ -21,6 +21,9 @@ export interface ApiClientResponse<T = any> {
   success: boolean;
   data?: T;
   error?: string;
+  /** The server's code for a refusal, e.g. IDENTITY_VERIFICATION_REQUIRED. */
+  code?: string;
+  status?: number;
 }
 
 export class ApiClient {
@@ -97,7 +100,17 @@ export class ApiClient {
             log.warn(`ApiClient: Primary URL failed (${response.status}), trying fallback...`);
             continue;
           }
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          // The server's own words. This threw "HTTP 403: Forbidden", so
+          // every refusal reached the person as a bare status (or a generic
+          // failure), never as the reason, and a 4xx was even retried on the
+          // fallback URL.
+          const body = await response.json().catch(() => null) as { error?: string; message?: string; code?: string } | null;
+          return {
+            success: false,
+            error: body?.error || body?.message || `HTTP ${response.status}`,
+            code: body?.code,
+            status: response.status,
+          };
         }
 
         const result = await response.json();

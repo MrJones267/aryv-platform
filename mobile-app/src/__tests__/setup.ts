@@ -56,6 +56,8 @@ jest.mock('react-native-permissions', () => ({
 
 // Mock @react-native-community/geolocation
 jest.mock('@react-native-community/geolocation', () => ({
+  // services/position configures the fused provider when it loads.
+  setRNConfiguration: jest.fn(),
   getCurrentPosition: jest.fn((success) => {
     success({
       coords: {

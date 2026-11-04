@@ -127,35 +127,22 @@ describe('LocationService', () => {
       await expect(locationService.getCurrentLocation()).rejects.toThrow('Location unavailable');
     });
 
-    it('uses custom options', async () => {
-      mockPermissionsAndroid.request.mockResolvedValue('granted');
+    it('asks for a precise fix first, whatever the caller passes', async () => {
+      // services/position chooses accuracy and timeouts, with a coarse
+      // fallback, instead of a caller's options timing out indoors.
       mockGeolocation.getCurrentPosition.mockImplementation((success) => {
         success({
-          coords: {
-            latitude: 37.7749,
-            longitude: -122.4194,
-            accuracy: 5,
-            altitude: null,
-            altitudeAccuracy: null,
-            heading: null,
-            speed: null,
-          },
+          coords: { latitude: 37.7749, longitude: -122.4194, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null },
           timestamp: Date.now(),
-        });
+        } as never);
       });
 
-      const options = {
-        enableHighAccuracy: false,
-        timeout: 5000,
-        maximumAge: 60000,
-      };
-
-      await locationService.getCurrentLocation(options);
+      await locationService.getCurrentLocation({ enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 });
 
       expect(mockGeolocation.getCurrentPosition).toHaveBeenCalledWith(
         expect.any(Function),
         expect.any(Function),
-        expect.objectContaining(options)
+        expect.objectContaining({ enableHighAccuracy: true, timeout: 15000 })
       );
     });
   });
