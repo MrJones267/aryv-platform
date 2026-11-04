@@ -5,6 +5,7 @@
  * @lastModified 2025-01-20
  */
 
+import { fileStorageService, avatarFileFromUrl } from '../services/FileStorageService';
 import { isNameLocked, changesName, NAME_LOCKED_MESSAGE } from '../services/identityNameLock';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
@@ -562,7 +563,10 @@ export class AuthController {
         return;
       }
 
+      const previous = avatarFileFromUrl(user.profilePicture);
       await user.update({ profilePicture: profilePictureUrl });
+      // A replaced photo is not kept: it is a picture of someone's face.
+      if (previous && previous !== file.filename) await fileStorageService.removeUpload('avatars', previous);
 
       res.status(200).json({
         success: true,

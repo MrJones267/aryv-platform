@@ -5,6 +5,7 @@
  * @lastModified 2025-01-27
  */
 
+import { fileStorageService, avatarFileFromUrl } from '../services/FileStorageService';
 import { isNameLocked, changesName, NAME_LOCKED_MESSAGE } from '../services/identityNameLock';
 import crypto from 'crypto';
 import { Response } from 'express';
@@ -207,7 +208,11 @@ export class UserController {
         return;
       }
 
+      const user = await User.findByPk(userId, { attributes: ['id', 'profilePicture'] });
+      const previous = avatarFileFromUrl(user?.profilePicture);
       await User.update({ profilePicture: null }, { where: { id: userId } });
+      // The photo itself too: clearing only the column left it in storage.
+      if (previous) await fileStorageService.removeUpload('avatars', previous);
 
       res.json({ success: true, message: 'Avatar deleted successfully', timestamp: new Date().toISOString() });
     } catch (error) {

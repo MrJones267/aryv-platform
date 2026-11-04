@@ -82,6 +82,16 @@ export const isR2Configured = (): boolean =>
 export const storageIsEphemeral = (): boolean =>
   !isR2Configured() && !process.env['UPLOADS_DIR'] && !VOLUME_MOUNT_PATH;
 
+/**
+ * The stored file behind a profile-photo URL
+ * ("https://api.aryv-app.com/uploads/avatars/<file>"), or null for anything
+ * else, such as a Google account photo.
+ */
+export const avatarFileFromUrl = (url: string | null | undefined): string | null => {
+  const match = /\/uploads\/avatars\/([^/?#]+)$/.exec(url ?? '');
+  return match ? path.basename(match[1]!) : null;
+};
+
 export class FileStorageService {
   private client: S3Client | null = null;
 
