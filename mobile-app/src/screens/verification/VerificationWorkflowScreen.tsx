@@ -354,7 +354,7 @@ const VerificationWorkflowScreen: React.FC<VerificationWorkflowScreenProps> = ({
                   />
                   <View style={styles.documentText}>
                     <Text style={styles.documentTitle}>
-                      {requirement.documentType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      {requirement.documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </Text>
                     <Text style={styles.documentDescription}>
                       {requirement.description}

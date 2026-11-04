@@ -92,9 +92,16 @@ const PackageScreen: React.FC = () => {
       return t('status.cancelled');
     }
 
-    // Check the package status field if available
-    if (package_.status) {
-      switch (package_.status.toLowerCase()) {
+    // A package has no status of its own; where it stands is the status of
+    // its delivery. Reading only package_.status, every package showed as
+    // "Active", whether a courier had it or it had been delivered.
+    const agreements = ((package_ as unknown as { deliveryAgreements?: Array<{ status?: string; createdAt?: string }> }).deliveryAgreements ?? [])
+      .filter((agreement) => agreement.status && agreement.status !== 'cancelled')
+      .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+    const status = package_.status ?? agreements[0]?.status;
+
+    if (status) {
+      switch (status.toLowerCase()) {
         case 'pending':
         case 'awaiting_courier':
           return t('cf2.awaitingCourier');
@@ -114,7 +121,7 @@ const PackageScreen: React.FC = () => {
         case 'cancelled':
           return t('status.cancelled');
         default:
-          return package_.status.charAt(0).toUpperCase() + package_.status.slice(1).replace(/_/g, ' ');
+          return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
       }
     }
 

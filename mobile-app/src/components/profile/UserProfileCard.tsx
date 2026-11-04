@@ -136,7 +136,8 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({
         {renderAvatar(36)}
         <View style={styles.inlineInfo}>
           <Text style={styles.inlineName} numberOfLines={1}>
-            {user.firstName} {user.lastName.charAt(0)}.
+            {/* Public views send no surname (see utils/driverName); charAt on it threw. */}
+            {user.firstName}{user.lastName ? ` ${user.lastName.charAt(0)}.` : ''}
           </Text>
           <View style={styles.inlineRating}>
             <Icon name="star" size={12} color="#F59E0B" />

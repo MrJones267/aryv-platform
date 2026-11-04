@@ -162,7 +162,9 @@ class NotificationService {
         deviceId: await this.getDeviceId(),
       };
 
-      const response = await this.apiClient.post('/notifications/register-token', deviceInfo, {
+      // The server's route is /notifications/push-token; /register-token did
+      // not exist, so no phone was ever registered for push.
+      const response = await this.apiClient.post('/notifications/push-token', { token: deviceInfo.token, platform: deviceInfo.platform }, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',

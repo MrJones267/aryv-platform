@@ -161,14 +161,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   };
 
+  // 'Packages' is not a screen anywhere, so Send parcel did nothing. Both go
+  // to the courier hub's own screens.
   const handleSendPackage = (): void => {
     haptic.tap();
-    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Packages');
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Courier', { screen: 'PackageMain' });
   };
 
   const handleDeliverPackages = (): void => {
     haptic.tap();
-    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Courier');
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void }).navigate('Courier', { screen: 'CourierMain' });
   };
 
   const handleViewRide = (rideId: string): void => {

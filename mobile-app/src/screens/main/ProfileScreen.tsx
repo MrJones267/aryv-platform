@@ -227,7 +227,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         handleVehicleManagement();
         break;
       case 'deliveryHistory':
-        nav.navigate('DeliveryHistory');
+        // There is no DeliveryHistory screen; a courier's deliveries are on the courier hub.
+        nav.navigate('Courier', { screen: 'CourierMain' });
         break;
       case 'switchRole':
         handleRoleSwitching();

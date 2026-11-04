@@ -493,7 +493,89 @@ class DocumentVerificationService {
       throw new Error(response.error || 'Verification status API failed');
     }
 
-    return response.data;
+    return this.toVerificationStatus(userId, response.data);
+  }
+
+  /**
+   * The screen's view of what the server sends.
+   *
+   * The server lists required documents by name ('drivers_license'), and the
+   * screen read `requirement.documentType.replace(...)` from each, which on a
+   * string is undefined: opening Verify Your Identity threw while drawing and
+   * the app crashed. Its statuses ('unverified', 'rejected') and missing
+   * fields (verificationLevel, canBookRides) are mapped here too.
+   *
+   * Identity comes first for everyone: a national ID, or a passport instead.
+   * The server asked only for driver documents, so nobody could verify who
+   * they are, and a name verified from an ID could never be locked.
+   */
+  private toVerificationStatus(userId: string, data: unknown): UserVerificationStatus {
+    const raw = (data ?? {}) as {
+      overallStatus?: string;
+      completionPercentage?: number;
+      canStartDriving?: boolean;
+      canBookRides?: boolean;
+      requiredDocuments?: Array<string | VerificationRequirements>;
+      submittedDocuments?: DocumentRecord[];
+      nextSteps?: string[];
+      verificationLevel?: UserVerificationStatus['verificationLevel'];
+      lastUpdated?: string;
+    };
+
+    const requirementFor = (type: DocumentType): VerificationRequirements =>
+      this.DOCUMENT_REQUIREMENTS[type] ?? {
+        documentType: type,
+        required: true,
+        description: '',
+        exampleImages: [],
+        guidelines: [],
+        maxFileSize: 10,
+        acceptedFormats: ['jpg', 'jpeg', 'png', 'pdf'],
+      };
+
+    const fromServer = (raw.requiredDocuments ?? [])
+      .map((entry) => (typeof entry === 'string' ? requirementFor(entry as DocumentType) : entry))
+      .filter((entry): entry is VerificationRequirements => Boolean(entry?.documentType));
+    // The ID is the required one (the table above lists it as optional);
+    // a passport is offered as the alternative.
+    const identity: VerificationRequirements[] = [
+      { ...requirementFor('national_id'), required: true },
+      { ...requirementFor('passport'), required: false },
+    ];
+    const required = [
+      ...identity,
+      ...fromServer.filter((r) => r.documentType !== 'national_id' && r.documentType !== 'passport'),
+    ];
+
+    const submitted = Array.isArray(raw.submittedDocuments) ? raw.submittedDocuments : [];
+    const identityDone = submitted.some(
+      (doc) => (doc.documentType === 'national_id' || doc.documentType === 'passport') && doc.status === 'approved',
+    );
+
+    const STATUS: Record<string, UserVerificationStatus['overallStatus']> = {
+      unverified: 'incomplete',
+      rejected: 'incomplete',
+      incomplete: 'incomplete',
+      pending: 'pending',
+      verified: 'verified',
+      suspended: 'suspended',
+    };
+
+    return {
+      userId,
+      overallStatus: STATUS[raw.overallStatus ?? ''] ?? 'incomplete',
+      completionPercentage: typeof raw.completionPercentage === 'number' ? raw.completionPercentage : 0,
+      requiredDocuments: required,
+      submittedDocuments: submitted,
+      nextSteps: [
+        ...(identityDone ? [] : ['Upload your national ID or passport']),
+        ...(Array.isArray(raw.nextSteps) ? raw.nextSteps : []),
+      ],
+      canStartDriving: Boolean(raw.canStartDriving),
+      canBookRides: raw.canBookRides ?? true,
+      verificationLevel: raw.verificationLevel ?? (identityDone ? 'standard' : 'basic'),
+      lastUpdated: raw.lastUpdated ?? new Date().toISOString(),
+    };
   }
 
   private async callVerificationProgressAPI(userId: string): Promise<VerificationProgressResponse> {

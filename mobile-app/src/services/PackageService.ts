@@ -285,7 +285,7 @@ class PackageService {
         throw new Error('Authentication required');
       }
 
-      const response = await this.apiClient.get('/courier/user/packages', {
+      const response = await this.apiClient.get('/courier/packages/user', {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
