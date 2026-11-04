@@ -19,7 +19,7 @@ import { authenticateToken } from '../middleware/auth';
 import path from 'path';
 import { uploadAvatar, uploadDocument, uploadVehiclePhoto, uploadVehicleDocument, handleMulterError, UPLOADS_DIR, keptInStorage } from '../middleware/upload';
 import User from '../models/User';
-import { AuthenticatedRequest } from '../types';
+import { AuthenticatedRequest, VehicleType } from '../types';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -248,6 +248,34 @@ router.get(
 );
 
 /**
+ * The vehicle model stores `type` and `capacity`, which is what the app
+ * sends. These routes validated `vehicleType`, `seatingCapacity` and a
+ * required `fuelType` instead, so every vehicle the app tried to register
+ * was refused, and no driver could offer a ride. The old names are still
+ * accepted, and the names people use for a type are mapped onto the
+ * model's.
+ */
+const VEHICLE_TYPE_ALIASES: Record<string, VehicleType> = {
+  car: VehicleType.SEDAN,
+  van: VehicleType.MINIVAN,
+  minibus: VehicleType.MINIVAN,
+  truck: VehicleType.PICKUP,
+  bakkie: VehicleType.PICKUP,
+};
+const normaliseVehicleBody = (req: any, _res: any, next: any): void => {
+  const body = req.body ?? {};
+  if (body.type === undefined && body.vehicleType !== undefined) body.type = body.vehicleType;
+  if (body.capacity === undefined && body.seatingCapacity !== undefined) body.capacity = body.seatingCapacity;
+  if (typeof body.type === 'string') {
+    const type = body.type.trim().toLowerCase();
+    body.type = VEHICLE_TYPE_ALIASES[type] ?? type;
+  }
+  delete body.vehicleType;
+  delete body.seatingCapacity;
+  next();
+};
+
+/**
  * @route   POST /api/users/vehicles
  * @desc    Register a new vehicle
  * @access  Private
@@ -256,6 +284,7 @@ router.post(
   '/vehicles',
   userRateLimit,
   authenticateToken,
+  normaliseVehicleBody,
   [
     body('make')
       .isLength({ min: 2, max: 50 })
@@ -272,15 +301,16 @@ router.post(
     body('licensePlate')
       .isLength({ min: 3, max: 15 })
       .withMessage('License plate must be between 3 and 15 characters'),
-    body('seatingCapacity')
-      .isInt({ min: 2, max: 8 })
-      .withMessage('Seating capacity must be between 2 and 8'),
+    body('capacity')
+      .isInt({ min: 1, max: 8 })
+      .withMessage('Passenger seats must be between 1 and 8'),
+    body('type')
+      .isIn(Object.values(VehicleType))
+      .withMessage(`Vehicle type must be one of: ${Object.values(VehicleType).join(', ')}`),
     body('fuelType')
+      .optional()
       .isIn(['gasoline', 'diesel', 'hybrid', 'electric', 'cng', 'lpg'])
       .withMessage('Invalid fuel type'),
-    body('vehicleType')
-      .isIn(['sedan', 'hatchback', 'suv', 'van', 'pickup', 'coupe', 'convertible'])
-      .withMessage('Invalid vehicle type'),
   ],
   validateInput,
   userController.registerVehicle.bind(userController),
@@ -295,6 +325,7 @@ router.put(
   '/vehicles/:id',
   userRateLimit,
   authenticateToken,
+  normaliseVehicleBody,
   [
     param('id').isUUID().withMessage('Vehicle ID must be a valid UUID'),
     body('make')
@@ -313,10 +344,14 @@ router.put(
       .optional()
       .isLength({ min: 3, max: 30 })
       .withMessage('Vehicle color must be between 3 and 30 characters'),
-    body('seatingCapacity')
+    body('capacity')
       .optional()
-      .isInt({ min: 2, max: 8 })
-      .withMessage('Seating capacity must be between 2 and 8'),
+      .isInt({ min: 1, max: 8 })
+      .withMessage('Passenger seats must be between 1 and 8'),
+    body('type')
+      .optional()
+      .isIn(Object.values(VehicleType))
+      .withMessage(`Vehicle type must be one of: ${Object.values(VehicleType).join(', ')}`),
   ],
   validateInput,
   userController.updateVehicle.bind(userController),
@@ -327,6 +362,7 @@ router.patch(
   '/vehicles/:id',
   userRateLimit,
   authenticateToken,
+  normaliseVehicleBody,
   [param('id').isUUID()],
   validateInput,
   userController.updateVehicle.bind(userController),

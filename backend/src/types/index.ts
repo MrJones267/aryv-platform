@@ -49,6 +49,10 @@ export enum VehicleType {
   MINIVAN = 'minivan',
   MOTORCYCLE = 'motorcycle',
   BICYCLE = 'bicycle',
+  // Migration 036. A bakkie is one of the commonest cars in Botswana; the
+  // app offered "Truck" and "Coupe", which could not be stored.
+  PICKUP = 'pickup',
+  COUPE = 'coupe',
 }
 
 export enum VehicleStatus {
