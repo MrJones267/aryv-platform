@@ -316,6 +316,17 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
       return;
     }
 
+    // A ride needs the car it is driven in. Without one this sent the
+    // placeholder 'default-vehicle-id', which the server refused as "Vehicle
+    // ID must be a valid UUID" and the driver saw only a failure.
+    if (!formData.vehicleId) {
+      Alert.alert(t('profile.noVehicles'), t('rf.addYourVehicleToOffer'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('profile.addVehicle'), onPress: () => (navigation as unknown as { navigate: (screen: string) => void }).navigate('DriverOnboarding') },
+      ]);
+      return;
+    }
+
     setIsCreating(true);
     try {
       const originData = formData.origin!;
@@ -344,7 +355,7 @@ const CreateRideScreen: React.FC<CreateRideScreenProps> = ({ navigation }) => {
         description: formData.description.trim(),
         preferences: formData.preferences,
         amenities: formData.amenities,
-        vehicleId: formData.vehicleId || 'default-vehicle-id',
+        vehicleId: formData.vehicleId,
       };
 
       const response = await ridesApi.createRide(rideData);

@@ -463,6 +463,7 @@ export const en = {
   'profile.noVehiclesBody': 'You have no registered vehicles.',
   'profile.yourVehicles': 'Your Vehicles',
   'profile.addVehicle': 'Add Vehicle',
+  'profile.nameLockedNote': 'Verified from your ID. Contact support if it needs correcting.',
   'profile.roleSwitched': 'Role Switched',
   'profile.roleSwitchedBody': 'Your active role is now: {{role}}',
   'profile.switchRole': 'Switch Role',

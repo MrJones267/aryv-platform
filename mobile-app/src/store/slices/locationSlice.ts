@@ -7,6 +7,7 @@
 
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import Geolocation from '@react-native-community/geolocation';
+import { getPosition } from '../../services/position';
 import { PERMISSIONS, RESULTS, request, check } from 'react-native-permissions';
 import { Platform, Alert, Linking } from 'react-native';
 
@@ -124,45 +125,26 @@ export const getCurrentLocation = createAsyncThunk(
         }
       }
 
-      return new Promise<LocationData>((resolve, reject) => {
-        Geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude, accuracy } = position.coords;
-            const timestamp = position.timestamp;
-            
-            try {
-              const geocodeData = await reverseGeocode(latitude, longitude);
-              
-              const locationData: LocationData = {
-                latitude,
-                longitude,
-                accuracy,
-                timestamp,
-                ...geocodeData,
-              };
-              
-              resolve(locationData);
-            } catch (geocodeError) {
-              // Still resolve with coordinates even if geocoding fails
-              resolve({
-                latitude,
-                longitude,
-                accuracy,
-                timestamp,
-                address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-              });
-            }
-          },
-          (error) => {
-            reject(error.message || 'Failed to get current location');
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 10000,
-          }
-        );
+      // Fused provider, with a coarse fallback rather than a timeout: see services/position.
+      const position = await getPosition().catch((error: { message?: string }) => {
+        throw new Error(error?.message || 'Failed to get current location');
       });
+      const { latitude, longitude, accuracy } = position.coords;
+      const timestamp = position.timestamp;
+
+      try {
+        const geocodeData = await reverseGeocode(latitude, longitude);
+        return { latitude, longitude, accuracy, timestamp, ...geocodeData } as LocationData;
+      } catch (geocodeError) {
+        // Still resolve with coordinates even if geocoding fails
+        return {
+          latitude,
+          longitude,
+          accuracy,
+          timestamp,
+          address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+        } as LocationData;
+      }
     } catch (error: any) {
       return rejectWithValue(error.message || 'Failed to get current location');
     }
