@@ -403,6 +403,26 @@ class PackageService {
     }
   }
 
+  /** This person's courier profile, or null if they have never been a courier. */
+  async getCourierProfile(): Promise<{ isCourierActive?: boolean; isAvailableForDeliveries?: boolean } | null> {
+    const response = await this.apiClient.get('/courier/profile');
+    return response.success ? response.data ?? null : null;
+  }
+
+  /**
+   * Switch "Available for deliveries" on or off. The switch only changed the
+   * screen, so nobody ever became a courier and every Accept was refused
+   * with "User is not an active courier". The server turns a courier on only
+   * once an identity document is approved (IDENTITY_VERIFICATION_REQUIRED).
+   */
+  async setCourierAvailability(available: boolean): Promise<{ success: boolean; error?: string; code?: string }> {
+    const response = await this.apiClient.put('/courier/profile', {
+      isCourierActive: available,
+      isAvailableForDeliveries: available,
+    });
+    return { success: response.success, error: response.error, code: response.code };
+  }
+
   /**
    * Accept a package for delivery with conflict resolution
    */

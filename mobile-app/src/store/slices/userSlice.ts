@@ -136,6 +136,22 @@ export const uploadProfilePicture = createAsyncThunk(
   }
 );
 
+/** Remove the profile photo. Before this, Remove only cleared the preview. */
+export const removeProfilePicture = createAsyncThunk(
+  'user/removeProfilePicture',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await userApi.removeProfilePicture();
+      if (response.success) {
+        return true;
+      }
+      return rejectWithValue(response.error || 'Failed to remove profile picture');
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Network error');
+    }
+  }
+);
+
 export const changePassword = createAsyncThunk(
   'user/changePassword',
   async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }, { rejectWithValue }) => {
@@ -285,6 +301,11 @@ const userSlice = createSlice({
           state.profile.profilePicture = action.payload;
         }
         state.updateError = null;
+      })
+      .addCase(removeProfilePicture.fulfilled, (state) => {
+        if (state.profile) {
+          state.profile.profilePicture = undefined;
+        }
       })
       .addCase(uploadProfilePicture.rejected, (state, action) => {
         state.updateLoading = false;

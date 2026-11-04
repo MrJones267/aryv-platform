@@ -116,6 +116,13 @@ class UserApiService extends BaseApiService {
   }
 
   /**
+   * Remove the profile photo: the server clears it and deletes the file.
+   */
+  async removeProfilePicture(): Promise<ApiResponse<void>> {
+    return this.delete<void>('/users/profile/avatar');
+  }
+
+  /**
    * Change password
    */
   async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<void>> {

@@ -17,15 +17,21 @@ import {
   Alert,
   Image,
   ActivityIndicator,
+  Linking,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import { launchCamera } from 'react-native-image-picker';
+import FaceDetection from '@react-native-ml-kit/face-detection';
+import { facePhotoProblem, FacePhotoProblem } from '../../utils/facePhoto';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { updateUserProfile, uploadProfilePicture } from '../../store/slices/userSlice';
+import { updateUserProfile, uploadProfilePicture, removeProfilePicture } from '../../store/slices/userSlice';
 import { colors } from '../../theme';
 import PhoneInput from '../../components/ui/PhoneInput';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import type { TranslationKey } from '../../i18n/translations';
 import { fixed } from '../../utils/fixed';
 
 /** Lightweight country shape matching what PhoneInput emits */
@@ -115,62 +121,108 @@ const EditProfileScreen: React.FC<EditProfileScreenProps> = ({ navigation }) => 
     }
   };
 
+  // Profile photos are how riders and drivers recognise each other at
+  // pickup: taken with the front camera, never picked from the gallery, and
+  // only accepted when they show one face clearly.
   const handleSelectPhoto = (): void => {
+    const hasPhoto = Boolean(localPhotoUri || profile?.profilePicture);
     Alert.alert(
       t('st.profilePhoto'),
-      t('st.chooseHowYouWantTo'),
+      t('photo.cameraOnly'),
       [
-        {
-          text: t('rf.takePhoto'),
-          onPress: () => pickImage(true),
-        },
-        {
-          text: t('rf.chooseFromGallery'),
-          onPress: () => pickImage(false),
-        },
-        {
-          text: t('st.removePhoto'),
-          style: 'destructive',
-          onPress: () => {
-            setLocalPhotoUri(null);
-            // Could dispatch an update to clear the photo
-          },
-        },
+        { text: t('rf.takePhoto'), onPress: () => takePhoto() },
+        ...(hasPhoto
+          ? [{ text: t('st.removePhoto'), style: 'destructive' as const, onPress: () => removePhoto() }]
+          : []),
         { text: t('common.cancel'), style: 'cancel' },
       ]
     );
   };
 
-  const pickImage = async (useCamera: boolean) => {
+  const FACE_PROBLEM_TEXT: Record<FacePhotoProblem, TranslationKey> = {
+    no_face: 'photo.noFace',
+    several_faces: 'photo.severalFaces',
+    too_far: 'photo.tooFar',
+    not_facing: 'photo.notFacing',
+    eyes_closed: 'photo.eyesClosed',
+  };
+
+  const takePhoto = async (): Promise<void> => {
     try {
-      const options = {
-        mediaType: 'photo' as const,
-        quality: 0.8 as const,
+      // The camera opens only once access is granted; the picker does not ask.
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert(t('photo.faceTitle'), t('photo.cameraNeeded'), [
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('perm.openSettings'), onPress: () => { Linking.openSettings().catch(() => undefined); } },
+          ]);
+          return;
+        }
+      }
+
+      const result = await launchCamera({
+        mediaType: 'photo',
+        cameraType: 'front',
+        quality: 0.8,
         maxWidth: 1024,
         maxHeight: 1024,
         includeBase64: false,
-      };
+        saveToPhotos: false,
+      });
 
-      const result = useCamera
-        ? await launchCamera(options)
-        : await launchImageLibrary(options);
+      if (result.errorCode) {
+        log.warn('Camera failed', { code: result.errorCode, message: result.errorMessage });
+        Alert.alert(t('common.error'), t('st.failedToSelectPhotoPlease'));
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (result.didCancel || !asset?.uri) return;
 
-      if (result.didCancel || !result.assets?.[0]?.uri) return;
+      // On the phone, before anything is sent: one face, close enough,
+      // looking at the camera.
+      const faces = await FaceDetection.detect(asset.uri, {
+        performanceMode: 'accurate',
+        classificationMode: 'all',
+      });
+      const problem = facePhotoProblem(faces, asset.width ?? 0);
+      if (problem) {
+        Alert.alert(t('photo.faceTitle'), t(FACE_PROBLEM_TEXT[problem]), [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('photo.retake'), onPress: () => takePhoto() },
+        ]);
+        return;
+      }
 
-      const imageUri = result.assets[0].uri;
-      setLocalPhotoUri(imageUri);
+      setLocalPhotoUri(asset.uri);
       setIsUploadingPhoto(true);
-
       try {
-        await dispatch(uploadProfilePicture(imageUri)).unwrap();
+        await dispatch(uploadProfilePicture(asset.uri)).unwrap();
       } catch (error: unknown) {
-        log.warn('Photo upload failed, will retry on save:', error);
-        // Keep the local preview — photo saved locally even if upload fails
+        // Nothing retried a failed upload, though this said it would on save.
+        log.warn('Photo upload failed', error);
+        setLocalPhotoUri(null);
+        Alert.alert(t('common.error'), t('photo.uploadFailed'));
       } finally {
         setIsUploadingPhoto(false);
       }
     } catch (error) {
+      log.warn('Could not take a profile photo', error);
       Alert.alert(t('common.error'), t('st.failedToSelectPhotoPlease'));
+    }
+  };
+
+  const removePhoto = async (): Promise<void> => {
+    setIsUploadingPhoto(true);
+    try {
+      // This only cleared the preview, so the photo reappeared at once.
+      await dispatch(removeProfilePicture()).unwrap();
+      setLocalPhotoUri(null);
+    } catch (error: unknown) {
+      log.warn('Photo removal failed', error);
+      Alert.alert(t('common.error'), t('photo.removeFailed'));
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
