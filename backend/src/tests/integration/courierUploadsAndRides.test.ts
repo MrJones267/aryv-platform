@@ -87,6 +87,16 @@ describe('Courier: accepting and opening a package', () => {
 });
 
 describe('Profile photo from the app', () => {
+  // The stored URL is built from API_BASE_URL, as in production, and the
+  // column only takes a URL with a real host: the localhost fallback is not
+  // one.
+  const baseUrl = process.env['API_BASE_URL'];
+  beforeAll(() => { process.env['API_BASE_URL'] = 'https://api.test.aryv-app.com'; });
+  afterAll(() => {
+    if (baseUrl === undefined) delete process.env['API_BASE_URL'];
+    else process.env['API_BASE_URL'] = baseUrl;
+  });
+
   it('takes the photo under the field name the app sends', async () => {
     const user = await mk('neo@test.com', 'Neo');
     const res = await request(app).post('/api/auth/upload-profile-picture').set(as(user))
@@ -107,6 +117,8 @@ describe('Profile photo from the app', () => {
 describe('Offering a ride between towns', () => {
   it('accepts a town name alone as the address', async () => {
     const driver = await mk('thato@test.com', 'Thato', UserRole.DRIVER);
+    // Offering rides is for verified drivers.
+    await driver.update({ driverVerificationStatus: 'verified' } as any);
     const vehicle = await Vehicle.create({
       driverId: driver.id, make: 'Toyota', model: 'Corolla', year: 2019, color: 'White',
       licensePlate: 'B321XYZ', capacity: 4, type: VehicleType.SEDAN, isVerified: true,
