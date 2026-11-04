@@ -515,9 +515,11 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
               <UserProfileCard
                 user={{
                   id: booking.id,
-                  firstName: booking.passenger.firstName,
-                  lastName: booking.passenger.lastName,
-                  rating: booking.passenger.rating,
+                  // A booking can arrive without its passenger (an account
+                  // since closed); reading through it threw while drawing.
+                  firstName: booking.passenger?.firstName ?? '',
+                  lastName: booking.passenger?.lastName ?? '',
+                  rating: booking.passenger?.rating ?? 0,
                   totalRides: 0,
                 }}
                 variant="inline"

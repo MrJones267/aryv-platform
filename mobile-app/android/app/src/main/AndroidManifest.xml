@@ -13,6 +13,11 @@
          parcel or Deliver closed the app ("keeps stopping"). Normal
          permission: granted at install, nothing to ask. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- WebRTC calls: routing call audio (earpiece, speaker, headset) and
+         re-binding the network when it changes mid-call. Normal permissions,
+         granted at install. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <!-- Legacy storage only; a no-op from API 29 and refused by Play without a cap. -->
     <uses-permission

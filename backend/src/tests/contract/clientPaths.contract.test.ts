@@ -160,7 +160,6 @@ describe('mobile client / backend path contract', () => {
     'GET /api/courier/deliveries/available  (CourierService.ts)',
     'GET /api/courier/notifications  (CourierService.ts)',
     'GET /api/courier/stats  (CourierService.ts)',
-    'GET /api/courier/user/packages  (PackageService.ts)',
     'POST /api/courier/availability  (CourierService.ts)',
     'POST /api/courier/deliveries/accept  (CourierService.ts)',
     'POST /api/courier/location  (CourierService.ts)',
@@ -184,7 +183,6 @@ describe('mobile client / backend path contract', () => {
 
     // Notification preferences and token registration.
     'GET /api/notifications/preferences  (NotificationService.ts)',
-    'POST /api/notifications/register-token  (NotificationService.ts)',
     'PUT /api/notifications/preferences  (NotificationService.ts)',
 
     // Assorted single endpoints.
