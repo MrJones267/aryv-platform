@@ -242,7 +242,7 @@ export const tn: Record<TranslationKey, string> = {
   'register.phoneShort': 'Nomoro ya mogala e tshwanetse go nna le dinomoro di le 6 bonnye',
   'register.phoneDigits': 'Nomoro ya mogala e ka nna le dinomoro, digopa le mela fela',
   'register.passwordRequired': 'Lefoko la sephiri le a tlhokega',
-  'register.passwordMix': 'Lefoko la sephiri le tshwanetse go nna le tlhaka e kgolo, e nnye, nomoro le letshwao',
+  'register.passwordMix': 'Bonnye ditlhaka di le 8, go na le tlhaka e kgolo, e nnye, nomoro le letshwao (lefe fela, jaaka # . ! @)',
   'register.passwordShort': 'Lefoko la sephiri le tshwanetse go nna le ditlhaka di le 8 bonnye',
   'register.confirmRequired': 'Tsweetswee netefatsa lefoko la sephiri',
   'register.mismatch': 'Mafoko a sephiri ga a tshwane',

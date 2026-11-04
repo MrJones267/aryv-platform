@@ -24,6 +24,7 @@ import { registerUser, clearAuthError, googleLogin } from '../../store/slices/au
 import { RegisterScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import PhoneInput from '../../components/ui/PhoneInput';
+import { passwordProblem } from '../../utils/passwordRule';
 import { Country as CountryServiceCountry } from '../../services/CountryService';
 import { CurrencyService } from '../../services/CurrencyService';
 
@@ -114,14 +115,14 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       errors.phone = t('register.phoneDigits');
     }
 
-    // Password validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!formData.password) {
+    // Password validation: the server's rule (any symbol counts).
+    const problem = passwordProblem(formData.password);
+    if (problem === 'required') {
       errors.password = t('register.passwordRequired');
-    } else if (!passwordRegex.test(formData.password)) {
-      errors.password = t('register.passwordMix');
-    } else if (formData.password.length < 8) {
+    } else if (problem === 'too_short') {
       errors.password = t('register.passwordShort');
+    } else if (problem) {
+      errors.password = t('register.passwordMix');
     }
 
     // Confirm password validation
@@ -201,7 +202,12 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   };
 
   const handleRegister = async (): Promise<void> => {
-    if (!isFormValid) return;
+    if (!isFormValid) {
+      // The button stayed greyed out with no word of why; say what to fix.
+      const first = Object.values(validationErrors)[0];
+      Alert.alert(t('register.failed'), first || t('register.mustAgree'));
+      return;
+    }
 
     try {
       // Construct full phone number with country code
@@ -490,7 +496,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                 (!isFormValid || isLoading) && styles.registerButtonDisabled,
               ]}
               onPress={handleRegister}
-              disabled={!isFormValid || isLoading}
+              // Pressable while the form is incomplete, so it can say why.
+              disabled={isLoading}
               activeOpacity={0.8}
             >
               <Text style={styles.registerButtonText}>
