@@ -147,6 +147,26 @@ app.use(limiter);
 // Request logging middleware
 app.use(requestLogger);
 
+// Profile photos are public, as on any ride app: riders see their driver's
+// photo and drivers their riders'. They were behind the authenticated route
+// below, which an <Image> cannot satisfy (it sends no Authorization header),
+// so every photo, including a person's own, showed as a blank space.
+app.get('/uploads/avatars/:filename', (req, res) => {
+  const safe = path.basename(req.params['filename'] ?? '');
+  if (safe !== req.params['filename'] || safe.startsWith('.')) {
+    return res.status(400).json({ success: false, error: 'Invalid filename', code: 'INVALID_FILENAME' });
+  }
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return fileStorageService.sendFile(res, 'avatars', safe)
+    .then((sent) => {
+      if (!sent) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+    })
+    .catch((error: Error) => {
+      logError('Could not serve a profile photo', error);
+      if (!res.headersSent) res.status(404).json({ success: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+    });
+});
+
 // Authenticated file serving — users can only access their own files; admins can access all
 app.get('/uploads/:type/:filename', authenticateToken as any, (req: any, res) => {
   const { type, filename } = req.params as { type: string; filename: string };

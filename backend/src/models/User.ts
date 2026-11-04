@@ -163,10 +163,18 @@ const User = sequelize.define<UserModel>(
           args: new Date().toISOString(),
           msg: 'Date of birth cannot be in the future',
         },
-        isAdult(value: Date) {
+        isAdult(value: Date | string) {
           if (value) {
-            const age = new Date().getFullYear() - value.getFullYear();
-            if (age < 18) {
+            // A DATEONLY arrives as text ('1995-05-17'), which has no
+            // getFullYear(): this threw, and saving a date of birth on the
+            // profile answered 500 for everyone.
+            const born = value instanceof Date ? value : new Date(value);
+            if (Number.isNaN(born.getTime())) {
+              throw new Error('Date of birth is not a valid date');
+            }
+            const eighteenth = new Date(born);
+            eighteenth.setFullYear(born.getFullYear() + 18);
+            if (eighteenth > new Date()) {
               throw new Error('User must be at least 18 years old');
             }
           }

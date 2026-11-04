@@ -55,7 +55,9 @@ class SMSService {
     }
 
     if (!this.initialized || !TWILIO_PHONE_NUMBER) {
-      logger.info('SMS not sent (Twilio not configured)', { to, body });
+      // The body only outside production: it can carry a code, and with `to`
+      // it is personal data the logs should not keep.
+      logger.info('SMS not sent (Twilio not configured)', process.env['NODE_ENV'] === 'production' ? {} : { to, body });
       return false;
     }
 
