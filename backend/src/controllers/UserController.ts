@@ -5,6 +5,7 @@
  * @lastModified 2025-01-27
  */
 
+import { isNameLocked, changesName, NAME_LOCKED_MESSAGE } from '../services/identityNameLock';
 import crypto from 'crypto';
 import { Response } from 'express';
 import { Op } from 'sequelize';
@@ -58,7 +59,8 @@ export class UserController {
 
       res.json({
         success: true,
-        data: user,
+        // nameLocked: the name came from an approved ID; the app shows it read-only.
+        data: { ...user.toJSON(), nameLocked: await isNameLocked(userId) },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -118,6 +120,17 @@ export class UserController {
           timestamp: new Date().toISOString(),
         });
         await transaction.rollback();
+        return;
+      }
+
+      if (changesName(user, updateData) && await isNameLocked(userId)) {
+        await transaction.rollback();
+        res.status(403).json({
+          success: false,
+          error: NAME_LOCKED_MESSAGE,
+          code: 'NAME_LOCKED_BY_VERIFICATION',
+          timestamp: new Date().toISOString(),
+        });
         return;
       }
 

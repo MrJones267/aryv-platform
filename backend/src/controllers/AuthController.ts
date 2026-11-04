@@ -5,6 +5,7 @@
  * @lastModified 2025-01-20
  */
 
+import { isNameLocked, changesName, NAME_LOCKED_MESSAGE } from '../services/identityNameLock';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
@@ -261,7 +262,8 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: 'Profile retrieved successfully',
-        data: user,
+        // nameLocked: the name came from an approved ID; the app shows it read-only.
+        data: { ...user, nameLocked: await isNameLocked(req.user.id) },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -513,6 +515,11 @@ export class AuthController {
 
       if (Object.keys(updates).length === 0) {
         res.status(400).json({ success: false, error: 'No updatable fields provided', code: 'NO_FIELDS', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (changesName(user, updates) && await isNameLocked(user.id)) {
+        res.status(403).json({ success: false, error: NAME_LOCKED_MESSAGE, code: 'NAME_LOCKED_BY_VERIFICATION', timestamp: new Date().toISOString() });
         return;
       }
 
