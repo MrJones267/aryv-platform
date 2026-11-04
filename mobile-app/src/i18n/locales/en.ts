@@ -241,7 +241,7 @@ export const en = {
   'register.phoneShort': 'Phone number must be at least 6 digits',
   'register.phoneDigits': 'Phone number can only contain digits, spaces, and dashes',
   'register.passwordRequired': 'Password is required',
-  'register.passwordMix': 'Password must contain uppercase, lowercase, number, and special character',
+  'register.passwordMix': 'At least 8 characters, with an uppercase letter, a lowercase letter, a number and a symbol (any, e.g. # . ! @)',
   'register.passwordShort': 'Password must be at least 8 characters',
   'register.confirmRequired': 'Please confirm your password',
   'register.mismatch': 'Passwords do not match',

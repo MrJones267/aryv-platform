@@ -241,7 +241,7 @@ export const af: Record<TranslationKey, string> = {
   'register.phoneShort': 'Telefoonnommer moet minstens 6 syfers hê',
   'register.phoneDigits': 'Telefoonnommer mag slegs syfers, spasies en koppeltekens bevat',
   'register.passwordRequired': 'Wagwoord word vereis',
-  'register.passwordMix': 'Wagwoord moet \'n hoofletter, kleinletter, syfer en spesiale karakter bevat',
+  'register.passwordMix': 'Minstens 8 karakters, met \'n hoofletter, \'n kleinletter, \'n syfer en \'n simbool (enige, bv. # . ! @)',
   'register.passwordShort': 'Wagwoord moet minstens 8 karakters hê',
   'register.confirmRequired': 'Bevestig asseblief jou wagwoord',
   'register.mismatch': 'Wagwoorde stem nie ooreen nie',
