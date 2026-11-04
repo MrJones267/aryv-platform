@@ -13,6 +13,11 @@ jest.mock('../../models/User');
 jest.mock('../../models/Vehicle');
 jest.mock('../../models/Ride');
 jest.mock('../../models/Booking');
+// The name lock reads approved ID documents; no database in unit tests.
+jest.mock('../../services/identityNameLock', () => ({
+  ...jest.requireActual('../../services/identityNameLock'),
+  isNameLocked: jest.fn().mockResolvedValue(false),
+}));
 jest.mock('../../config/database', () => ({
   sequelize: {
     transaction: jest.fn(() => ({
@@ -87,11 +92,11 @@ describe('UserController', () => {
     });
 
     it('returns 200 with user data (excluding password)', async () => {
-      const fakeUser = { id: 'u1', email: 'a@b.com', firstName: 'A', vehicles: [] };
-      (User.findByPk as jest.Mock).mockResolvedValue(fakeUser);
+      const fields = { id: 'u1', email: 'a@b.com', firstName: 'A', vehicles: [] };
+      (User.findByPk as jest.Mock).mockResolvedValue({ ...fields, toJSON: () => fields });
       const res = mockRes();
       await controller.getProfile(mockReq({ id: 'u1' }), res);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: fakeUser }));
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: { ...fields, nameLocked: false } }));
     });
 
     it('returns 500 on DB error', async () => {
