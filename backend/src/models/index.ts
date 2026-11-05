@@ -2,7 +2,7 @@
  * @fileoverview Model index file with associations and database sync
  * @author Oabona-Majoko
  * @created 2025-01-20
- * @lastModified 2025-01-24
+ * @lastModified 2026-11-05
  */
 
 import { sequelize, testConnection } from '../config/database';
@@ -28,6 +28,11 @@ import DemandMetrics from './DemandMetrics';
 // Cash payment models
 import CashTransaction from './CashTransaction';
 import UserWallet from './UserWallet';
+// The user's money: balance, top-ups and every movement, as a ledger.
+// UserWallet, despite its name, holds no money: it is the cash trust and
+// commission profile. Not registered here before, so build-schema never
+// created these tables.
+import { CashWallet, CashWalletTransaction } from './CashWallet';
 import CommissionLedger from './CommissionLedger';
 import TrustHold from './TrustHold';
 import CashDispute from './CashDispute';
@@ -534,6 +539,8 @@ export {
   // Cash payment models
   CashTransaction,
   UserWallet,
+  CashWallet,
+  CashWalletTransaction,
   CommissionLedger,
   TrustHold,
   CashDispute,
@@ -584,6 +591,8 @@ export default {
   // Cash payment models
   CashTransaction,
   UserWallet,
+  CashWallet,
+  CashWalletTransaction,
   CommissionLedger,
   TrustHold,
   CashDispute,

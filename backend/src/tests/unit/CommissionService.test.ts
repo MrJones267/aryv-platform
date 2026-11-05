@@ -3,12 +3,13 @@
  *               accrual, settlement, balance and block enforcement.
  * @author Oabona-Majoko
  * @created 2026-06-17
- * @lastModified 2026-06-17
+ * @lastModified 2026-11-05
  */
 
 import { sequelize } from '../../config/database';
 import CommissionService from '../../services/CommissionService';
 import UserWallet from '../../models/UserWallet';
+import cashWalletService from '../../services/CashWalletService';
 import CommissionLedger, {
   CommissionEntryType,
   SettlementMethod,
@@ -17,6 +18,11 @@ import CommissionLedger, {
 // Mock the models. config/database is intentionally NOT mocked: sequelize
 // .define() runs without a DB connection, and we stub sequelize.transaction().
 jest.mock('../../models/UserWallet');
+// The wallet's money lives in cash_wallets; settlement debits it through here.
+jest.mock('../../services/CashWalletService', () => ({
+  __esModule: true,
+  default: { debitForCommission: jest.fn() },
+}));
 jest.mock('../../models/CommissionLedger', () => {
   const actual = jest.requireActual('../../models/CommissionLedger');
   return {
@@ -36,11 +42,11 @@ const MockedUserWallet = UserWallet as unknown as {
   create: jest.Mock;
 };
 const MockedLedger = CommissionLedger as unknown as { create: jest.Mock };
+const mockDebit = (cashWalletService as unknown as { debitForCommission: jest.Mock }).debitForCommission;
 
 /** Build a wallet stub with a jest.fn update() and sane defaults. */
 const makeWallet = (overrides: Record<string, unknown> = {}) => ({
   userId: 'driver-1',
-  availableBalance: 0,
   commissionOwed: 0,
   totalCommissionPaid: 0,
   commissionBlockThreshold: 50,
@@ -163,27 +169,55 @@ describe('CommissionService', () => {
       expect(res.remainingOwed).toBe(0);
     });
 
-    it('deducts from the digital wallet on WALLET_DEDUCTION when funds exist', async () => {
-      const wallet = makeWallet({ commissionOwed: 15, availableBalance: 50 });
+    it('pays WALLET_DEDUCTION from cash_wallets, inside the settlement transaction', async () => {
+      const wallet = makeWallet({ commissionOwed: 15 });
       MockedUserWallet.findOne.mockResolvedValue(wallet);
+      mockDebit.mockResolvedValue({ success: true, transactionId: 'cwt-1', balanceAfter: 35 });
 
       const res = await service.settleCommission('driver-1', 15, SettlementMethod.WALLET_DEDUCTION);
 
       expect(res.success).toBe(true);
-      // First update debits the wallet balance.
-      expect(wallet.update).toHaveBeenCalledWith({ availableBalance: 35 }, { transaction: mockTx });
+      expect(mockDebit).toHaveBeenCalledWith('driver-1', 15, mockTx);
+      expect(wallet.update).toHaveBeenCalledWith(
+        expect.objectContaining({ commissionOwed: 0, totalCommissionPaid: 15 }),
+        { transaction: mockTx },
+      );
+      expect(mockTx.commit).toHaveBeenCalled();
     });
 
-    it('fails WALLET_DEDUCTION with insufficient balance and rolls back', async () => {
-      const wallet = makeWallet({ commissionOwed: 15, availableBalance: 5 });
+    it('debits only what is owed when asked to pay more from the wallet', async () => {
+      MockedUserWallet.findOne.mockResolvedValue(makeWallet({ commissionOwed: 7 }));
+      mockDebit.mockResolvedValue({ success: true });
+
+      await service.settleCommission('driver-1', 100, SettlementMethod.WALLET_DEDUCTION);
+
+      expect(mockDebit).toHaveBeenCalledWith('driver-1', 7, mockTx);
+    });
+
+    it('fails WALLET_DEDUCTION when the wallet cannot pay, and rolls back', async () => {
+      const wallet = makeWallet({ commissionOwed: 15 });
       MockedUserWallet.findOne.mockResolvedValue(wallet);
+      mockDebit.mockResolvedValue({
+        success: false, code: 'INSUFFICIENT_BALANCE',
+        error: 'Insufficient wallet balance. Available: 5, required: 15',
+      });
 
       const res = await service.settleCommission('driver-1', 15, SettlementMethod.WALLET_DEDUCTION);
 
       expect(res.success).toBe(false);
       expect(res.error).toMatch(/insufficient wallet balance/i);
       expect(mockTx.rollback).toHaveBeenCalled();
+      expect(mockTx.commit).not.toHaveBeenCalled();
+      expect(wallet.update).not.toHaveBeenCalled();
       expect(MockedLedger.create).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the wallet when the driver pays another way', async () => {
+      MockedUserWallet.findOne.mockResolvedValue(makeWallet({ commissionOwed: 15 }));
+
+      await service.settleCommission('driver-1', 15, SettlementMethod.CASH_AGENT);
+
+      expect(mockDebit).not.toHaveBeenCalled();
     });
   });
 

@@ -5,12 +5,13 @@
  *               while riders pay 100% in cash (no card / mobile money needed).
  * @author Oabona-Majoko
  * @created 2026-06-17
- * @lastModified 2026-06-17
+ * @lastModified 2026-11-05
  */
 
 import { Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import UserWallet from '../models/UserWallet';
+import cashWalletService from './CashWalletService';
 import CommissionLedger, {
   CommissionEntryType,
   SettlementMethod,
@@ -117,19 +118,16 @@ export class CommissionService {
       const applied = round2(Math.min(amount, owed));
       const newOwed = round2(owed - applied);
 
-      // If settling via the digital wallet, the funds must exist there.
+      // Paying from the wallet takes the money from cash_wallets, the one
+      // place a user's balance lives. This used to read user_wallets'
+      // availableBalance, which nothing ever credits: top-ups land in
+      // cash_wallets, so a driver with money in the app could not pay with it.
       if (method === SettlementMethod.WALLET_DEDUCTION) {
-        const available = Number(wallet.availableBalance);
-        if (available < applied) {
+        const debit = await cashWalletService.debitForCommission(driverId, applied, transaction);
+        if (!debit.success) {
           await transaction.rollback();
-          return {
-            success: false,
-            error: `Insufficient wallet balance. Available: ${available}, required: ${applied}`,
-          };
+          return { success: false, error: debit.error ?? 'Could not pay from the wallet' };
         }
-        await wallet.update({
-          availableBalance: round2(available - applied),
-        }, { transaction });
       }
 
       await wallet.update({

@@ -1,8 +1,18 @@
 /**
- * @fileoverview User Wallet model for cash payment trust system
+ * @fileoverview A user's cash trust and commission profile
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-11-05
+ *
+ * Despite the name, this holds no money. A user's balance, top-ups and
+ * payments live in CashWallet (cash_wallets), the one wallet system. This
+ * holds cash-ride limits, trust score, suspension and commission owed.
+ *
+ * It used to also carry availableBalance, pendingBalance and escrowBalance,
+ * "for future digital wallet features". Nothing ever credited them, and
+ * commission settlement debited a balance that was always zero. They are no
+ * longer mapped. The columns stay in the table (NOT NULL DEFAULT 0, so
+ * inserts are unaffected) until a migration drops them.
  */
 
 import {
@@ -27,11 +37,6 @@ export interface UserWalletModel extends Model<
 > {
   id: CreationOptional<string>;
   userId: ForeignKey<string>;
-
-  // Wallet balances (for future digital wallet features)
-  availableBalance: CreationOptional<number>;
-  pendingBalance: CreationOptional<number>;
-  escrowBalance: CreationOptional<number>;
 
   // Cash transaction limits
   dailyCashLimit: CreationOptional<number>;
@@ -95,24 +100,6 @@ const UserWallet = sequelize.define<UserWalletModel>(
         model: 'users',
         key: 'id',
       },
-    },
-    availableBalance: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      defaultValue: 0.00,
-      field: 'available_balance',
-    },
-    pendingBalance: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      defaultValue: 0.00,
-      field: 'pending_balance',
-    },
-    escrowBalance: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      defaultValue: 0.00,
-      field: 'escrow_balance',
     },
     dailyCashLimit: {
       type: DataTypes.DECIMAL(8, 2),
