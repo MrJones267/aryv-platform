@@ -2,20 +2,22 @@
  * @fileoverview Location and real-time tracking API routes
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-11-05
  */
 
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { body, query, param } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
 import { LocationController } from '../controllers/LocationController';
+import { EmergencyController } from '../controllers/EmergencyController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 const locationController = new LocationController();
+const emergencyController = new EmergencyController();
 
 // Rate limiting for location operations
 const locationRateLimit = rateLimit({
@@ -268,8 +270,15 @@ router.get(
 
 /**
  * @route   POST /api/locations/emergency-alert
- * @desc    Send emergency alert with location
+ * @desc    Legacy SOS address, kept for app builds already installed. It now
+ *          raises the alert through /api/emergency, the same as the app does.
  * @access  Private
+ *
+ * This used to have its own handler. It saved nothing, so admins never saw
+ * the alert, and it sent the caller's ID and exact location over the socket
+ * to every connected user. Now it fills in `alertType` from the old
+ * `emergencyType` field and hands the request to the real controller, which
+ * saves the alert, notifies emergency contacts and alerts operators.
  */
 router.post(
   '/emergency-alert',
@@ -295,7 +304,11 @@ router.post(
       .withMessage('Ride ID must be a valid UUID'),
   ],
   validateInput,
-  locationController.sendEmergencyAlert.bind(locationController),
+  (req: Request, _res: Response, next: NextFunction): void => {
+    req.body.alertType = req.body.emergencyType;
+    next();
+  },
+  emergencyController.raiseAlert.bind(emergencyController),
 );
 
 /**

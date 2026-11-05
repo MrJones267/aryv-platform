@@ -2,7 +2,7 @@
  * @fileoverview Location controller for real-time tracking and geospatial operations
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-11-05
  */
 
 import { Response } from 'express';
@@ -14,8 +14,6 @@ import { BookingStatus } from '../types';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 import googleMapsService from '../services/GoogleMapsService';
 import { redisClient } from '../config/redis';
-import User from '../models/User';
-import notificationService from '../services/NotificationService';
 
 const LOCATION_TTL = 300; // 5 minutes — location data expires if not refreshed
 const locationKey = (userId: string) => `loc:${userId}`;
@@ -585,94 +583,6 @@ export class LocationController {
         success: false,
         error: 'Failed to get ETA',
         code: 'GET_ETA_FAILED',
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
-
-  async sendEmergencyAlert(req: AuthenticatedRequest, res: Response): Promise<void> {
-    try {
-      const { latitude, longitude, emergencyType, message, rideId } = req.body;
-      const userId = req.user?.id;
-
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          error: 'User not authenticated',
-          code: 'UNAUTHORIZED',
-          timestamp: new Date().toISOString(),
-        });
-        return;
-      }
-
-      const emergencyAlert = {
-        id: `emergency-${Date.now()}`,
-        userId,
-        location: { latitude, longitude },
-        type: emergencyType,
-        message,
-        rideId,
-        timestamp: new Date(),
-        status: 'active',
-      };
-
-      logger.error('EMERGENCY ALERT', { alert: emergencyAlert, priority: 'CRITICAL' });
-
-      // Notify the user's emergency contact and any active ride passengers/driver
-      try {
-        const user = await User.findByPk(userId, {
-          attributes: ['id', 'firstName', 'lastName', 'emergencyContactName', 'emergencyContactPhone'],
-        });
-
-        const alertNotification = {
-          type: 'emergency_alert',
-          title: '🚨 Emergency Alert',
-          message: `${user?.firstName || 'A user'} has triggered an emergency alert. Location: ${latitude}, ${longitude}`,
-          data: { alertId: emergencyAlert.id, latitude, longitude, type: emergencyType },
-          timestamp: new Date().toISOString(),
-        };
-
-        // Notify via the user's own notification channel (for support visibility)
-        await notificationService.sendToUser(userId, alertNotification);
-
-        // If in a ride, notify all participants
-        if (rideId) {
-          await notificationService.sendToRide(rideId, alertNotification);
-        }
-      } catch (notifyErr) {
-        logger.warn('Failed to dispatch emergency notifications', {
-          error: getErrorMessage(notifyErr), userId,
-        });
-      }
-
-      // Notify via Socket.io if in a ride
-      const socketService = req.app.get('socketService');
-      if (socketService && rideId) {
-        await socketService.sendEmergencyAlert(rideId, emergencyAlert);
-      }
-
-      res.json({
-        success: true,
-        message: 'Emergency alert sent successfully',
-        data: {
-          alertId: emergencyAlert.id,
-          status: 'sent',
-          timestamp: emergencyAlert.timestamp,
-        },
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error('Error in sendEmergencyAlert', {
-        error: getErrorMessage(error),
-        stack: getErrorStack(error),
-        userId: req.user?.id,
-        body: req.body,
-      });
-
-      res.status(500).json({
-        success: false,
-        error: 'Failed to send emergency alert',
-        code: 'EMERGENCY_ALERT_FAILED',
         timestamp: new Date().toISOString(),
       });
     }
