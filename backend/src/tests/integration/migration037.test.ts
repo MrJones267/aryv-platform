@@ -13,7 +13,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { QueryTypes } from 'sequelize';
+import { QueryTypes, UniqueConstraintError } from 'sequelize';
 import { sequelize } from '../../config/database';
 import { CashWallet, CashWalletTransaction } from '../../models/CashWallet';
 import PromoCode from '../../models/PromoCode';
@@ -57,6 +57,17 @@ describe('migration 037_cash_wallets_and_promo_codes', () => {
       );
       expect(indexes.map((i) => i.indexname)).toContain('cash_wallet_transactions_load_reference_unique');
 
+      // Foreign keys land on these tables even when a same-named constraint
+      // already exists elsewhere, as it does in public in a model-built schema.
+      const fks = await select<{ conname: string }>(
+        `SELECT c.conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+          WHERE n.nspname = '${SCHEMA}' AND c.contype = 'f'`,
+      );
+      expect(fks.map((f) => f.conname).sort()).toEqual([
+        'fk_cash_wallet_transactions_wallet_id',
+        'fk_cash_wallets_user_id',
+      ]);
+
       // The guarantee itself: a second credit for the same reference fails.
       await run(`INSERT INTO users (id) VALUES ('11111111-1111-4111-8111-111111111111')`);
       await run(`INSERT INTO cash_wallets (id, user_id, created_at, updated_at)
@@ -68,7 +79,7 @@ describe('migration 037_cash_wallets_and_promo_codes', () => {
       );
       await load('33333333-3333-4333-8333-333333333333');
       await run('SAVEPOINT duplicate_load');
-      await expect(load('44444444-4444-4444-8444-444444444444')).rejects.toThrow(/duplicate key/);
+      await expect(load('44444444-4444-4444-8444-444444444444')).rejects.toBeInstanceOf(UniqueConstraintError);
       await run('ROLLBACK TO SAVEPOINT duplicate_load');
     } finally {
       await transaction.rollback();

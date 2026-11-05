@@ -25,25 +25,25 @@
 -- Enum types, named as Sequelize names them (enum_<table>_<column>).
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallets_status') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallets_status' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_cash_wallets_status" AS ENUM ('active', 'suspended', 'closed');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallets_kyc_level') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallets_kyc_level' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_cash_wallets_kyc_level" AS ENUM ('basic', 'enhanced', 'full');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_type') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_type' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_cash_wallet_transactions_type" AS ENUM
       ('load', 'payment', 'refund', 'transfer', 'escrow_hold', 'escrow_release', 'fee', 'bonus');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_status') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_status' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_cash_wallet_transactions_status" AS ENUM
       ('pending', 'completed', 'failed', 'cancelled');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_source') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_cash_wallet_transactions_source' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_cash_wallet_transactions_source" AS ENUM
       ('agent', 'kiosk', 'partner_store', 'mobile_money', 'voucher', 'bank_transfer', 'ride_payment', 'refund');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_promo_codes_type') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_promo_codes_type' AND typnamespace = 'public'::regnamespace) THEN
     CREATE TYPE "public"."enum_promo_codes_type" AS ENUM ('percentage', 'fixed');
   END IF;
 END
@@ -133,12 +133,12 @@ CREATE INDEX IF NOT EXISTS "promo_codes_expires_at" ON "promo_codes" ("expires_a
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cash_wallets_user_id') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cash_wallets_user_id' AND conrelid = 'cash_wallets'::regclass) THEN
     ALTER TABLE "cash_wallets"
       ADD CONSTRAINT "fk_cash_wallets_user_id"
       FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE CASCADE ON DELETE RESTRICT;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cash_wallet_transactions_wallet_id') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cash_wallet_transactions_wallet_id' AND conrelid = 'cash_wallet_transactions'::regclass) THEN
     ALTER TABLE "cash_wallet_transactions"
       ADD CONSTRAINT "fk_cash_wallet_transactions_wallet_id"
       FOREIGN KEY ("wallet_id") REFERENCES "cash_wallets" ("id") ON UPDATE CASCADE ON DELETE RESTRICT;
