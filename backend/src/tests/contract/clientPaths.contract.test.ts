@@ -3,7 +3,7 @@
  *               served by the backend.
  * @author Oabona-Majoko
  * @created 2026-08-23
- * @lastModified 2026-08-23
+ * @lastModified 2026-11-05
  *
  * Two shipped defects would have been caught here on the day they were
  * written. OTPService posted to /otp/sms/send when the route is
@@ -25,6 +25,15 @@ const MOBILE_SERVICES = path.resolve(__dirname, '../../../../mobile-app/src/serv
 /** Client call sites: `.get('/x')`, `.post(`/x/${id}`)`, and so on. */
 const CALL_PATTERN =
   /\.(get|post|put|patch|delete)\s*\(\s*['"`](\/[^'"`\s)]*)/g;
+
+/**
+ * Raw fetch calls against the API base: fetch(`${apiUrl}/rides/${id}/tip`, …).
+ * The pattern above cannot see these, which is how a tip endpoint and a
+ * masked-calling endpoint that never existed went unnoticed. The method is
+ * read from the `method:` option that follows; fetch defaults to GET.
+ */
+const FETCH_PATTERN =
+  /\bfetch\s*\(\s*`\$\{(?:apiUrl|API_URL|baseUrl|this\.baseUrl|API_BASE_URL|BASE_URL|this\.baseURL)\}(\/[^`\s]*)`([\s\S]{0,300})/g;
 
 /**
  * Paths that are not backend API calls. The scan is deliberately broad, so
@@ -57,6 +66,13 @@ const listFiles = (dir: string): string[] => {
   return out;
 };
 
+/** `${...}` holes stand in for path parameters; the query string is not part of the route. */
+const toServerPath = (rawPath: string): string =>
+  `/api${rawPath
+    .replace(/\$\{[^}]*\}/g, ':param')
+    .split('?')[0]!
+    .replace(/\/$/, '')}`;
+
 const collectClientCalls = (): ClientCall[] => {
   const calls: ClientCall[] = [];
 
@@ -68,18 +84,26 @@ const collectClientCalls = (): ClientCall[] => {
 
       if (NOT_API_CALLS.some((p) => p.test(rawPath))) continue;
 
-      // `${...}` interpolations stand in for path parameters; the query
-      // string is not part of the route.
-      const resolved = `/api${rawPath
-        .replace(/\$\{[^}]*\}/g, ':param')
-        .split('?')[0]!
-        .replace(/\/$/, '')}`;
+      const resolved = toServerPath(rawPath);
 
       calls.push({
         file: path.relative(MOBILE_SERVICES, file),
         method,
         rawPath,
         resolved,
+      });
+    }
+
+    for (const match of source.matchAll(FETCH_PATTERN)) {
+      const rawPath = match[1]!;
+      const options = match[2] ?? '';
+      const method = (/method:\s*['"](\w+)['"]/.exec(options)?.[1] ?? 'GET').toLowerCase();
+
+      calls.push({
+        file: path.relative(MOBILE_SERVICES, file),
+        method,
+        rawPath,
+        resolved: toServerPath(rawPath),
       });
     }
   }
@@ -122,7 +146,7 @@ describe('mobile client / backend path contract', () => {
   });
 
   /**
-   * Client calls with no matching server route, as of 23 August 2026.
+   * Client calls with no matching server route, as of 5 November 2026.
    *
    * This is a ratchet, not an allowlist. The assertion is equality, so the
    * list can only be changed deliberately: a new mismatch fails the test, and
@@ -134,61 +158,9 @@ describe('mobile client / backend path contract', () => {
    * work.
    */
   const KNOWN_GAPS: string[] = [
-    // Escrow payments. Deferred rather than broken: deliveries are paid in
-    // cash to the courier on arrival, so no escrow provider is needed for
-    // launch and none is configured. EscrowPaymentService is kept for whenever
-    // one is wired up, and no screen calls it any more — these entries are its
-    // own call sites, which the scan reaches directly. Delete the service and
-    // these go with it.
-    'GET /api/payments/escrow/:param  (EscrowPaymentService.ts)',
-    'GET /api/payments/escrow/:param/auto-release-check  (EscrowPaymentService.ts)',
-    'GET /api/payments/escrow/history  (EscrowPaymentService.ts)',
-    'GET /api/payments/escrow/ride/:param  (EscrowPaymentService.ts)',
-    'GET /api/payments/escrow/statistics  (EscrowPaymentService.ts)',
-    'GET /api/payments/escrow/wallet/balance  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/:param/dispute  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/:param/fund  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/:param/refund  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/:param/release  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/create  (EscrowPaymentService.ts)',
-    'POST /api/payments/escrow/eligibility-check  (EscrowPaymentService.ts)',
-
-    // Courier. Most have no route. Left until the courier
-    // delivery-confirmation design is settled, since the client will change.
-    // (Available packages asked for /available/packages; it now asks for
-    // the server's /packages/available.)
-    'GET /api/courier/deliveries/available  (CourierService.ts)',
-    'GET /api/courier/notifications  (CourierService.ts)',
-    'GET /api/courier/stats  (CourierService.ts)',
-    'POST /api/courier/availability  (CourierService.ts)',
-    'POST /api/courier/deliveries/accept  (CourierService.ts)',
-    'POST /api/courier/location  (CourierService.ts)',
-    'PUT /api/courier/deliveries/:param/status  (CourierService.ts)',
-    'PUT /api/courier/notifications/:param  (CourierService.ts)',
-
-    // Emergency / SOS. No router is mounted for any of this. Note the
-    // singular /user/ prefix, which does not match the /users router either.
-    'POST /api/emergency/contacts/find  (CallIntegrationService.ts)',
-
-    // Voice and video calling. Call models and a CallService exist on the
-    // server, but no HTTP routes are mounted for them.
-    'GET /api/calls/history/:param/:param  (CallIntegrationService.ts)',
-    'POST /api/calls/workflows/create  (CallIntegrationService.ts)',
-    'POST /api/calls/workflows/emergency  (CallIntegrationService.ts)',
-    'PUT /api/calls/workflows/:param/status  (CallIntegrationService.ts)',
-
-    // AI matching, pricing and recommendations. No routes; the mobile
-    // services call an API that was never built.
-    'POST /api/ai/matching/find  (AIMatchingService.ts)',
-
     // Notification preferences and token registration.
     'GET /api/notifications/preferences  (NotificationService.ts)',
     'PUT /api/notifications/preferences  (NotificationService.ts)',
-
-    // Assorted single endpoints.
-    'GET /api/currencies/country/:param  (CurrencyService.ts)',
-    'POST /api/users/currency  (CurrencyService.ts)',
-    'PUT /api/countries/user  (CountryService.ts)',
   ];
 
   it('has no client path missing from the server beyond the recorded gaps', () => {
