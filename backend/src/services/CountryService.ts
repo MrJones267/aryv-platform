@@ -2,12 +2,12 @@
  * @fileoverview Country Service for managing country data and user location preferences
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-11-05
  */
 
 import { Country } from '../models/Country';
 import User from '../models/User';
-import { CurrencyService } from './CurrencyService';
+import { CurrencyService, COUNTRY_DEFAULT_CURRENCY } from './CurrencyService';
 import logger from '../utils/logger';
 
 export interface CountryWithCurrencies extends Country {
@@ -170,20 +170,10 @@ export class CountryService {
    */
   static async getSuggestedCurrency(countryCode: string): Promise<{ code: string; name: string; symbol: string } | null> {
     try {
-      // Mapping of country codes to their primary currencies
-      const countryToCurrency: Record<string, string> = {
-        'US': 'USD', 'CA': 'CAD', 'MX': 'MXN',
-        'GB': 'GBP', 'EU': 'EUR', 'DE': 'EUR', 'FR': 'EUR', 'IT': 'EUR', 'ES': 'EUR', 'NL': 'EUR',
-        'CH': 'CHF', 'SE': 'SEK', 'NO': 'NOK',
-        'JP': 'JPY', 'KR': 'KRW', 'CN': 'CNY', 'IN': 'INR', 'SG': 'SGD',
-        'AU': 'AUD', 'NZ': 'NZD',
-        'BR': 'BRL', 'AR': 'ARS', 'CL': 'CLP', 'CO': 'COP', 'PE': 'PEN',
-        'ZA': 'ZAR', 'NG': 'NGN', 'KE': 'KES', 'EG': 'EGP', 'MA': 'MAD', 'GH': 'GHS',
-        'AE': 'AED', 'SA': 'SAR', 'TR': 'TRY',
-        'TH': 'THB', 'VN': 'VND', 'MY': 'MYR', 'ID': 'IDR', 'PH': 'PHP',
-      };
-
-      const currencyCode = countryToCurrency[countryCode.toUpperCase()];
+      // The platform-wide country -> currency table. This had its own copy,
+      // which left out Botswana and the rest of the region the app serves, so
+      // the place it most needed an answer got none.
+      const currencyCode = COUNTRY_DEFAULT_CURRENCY[countryCode.toUpperCase()];
       if (!currencyCode) {
         return null; // Default to user's existing currency
       }

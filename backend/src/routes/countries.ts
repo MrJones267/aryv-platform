@@ -2,16 +2,18 @@
  * @fileoverview Country routes for country and dialing code support
  * @author Oabona-Majoko
  * @created 2026-01-05
- * @lastModified 2026-01-05
+ * @lastModified 2026-11-05
  */
 
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
-import { param, query } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import { CountryController } from '../controllers/CountryController';
 import { validateInput } from '../middleware/validation';
+import { authenticateToken } from '../middleware/auth';
+import { AuthenticatedRequest } from '../types';
 
 const router = express.Router();
 
@@ -92,6 +94,52 @@ router.get(
  * @description Get specific country by code
  * @access Public
  */
+/**
+ * @route GET /api/countries/user
+ * @description The signed-in user's country. Registered before /:countryCode,
+ *              which would otherwise take "user" as a country code.
+ * @access Private
+ */
+router.get('/user', authenticateToken, (req: Request, res: Response) =>
+  CountryController.getUserCountry(req as AuthenticatedRequest, res));
+
+/**
+ * @route PUT /api/countries/user
+ * @description Set the signed-in user's country (and, by default, currency)
+ * @access Private
+ */
+router.put(
+  '/user',
+  authenticateToken,
+  [
+    body('countryCode')
+      .isString()
+      .matches(/^[A-Z]{2,3}$/i)
+      .withMessage('Country code must be 2-3 letters'),
+    body('updateCurrency').optional().isBoolean(),
+  ],
+  validateInput,
+  (req: Request, res: Response) => CountryController.setUserCountry(req as AuthenticatedRequest, res),
+);
+
+/**
+ * @route GET /api/countries/:countryCode/currency
+ * @description The currency to suggest for a country, used at sign-up
+ * @access Public
+ */
+router.get(
+  '/:countryCode/currency',
+  [
+    param('countryCode')
+      .isLength({ min: 2, max: 3 })
+      .withMessage('Country code must be 2-3 characters')
+      .matches(/^[A-Z]{2,3}$/i)
+      .withMessage('Country code must contain only letters'),
+  ],
+  validateInput,
+  (req: Request, res: Response) => CountryController.getSuggestedCurrency(req, res),
+);
+
 router.get(
   '/:countryCode',
   [

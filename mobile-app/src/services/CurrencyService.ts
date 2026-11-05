@@ -2,7 +2,7 @@
  * @fileoverview Currency Service for mobile app API communication
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-11-05
  */
 
 import { ApiClient } from './ApiClient';
@@ -615,72 +615,6 @@ export class CurrencyService {
     };
 
     return flagMap[countryCode.toUpperCase()] || '🌍';
-  }
-
-  /**
-   * Get currencies by country code
-   */
-  static async getCurrenciesByCountry(countryCode: string): Promise<Currency[]> {
-    try {
-      const response = await this.apiClient.get(`/currencies/country/${countryCode}`);
-      
-      if (response.success) {
-        return response.data.currencies;
-      } else {
-        log.error('Failed to fetch currencies for country:', response.error);
-        
-        // Fallback to common country-currency mappings (SADC + international)
-        const countryToCurrency: Record<string, Currency[]> = {
-          'BW': [{ id: 'bwp', code: 'BWP', name: 'Botswana Pula', symbol: 'P', decimalPlaces: 2, exchangeRate: 13.6, lastUpdated: new Date().toISOString() }],
-          'ZA': [{ id: 'zar', code: 'ZAR', name: 'South African Rand', symbol: 'R', decimalPlaces: 2, exchangeRate: 18.5, lastUpdated: new Date().toISOString() }],
-          'NA': [{ id: 'nad', code: 'NAD', name: 'Namibian Dollar', symbol: 'N$', decimalPlaces: 2, exchangeRate: 18.5, lastUpdated: new Date().toISOString() }],
-          'ZM': [{ id: 'zmw', code: 'ZMW', name: 'Zambian Kwacha', symbol: 'ZK', decimalPlaces: 2, exchangeRate: 27, lastUpdated: new Date().toISOString() }],
-          'MZ': [{ id: 'mzn', code: 'MZN', name: 'Mozambican Metical', symbol: 'MT', decimalPlaces: 2, exchangeRate: 63.9, lastUpdated: new Date().toISOString() }],
-          'MW': [{ id: 'mwk', code: 'MWK', name: 'Malawian Kwacha', symbol: 'MK', decimalPlaces: 2, exchangeRate: 1735, lastUpdated: new Date().toISOString() }],
-          'SZ': [{ id: 'szl', code: 'SZL', name: 'Eswatini Lilangeni', symbol: 'E', decimalPlaces: 2, exchangeRate: 18.5, lastUpdated: new Date().toISOString() }],
-          'LS': [{ id: 'lsl', code: 'LSL', name: 'Lesotho Loti', symbol: 'L', decimalPlaces: 2, exchangeRate: 18.5, lastUpdated: new Date().toISOString() }],
-          'ZW': [{ id: 'zwl', code: 'ZWL', name: 'Zimbabwean Dollar', symbol: 'Z$', decimalPlaces: 2, exchangeRate: 4500, lastUpdated: new Date().toISOString() }],
-          'AO': [{ id: 'aoa', code: 'AOA', name: 'Angolan Kwanza', symbol: 'Kz', decimalPlaces: 2, exchangeRate: 830, lastUpdated: new Date().toISOString() }],
-          'TZ': [{ id: 'tzs', code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', decimalPlaces: 2, exchangeRate: 2650, lastUpdated: new Date().toISOString() }],
-          'CD': [{ id: 'cdf', code: 'CDF', name: 'Congolese Franc', symbol: 'FC', decimalPlaces: 2, exchangeRate: 2780, lastUpdated: new Date().toISOString() }],
-          'MG': [{ id: 'mga', code: 'MGA', name: 'Malagasy Ariary', symbol: 'Ar', decimalPlaces: 2, exchangeRate: 4550, lastUpdated: new Date().toISOString() }],
-          'MU': [{ id: 'mur', code: 'MUR', name: 'Mauritian Rupee', symbol: '₨', decimalPlaces: 2, exchangeRate: 45.5, lastUpdated: new Date().toISOString() }],
-          'SC': [{ id: 'scr', code: 'SCR', name: 'Seychellois Rupee', symbol: '₨', decimalPlaces: 2, exchangeRate: 14.2, lastUpdated: new Date().toISOString() }],
-          'KE': [{ id: 'kes', code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', decimalPlaces: 2, exchangeRate: 130, lastUpdated: new Date().toISOString() }],
-          'NG': [{ id: 'ngn', code: 'NGN', name: 'Nigerian Naira', symbol: '₦', decimalPlaces: 2, exchangeRate: 800, lastUpdated: new Date().toISOString() }],
-          'US': [{ id: 'usd', code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2, exchangeRate: 1, lastUpdated: new Date().toISOString() }],
-          'GB': [{ id: 'gbp', code: 'GBP', name: 'British Pound', symbol: '£', decimalPlaces: 2, exchangeRate: 0.8, lastUpdated: new Date().toISOString() }],
-        };
-
-        return countryToCurrency[countryCode] || [countryToCurrency['BWP']?.[0] || countryToCurrency['US'][0]];
-      }
-    } catch (error) {
-      log.error('Error fetching currencies by country:', error);
-      // Return USD as fallback
-      return [{ id: 'usd', code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2, exchangeRate: 1, lastUpdated: new Date().toISOString() }];
-    }
-  }
-
-  /**
-   * Set user's preferred currency
-   */
-  static async setUserCurrency(currencyCode: string): Promise<boolean> {
-    try {
-      const response = await this.apiClient.post('/users/currency', {
-        currency: currencyCode.toUpperCase()
-      });
-      
-      if (response.success) {
-        log.info('User currency updated successfully:', currencyCode);
-        return true;
-      } else {
-        log.error('Failed to update user currency:', response.error);
-        return false;
-      }
-    } catch (error) {
-      log.error('Error setting user currency:', error);
-      return false;
-    }
   }
 
   /**

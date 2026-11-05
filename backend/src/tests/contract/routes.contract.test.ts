@@ -143,8 +143,9 @@ describe('route contract', () => {
       /^\/api\/admin\/auth\/login$/,
       // Stripe calls this; it authenticates by signature, not by bearer token.
       /^\/api\/bookings\/stripe-webhook$/,
-      // Reference data with nothing user-specific in it.
-      /^\/api\/countries/,
+      // Reference data with nothing user-specific in it. /countries/user is
+      // the signed-in user's own country, so it is held to auth like the rest.
+      /^\/api\/countries(?!\/user$)/,
       /^\/api\/currencies/,
       /^\/api\/courier\/delivery-tiers/,
       /^\/api\/promos\/validate/,
