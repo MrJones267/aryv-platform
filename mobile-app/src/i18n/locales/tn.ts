@@ -86,7 +86,8 @@ export const tn: Record<TranslationKey, string> = {
   'tip.selectAmount': 'Tlhopha selekanyo sa motshelo',
   'tip.noThanks': 'Nnyaa ke a leboga',
   'tip.thankYou': 'Ke a leboga!',
-  'tip.sentToDriver': 'Motshelo wa gago o rometswe kwa mokgweetising',
+  'tip.paidInCash': 'Motshelo o duelwa ka kheshe, ka tlhamalalo go mokgweetsi.',
+  'tip.handInCash': 'Tsweetswee duela mokgweetsi {{currency}} {{amount}} ka kheshe.',
 
   // Receipt
   'receipt.title': 'Risiti ya Leeto',

@@ -2,12 +2,11 @@
  * @fileoverview Digital receipt generation and storage for completed rides
  * @author Oabona-Majoko
  * @created 2026-02-04
- * @lastModified 2026-02-04
+ * @lastModified 2026-11-05
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Share } from 'react-native';
-import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
 import { fixed } from '../utils/fixed';
 
@@ -111,7 +110,8 @@ class ReceiptService {
   }
 
   /**
-   * Save receipt locally and attempt to sync with backend
+   * Save a receipt on this phone. Receipts are not sent anywhere: this used to
+   * post each one to /receipts, which the server does not have.
    */
   async saveReceipt(receipt: RideReceipt): Promise<void> {
     try {
@@ -120,9 +120,6 @@ class ReceiptService {
       receipts.push(receipt);
       // Keep last 200
       await AsyncStorage.setItem(RECEIPTS_KEY, JSON.stringify(receipts.slice(-200)));
-
-      // Try to sync with backend
-      this.syncReceipt(receipt).catch(() => {});
     } catch (error) {
       log.warn('Failed to save receipt', { error: String(error) });
     }
@@ -210,30 +207,6 @@ class ReceiptService {
     const d = String(now.getDate()).padStart(2, '0');
     const seq = Math.floor(Math.random() * 9000 + 1000);
     return `ARV-${y}${m}${d}-${seq}`;
-  }
-
-  /**
-   * Sync receipt with backend
-   */
-  private async syncReceipt(receipt: RideReceipt): Promise<void> {
-    try {
-      const { apiUrl } = getApiConfig();
-      const token = await AsyncStorage.getItem('@aryv_auth_token')
-        || await AsyncStorage.getItem('accessToken');
-
-      if (apiUrl && token) {
-        await fetch(`${apiUrl}/receipts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(receipt),
-        });
-      }
-    } catch {
-      // Silent fail — receipt is saved locally
-    }
   }
 }
 
