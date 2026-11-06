@@ -31,6 +31,20 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore(deps-app)
+    # React Native and the packages tied to its version are upgraded as a
+    # project, not by a weekly bump: 0.72 -> 0.88 arrived as a "minor" group
+    # update (#78), because a 0.x minor counts as minor. Native modules that
+    # track React Native's version are held at their major for the same reason.
+    ignore:
+      - dependency-name: "react-native"
+      - dependency-name: "react"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-community/cli*"
+      - dependency-name: "metro*"
+      - dependency-name: "react-native-maps"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-*"
+        update-types: ["version-update:semver-major"]
     groups:
       app-minor-patch:
         update-types: [minor, patch]
