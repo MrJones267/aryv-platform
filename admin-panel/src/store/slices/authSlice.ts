@@ -24,6 +24,11 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   loading: boolean;
+  // Only the check of a saved session at start-up. App.tsx swaps the whole
+  // page for a spinner while this is true; it used to do so on `loading`,
+  // which every auth request sets, and that unmounted the login form
+  // mid-sign-in so the two-factor code box never appeared.
+  verifying: boolean;
   error: string | null;
 }
 
@@ -32,6 +37,7 @@ const initialState: AuthState = {
   token: localStorage.getItem('admin_token'),
   isAuthenticated: false,
   loading: false,
+  verifying: false,
   error: null,
 };
 
@@ -150,15 +156,18 @@ const authSlice = createSlice({
       // Verify token
       .addCase(verifyToken.pending, state => {
         state.loading = true;
+        state.verifying = true;
       })
       .addCase(verifyToken.fulfilled, (state, action) => {
         state.loading = false;
+        state.verifying = false;
         state.user = action.payload;
         state.isAuthenticated = true;
         state.error = null;
       })
       .addCase(verifyToken.rejected, (state, action) => {
         state.loading = false;
+        state.verifying = false;
         state.user = null;
         state.token = null;
         state.isAuthenticated = false;
@@ -206,4 +215,5 @@ export const selectAuth = (state: { auth: AuthState }) => state.auth;
 export const selectIsAuthenticated = (state: { auth: AuthState }) => state.auth.isAuthenticated;
 export const selectAdminUser = (state: { auth: AuthState }) => state.auth.user;
 export const selectAuthLoading = (state: { auth: AuthState }) => state.auth.loading;
+export const selectAuthVerifying = (state: { auth: AuthState }) => state.auth.verifying;
 export const selectAuthError = (state: { auth: AuthState }) => state.auth.error;
