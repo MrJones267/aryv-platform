@@ -40,9 +40,20 @@
  * address that is neither is the caller. Anything a client writes into
  * X-Forwarded-For sits to the left of its own real address, so it is never
  * reached.
+ *
+ * **Railway's edge replaces X-Forwarded-For.** (2026-11-06, measured after
+ * the change above shipped) Through Cloudflare, req.ip came out as a
+ * Cloudflare address (104.22.45.82, 172.68.42.108): the edge does not keep
+ * the chain Cloudflare sends, it starts a new one from its own TCP peer. So
+ * the caller survives only in Cloudflare's CF-Connecting-IP header, and
+ * `cloudflareClientIp` reads it — but only when that TCP peer, which the
+ * edge recorded and nobody upstream can forge, is inside Cloudflare's
+ * ranges. A caller reaching Railway directly is never a Cloudflare address,
+ * so a CF-Connecting-IP header they write is ignored.
  */
 
-import type { Request } from 'express';
+import net from 'net';
+import type { NextFunction, Request, Response } from 'express';
 import proxyaddr from 'proxy-addr';
 import logger from '../utils/logger';
 
@@ -127,3 +138,20 @@ export const normaliseIpForRateLimit = (ip: string | undefined): string => {
  * silently fall back to the default and reintroduce either problem above.
  */
 export const rateLimitKey = (req: Request): string => normaliseIpForRateLimit(req.ip);
+
+/**
+ * Express middleware, mounted straight after `trust proxy`: when the request
+ * reached Railway from a Cloudflare edge, make `req.ip` the caller Cloudflare
+ * saw instead. Everything downstream (rate limiters, audit log, request log)
+ * reads `req.ip`, so this is the one place it is decided.
+ */
+export const cloudflareClientIp = (req: Request, _res: Response, next: NextFunction): void => {
+  const peer = req.ip;
+  const header = req.headers['cf-connecting-ip'];
+  const claimed = typeof header === 'string' ? header.trim() : '';
+
+  if (peer && claimed && net.isIP(claimed) && isCloudflare(peer, 0)) {
+    Object.defineProperty(req, 'ip', { value: claimed, configurable: true, enumerable: true });
+  }
+  next();
+};
