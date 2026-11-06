@@ -109,11 +109,18 @@ export const requestLogger = (req: any, res: any, next: any): void => {
     const duration = Date.now() - start;
     const message = `${req.method} ${req.originalUrl} - ${res.statusCode} - ${duration}ms`;
 
-    if (res.statusCode >= 400) {
+    // A 404 outside /api/ is a scanner probing for /wp-admin, /.env and the
+    // like: logged at http level, below production's `info`, so it does not
+    // drown everything else. A 404 under /api/ stays a warning — it can be
+    // the app calling a route the server does not have.
+    const isProbe = res.statusCode === 404 && !String(req.originalUrl || '').startsWith('/api/');
+
+    if (res.statusCode >= 400 && !isProbe) {
       Logger.warn(message, {
         method: req.method,
         url: req.originalUrl,
         statusCode: res.statusCode,
+        ...(res.locals?.['errorCode'] && { errorCode: res.locals['errorCode'] }),
         duration,
         userAgent: req.get('User-Agent'),
         ip: req.ip,
