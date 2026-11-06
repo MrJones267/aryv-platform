@@ -3,10 +3,11 @@
  *               kept in Cloudflare R2 when it is configured
  * @author Oabona-Majoko
  * @created 2026-03-27
- * @lastModified 2026-11-03
+ * @lastModified 2026-11-06
  */
 
 import multer from 'multer';
+import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { Request, Response, NextFunction, RequestHandler } from 'express';
@@ -52,13 +53,23 @@ const VEHICLES_DIR = path.join(UPLOADS_DIR, 'vehicles');
 
 const sanitizeId = (id: string): string => id.replace(/[^a-zA-Z0-9-]/g, '');
 
+/**
+ * The part of a stored filename after the owner's id: a timestamp and 16 hex
+ * characters of randomness. These used to be just `${userId}-${Date.now()}`.
+ * User ids are public, so a millisecond timestamp was the only unknown, and
+ * avatars are served without sign-in: a replaced face photo stayed reachable
+ * at a guessable name. The `${userId}-` prefix is kept because the /uploads
+ * ownership check in index.ts relies on it.
+ */
+const unguessable = (): string => `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+
 // Storage for avatars
 const avatarStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
   filename: (req: any, _file, cb) => {
     const userId = sanitizeId(req.user?.id || 'unknown');
     const ext = '.jpg';
-    cb(null, `${userId}-${Date.now()}${ext}`);
+    cb(null, `${userId}-${unguessable()}${ext}`);
   },
 });
 
@@ -70,7 +81,7 @@ const documentStorage = multer.diskStorage({
     const allowedExts = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
     const safeExt = allowedExts.includes(ext) ? ext : '.bin';
-    cb(null, `${userId}-doc-${Date.now()}${safeExt}`);
+    cb(null, `${userId}-doc-${unguessable()}${safeExt}`);
   },
 });
 
@@ -102,7 +113,7 @@ const vehiclePhotoStorage = multer.diskStorage({
   filename: (req: any, _file, cb) => {
     const userId = sanitizeId(req.user?.id || 'unknown');
     const vehicleId = sanitizeId(req.params?.id || 'vehicle');
-    cb(null, `${userId}-${vehicleId}-${Date.now()}.jpg`);
+    cb(null, `${userId}-${vehicleId}-${unguessable()}.jpg`);
   },
 });
 

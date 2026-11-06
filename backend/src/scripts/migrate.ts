@@ -3,7 +3,7 @@
  *               each, recording what has run.
  * @author Oabona-Majoko
  * @created 2026-08-23
- * @lastModified 2026-08-23
+ * @lastModified 2026-11-06
  *
  * Why this exists: nothing applied these. `run-migrations.sh` is a stale local
  * Docker script that only covers 001–003, and `npm run db:migrate` invoked
@@ -14,6 +14,13 @@
  *
  * Run: npm run db:migrate        (apply everything outstanding)
  *      npm run db:migrate:status (list applied vs pending, change nothing)
+ *
+ * Run it as the database owner. Since migration 038, the API's own
+ * DATABASE_URL is the restricted aryv_app role, which cannot change the
+ * schema. In production, point DATABASE_URL at PostGIS's own URL instead:
+ *   DATABASE_URL="$(railway variables --service PostGIS --kv \
+ *     | sed -n 's/^DATABASE_URL=//p')" npm run db:migrate
+ * Check `status` first: the runner applies every pending file.
  */
 
 import fs from 'fs';

@@ -2,7 +2,7 @@
  * @fileoverview Unit tests for keeping uploads in Cloudflare R2
  * @author Oabona-Majoko
  * @created 2026-11-03
- * @lastModified 2026-11-03
+ * @lastModified 2026-11-06
  *
  * FileStorageService could write to R2, but nothing called it: every upload
  * stayed on the container's disk and was lost on the next deploy, with R2
@@ -100,6 +100,9 @@ describe('Uploads kept in R2', () => {
 
     const key = `documents/${res.body.filename}`;
     expect(res.body.filename.startsWith(`${USER_ID}-`)).toBe(true);
+    // Owner prefix, timestamp, then 16 random hex characters: the name cannot
+    // be guessed from the (public) user id and an upload time.
+    expect(res.body.filename).toMatch(new RegExp(`^${USER_ID}-doc-\\d{13}-[0-9a-f]{16}\\.pdf$`));
     expect(r2Objects.get(key)).toEqual({ body: Buffer.from('%PDF-1.4 licence'), contentType: 'application/pdf' });
     await waitFor(() => !fs.existsSync(res.body.stagedAt));
     expect(fs.existsSync(res.body.stagedAt)).toBe(false);
