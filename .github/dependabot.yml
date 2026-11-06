@@ -1,0 +1,50 @@
+# Weekly version updates. Security updates are separate: they are enabled in
+# the repository settings and open as soon as an advisory is published.
+#
+# Minor and patch bumps are grouped into one PR per ecosystem a week; major
+# bumps each get their own PR, because they can need code changes.
+version: 2
+updates:
+  # Root npm workspace: backend, admin-panel, shared (one package-lock.json).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Gaborone
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      server-minor-patch:
+        update-types: [minor, patch]
+
+  # React Native app: its own package-lock.json, outside the workspace.
+  - package-ecosystem: npm
+    directory: /mobile-app
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Gaborone
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps-app)
+    groups:
+      app-minor-patch:
+        update-types: [minor, patch]
+
+  # Versions of the actions the CI workflows use.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Gaborone
+    commit-message:
+      prefix: chore(ci)
+    groups:
+      actions:
+        patterns: ["*"]
