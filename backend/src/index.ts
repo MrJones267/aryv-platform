@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from './config/rateLimitStore';
-import { resolveTrustProxyHops, rateLimitKey } from './config/rateLimitKey';
+import { resolveTrustProxy, rateLimitKey } from './config/rateLimitKey';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
@@ -84,8 +84,7 @@ const app = express();
  * X-Forwarded-For chain becomes trusted, including the portion the client
  * wrote, and any caller could mint a fresh bucket per request.
  */
-const trustProxyHops = resolveTrustProxyHops();
-app.set('trust proxy', trustProxyHops);
+app.set('trust proxy', resolveTrustProxy());
 
 // Create HTTP server
 const server = createServer(app);
