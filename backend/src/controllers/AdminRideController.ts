@@ -47,7 +47,7 @@ export class AdminRideController {
           {
             model: Vehicle,
             as: 'vehicle',
-            attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'vehicleType'],
+            attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate', 'type'],
           },
         ],
         order: [[sortBy as string, sortOrder as string]],
