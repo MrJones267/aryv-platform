@@ -389,13 +389,6 @@ class SocketService {
     }
   }
   
-  // General notification methods
-  sendNotification(notification: NotificationData): void {
-    if (this.isSocketConnected()) {
-      this.socket?.emit('send_notification', notification);
-    }
-  }
-  
   // Admin/Broadcasting methods
   broadcastToRoom(room: string, event: string, data: unknown): void {
     if (this.isSocketConnected()) {

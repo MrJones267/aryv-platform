@@ -256,19 +256,6 @@ export class RealTimeService {
   }
 
   /**
-   * Send notification
-   */
-  sendNotification(notification: NotificationData): void {
-    if (!this.socket || !this.isConnected) return;
-
-    this.socket.emit('send_notification', {
-      ...notification,
-      userId: this.currentUserId,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  /**
    * Setup all Socket.io event listeners
    */
   private setupEventListeners(): void {
