@@ -236,18 +236,6 @@ export const useRealTime = (options: UseRealTimeOptions) => {
   }, [state.connected]);
 
   /**
-   * Send notification
-   */
-  const sendNotification = useCallback((notification: Omit<NotificationData, 'timestamp'>) => {
-    if (state.connected) {
-      realTimeService.sendNotification({
-        ...notification,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }, [state.connected]);
-
-  /**
    * Clear old data
    */
   const clearData = useCallback(() => {
@@ -322,7 +310,6 @@ export const useRealTime = (options: UseRealTimeOptions) => {
     sendLocation,
     sendRideUpdate,
     sendMessage,
-    sendNotification,
     
     // Real-time data
     locationUpdates,

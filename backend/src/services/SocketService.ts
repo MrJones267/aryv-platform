@@ -402,19 +402,10 @@ export class SocketService {
     // Mobile emits 'ride_update' — alias to ride_status_update handler
     socket.on('ride_update', (data: RideStatusUpdate) => this.handleRideStatusUpdate(socket, data));
 
-    // Mobile emits 'send_notification' — broadcast to target user room
-    socket.on('send_notification', (data: { to: string; type: string; title: string; message: string; payload?: any }) => {
-      if (data.to) {
-        this.io.to(`user:${data.to}`).emit('notification', {
-          type: data.type,
-          title: data.title,
-          message: data.message,
-          payload: data.payload || {},
-          fromUserId: socket.userId,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
+    // There is deliberately no 'send_notification' handler. One existed that
+    // forwarded any title and message to any user id, so any signed-in user
+    // could put a fake "ARYV Support" notice on anyone's phone. Notifications
+    // come only from the server's own services.
   }
 
   private async handleJoinRide(socket: any, data: { rideId: string }): Promise<void> {
