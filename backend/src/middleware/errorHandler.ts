@@ -31,9 +31,9 @@ const sendErrorProd = (err: AppError, res: Response): void => {
       timestamp: new Date().toISOString(),
     });
   } else {
-    // Programming or other unknown error: don't leak error details
-    logError('Unexpected error', err);
-
+    // Programming or other unknown error: don't leak error details. Already
+    // logged, with its stack and the request, by globalErrorHandler; this
+    // copy of it has lost the stack, so logging it again only duplicated it.
     res.status(500).json({
       success: false,
       error: 'Something went wrong',
@@ -111,15 +111,6 @@ export const globalErrorHandler = (
   error.code = err.code || 'INTERNAL_SERVER_ERROR';
   error.isOperational = err.isOperational || false;
 
-  // Log error details
-  logError('Global error handler', err, {
-    url: req.url,
-    method: req.method,
-    ip: req.ip,
-    userAgent: req.get('User-Agent'),
-    userId: (req as any).user?.id,
-  });
-
   // Handle specific error types
   if (err.name === 'SequelizeValidationError') {
     error = handleSequelizeValidationError(err);
@@ -139,6 +130,24 @@ export const globalErrorHandler = (
     error = new AppError('Request timeout', 408, 'REQUEST_TIMEOUT');
   } else if (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT') {
     error = handleMulterError(err);
+  }
+
+  // A stack trace only for faults on our side. A 4xx is the caller's
+  // mistake — a missing route, a bad token, invalid input — and the request
+  // logger already records it as one line; here it only hands that line the
+  // error code. Logging every 4xx as an error with a stack buried real
+  // failures under scanner noise (about 120 lines a minute from one
+  // WordPress scanner probing /wp-admin/...).
+  if (error.statusCode >= 500) {
+    logError('Global error handler', err, {
+      url: req.url,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      userId: (req as any).user?.id,
+    });
+  } else {
+    res.locals['errorCode'] = error.code;
   }
 
   // Log security events for certain error types
