@@ -2,7 +2,7 @@
  * @fileoverview Group Chat Service for mobile app
  * @author Oabona-Majoko
  * @created 2025-01-25
- * @lastModified 2025-01-25
+ * @lastModified 2026-11-05
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,7 +10,10 @@ import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
 
 const log = logger.createLogger('GroupChatService');
-const API_BASE_URL = getApiConfig().apiUrl?.replace('/api', '') || 'https://api.aryv-app.com';
+// apiUrl already ends in /api, which is where /group-chats is mounted. This
+// used to strip '/api' from it, but the first match is the one inside
+// 'https://api.', so every request went to https:/.aryv-app.com/api/...
+const API_BASE_URL = getApiConfig().apiUrl || 'https://api.aryv-app.com/api';
 const getAuthToken = async () => {
   const token = await AsyncStorage.getItem('@aryv_auth_token')
     || await AsyncStorage.getItem('accessToken');

@@ -2,13 +2,15 @@
  * @fileoverview Country Controller for handling country and dialing code operations
  * @author Oabona-Majoko
  * @created 2026-01-05
- * @lastModified 2026-01-05
+ * @lastModified 2026-11-05
  */
 
 import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
 import Country from '../models/Country';
 import { COUNTRY_DEFAULT_CURRENCY } from '../services/CurrencyService';
+import { CountryService } from '../services/CountryService';
 
 /**
  * Surfaced first in the picker. These are the markets ARYV serves, not a
@@ -227,6 +229,29 @@ export class CountryController {
         });
       }
 
+      // The countries table first, as getCountries does. This only searched
+      // the built-in list, which has no Botswana, so the platform's own
+      // country came back 404.
+      const row = await Country.findOne({ where: { code: countryCode.toUpperCase(), isActive: true } });
+      if (row) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            country: {
+              code: row.code,
+              name: row.name,
+              flag: row.flag,
+              dialingCode: (row as unknown as { phonePrefix?: string }).phonePrefix,
+              currency: COUNTRY_DEFAULT_CURRENCY[row.code] ?? null,
+              region: row.region,
+              isPopular: POPULAR_COUNTRIES.includes(row.code),
+            },
+            source: 'database',
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       const country = this.fallbackCountries.find(
         c => c.code.toLowerCase() === countryCode.toLowerCase()
       );
@@ -381,6 +406,71 @@ export class CountryController {
         code: 'COUNTRY_SEARCH_ERROR',
         timestamp: new Date().toISOString(),
       });
+    }
+  }
+
+  /**
+   * The currency to suggest for a country, e.g. BWP for BW. `suggestedCurrency`
+   * is null when the country has no default or the currency is not active.
+   */
+  static async getSuggestedCurrency(req: Request, res: Response): Promise<Response> {
+    try {
+      const countryCode = String(req.params['countryCode'] ?? '').toUpperCase();
+      const suggestedCurrency = await CountryService.getSuggestedCurrency(countryCode);
+
+      return res.status(200).json({
+        success: true,
+        data: { countryCode, suggestedCurrency },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error fetching suggested currency', {
+        error: (error as Error).message,
+        countryCode: req.params['countryCode'],
+      });
+
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch suggested currency',
+        code: 'SUGGESTED_CURRENCY_ERROR',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** GET /api/countries/user — the signed-in user's country and timezone. */
+  static async getUserCountry(req: AuthenticatedRequest, res: Response): Promise<Response> {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+    }
+
+    const info = await CountryService.getUserCountry(userId);
+    return res.status(200).json({ success: true, data: info, timestamp: new Date().toISOString() });
+  }
+
+  /**
+   * PUT /api/countries/user — set the signed-in user's country. With
+   * updateCurrency (the default), it also makes that country's currency the
+   * user's primary one, unless they already chose something other than USD.
+   */
+  static async setUserCountry(req: AuthenticatedRequest, res: Response): Promise<Response> {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated', code: 'UNAUTHORIZED', timestamp: new Date().toISOString() });
+    }
+
+    const { countryCode, updateCurrency } = req.body as { countryCode: string; updateCurrency?: boolean };
+    try {
+      const result = await CountryService.setUserCountry(userId, countryCode.toUpperCase(), updateCurrency !== false);
+      return res.status(200).json({ success: true, data: result, timestamp: new Date().toISOString() });
+    } catch (error) {
+      const message = (error as Error).message;
+      if (/not found/i.test(message)) {
+        return res.status(404).json({ success: false, error: message, code: 'COUNTRY_NOT_FOUND', timestamp: new Date().toISOString() });
+      }
+      logger.error('Error setting user country', { error: message, userId });
+      return res.status(500).json({ success: false, error: 'Failed to set country', code: 'SET_COUNTRY_ERROR', timestamp: new Date().toISOString() });
     }
   }
 }

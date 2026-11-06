@@ -2,11 +2,10 @@
  * @fileoverview Tipping service for post-ride driver tips
  * @author Oabona-Majoko
  * @created 2026-02-04
- * @lastModified 2026-02-04
+ * @lastModified 2026-11-05
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
 
 const log = logger.createLogger('TippingService');
@@ -59,39 +58,15 @@ class TippingService {
   }
 
   /**
-   * Submit a tip to the backend
+   * Note a tip the rider is handing to the driver in cash.
+   *
+   * Rides are paid in cash, so nothing is sent anywhere: the tip is kept on
+   * the phone for the ride receipt and so the same ride is not offered a tip
+   * twice. This used to post to /rides/:id/tip, which does not exist, and
+   * report success anyway, so the rider was told the driver had the tip.
    */
-  async submitTip(rideId: string, driverId: string, amount: number, currency: string = 'BWP'): Promise<boolean> {
-    try {
-      const { apiUrl } = getApiConfig();
-      const token = await AsyncStorage.getItem('@aryv_auth_token')
-        || await AsyncStorage.getItem('accessToken');
-
-      if (apiUrl && token) {
-        const response = await fetch(`${apiUrl}/rides/${rideId}/tip`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ amount, currency }),
-        });
-
-        if (response.ok) {
-          await this.recordTip({ rideId, driverId, amount, currency, createdAt: new Date().toISOString() });
-          return true;
-        }
-      }
-
-      // Store locally even if backend fails — can sync later
-      await this.recordTip({ rideId, driverId, amount, currency, createdAt: new Date().toISOString() });
-      return true;
-    } catch (error) {
-      log.error('Failed to submit tip', error);
-      // Save locally for retry
-      await this.recordTip({ rideId, driverId, amount, currency, createdAt: new Date().toISOString() });
-      return false;
-    }
+  async recordCashTip(rideId: string, driverId: string, amount: number, currency: string = 'BWP'): Promise<void> {
+    await this.recordTip({ rideId, driverId, amount, currency, createdAt: new Date().toISOString() });
   }
 
   /**

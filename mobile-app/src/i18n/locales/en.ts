@@ -85,7 +85,8 @@ export const en = {
   'tip.selectAmount': 'Select tip amount',
   'tip.noThanks': 'No thanks',
   'tip.thankYou': 'Thank you!',
-  'tip.sentToDriver': 'Your tip has been sent to the driver',
+  'tip.paidInCash': 'Tips are paid in cash, straight to your driver.',
+  'tip.handInCash': 'Please hand your driver {{currency}} {{amount}} in cash.',
 
   // Receipt
   'receipt.title': 'Ride Receipt',

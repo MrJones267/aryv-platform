@@ -2,7 +2,7 @@
  * @fileoverview Socket.io service for real-time features
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2026-11-05
  */
 
 import { Server as SocketIOServer } from 'socket.io';
@@ -1262,14 +1262,6 @@ export class SocketService {
       locations: driverLocation ? [driverLocation] : [],
       lastUpdated: driverLocation?.timestamp || null,
     };
-  }
-
-  // Called by LocationController to send emergency alerts
-  public async sendEmergencyAlert(rideId: string, alert: any): Promise<void> {
-    this.io.to(`ride:${rideId}`).emit('emergency_alert', alert);
-    // Also notify all connected admins
-    this.io.emit('admin_emergency_alert', alert);
-    logError('Emergency alert broadcasted', new Error('EMERGENCY'), { rideId, alert });
   }
 }
 

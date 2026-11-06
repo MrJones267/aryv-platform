@@ -2,7 +2,7 @@
  * @fileoverview Main entry point for ARYV backend API server
  * @author Oabona-Majoko
  * @created 2025-01-20
- * @lastModified 2025-01-25
+ * @lastModified 2026-11-05
  */
 
 import express from 'express';
@@ -398,6 +398,11 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
     // Every cash ride payment writes a hold; without it none can start.
     { table: 'trust_holds', migration: '032_cash_payment_holds_and_disputes.sql' },
     { table: 'cash_disputes', migration: '032_cash_payment_holds_and_disputes.sql' },
+    // The one wallet: balances, top-ups, wallet payments and commission paid
+    // from the wallet. Promo codes are validated at booking.
+    { table: 'cash_wallets', migration: '037_cash_wallets_and_promo_codes.sql' },
+    { table: 'cash_wallet_transactions', migration: '037_cash_wallets_and_promo_codes.sql' },
+    { table: 'promo_codes', migration: '037_cash_wallets_and_promo_codes.sql' },
   ];
 
   // Indexes that carry a correctness guarantee rather than just performance.
@@ -405,12 +410,11 @@ const assertSchemaIsCurrent = async (): Promise<void> => {
   // nothing else in the running system would notice — so a deploy that has not
   // had the migration applied must not start.
   //
-  // `onTable` is load-bearing. Environments baselined by `db:migrate baseline`
-  // have migrations 001-012 recorded as applied without ever having run them,
-  // so they have no cash wallet tables at all — production is one of those.
-  // Demanding an index on a table that does not exist would refuse to boot
-  // over a guarantee for a feature that environment does not have. The
-  // requirement applies only where the table is present.
+  // `onTable` is kept for tables that may legitimately be absent. The wallet
+  // tables used to be one of those: environments baselined past 001-012,
+  // production among them, never had them. Migration 037 creates them and
+  // REQUIRED_TABLES above now demands them, so this guard only matters if
+  // that requirement is ever removed.
   const REQUIRED_INDEXES: Array<{ index: string; onTable: string; migration: string }> = [
     {
       index: 'cash_wallet_transactions_load_reference_unique',

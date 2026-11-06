@@ -85,7 +85,8 @@ export const af: Record<TranslationKey, string> = {
   'tip.selectAmount': 'Kies fooitjie bedrag',
   'tip.noThanks': 'Nee dankie',
   'tip.thankYou': 'Dankie!',
-  'tip.sentToDriver': 'Jou fooitjie is aan die bestuurder gestuur',
+  'tip.paidInCash': 'Fooitjies word kontant betaal, direk aan jou bestuurder.',
+  'tip.handInCash': 'Gee asseblief vir jou bestuurder {{currency}} {{amount}} in kontant.',
 
   // Receipt
   'receipt.title': 'Rit Kwitansie',

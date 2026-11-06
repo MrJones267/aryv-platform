@@ -2,7 +2,11 @@
  * @fileoverview Tip selector component for post-ride tipping
  * @author Oabona-Majoko
  * @created 2026-02-04
- * @lastModified 2026-02-04
+ * @lastModified 2026-11-05
+ *
+ * Rides are paid in cash, so a tip is too: the rider hands it to the driver.
+ * This used to say the tip "has been sent to the driver" after posting to a
+ * route that does not exist, so the driver never heard about it.
  */
 
 import React, { useState } from 'react';
@@ -67,7 +71,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
     haptic.confirm();
     setIsSubmitting(true);
 
-    await tippingService.submitTip(rideId, driverId, amount, currency);
+    await tippingService.recordCashTip(rideId, driverId, amount, currency);
 
     setSubmitted(true);
     setIsSubmitting(false);
@@ -85,7 +89,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
           </View>
           <Text style={styles.thankYouTitle}>{t('tip.thankYou')}</Text>
           <Text style={styles.thankYouDesc}>
-            Your {currency} {effectiveAmount} tip has been sent to the driver
+            {t('tip.handInCash', { currency, amount: effectiveAmount })}
           </Text>
         </View>
       </View>
@@ -99,7 +103,7 @@ const TipSelector: React.FC<TipSelectorProps> = ({
         <Text style={styles.headerTitle}>{t('tip.addTip')}</Text>
       </View>
       <Text style={styles.headerDesc}>
-        100% of tips go directly to your driver
+        {t('tip.paidInCash')}
       </Text>
 
       {/* Preset amounts */}

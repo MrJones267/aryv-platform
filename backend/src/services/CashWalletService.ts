@@ -2,7 +2,7 @@
  * @fileoverview Cash wallet service for managing stored value operations
  * @author Oabona-Majoko
  * @created 2025-01-27
- * @lastModified 2025-01-27
+ * @lastModified 2026-11-05
  */
 
 import { Transaction, UniqueConstraintError } from 'sequelize';
@@ -376,6 +376,67 @@ export class CashWalletService {
         code: 'WALLET_PAYMENT_FAILED',
       };
     }
+  }
+
+  /**
+   * Take a driver's commission payment out of their wallet, inside the
+   * caller's transaction so the debit and the commission record succeed or
+   * fail together. Nothing is committed or rolled back here.
+   *
+   * Spending limits do not apply: they guard money leaving to third parties,
+   * and this is the driver paying what they owe the platform.
+   *
+   * Recorded as a `fee` with metadata.purpose 'commission_settlement'. The
+   * source enum has no commission value, and adding one would need a
+   * migration that cannot run inside a transaction.
+   */
+  async debitForCommission(
+    userId: string,
+    amount: number,
+    transaction: Transaction,
+  ): Promise<{ success: boolean; error?: string; code?: string; transactionId?: string; balanceAfter?: number }> {
+    const wallet = await CashWallet.findOne({
+      where: { userId },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!wallet || wallet.status !== 'active') {
+      return { success: false, error: 'No active wallet to pay from', code: 'WALLET_INACTIVE' };
+    }
+
+    const balanceBefore = parseFloat(wallet.balance.toString());
+    const available = Math.round((balanceBefore
+      - parseFloat(wallet.frozenBalance.toString())
+      - parseFloat(wallet.escrowBalance.toString())) * 100) / 100;
+
+    if (available < amount) {
+      return {
+        success: false,
+        error: `Insufficient wallet balance. Available: ${available}, required: ${amount}`,
+        code: 'INSUFFICIENT_BALANCE',
+      };
+    }
+
+    const balanceAfter = Math.round((balanceBefore - amount) * 100) / 100;
+
+    const entry = await CashWalletTransaction.create({
+      walletId: wallet.id,
+      type: 'fee',
+      amount,
+      currency: wallet.currency,
+      balanceBefore,
+      balanceAfter,
+      status: 'completed',
+      source: 'ride_payment',
+      description: 'Commission settlement',
+      metadata: { purpose: 'commission_settlement' },
+      processedAt: new Date(),
+    } as any, { transaction });
+
+    await wallet.update({ balance: balanceAfter, lastTransactionAt: new Date() }, { transaction });
+
+    return { success: true, transactionId: entry.id, balanceAfter };
   }
 
   /**

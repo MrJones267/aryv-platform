@@ -2,7 +2,7 @@
  * @fileoverview Registration screen component
  * @author Oabona-Majoko
  * @created 2025-01-21
- * @lastModified 2025-01-21
+ * @lastModified 2026-11-05
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,8 +25,7 @@ import { RegisterScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import PhoneInput from '../../components/ui/PhoneInput';
 import { passwordProblem } from '../../utils/passwordRule';
-import { Country as CountryServiceCountry } from '../../services/CountryService';
-import { CurrencyService } from '../../services/CurrencyService';
+import { CountryService, Country as CountryServiceCountry } from '../../services/CountryService';
 
 /** Lightweight country shape matching what PhoneInput emits */
 interface PhoneCountry {
@@ -148,57 +147,47 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const handleCountryChange = async (country: PhoneCountry): Promise<void> => {
     setSelectedCountry(country);
 
-    // Automatically suggest currency based on country
-    try {
-      const currencies = await CurrencyService.getCurrenciesByCountry(country.code);
-      if (currencies && currencies.length > 0) {
-        const primaryCurrency = currencies[0];
-        setSuggestedCurrency(primaryCurrency.code);
-        
-        // Show currency suggestion to user
-        Alert.alert(
-          t('register.currencyTitle'),
-          t('register.currencyBody', { country: country.name, currency: primaryCurrency.name, code: primaryCurrency.code }),
-          [
-            { text: t('common.ok'), style: 'default' }
-          ]
-        );
-
-        // Automatically set the user's currency preference
-        try {
-          await CurrencyService.setUserCurrency(primaryCurrency.code);
-        } catch (error) {
-          log.error('Error setting user currency:', error);
-        }
-      }
-    } catch (error) {
-      log.error('Error getting currency suggestion:', error);
-      // Set fallback currency based on common country mappings
-      const fallbackCurrencies: Record<string, string> = {
-        'BW': 'BWP',
-        'ZA': 'ZAR',
-        'NA': 'NAD',
-        'ZM': 'ZMW',
-        'MZ': 'MZN',
-        'MW': 'MWK',
-        'SZ': 'SZL',
-        'LS': 'LSL',
-        'ZW': 'ZWL',
-        'AO': 'AOA',
-        'TZ': 'TZS',
-        'KE': 'KES',
-        'NG': 'NGN',
-        'GH': 'GHS',
-        'UG': 'UGX',
-        'US': 'USD',
-        'GB': 'GBP',
-        'CA': 'CAD',
-        'AU': 'AUD',
-      };
-
-      const fallbackCurrency = fallbackCurrencies[country.code] || 'BWP';
-      setSuggestedCurrency(fallbackCurrency);
+    // Suggest the country's currency. It is sent with the registration and
+    // saved as the new account's primary currency; there is no account to
+    // save it to before then. (This used to also post it to /users/currency,
+    // which does not exist and could not work before sign-up anyway.)
+    const suggested = await CountryService.getSuggestedCurrency(country.code);
+    if (suggested) {
+      setSuggestedCurrency(suggested.code);
+      Alert.alert(
+        t('register.currencyTitle'),
+        t('register.currencyBody', { country: country.name, currency: suggested.name, code: suggested.code }),
+        [
+          { text: t('common.ok'), style: 'default' }
+        ]
+      );
+      return;
     }
+
+    // Offline, or a country the server has no default for.
+    const fallbackCurrencies: Record<string, string> = {
+      'BW': 'BWP',
+      'ZA': 'ZAR',
+      'NA': 'NAD',
+      'ZM': 'ZMW',
+      'MZ': 'MZN',
+      'MW': 'MWK',
+      'SZ': 'SZL',
+      'LS': 'LSL',
+      'ZW': 'ZWL',
+      'AO': 'AOA',
+      'TZ': 'TZS',
+      'KE': 'KES',
+      'NG': 'NGN',
+      'GH': 'GHS',
+      'UG': 'UGX',
+      'US': 'USD',
+      'GB': 'GBP',
+      'CA': 'CAD',
+      'AU': 'AUD',
+    };
+
+    setSuggestedCurrency(fallbackCurrencies[country.code] || 'BWP');
   };
 
   const handleRegister = async (): Promise<void> => {
