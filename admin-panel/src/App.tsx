@@ -8,7 +8,7 @@ import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { useAppDispatch, useAppSelector } from './store';
-import { verifyToken, selectIsAuthenticated, selectAuthLoading } from './store/slices/authSlice';
+import { verifyToken, selectIsAuthenticated, selectAuthVerifying } from './store/slices/authSlice';
 
 // Layout components
 import AuthLayout from './components/layout/AuthLayout';
@@ -40,7 +40,7 @@ import NotFoundPage from './pages/error/NotFoundPage';
 const App: React.FC = () => {
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
-  const authLoading = useAppSelector(selectAuthLoading);
+  const verifyingSession = useAppSelector(selectAuthVerifying);
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token');
@@ -49,8 +49,11 @@ const App: React.FC = () => {
     }
   }, [dispatch, isAuthenticated]);
 
-  // Show loading spinner while verifying token
-  if (authLoading) {
+  // Spinner only while a saved session is checked at start-up. Not for
+  // sign-in or profile saves: replacing the page then unmounts the form in
+  // use and loses its state (the login page forgot it was asking for the
+  // two-factor code, so the code box never appeared).
+  if (verifyingSession) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" bgcolor="background.default">
         <CircularProgress size={40} />
