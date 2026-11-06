@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from './config/rateLimitStore';
-import { resolveTrustProxy, rateLimitKey } from './config/rateLimitKey';
+import { resolveTrustProxy, cloudflareClientIp, rateLimitKey } from './config/rateLimitKey';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import path from 'path';
@@ -85,6 +85,8 @@ const app = express();
  * wrote, and any caller could mint a fresh bucket per request.
  */
 app.set('trust proxy', resolveTrustProxy());
+// Through Cloudflare, the caller is in CF-Connecting-IP; see rateLimitKey.ts.
+app.use(cloudflareClientIp);
 
 // Create HTTP server
 const server = createServer(app);

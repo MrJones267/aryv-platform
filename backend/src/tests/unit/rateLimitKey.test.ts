@@ -14,7 +14,7 @@
 
 import express from 'express';
 import request from 'supertest';
-import { resolveTrustProxyHops, resolveTrustProxy, normaliseIpForRateLimit } from '../../config/rateLimitKey';
+import { resolveTrustProxyHops, resolveTrustProxy, cloudflareClientIp, normaliseIpForRateLimit } from '../../config/rateLimitKey';
 
 describe('resolveTrustProxyHops', () => {
   const ORIGINAL_ENV = process.env;
@@ -103,11 +103,15 @@ describe('req.ip behind Railway and Cloudflare', () => {
   const appWithTrust = () => {
     const app = express();
     app.set('trust proxy', resolveTrustProxy());
+    app.use(cloudflareClientIp);
     app.get('/ip', (req, res) => { res.json({ ip: req.ip }); });
     return app;
   };
-  const ipFor = async (xff: string): Promise<string> =>
-    (await request(appWithTrust()).get('/ip').set('X-Forwarded-For', xff)).body.ip;
+  const ipFor = async (xff: string, cfConnectingIp?: string): Promise<string> => {
+    const req = request(appWithTrust()).get('/ip').set('X-Forwarded-For', xff);
+    if (cfConnectingIp !== undefined) req.set('CF-Connecting-IP', cfConnectingIp);
+    return (await req).body.ip;
+  };
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV, NODE_ENV: 'production' };
@@ -149,5 +153,24 @@ describe('req.ip behind Railway and Cloudflare', () => {
     process.env['NODE_ENV'] = 'development';
     const ip = await ipFor(`${CLIENT}, ${CLOUDFLARE}, ${EDGE}`);
     expect([CLIENT, CLOUDFLARE, EDGE]).not.toContain(ip);
+  });
+
+  // What Railway really sends through Cloudflare (measured 2026-11-06): the
+  // edge starts a new chain from its TCP peer, so X-Forwarded-For holds only
+  // the Cloudflare edge and Railway's own; the caller is in CF-Connecting-IP.
+  it('is the caller Cloudflare reports, when the request came from Cloudflare', async () => {
+    expect(await ipFor(`${CLOUDFLARE}, ${EDGE}`, CLIENT)).toBe(CLIENT);
+  });
+
+  it('reads CF-Connecting-IP over IPv6 as well', async () => {
+    expect(await ipFor(`2a06:98c1:3120::3, ${EDGE}`, '2001:db8::7')).toBe('2001:db8::7');
+  });
+
+  it('ignores a CF-Connecting-IP header from a caller who did not come through Cloudflare', async () => {
+    expect(await ipFor(`${CLIENT}, ${EDGE}`, '6.6.6.6')).toBe(CLIENT);
+  });
+
+  it('keeps the Cloudflare address when CF-Connecting-IP is not an address', async () => {
+    expect(await ipFor(`${CLOUDFLARE}, ${EDGE}`, 'not-an-ip')).toBe(CLOUDFLARE);
   });
 });
