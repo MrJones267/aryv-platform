@@ -13,6 +13,10 @@
  *     release ran, so a failed release left the recipient's only code used
  *     and the delivery in transit.
  * Each case is forced here, and the step is then retried successfully.
+ *
+ * These were also the first tests to confirm a delivery over HTTP, and they
+ * found both confirmation routes refusing every real code: the routes
+ * required 8 to 100 characters, and the code is 6.
  */
 
 import request from 'supertest';
@@ -36,8 +40,10 @@ describe('delivery steps are all-or-nothing', () => {
     request(app).post(`/api/courier/agreements/${agreement.id}/pickup`)
       .set('Authorization', `Bearer ${tokenFor(courier)}`)
       .send({ location: [25.921, -24.651] });
-  const handOver = (code: string) =>
-    request(app).post(`/api/courier/deliveries/verify/${code}`)
+  // Both confirmation routes: /verify-qr is the one the app calls. Each
+  // refused every real (6-character) code until this change.
+  const handOver = (code: string, route: 'verify-qr' | 'deliveries/verify' = 'verify-qr') =>
+    request(app).post(`/api/courier/${route}/${code}`)
       .set('Authorization', `Bearer ${tokenFor(courier)}`)
       .send({ location: [25.94, -24.63] });
   const activeCode = async () =>
@@ -107,7 +113,7 @@ describe('delivery steps are all-or-nothing', () => {
     await pickup().expect(200);
     const code = (await activeCode())!;
 
-    const [first, second] = await Promise.all([handOver(code), handOver(code)]);
+    const [first, second] = await Promise.all([handOver(code, 'deliveries/verify'), handOver(code, 'deliveries/verify')]);
     const statuses = [first.status, second.status].sort();
 
     expect(statuses).toEqual([200, 400]);

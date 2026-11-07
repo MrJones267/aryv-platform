@@ -267,7 +267,7 @@ export class DeliveryHandoverService {
         where: { qrToken: normalised },
         // A double submit must not spend the code twice and complete the
         // delivery twice; the second waits here and then sees it used.
-        lock: t.LOCK.UPDATE,
+        lock: Transaction.LOCK.UPDATE,
         transaction: t,
       });
 

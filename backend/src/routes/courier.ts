@@ -389,11 +389,13 @@ router.post('/deliveries/:agreementId/pickup',
 // Verify delivery QR code (mobile app compatibility)
 router.post('/verify-qr/:qrToken',
   [
+    // The handover code is six letters and digits (DeliveryHandoverService).
+    // This used to demand 8 to 100 characters, left from an older long
+    // token, so every real code was refused and no delivery could finish.
     param('qrToken')
-      .notEmpty()
-      .withMessage('QR token is required')
-      .isLength({ min: 8, max: 100 })
-      .withMessage('QR token must be between 8 and 100 characters'),
+      .trim()
+      .matches(/^[A-Za-z0-9]{6}$/)
+      .withMessage('The delivery code is 6 letters and digits'),
 
     body('location')
       .optional()
@@ -413,11 +415,13 @@ router.post('/verify-qr/:qrToken',
 // Verify delivery QR code
 router.post('/deliveries/verify/:qrToken',
   [
+    // The handover code is six letters and digits (DeliveryHandoverService).
+    // This used to demand 8 to 100 characters, left from an older long
+    // token, so every real code was refused and no delivery could finish.
     param('qrToken')
-      .notEmpty()
-      .withMessage('QR token is required')
-      .isLength({ min: 8, max: 100 })
-      .withMessage('QR token must be between 8 and 100 characters'),
+      .trim()
+      .matches(/^[A-Za-z0-9]{6}$/)
+      .withMessage('The delivery code is 6 letters and digits'),
 
     body('location')
       .optional()
