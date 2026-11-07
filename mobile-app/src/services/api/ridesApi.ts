@@ -351,7 +351,9 @@ class RidesApiService extends BaseApiService {
    * Cancel a booking
    */
   async cancelBooking(bookingId: string, reason?: string): Promise<ApiResponse<{ message: string }>> {
-    return this.patch<{ message: string }>(`/bookings/${bookingId}/cancel`, { reason });
+    // POST, as the server takes it. This sent PATCH, which no route answers,
+    // so cancelling a booking from the Rides screen always failed (404).
+    return this.post<{ message: string }>(`/bookings/${bookingId}/cancel`, { reason });
   }
 
   /**
@@ -386,7 +388,8 @@ class RidesApiService extends BaseApiService {
    * Confirm a booking (driver action)
    */
   async confirmBooking(bookingId: string): Promise<ApiResponse<Booking>> {
-    return this.patch<Booking>(`/bookings/${bookingId}/confirm`);
+    // POST, as the server takes it (this sent PATCH, which 404s).
+    return this.post<Booking>(`/bookings/${bookingId}/confirm`);
   }
 
   /**

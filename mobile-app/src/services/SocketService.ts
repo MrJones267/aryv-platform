@@ -341,60 +341,11 @@ class SocketService {
     }
   }
 
-  /**
-   * Additional methods for package/courier functionality
-   */
-  
-  // Package tracking methods
-  joinPackage(packageId: string): void {
-    if (this.isSocketConnected()) {
-      this.socket?.emit('join_package', { packageId });
-      log.info(`Joined package tracking: ${packageId}`);
-    }
-  }
-  
-  leavePackage(packageId: string): void {
-    if (this.isSocketConnected()) {
-      this.socket?.emit('leave_package', { packageId });
-      log.info(`Left package tracking: ${packageId}`);
-    }
-  }
-  
-  updatePackageLocation(packageId: string, location: LocationData): void {
-    if (this.isSocketConnected()) {
-      this.socket?.emit('package_location_update', {
-        packageId,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        heading: location.heading,
-        speed: location.speed,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
-  
-  updatePackageStatus(packageId: string, status: string): void {
-    if (this.isSocketConnected()) {
-      const state = store.getState();
-      const userId = state.user.profile?.id;
-      
-      if (userId) {
-        this.socket?.emit('package_status_update', {
-          packageId,
-          status,
-          courierId: userId,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }
-  }
-  
-  // Admin/Broadcasting methods
-  broadcastToRoom(room: string, event: string, data: unknown): void {
-    if (this.isSocketConnected()) {
-      this.socket?.emit('broadcast_to_room', { room, event, data });
-    }
-  }
+  // No package or broadcast events are sent from here. Helpers for
+  // join_package, leave_package, package_location_update,
+  // package_status_update and broadcast_to_room were removed: the server
+  // handles none of them and no screen called them. A courier's position
+  // goes over HTTP (DeliveryLocationService).
 
   /**
    * Subscribe to an event

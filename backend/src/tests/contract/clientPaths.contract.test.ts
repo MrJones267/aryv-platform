@@ -20,11 +20,26 @@ import fs from 'fs';
 import path from 'path';
 import { MOUNTS } from './harness';
 
-const MOBILE_SERVICES = path.resolve(__dirname, '../../../../mobile-app/src/services');
+const REPO = path.resolve(__dirname, '../../../..');
 
-/** Client call sites: `.get('/x')`, `.post(`/x/${id}`)`, and so on. */
-const CALL_PATTERN =
-  /\.(get|post|put|patch|delete)\s*\(\s*['"`](\/[^'"`\s)]*)/g;
+/**
+ * Where clients call the API, and the path prefix their calls are relative
+ * to. This read mobile-app/src/services only; calls from screens, hooks and
+ * the admin panel were never checked.
+ */
+const CLIENTS: Array<{ dir: string; prefix: string; pattern: RegExp; fetch: boolean }> = [
+  { dir: path.join(REPO, 'mobile-app/src'), prefix: '/api', pattern: /\.(get|post|put|patch|delete)\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*\(\s*['"`](\/[^'"`\s)]*)/g, fetch: true },
+  // adminApi's base URL is <host>/api/admin.
+  { dir: path.join(REPO, 'admin-panel/src'), prefix: '/api/admin', pattern: /adminApi\.(get|post|put|patch|delete)\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*\(\s*['"`](\/[^'"`\s)]*)/g, fetch: false },
+];
+
+/**
+ * Client call sites: `.get('/x')`, `.post(`/x/${id}`)`, and so on, with or
+ * without a type argument (`.patch<Booking>(...)`, `.get<ApiResponse<T>>(...)`).
+ * The pattern used to allow none, so every call written with one was
+ * invisible: `this.patch<{ message: string }>('/bookings/:id/cancel')` was
+ * never checked, and the server only takes POST there.
+ */
 
 /**
  * Raw fetch calls against the API base: fetch(`${apiUrl}/rides/${id}/tip`, …).
@@ -57,7 +72,7 @@ const listFiles = (dir: string): string[] => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === '__tests__') continue;
+      if (['__tests__', 'node_modules', 'tests'].includes(entry.name)) continue;
       out.push(...listFiles(full));
     } else if (/\.tsx?$/.test(entry.name)) {
       out.push(full);
@@ -67,47 +82,33 @@ const listFiles = (dir: string): string[] => {
 };
 
 /** `${...}` holes stand in for path parameters; the query string is not part of the route. */
-const toServerPath = (rawPath: string): string =>
-  `/api${rawPath
+const toServerPath = (rawPath: string, prefix = '/api'): string =>
+  `${prefix}${rawPath
     .replace(/\$\{[^}]*\}/g, ':param')
     .split('?')[0]!
     .replace(/\/$/, '')}`;
 
 const collectClientCalls = (): ClientCall[] => {
   const calls: ClientCall[] = [];
-
-  for (const file of listFiles(MOBILE_SERVICES)) {
-    const source = fs.readFileSync(file, 'utf8');
-    for (const match of source.matchAll(CALL_PATTERN)) {
-      const method = match[1]!;
-      const rawPath = match[2]!;
-
-      if (NOT_API_CALLS.some((p) => p.test(rawPath))) continue;
-
-      const resolved = toServerPath(rawPath);
-
-      calls.push({
-        file: path.relative(MOBILE_SERVICES, file),
-        method,
-        rawPath,
-        resolved,
-      });
-    }
-
-    for (const match of source.matchAll(FETCH_PATTERN)) {
-      const rawPath = match[1]!;
-      const options = match[2] ?? '';
-      const method = (/method:\s*['"](\w+)['"]/.exec(options)?.[1] ?? 'GET').toLowerCase();
-
-      calls.push({
-        file: path.relative(MOBILE_SERVICES, file),
-        method,
-        rawPath,
-        resolved: toServerPath(rawPath),
-      });
+  for (const client of CLIENTS) {
+    for (const file of listFiles(client.dir)) {
+      const source = fs.readFileSync(file, 'utf8');
+      const where = path.relative(REPO, file);
+      for (const match of source.matchAll(client.pattern)) {
+        const method = match[1]!;
+        const rawPath = match[2]!;
+        if (NOT_API_CALLS.some((p) => p.test(rawPath))) continue;
+        calls.push({ file: where, method, rawPath, resolved: toServerPath(rawPath, client.prefix) });
+      }
+      if (!client.fetch) continue;
+      for (const match of source.matchAll(FETCH_PATTERN)) {
+        const rawPath = match[1]!;
+        const options = match[2] ?? '';
+        const method = (/method:\s*['"](\w+)['"]/.exec(options)?.[1] ?? 'GET').toLowerCase();
+        calls.push({ file: where, method, rawPath, resolved: toServerPath(rawPath) });
+      }
     }
   }
-
   return calls;
 };
 
@@ -135,7 +136,7 @@ const collectServerRoutes = (): Array<{ method: string; regex: RegExp; label: st
   return routes;
 };
 
-describe('mobile client / backend path contract', () => {
+describe('client (app and admin panel) / backend path contract', () => {
   const calls = collectClientCalls();
   const serverRoutes = collectServerRoutes();
 
@@ -159,8 +160,14 @@ describe('mobile client / backend path contract', () => {
    */
   const KNOWN_GAPS: string[] = [
     // Notification preferences and token registration.
-    'GET /api/notifications/preferences  (NotificationService.ts)',
-    'PUT /api/notifications/preferences  (NotificationService.ts)',
+    'GET /api/notifications/preferences  (mobile-app/src/services/NotificationService.ts)',
+    'PUT /api/notifications/preferences  (mobile-app/src/services/NotificationService.ts)',
+    // Admin panel: client functions with no server route. No page uses
+    // them (their Redux actions are never dispatched), so nothing breaks;
+    // wiring any of them to a page needs the route first.
+    'GET /api/admin/courier/agreements  (admin-panel/src/services/api.ts)',
+    'PUT /api/admin/rides/:param  (admin-panel/src/services/api.ts)',
+    'PUT /api/admin/settings/content  (admin-panel/src/services/api.ts)',
   ];
 
   it('has no client path missing from the server beyond the recorded gaps', () => {
