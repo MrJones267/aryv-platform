@@ -9,6 +9,9 @@ import { Model, DataTypes, Optional } from 'sequelize';
 import { sequelize } from '../config/database';
 
 // Package size enum
+/** What is being sent. Migration 039. */
+export type PackageType = 'parcel' | 'document';
+
 export enum PackageSize {
   SMALL = 'small',
   MEDIUM = 'medium',
@@ -27,6 +30,8 @@ export interface PackageAttributes {
   dimensionsHeight?: number;
   weight?: number;
   packageSize: PackageSize;
+  /** A document has its own flat pricing; see DemandPricingEngine. */
+  packageType: PackageType;
   fragile: boolean;
   valuable: boolean;
   specialInstructions?: string;
@@ -55,7 +60,7 @@ export interface PackageAttributes {
 }
 
 export interface PackageCreationAttributes extends Optional<PackageAttributes,
-  'id' | 'description' | 'dimensionsLength' | 'dimensionsWidth' | 'dimensionsHeight' |
+  'packageType' | 'id' | 'description' | 'dimensionsLength' | 'dimensionsWidth' | 'dimensionsHeight' |
   'weight' | 'specialInstructions' | 'pickupContactName' | 'pickupContactPhone' |
   'dropoffContactName' | 'dropoffContactPhone' | 'packageImages' | 'distance' |
   'systemSuggestedPrice' | 'deliveryTierId' | 'requestedDeliveryTime' | 'urgencyLevel' |
@@ -72,6 +77,7 @@ export class Package extends Model<PackageAttributes, PackageCreationAttributes>
   public dimensionsHeight?: number;
   public weight?: number;
   public packageSize!: PackageSize;
+  public packageType!: PackageType;
   public fragile!: boolean;
   public valuable!: boolean;
   public specialInstructions?: string;
@@ -184,6 +190,13 @@ Package.init({
     allowNull: false,
     defaultValue: PackageSize.MEDIUM,
     field: 'package_size',
+  },
+  packageType: {
+    type: DataTypes.STRING(16),
+    allowNull: false,
+    defaultValue: 'parcel',
+    field: 'package_type',
+    validate: { isIn: [['parcel', 'document']] },
   },
   fragile: {
     type: DataTypes.BOOLEAN,

@@ -54,6 +54,11 @@ router.post('/pricing/suggestions',
       .isFloat({ min: -180, max: 180 })
       .withMessage('Coordinates must be valid longitude/latitude values'),
 
+    body('packageType')
+      .optional()
+      .isIn(['parcel', 'document'])
+      .withMessage('packageType must be parcel or document'),
+
     body('packageSize')
       .optional()
       .isIn(['small', 'medium', 'large', 'custom'])
@@ -121,6 +126,11 @@ router.post('/packages',
       .optional()
       .isFloat({ min: 0 })
       .withMessage('Weight must be a positive number'),
+
+    body('packageType')
+      .optional()
+      .isIn(['parcel', 'document'])
+      .withMessage('packageType must be parcel or document'),
 
     body('packageSize')
       .optional()

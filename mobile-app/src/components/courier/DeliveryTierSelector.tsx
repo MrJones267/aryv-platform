@@ -29,6 +29,8 @@ interface DeliveryTierSelectorProps {
   pickupCoordinates?: [number, number];
   dropoffCoordinates?: [number, number];
   packageSize?: 'small' | 'medium' | 'large' | 'custom';
+  /** Documents are quoted one flat price; parcels by tier and distance. */
+  packageType?: 'parcel' | 'document';
   fragile?: boolean;
   valuable?: boolean;
   requestedDeliveryTime?: Date;
@@ -46,6 +48,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
   pickupCoordinates,
   dropoffCoordinates,
   packageSize = 'medium',
+  packageType = 'parcel',
   fragile = false,
   valuable = false,
   requestedDeliveryTime,
@@ -81,7 +84,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
     if (pickupCoordinates && dropoffCoordinates) {
       loadPricingSuggestions();
     }
-  }, [pickupCoordinates, dropoffCoordinates, packageSize, fragile, valuable, requestedDeliveryTime]);
+  }, [pickupCoordinates, dropoffCoordinates, packageSize, packageType, fragile, valuable, requestedDeliveryTime]);
 
   const loadDeliveryTiers = async () => {
     setLoading(true);
@@ -109,6 +112,7 @@ const DeliveryTierSelector: React.FC<DeliveryTierSelectorProps> = ({
         pickupCoordinates,
         dropoffCoordinates,
         packageSize,
+        packageType,
         fragile,
         valuable,
         requestedDeliveryTime: requestedDeliveryTime?.toISOString(),

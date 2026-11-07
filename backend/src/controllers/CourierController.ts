@@ -6,7 +6,7 @@
  */
 
 import { Request, Response } from 'express';
-import { Op, QueryTypes } from 'sequelize';
+import { Op, QueryTypes, Transaction } from 'sequelize';
 import {
   Package,
   DeliveryAgreement,
@@ -14,12 +14,13 @@ import {
   User,
   CourierLocation,
 } from '../models';
-import { PackageSize } from '../models/Package';
+import { PackageSize, PackageType } from '../models/Package';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
 import { sequelize } from '../config/database';
 import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
+import { roadDistanceKm } from '../services/courierDistance';
 import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { notifyDeliveryEvent } from '../services/courierNotifications';
@@ -59,6 +60,7 @@ export class CourierController {
         valuable = false,
         requestedDeliveryTime,
       } = req.body;
+      const packageType: PackageType = req.body.packageType === 'document' ? 'document' : 'parcel';
 
       if (!pickupCoordinates || !dropoffCoordinates) {
         res.status(400).json({
@@ -69,8 +71,9 @@ export class CourierController {
         return;
       }
 
-      // Calculate distance
-      const distance = this.calculateDistance(pickupCoordinates, dropoffCoordinates);
+      // By road, as the courier drives it.
+      const route = await roadDistanceKm(pickupCoordinates, dropoffCoordinates);
+      const distance = route.km;
 
       // Quotes are in the sender's currency, the one a package is charged in.
       const currency = await CurrencyService.getUserCurrencyCode(req.user?.id ?? '');
@@ -80,12 +83,13 @@ export class CourierController {
       const pricingSuggestions = await pricingEngine.calculatePricingSuggestions(
         pickupCoordinates,
         dropoffCoordinates,
-        packageSize,
+        packageType === 'document' ? PackageSize.SMALL : packageSize,
         distance,
         fragile,
         valuable,
         requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
         currency,
+        packageType,
       );
 
       // Refresh demand metrics. Best effort: the suggestions above already
@@ -105,6 +109,9 @@ export class CourierController {
         success: true,
         data: {
           distance,
+          // 'road' from Google, or 'estimated' from the straight line.
+          distanceSource: route.source,
+          packageType,
           pricingSuggestions,
           // The currency these prices are in: a package is charged in its
           // sender's currency (see createPackage). The app printed every price
@@ -166,7 +173,11 @@ export class CourierController {
    * Create a new package listing
    */
   async createPackage(req: Request, res: Response): Promise<void> {
-    const transaction = await sequelize.transaction();
+    // Opened only for the insert. It used to open on the first line, and the
+    // early returns below (missing fields, a refused offer) never closed it,
+    // so each kept a pooled database connection checked out for good; the
+    // pool holds ten, after which every request in the API waited.
+    let transaction: Transaction | null = null;
 
     try {
       const userId = req.user?.id;
@@ -204,6 +215,8 @@ export class CourierController {
         requestedDeliveryTime,
         urgencyLevel,
       } = req.body;
+      const packageType: PackageType = req.body.packageType === 'document' ? 'document' : 'parcel';
+      const isDocument = packageType === 'document';
 
       // Validate required fields
       if (!title || !pickupAddress || !dropoffAddress || !senderPriceOffer) {
@@ -215,8 +228,22 @@ export class CourierController {
         return;
       }
 
-      // Calculate distance between pickup and dropoff
-      const distance = this.calculateDistance(pickupCoordinates, dropoffCoordinates);
+      if (isDocument && weight !== undefined && weight !== null && Number(weight) > DemandPricingEngine.DOCUMENT.maxWeightKg) {
+        res.status(400).json({
+          success: false,
+          error: `A document must weigh ${DemandPricingEngine.DOCUMENT.maxWeightKg} kg or less; send it as a parcel instead`,
+          code: 'DOCUMENT_TOO_HEAVY',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      // A document is an envelope: small, whatever was sent.
+      const effectiveSize: PackageSize = isDocument ? PackageSize.SMALL : (packageSize || PackageSize.MEDIUM);
+
+      // By road, as the courier drives it; straight-line distance was used,
+      // which is shorter on every route that bends.
+      const route = await roadDistanceKm(pickupCoordinates, dropoffCoordinates);
+      const distance = route.km;
 
       // Demand-based pricing is advice for the suggested price, not a
       // precondition for sending a package. Both calls used to be awaited
@@ -233,12 +260,13 @@ export class CourierController {
         pricingSuggestions = await pricingEngine.calculatePricingSuggestions(
           pickupCoordinates,
           dropoffCoordinates,
-          packageSize || PackageSize.MEDIUM,
+          effectiveSize,
           distance,
           fragile || false,
           valuable || false,
           requestedDeliveryTime ? new Date(requestedDeliveryTime) : undefined,
           packageCurrency,
+          packageType,
         );
       } catch (error) {
         logger.warn('Demand pricing unavailable; using the base suggested price', {
@@ -255,11 +283,14 @@ export class CourierController {
       }
 
       // Get the system suggested price (median of all tier suggestions)
-      const systemSuggestedPrice = pricingSuggestions.length > 0
-        ? pricingSuggestions[Math.floor(pricingSuggestions.length / 2)].finalPrice
+      // A true median: this took the middle item of a list ordered by
+      // delivery speed, so it was whichever tier happened to sit there.
+      const byPrice = [...pricingSuggestions].sort((a, b) => a.finalPrice - b.finalPrice);
+      const systemSuggestedPrice = byPrice.length > 0
+        ? byPrice[Math.floor((byPrice.length - 1) / 2)]!.finalPrice
         : await this.calculateSuggestedPrice(
             distance,
-            packageSize || PackageSize.MEDIUM,
+            effectiveSize,
             fragile || false,
             valuable || false,
             packageCurrency,
@@ -270,6 +301,31 @@ export class CourierController {
         ? pricingSuggestions[0].demandMultiplier
         : 1.0;
 
+      // The sender names the price, but not below what the trip is worth:
+      // couriers were shown P50 offers for 450 km. A document's floor is
+      // its flat price; a parcel's is half the cheapest tier's normal price,
+      // without the demand surge. With the surge in it, the floor moved
+      // between the quote a sender saw and the package they then sent (every
+      // quote refreshes demand), so an offer of exactly the minimum shown
+      // could be refused.
+      const normalPrices = pricingSuggestions.map((s) => s.finalPrice / (Number(s.demandMultiplier) || 1));
+      const minimumOffer = isDocument
+        ? (byPrice[0]?.finalPrice ?? null)
+        : (normalPrices.length > 0 ? Math.round(Math.min(...normalPrices) * 50) / 100 : null);
+      if (minimumOffer !== null && Number(senderPriceOffer) < minimumOffer) {
+        res.status(400).json({
+          success: false,
+          error: isDocument
+            ? `A document over this distance costs at least ${minimumOffer.toFixed(2)} ${packageCurrency}`
+            : `Your offer is too low for this distance. Offer at least ${minimumOffer.toFixed(2)} ${packageCurrency}`,
+          code: 'OFFER_TOO_LOW',
+          data: { minimumOffer, currency: packageCurrency, distance },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      transaction = await sequelize.transaction();
       const packageData = await Package.create({
         // The sender names the price, so the package is in their currency.
         currency: packageCurrency,
@@ -280,7 +336,8 @@ export class CourierController {
         dimensionsWidth,
         dimensionsHeight,
         weight,
-        packageSize: packageSize || PackageSize.MEDIUM,
+        packageSize: effectiveSize,
+        packageType,
         fragile: fragile || false,
         valuable: valuable || false,
         specialInstructions,
@@ -325,7 +382,7 @@ export class CourierController {
       });
 
     } catch (error) {
-      await transaction.rollback();
+      if (transaction) await transaction.rollback();
       logger.error('Error in createPackage', {
         error: (error as Error).message,
         stack: (error as Error).stack,
@@ -582,6 +639,10 @@ export class CourierController {
       }
 
       // To the cent: 25% of P40.10 is 10.025, which was stored as is.
+      // Documents carry their own fee whatever tier they went by.
+      if ((packageData as { packageType?: string }).packageType === 'document') {
+        platformFeePercentage = DemandPricingEngine.DOCUMENT.feeRate;
+      }
       const platformFee = round2(agreedPrice * platformFeePercentage);
       const escrowAmount = agreedPrice;
 
@@ -1218,23 +1279,7 @@ export class CourierController {
 
   // Helper methods
 
-  private calculateDistance(coord1: [number, number], coord2: [number, number]): number {
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = this.toRad(coord2[1] - coord1[1]);
-    const dLon = this.toRad(coord2[0] - coord1[0]);
-    const lat1 = this.toRad(coord1[1]);
-    const lat2 = this.toRad(coord2[1]);
 
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
-
-  private toRad(value: number): number {
-    return value * Math.PI / 180;
-  }
 
   private async calculateSuggestedPrice(
     distance: number,

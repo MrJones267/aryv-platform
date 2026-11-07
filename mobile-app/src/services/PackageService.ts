@@ -19,6 +19,8 @@ export interface PackageCreationData {
   dimensionsHeight?: number;
   weight?: number;
   packageSize: 'small' | 'medium' | 'large' | 'custom';
+  /** A document (A4 envelope, up to 0.5 kg) has its own flat price. */
+  packageType?: 'parcel' | 'document';
   fragile: boolean;
   valuable: boolean;
   specialInstructions?: string;
@@ -198,6 +200,7 @@ class PackageService {
     pickupCoordinates: [number, number];
     dropoffCoordinates: [number, number];
     packageSize?: 'small' | 'medium' | 'large' | 'custom';
+    packageType?: 'parcel' | 'document';
     fragile?: boolean;
     valuable?: boolean;
     requestedDeliveryTime?: string;
