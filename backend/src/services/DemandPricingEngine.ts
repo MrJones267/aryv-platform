@@ -7,7 +7,7 @@
 
 import { DemandMetrics } from '../models/DemandMetrics';
 import { DeliveryTier, DeliveryTierType } from '../models/DeliveryTier';
-import { PackageSize } from '../models/Package';
+import { PackageSize, PackageType } from '../models/Package';
 import { CurrencyService, PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
 
 /** The currency every rate in this engine is set in: the platform's, pula. */
@@ -40,12 +40,56 @@ export class DemandPricingEngine {
   private static instance: DemandPricingEngine;
 
   // Base pricing configuration
-  private readonly BASE_PRICES = {
-    [DeliveryTierType.LIGHTNING]: 50.0,  // Base price for 1-2hr delivery
-    [DeliveryTierType.EXPRESS]: 35.0,    // Base price for 2-4hr delivery
-    [DeliveryTierType.STANDARD]: 25.0,   // Base price for 4-8hr delivery
-    [DeliveryTierType.ECONOMY]: 18.0,     // Base price for 8-12hr delivery
+  /**
+   * Parcel pricing, in pula (2026-11-07). The fare was a per-tier base plus a
+   * flat P1.25/km, then multiplied by the tier: built for town and absurd
+   * between towns (430 km came to P1,800+), and the tier counted twice.
+   * Now one base fare, a distance charge that tapers with distance, and the
+   * tier applied once.
+   */
+  static readonly PARCEL_BASE_FARE = 25.0;
+  /** [up to km, pula per km]: P2/km to 10 km, P1/km to 50 km, P0.20/km beyond. */
+  static readonly DISTANCE_BANDS: ReadonlyArray<[number, number]> = [
+    [10, 2.0],
+    [50, 1.0],
+    [Infinity, 0.2],
+  ];
+  /** Tiers that cannot be delivered in their window beyond this distance. */
+  static readonly TIER_MAX_KM: Partial<Record<DeliveryTierType, number>> = {
+    [DeliveryTierType.LIGHTNING]: 30,
+    [DeliveryTierType.EXPRESS]: 100,
   };
+
+  /**
+   * Documents: flat, door to door. Undercuts the depot-to-depot overnight
+   * courier price (P87, collected at their office) while delivering to the
+   * door. No size or demand multipliers; ARYV's fee is always 22.5%.
+   */
+  static readonly DOCUMENT = {
+    inTownKm: 30,
+    inTownPrice: 30.0,
+    intercityPrice: 80.0,
+    feeRate: 0.225,
+    maxWeightKg: 0.5,
+  } as const;
+
+  /** The distance part of a parcel fare, tapering with distance. */
+  static distanceCharge(km: number): number {
+    let charge = 0;
+    let from = 0;
+    for (const [upTo, rate] of DemandPricingEngine.DISTANCE_BANDS) {
+      if (km <= from) break;
+      charge += (Math.min(km, upTo) - from) * rate;
+      from = upTo;
+    }
+    return charge;
+  }
+
+  /** A document's price in pula, by distance. */
+  static documentPrice(km: number): number {
+    const d = DemandPricingEngine.DOCUMENT;
+    return km <= d.inTownKm ? d.inTownPrice : d.intercityPrice;
+  }
 
   private readonly PACKAGE_SIZE_MULTIPLIERS = {
     [PackageSize.SMALL]: 1.0,
@@ -54,7 +98,6 @@ export class DemandPricingEngine {
     [PackageSize.CUSTOM]: 2.0,
   };
 
-  private readonly DISTANCE_RATE_PER_KM = 1.25; // Additional cost per km
   private readonly FRAGILE_SURCHARGE = 5.0;
   private readonly VALUABLE_SURCHARGE = 10.0;
 
@@ -77,6 +120,7 @@ export class DemandPricingEngine {
     isValuable: boolean = false,
     requestedDeliveryTime?: Date,
     currency: string = PRICING_BASE_CURRENCY,
+    packageType: PackageType = 'parcel',
   ): Promise<PricingSuggestion[]> {
     try {
       // Every rate here is in pula. A quote for a sender in another currency
@@ -95,9 +139,22 @@ export class DemandPricingEngine {
         order: [['minDeliveryHours', 'ASC']],
       });
 
+      if (packageType === 'document') {
+        const document = this.documentSuggestion(deliveryTiers, distance);
+        if (!document) return [];
+        return [rate === 1 ? document : this.convertSuggestion(document, rate)];
+      }
+
       const suggestions: PricingSuggestion[] = [];
 
-      for (const tier of deliveryTiers) {
+      // Only the tiers that can be met over this distance: Lightning (1-2 h)
+      // was offered for Gaborone to Francistown.
+      const reachable = deliveryTiers.filter((tier) => {
+        const maxKm = DemandPricingEngine.TIER_MAX_KM[tier.tierType];
+        return maxKm === undefined || distance <= maxKm;
+      });
+
+      for (const tier of reachable) {
         const suggestion = await this.calculateTierPricing(
           tier,
           distance,
@@ -153,18 +210,42 @@ export class DemandPricingEngine {
    * database, so it is also the fallback when demand pricing is unavailable.
    */
   calculateBasePrice(
-    tierType: DeliveryTierType,
+    _tierType: DeliveryTierType,
     distance: number,
     packageSize: PackageSize,
     isFragile: boolean,
     isValuable: boolean,
   ): number {
-    let price = this.BASE_PRICES[tierType] || 25.0;
-    price += distance * this.DISTANCE_RATE_PER_KM;
+    // The tier no longer changes the base: it is applied once, as its
+    // multiplier, in calculateTierPricing.
+    let price = DemandPricingEngine.PARCEL_BASE_FARE + DemandPricingEngine.distanceCharge(distance);
     price *= this.PACKAGE_SIZE_MULTIPLIERS[packageSize] || 1.0;
     if (isFragile) price += this.FRAGILE_SURCHARGE;
     if (isValuable) price += this.VALUABLE_SURCHARGE;
     return price;
+  }
+
+  /**
+   * The one option for a document: Standard in town, Economy (overnight)
+   * between towns, at the flat price, with the document fee.
+   */
+  private documentSuggestion(tiers: DeliveryTier[], distance: number): PricingSuggestion | null {
+    const d = DemandPricingEngine.DOCUMENT;
+    const wanted = distance <= d.inTownKm ? DeliveryTierType.STANDARD : DeliveryTierType.ECONOMY;
+    const tier = tiers.find((t) => t.tierType === wanted) ?? tiers[tiers.length - 1];
+    if (!tier) return null;
+    const finalPrice = DemandPricingEngine.documentPrice(distance);
+    const platformFee = Math.round(finalPrice * d.feeRate * 100) / 100;
+    return {
+      tierType: tier.tierType,
+      basePrice: finalPrice,
+      demandMultiplier: 1,
+      finalPrice,
+      platformFee,
+      courierEarnings: Math.round((finalPrice - platformFee) * 100) / 100,
+      estimatedDeliveryTime: tier.getDeliveryWindow(),
+      demandLevel: 'NORMAL',
+    };
   }
 
   private async calculateTierPricing(

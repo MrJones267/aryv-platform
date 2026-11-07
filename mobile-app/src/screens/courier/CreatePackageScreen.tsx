@@ -46,6 +46,7 @@ interface PackageFormData {
   requestedDeliveryTime?: Date;
   urgencyLevel?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
   packageSize?: string;
+  packageType: 'parcel' | 'document';
   fragile?: boolean;
   valuable?: boolean;
   specialInstructions?: string;
@@ -73,6 +74,7 @@ const CreatePackageScreen: React.FC = () => {
     title: '',
     description: '',
     packageSize: 'medium',
+    packageType: 'parcel',
     fragile: false,
     valuable: false,
     specialInstructions: '',
@@ -240,7 +242,8 @@ const CreatePackageScreen: React.FC = () => {
         dimensionsWidth: formData.dimensionsWidth,
         dimensionsHeight: formData.dimensionsHeight,
         weight: formData.weight,
-        packageSize: formData.packageSize as PackageCreationData['packageSize'],
+        packageSize: (formData.packageType === 'document' ? 'small' : formData.packageSize) as PackageCreationData['packageSize'],
+        packageType: formData.packageType,
         fragile: formData.fragile || false,
         valuable: formData.valuable || false,
         specialInstructions: formData.specialInstructions || undefined,
@@ -259,7 +262,7 @@ const CreatePackageScreen: React.FC = () => {
       };
 
       // Create package through Redux action
-      const response = await (dispatch(createPackageAction(packageData)) as unknown as Promise<{ type?: string; payload?: { id?: string }; error?: string }>);
+      const response = await (dispatch(createPackageAction(packageData)) as unknown as Promise<{ type?: string; payload?: { id?: string } | string; error?: { message?: string } }>);
       
       if (response.type?.endsWith('/fulfilled')) {
         // No payment is taken here. Deliveries are paid in cash to the courier
@@ -278,7 +281,10 @@ const CreatePackageScreen: React.FC = () => {
           ]
         );
       } else {
-        Alert.alert(t('common.error'), response.error || t('cf2.failedToCreatePackage'));
+        // A refused package carries the server's reason in payload (for
+        // example the lowest acceptable offer); error only says "Rejected".
+        const reason = typeof response.payload === 'string' ? response.payload : undefined;
+        Alert.alert(t('common.error'), reason || t('cf2.failedToCreatePackage'));
       }
     } catch (error) {
       Alert.alert(t('common.error'), t('cf2.failedToCreatePackage'));
@@ -342,6 +348,29 @@ const CreatePackageScreen: React.FC = () => {
       </View>
 
       <View style={styles.inputGroup}>
+        <Text style={styles.label}>{t('create.whatAreYouSending')}</Text>
+        <View style={styles.sizeButtons}>
+          {(['parcel', 'document'] as const).map((kind) => (
+            <TouchableOpacity
+              key={kind}
+              style={[styles.sizeButton, formData.packageType === kind && styles.activeSizeButton]}
+              onPress={() => updateFormData('packageType', kind)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: formData.packageType === kind }}
+            >
+              <Text style={[styles.sizeButtonText, formData.packageType === kind && styles.activeSizeButtonText]}>
+                {kind === 'parcel' ? t('create.parcel') : t('create.document')}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {formData.packageType === 'document' && (
+          <Text style={styles.documentHint}>{t('create.documentHint')}</Text>
+        )}
+      </View>
+
+      {formData.packageType === 'parcel' && (
+      <View style={styles.inputGroup}>
         <Text style={styles.label}>{t('cf.packageSize')}</Text>
         <View style={styles.sizeButtons}>
           {['small', 'medium', 'large', 'custom'].map((size) => (
@@ -363,6 +392,7 @@ const CreatePackageScreen: React.FC = () => {
           ))}
         </View>
       </View>
+      )}
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>{t('cf.offeredPrice')}</Text>
@@ -598,7 +628,8 @@ const CreatePackageScreen: React.FC = () => {
       <DeliveryTierSelector
         pickupCoordinates={routeMatchesForm(route) ? route.pickup : undefined}
         dropoffCoordinates={routeMatchesForm(route) ? route.dropoff : undefined}
-        packageSize={formData.packageSize as 'small' | 'medium' | 'large' | 'custom'}
+        packageSize={(formData.packageType === 'document' ? 'small' : formData.packageSize) as 'small' | 'medium' | 'large' | 'custom'}
+        packageType={formData.packageType}
         fragile={formData.fragile}
         valuable={formData.valuable}
         requestedDeliveryTime={formData.requestedDeliveryTime}
@@ -765,6 +796,11 @@ const CreatePackageScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  documentHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,

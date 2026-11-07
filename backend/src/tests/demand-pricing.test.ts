@@ -61,7 +61,7 @@ describe('Demand-Based Pricing Engine', () => {
         pickupCoords,
         dropoffCoords,
         PackageSize.MEDIUM,
-        50, // 50km distance
+        25, // 25 km: within reach of every tier, Lightning included
         false,
         false
       );
