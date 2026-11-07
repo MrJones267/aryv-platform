@@ -182,7 +182,7 @@ describe('Demand-Based Pricing Engine', () => {
         coords,
         [25.8, -24.8], // Further location
         PackageSize.LARGE,
-        100, // 100km
+        25, // 25 km: within reach of every tier, Lightning included
         true, // fragile
         true  // valuable
       );

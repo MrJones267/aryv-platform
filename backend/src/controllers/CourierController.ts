@@ -303,10 +303,15 @@ export class CourierController {
 
       // The sender names the price, but not below what the trip is worth:
       // couriers were shown P50 offers for 450 km. A document's floor is
-      // its flat price; a parcel's is half the cheapest tier's suggestion.
+      // its flat price; a parcel's is half the cheapest tier's normal price,
+      // without the demand surge. With the surge in it, the floor moved
+      // between the quote a sender saw and the package they then sent (every
+      // quote refreshes demand), so an offer of exactly the minimum shown
+      // could be refused.
+      const normalPrices = pricingSuggestions.map((s) => s.finalPrice / (Number(s.demandMultiplier) || 1));
       const minimumOffer = isDocument
         ? (byPrice[0]?.finalPrice ?? null)
-        : (byPrice.length > 0 ? Math.round(byPrice[0]!.finalPrice * 50) / 100 : null);
+        : (normalPrices.length > 0 ? Math.round(Math.min(...normalPrices) * 50) / 100 : null);
       if (minimumOffer !== null && Number(senderPriceOffer) < minimumOffer) {
         res.status(400).json({
           success: false,

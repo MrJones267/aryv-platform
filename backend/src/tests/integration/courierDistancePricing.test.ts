@@ -121,6 +121,6 @@ describe('distance pricing when creating packages', () => {
     for (let i = 0; i < 15; i += 1) {
       await send(body({ senderPriceOffer: 1 })).expect(400);
     }
-    await send(body()).expect(201);
+    await send(body({ senderPriceOffer: 2000 })).expect(201);
   }, 60000);
 });
