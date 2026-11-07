@@ -160,6 +160,30 @@ const DeliveryDetailsScreen: React.FC = () => {
     }
   };
 
+  const handleHandBack = () => {
+    if (!delivery) return;
+    Alert.alert(t('cancel.handBackTitle'), t('cancel.handBackBody'), [
+      { text: t('cancel.keep'), style: 'cancel' },
+      {
+        text: t('cancel.handBack'),
+        style: 'destructive',
+        onPress: async () => {
+          const response = await PackageService.handBackDelivery(delivery.id);
+          if (response.success) {
+            Alert.alert(t('cancel.handedBackTitle'), t('cancel.handedBackBody'), [
+              { text: t('common.ok'), onPress: () => navigation.goBack() },
+            ]);
+          } else {
+            Alert.alert(
+              t('common.error'),
+              response.code === 'DELIVERY_IN_TRANSIT' ? t('cancel.alreadyCollected') : (response.error || t('cancel.failed')),
+            );
+          }
+        },
+      },
+    ]);
+  };
+
   const getNextAction = () => {
     if (!delivery) return null;
 
@@ -296,6 +320,18 @@ const DeliveryDetailsScreen: React.FC = () => {
             )}
           </View>
         </View>
+
+        {/* Before collecting, a courier who cannot do the delivery hands it
+            back, and the package reopens for others. There was no way to. */}
+        {delivery.status === 'pending_pickup' && (
+          <TouchableOpacity
+            style={styles.handBackLink}
+            onPress={handleHandBack}
+            accessibilityRole="button"
+          >
+            <Text style={styles.handBackText}>{t('cancel.handBackTitle')}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Delivery Location */}
         <View style={styles.locationCard}>
@@ -453,6 +489,17 @@ const DeliveryDetailsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  handBackLink: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  handBackText: {
+    color: colors.error,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,

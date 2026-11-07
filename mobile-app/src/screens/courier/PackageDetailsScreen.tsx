@@ -94,6 +94,77 @@ const PackageDetailsScreen: React.FC = () => {
     );
   };
 
+  const afterCancel = (title: string, body: string) =>
+    Alert.alert(title, body, [{ text: t('common.ok'), onPress: () => navigation.goBack() }]);
+
+  const refuseCancel = (response: { error?: string; code?: string }) =>
+    Alert.alert(
+      t('common.error'),
+      response.code === 'DELIVERY_IN_TRANSIT' ? t('cancel.alreadyCollected') : (response.error || t('cancel.failed')),
+    );
+
+  /** The sender withdraws a package nobody has accepted. */
+  const handleWithdraw = () => {
+    if (!package_) return;
+    Alert.alert(t('cancel.withdrawTitle'), t('cancel.withdrawBody'), [
+      { text: t('cancel.keep'), style: 'cancel' },
+      {
+        text: t('cancel.withdraw'),
+        style: 'destructive',
+        onPress: async () => {
+          const response = await PackageService.cancelPackage(package_.id);
+          if (response.success) afterCancel(t('cancel.withdrawnTitle'), t('cancel.withdrawnBody'));
+          else refuseCancel(response);
+        },
+      },
+    ]);
+  };
+
+  /** The sender drops a courier who has not collected the package yet. */
+  const handleCancelCourier = () => {
+    if (!package_) return;
+    const cancel = async (findAnotherCourier: boolean) => {
+      const response = await PackageService.cancelPackage(package_.id, { findAnotherCourier });
+      if (response.success) {
+        afterCancel(
+          t('cancel.courierDroppedTitle'),
+          findAnotherCourier ? t('cancel.reopenedBody') : t('cancel.withdrawnBody'),
+        );
+      } else {
+        refuseCancel(response);
+      }
+    };
+    Alert.alert(t('cancel.courierTitle'), t('cancel.courierBody'), [
+      { text: t('cancel.keep'), style: 'cancel' },
+      { text: t('cancel.findAnother'), onPress: () => cancel(true) },
+      { text: t('cancel.cancelDelivery'), style: 'destructive', onPress: () => cancel(false) },
+    ]);
+  };
+
+  /** The courier hands back a delivery before collecting it. */
+  const handleHandBack = () => {
+    const deliveryId = package_?.delivery?.id;
+    if (!deliveryId) return;
+    Alert.alert(t('cancel.handBackTitle'), t('cancel.handBackBody'), [
+      { text: t('cancel.keep'), style: 'cancel' },
+      {
+        text: t('cancel.handBack'),
+        style: 'destructive',
+        onPress: async () => {
+          const response = await PackageService.handBackDelivery(deliveryId);
+          if (response.success) afterCancel(t('cancel.handedBackTitle'), t('cancel.handedBackBody'));
+          else refuseCancel(response);
+        },
+      },
+    ]);
+  };
+
+  const handleTrack = () => {
+    if (!package_) return;
+    (navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void })
+      .navigate('PackageTracking', { packageId: package_.id });
+  };
+
   const handleCallContact = (phoneNumber: string) => {
     if (phoneNumber) {
       Linking.openURL(`tel:${phoneNumber}`);
@@ -270,16 +341,42 @@ const PackageDetailsScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      {/* Accept Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.acceptButton}
-          onPress={handleAcceptPackage}
-        >
-          <Icon name="check" size={24} color={colors.text.inverse} />
-          <Text style={styles.acceptButtonText}>{t('cf.acceptDelivery')}</Text>
-        </TouchableOpacity>
-      </View>
+      {/* What this viewer can do. The Accept button used to show to
+          everyone, the sender included, and the sender had no way to
+          withdraw or cancel. */}
+      {(() => {
+        const role = package_.viewerRole ?? 'browsing';
+        const status = package_.delivery?.status;
+        const footerButton = (
+          label: string, icon: string, onPress: () => void, destructive = false,
+        ) => (
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={[styles.acceptButton, destructive && { backgroundColor: colors.error }]}
+              onPress={onPress}
+              accessibilityRole="button"
+            >
+              <Icon name={icon} size={24} color={colors.text.inverse} />
+              <Text style={styles.acceptButtonText}>{label}</Text>
+            </TouchableOpacity>
+          </View>
+        );
+
+        if (role === 'sender') {
+          if (!status && package_.isActive) return footerButton(t('cancel.withdraw'), 'close', handleWithdraw, true);
+          if (status === 'pending_pickup') return footerButton(t('cancel.courierTitle'), 'person-remove', handleCancelCourier, true);
+          if (status === 'in_transit') return footerButton(t('cancel.track'), 'local-shipping', handleTrack);
+          return null;
+        }
+        if (role === 'courier') {
+          return status === 'pending_pickup'
+            ? footerButton(t('cancel.handBackTitle'), 'undo', handleHandBack, true)
+            : null;
+        }
+        return package_.isOpen === false
+          ? null
+          : footerButton(t('cf.acceptDelivery'), 'check', handleAcceptPackage);
+      })()}
     </View>
   );
 };

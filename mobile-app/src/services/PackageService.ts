@@ -106,6 +106,12 @@ export interface Package {
   isActive: boolean;
   createdAt: string;
   status?: string;
+  /** Who is looking, from GET /courier/packages/:id. */
+  viewerRole?: 'sender' | 'courier' | 'browsing';
+  /** Open for a courier to accept. */
+  isOpen?: boolean;
+  /** The live delivery, for its sender and courier only. */
+  delivery?: { id: string; status: string; courierId: string };
 }
 
 export interface DeliveryAgreement {
@@ -432,6 +438,27 @@ class PackageService {
   }> {
     const response = await this.apiClient.post(`/courier/deliveries/${agreementId}/handover-code`);
     return { success: response.success, data: response.data, error: response.error, code: response.code };
+  }
+
+  /**
+   * The sender withdraws their package, or drops the courier who accepted
+   * it before pickup and withdraws it or reopens it for another courier.
+   * Refused once the courier has the package (DELIVERY_IN_TRANSIT).
+   */
+  async cancelPackage(packageId: string, options: { findAnotherCourier?: boolean; reason?: string } = {}): Promise<{
+    success: boolean;
+    data?: { packageState: 'withdrawn' | 'reopened'; cancelledDeliveryId: string | null };
+    error?: string;
+    code?: string;
+  }> {
+    const response = await this.apiClient.post(`/courier/packages/${packageId}/cancel`, options);
+    return { success: response.success, data: response.data, error: response.error, code: response.code };
+  }
+
+  /** The courier hands back a delivery they accepted but have not picked up. */
+  async handBackDelivery(agreementId: string, reason?: string): Promise<{ success: boolean; error?: string; code?: string }> {
+    const response = await this.apiClient.post(`/courier/deliveries/${agreementId}/cancel`, reason ? { reason } : {});
+    return { success: response.success, error: response.error, code: response.code };
   }
 
   /** This person's courier profile, or null if they have never been a courier. */
