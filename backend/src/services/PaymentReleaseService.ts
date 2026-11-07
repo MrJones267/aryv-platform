@@ -106,7 +106,6 @@ export class PaymentReleaseService {
       };
 
       await this.logPaymentRelease(result, t);
-      await this.sendPaymentReleaseNotifications(completedAgreement, result, t);
 
       if (shouldCommit) await t.commit();
 
@@ -154,31 +153,6 @@ export class PaymentReleaseService {
     }
   }
 
-  private async sendPaymentReleaseNotifications(
-    agreement: DeliveryAgreement,
-    result: PaymentReleaseResult,
-    _transaction?: Transaction,
-  ): Promise<void> {
-    try {
-      // In a real implementation, this would integrate with notification service
-      // to send push notifications, emails, SMS, etc.
-
-      logInfo('Payment release notifications sent', {
-        agreementId: agreement.id,
-        courierId: agreement.courierId,
-        amount: result.courierEarnings,
-        trigger: result.trigger,
-      });
-
-      // Placeholder for actual notification implementation
-      // await notificationService.sendPaymentReleaseNotification(agreement, result);
-
-    } catch (error) {
-      logError('Failed to send payment release notifications', error as Error, {
-        agreementId: agreement.id,
-      });
-    }
-  }
 }
 
 export default new PaymentReleaseService();

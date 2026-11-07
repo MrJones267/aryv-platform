@@ -54,6 +54,10 @@ const str = (v: unknown): string | undefined => (v == null || v === '' ? undefin
 export function targetFor(type: string, data: Record<string, unknown> = {}): Target | null {
   const rideId = str(data['rideId']);
   const ride = rideId ? inStack('Home', 'RideDetails', { rideId }) : tab('Rides');
+  const packageId = str(data['packageId']);
+  // A delivery notification opens that package's tracking screen; without
+  // an id, the Courier tab.
+  const delivery = packageId ? inStack('Courier', 'PackageTracking', { packageId }) : tab('Courier');
 
   switch (type) {
     // A ride or a booking on one: open the ride.
@@ -77,8 +81,12 @@ export function targetFor(type: string, data: Record<string, unknown> = {}): Tar
     case 'payment_received':
       return tab('Rides');
 
-    // Packages.
+    // A step of a delivery: courier found, collected, delivered.
     case 'delivery_update':
+      return delivery;
+
+    // Packages.
+    case 'delivery_cancelled':
     case 'delivery_dispute_raised':
     case 'delivery_dispute_resolved':
     case 'escrow_release':

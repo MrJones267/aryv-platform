@@ -22,6 +22,7 @@ import paymentReleaseService from '../services/PaymentReleaseService';
 import DemandPricingEngine from '../services/DemandPricingEngine';
 import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
+import { notifyDeliveryEvent } from '../services/courierNotifications';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
 import { DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
 
@@ -615,6 +616,12 @@ export class CourierController {
 
       await transaction.commit();
 
+      await notifyDeliveryEvent('accepted', {
+        packageId: String(packageId),
+        deliveryAgreementId: deliveryAgreement.id,
+        courierName: (req.user as { firstName?: string } | undefined)?.firstName,
+      });
+
       res.status(201).json({
         success: true,
         data: {
@@ -724,6 +731,11 @@ export class CourierController {
       }
 
       await transaction.commit();
+
+      await notifyDeliveryEvent('picked_up', {
+        packageId: agreement.packageId,
+        deliveryAgreementId: agreement.id,
+      });
 
       res.status(200).json({
         success: true,
@@ -843,6 +855,11 @@ export class CourierController {
       }
 
       await transaction.commit();
+
+      await notifyDeliveryEvent('delivered', {
+        packageId: verification.agreement.packageId,
+        deliveryAgreementId: verification.agreement.id,
+      });
 
       // Record final location if provided
       if (location) {
