@@ -15,6 +15,7 @@ import {
 } from '../models';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
+import { DEFAULT_COURIER_FEE_RATE, round2 } from '../utils/fees';
 import { CommissionService } from './CommissionService';
 import { PLATFORM_DEFAULT_CURRENCY } from './CurrencyService';
 import { logInfo, logError, logWarning } from '../utils/logger';
@@ -441,14 +442,14 @@ export class CourierEscrowService {
       });
 
       if (courierProfile) {
-        const courierEarnings = agreement.agreedPrice - agreement.platformFee;
+        const courierEarnings = round2(agreement.agreedPrice - agreement.platformFee);
         await courierProfile.recordSuccessfulDelivery(courierEarnings);
       }
 
       await agreement.logEvent(isCash ? 'cash_collected' : 'payment_released', {
         payment_method: agreement.paymentMethod,
         ...(isCash ? {} : { escrow_payment_id: agreement.escrowPaymentId }),
-        courier_earnings: agreement.agreedPrice - agreement.platformFee,
+        courier_earnings: round2(agreement.agreedPrice - agreement.platformFee),
         platform_fee: agreement.platformFee,
       }, agreement.courierId, t);
 
@@ -794,9 +795,9 @@ export class CourierEscrowService {
 
   // Private helper methods
 
+  /** The same rate the accept path charges (it said 10% here, 25% there). */
   private calculatePlatformFee(amount: number): number {
-    // 10% platform fee
-    return Math.round(amount * 0.10 * 100) / 100;
+    return round2(amount * DEFAULT_COURIER_FEE_RATE);
   }
 }
 

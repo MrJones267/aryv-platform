@@ -5,7 +5,6 @@
  * @lastModified 2025-01-24
  */
 
-import crypto from 'crypto';
 import { Model, DataTypes, Optional, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 
@@ -177,32 +176,6 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
     await this.save(transaction ? { transaction } : {});
   }
 
-  public generateQRToken(): string {
-    return crypto.randomBytes(16).toString('hex').toUpperCase();
-  }
-
-  public async createQRCode(transaction?: Transaction): Promise<void> {
-    const token = this.generateQRToken();
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
-
-    this.qrCodeToken = token;
-    this.qrCodeExpiresAt = expiresAt;
-
-    await this.logEvent('qr_code_generated', {
-      token: token,
-      expires_at: expiresAt.toISOString(),
-    }, undefined, transaction);
-
-    await this.save(transaction ? { transaction } : {});
-  }
-
-  public isQRCodeValid(): boolean {
-    return !!(this.qrCodeToken &&
-             this.qrCodeExpiresAt &&
-             new Date() < this.qrCodeExpiresAt);
-  }
-
   public getEventsByType(eventType: string): DeliveryEvent[] {
     return this.eventLog.filter(event => event.event_type === eventType);
   }
@@ -211,8 +184,16 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
     return this.eventLog.length > 0 ? this.eventLog[this.eventLog.length - 1] : null;
   }
 
+  /**
+   * qr_code_token / qr_code_expires_at are left from an older handover
+   * scheme. Nothing accepts them as proof of delivery any more (handover
+   * codes live in delivery_qr_codes), yet a token was generated on every
+   * accept and sent to the courier in the API response. Never serialised.
+   */
   public override toJSON(): object {
-    const values = { ...this.get() };
+    const values = { ...this.get() } as Record<string, unknown>;
+    delete values['qrCodeToken'];
+    delete values['qrCodeExpiresAt'];
     return values;
   }
 }

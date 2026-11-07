@@ -5,6 +5,7 @@
  * @lastModified 2025-01-25
  */
 
+import { round2 } from '../utils/fees';
 import { DataTypes, Model, Optional } from 'sequelize';
 import { sequelize } from '../config/database';
 
@@ -63,7 +64,7 @@ class DeliveryTier extends Model<DeliveryTierAttributes, DeliveryTierCreationAtt
   }
 
   public calculatePlatformFee(agreedPrice: number): number {
-    return agreedPrice * (this.platformFeePercentage / 100);
+    return round2(agreedPrice * (this.platformFeePercentage / 100));
   }
 
   public override toJSON() {

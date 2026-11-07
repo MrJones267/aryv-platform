@@ -123,7 +123,6 @@ export interface DeliveryAgreement {
   escrowAmount: number;
   status: string;
   createdAt: string;
-  qrCodeToken?: string;
   package?: Package;
   courier?: {
     id: string;
