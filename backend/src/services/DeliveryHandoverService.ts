@@ -265,6 +265,9 @@ export class DeliveryHandoverService {
 
       const record = await DeliveryQRCode.findOne({
         where: { qrToken: normalised },
+        // A double submit must not spend the code twice and complete the
+        // delivery twice; the second waits here and then sees it used.
+        lock: Transaction.LOCK.UPDATE,
         transaction: t,
       });
 
@@ -329,7 +332,10 @@ export class DeliveryHandoverService {
           status: QRCodeStatus.USED,
           scannedAt: new Date(),
           scannedByUserId: submittedByUserId,
-          ...(location ? { scanLocation: location } : {}),
+          // A PostGIS point, [lng, lat]. The raw array was refused by the
+          // geometry column, so every confirmation that carried the
+          // courier's position failed (the app always sends one).
+          ...(location ? { scanLocation: { type: 'Point', coordinates: [Number(location[0]), Number(location[1])] } as any } : {}),
           verificationData: {
             confirmed_at: new Date().toISOString(),
             confirmed_by: submittedByUserId,

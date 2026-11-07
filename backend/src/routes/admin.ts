@@ -55,6 +55,7 @@ import { smsService } from '../services/SMSService';
 import { SOS_ESCALATION, reminderDueAfterMinutes } from '../services/EmergencyService';
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 import contentReportService, { ReportError } from '../services/ContentReportService';
+import courierEscrowService from '../services/CourierEscrowService';
 
 const COMMISSION_KEY = 'platform:commission';
 
@@ -606,8 +607,18 @@ router.post('/courier/agreements/:id/release-payment', authenticateAdminToken, r
     if (!agreement) {
       return res.status(404).json({ success: false, error: 'Agreement not found', code: 'NOT_FOUND', timestamp: new Date().toISOString() });
     }
+    if (agreement.status !== DeliveryStatus.IN_TRANSIT) {
+      return res.status(409).json({ success: false, error: `This delivery is ${agreement.status}, so it cannot be released`, code: 'DELIVERY_NOT_IN_TRANSIT', timestamp: new Date().toISOString() });
+    }
 
-    await agreement.transitionTo(DeliveryStatus.COMPLETED);
+    // Through the same completion as a verified handover. Setting the status
+    // directly skipped it, so a cash delivery an admin closed accrued no
+    // platform commission.
+    await courierEscrowService.completeDelivery(String(id), {
+      released_by_admin: (req as any).user?.id ?? null,
+      release_reason: 'admin_manual_release',
+      released_at: new Date().toISOString(),
+    });
 
     return res.json({ success: true, message: 'Payment released successfully', data: { agreementId: id, status: 'payment_released' }, timestamp: new Date().toISOString() });
   } catch (error) {

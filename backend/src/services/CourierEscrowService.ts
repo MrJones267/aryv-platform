@@ -307,7 +307,7 @@ export class CourierEscrowService {
         escrow_payment_id: escrowPaymentId,
         escrow_amount: escrowAmount,
         sender_id: packageData.senderId,
-      }, courierId);
+      }, courierId, t);
 
       if (shouldCommit) {
         await t.commit();
@@ -398,7 +398,7 @@ export class CourierEscrowService {
           cash_collected: true,
           verification_data: verificationData,
           completion_time: new Date().toISOString(),
-        });
+        }, t);
 
         agreement.cashCollectedAt = new Date();
         agreement.cashAmountCollected = agreement.agreedPrice;
@@ -428,7 +428,7 @@ export class CourierEscrowService {
           payment_released: true,
           verification_data: verificationData,
           completion_time: new Date().toISOString(),
-        });
+        }, t);
 
         agreement.paymentReleasedAt = new Date();
         await agreement.save({ transaction: t });
@@ -450,7 +450,7 @@ export class CourierEscrowService {
         ...(isCash ? {} : { escrow_payment_id: agreement.escrowPaymentId }),
         courier_earnings: agreement.agreedPrice - agreement.platformFee,
         platform_fee: agreement.platformFee,
-      }, agreement.courierId);
+      }, agreement.courierId, t);
 
       if (shouldCommit) {
         await t.commit();
@@ -533,7 +533,7 @@ export class CourierEscrowService {
         cancelled_by: cancelledByUserId,
         refund_processed: true,
         cancellation_time: new Date().toISOString(),
-      });
+      }, t);
 
       // Reactivate package if cancelled before pickup
       if (statusBeforeCancel === DeliveryStatus.PENDING_PICKUP) {
@@ -602,14 +602,14 @@ export class CourierEscrowService {
         dispute_type: disputeData.disputeType,
         dispute_description: disputeData.description,
         dispute_raised_at: new Date().toISOString(),
-      });
+      }, t);
 
       // Log dispute creation
       await agreement.logEvent('dispute_raised', {
         dispute_type: disputeData.disputeType,
         raised_by: disputeData.raisedByUserId,
         description: disputeData.description,
-      }, disputeData.raisedByUserId);
+      }, disputeData.raisedByUserId, t);
 
       if (shouldCommit) {
         await t.commit();
@@ -685,7 +685,7 @@ export class CourierEscrowService {
             await agreement.transitionTo(DeliveryStatus.COMPLETED, resolution.adminId, {
               admin_resolution: 'released_to_courier',
               admin_notes: resolution.notes,
-            });
+            }, t);
           }
           break;
 
@@ -698,7 +698,7 @@ export class CourierEscrowService {
             await agreement.transitionTo(DeliveryStatus.CANCELLED, resolution.adminId, {
               admin_resolution: 'refunded_to_sender',
               admin_notes: resolution.notes,
-            });
+            }, t);
           }
           break;
 
@@ -725,7 +725,7 @@ export class CourierEscrowService {
         admin_notes: resolution.notes,
         courier_amount: resolution.courierAmount,
         sender_refund: resolution.senderRefund,
-      }, resolution.adminId);
+      }, resolution.adminId, t);
 
       if (shouldCommit) {
         await t.commit();

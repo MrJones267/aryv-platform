@@ -593,7 +593,7 @@ export class CourierController {
       }, { transaction });
 
       // Generate QR code for delivery verification
-      await deliveryAgreement.createQRCode();
+      await deliveryAgreement.createQRCode(transaction);
       await deliveryAgreement.save({ transaction });
 
       // Mark package as no longer active (accepted)
@@ -655,6 +655,9 @@ export class CourierController {
           courierId: userId,
           status: DeliveryStatus.PENDING_PICKUP,
         },
+        // Two pickup confirmations at once would each issue a code, and the
+        // second would silently replace the one the recipient was sent.
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
@@ -672,7 +675,7 @@ export class CourierController {
       await agreement.transitionTo(DeliveryStatus.IN_TRANSIT, userId, {
         pickup_location: location,
         pickup_time: new Date().toISOString(),
-      });
+      }, transaction);
 
       if (location) {
         agreement.pickupLocation = toGeoPoint(location);
@@ -694,6 +697,18 @@ export class CourierController {
       // inside the pickup transaction: a delivery in transit with no code
       // cannot be completed by the courier at all, so the two belong together.
       const issued = await deliveryHandoverService.issueCode(agreementId, transaction);
+      if (!issued.success) {
+        // No code means nobody can ever confirm this delivery. Undo the
+        // pickup so the courier can simply try again.
+        await transaction.rollback();
+        res.status(503).json({
+          success: false,
+          error: 'Could not issue the delivery code. Please try confirming pickup again.',
+          code: 'HANDOVER_CODE_UNAVAILABLE',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
 
       await transaction.commit();
 
@@ -758,13 +773,22 @@ export class CourierController {
       // Verify the handover code first. This establishes that the caller is
       // the assigned courier and that they hold a code only the recipient was
       // given — everything the payment release depends on.
+      // The code is spent and the payment released in one transaction. They
+      // used to commit separately, so a release that failed after the code
+      // was marked used left the recipient's only code spent and the
+      // delivery in transit, with no way to finish it.
+      const transaction = await sequelize.transaction();
       const verification = await deliveryHandoverService.verifyCode(
         qrToken as string,
         userId,
         location,
+        transaction,
       );
 
       if (!verification.ok || !verification.agreement) {
+        // An expired code is marked expired; nothing else is kept.
+        if (verification.code === 'CODE_EXPIRED') await transaction.commit();
+        else await transaction.rollback();
         // Count the miss so repeated guessing runs into the cap. Recorded
         // outside the verification call so it survives that call's rollback.
         if (verification.code === 'CODE_NOT_FOUND') {
@@ -790,9 +814,12 @@ export class CourierController {
         verification.agreement.id,
         userId,
         location,
+        transaction,
       );
 
       if (!paymentResult.success) {
+        // The code goes back to unused, so the courier can try again.
+        await transaction.rollback();
         res.status(400).json({
           success: false,
           error: paymentResult.error || 'Delivery confirmed but payment release failed',
@@ -801,6 +828,8 @@ export class CourierController {
         });
         return;
       }
+
+      await transaction.commit();
 
       // Record final location if provided
       if (location) {

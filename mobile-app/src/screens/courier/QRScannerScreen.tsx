@@ -151,7 +151,9 @@ const QRScannerScreen: React.FC = () => {
       // Verify delivery with backend
       const result = await PackageService.verifyDeliveryQR(
         scanned,
-        [currentLocation.latitude, currentLocation.longitude],
+        // The server takes [longitude, latitude]; this sent them swapped, so
+        // the recorded drop-off point landed in the wrong place.
+        [currentLocation.longitude, currentLocation.latitude],
       );
 
       if (result.success) {

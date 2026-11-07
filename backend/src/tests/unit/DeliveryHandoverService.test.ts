@@ -291,7 +291,7 @@ describe('DeliveryHandoverService', () => {
       const written = code.update.mock.calls[0][0];
       expect(written.status).toBe(QRCodeStatus.USED);
       expect(written.scannedByUserId).toBe(COURIER_ID);
-      expect(written.scanLocation).toEqual([25.9, -24.6]);
+      expect(written.scanLocation).toEqual({ type: 'Point', coordinates: [25.9, -24.6] });
     });
 
     it('reports an unknown code without saying why', async () => {
