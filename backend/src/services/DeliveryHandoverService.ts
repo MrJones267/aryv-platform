@@ -419,7 +419,7 @@ export class DeliveryHandoverService {
     isCourier: boolean;
   }> {
     const agreement = await DeliveryAgreement.findByPk(agreementId, {
-      ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {}),
+      ...(transaction ? { transaction, lock: Transaction.LOCK.UPDATE } : {}),
     });
     if (!agreement) return { agreement: null, isSender: false, isCourier: false };
     const pkg = await Package.findByPk(agreement.packageId, { ...(transaction ? { transaction } : {}) });
