@@ -14,6 +14,7 @@ import { LocationController } from '../controllers/LocationController';
 import { EmergencyController } from '../controllers/EmergencyController';
 import { validateInput } from '../middleware/validation';
 import { authenticateToken } from '../middleware/auth';
+import { isGoogleService, pickParams, missingParam, callGoogle } from '../services/GoogleWebServiceProxy';
 
 const router = Router();
 const locationController = new LocationController();
@@ -362,6 +363,53 @@ router.get(
   ],
   validateInput,
   locationController.getLocationStatistics.bind(locationController),
+);
+
+/**
+ * Google's own geocoding, place-search and directions replies, fetched with
+ * the server's key, for the app. See services/GoogleWebServiceProxy.ts.
+ * A place search sends a request per keystroke, so the limit is generous.
+ */
+const googleRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  message: {
+    success: false,
+    error: 'Too many map searches, please slow down',
+    code: 'GOOGLE_RATE_LIMIT_EXCEEDED',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeStore('google-proxy'),
+  keyGenerator: rateLimitKey,
+});
+
+/**
+ * @route   GET /api/locations/google/:service
+ * @desc    geocode | autocomplete | details | directions, answered by Google
+ * @access  Private
+ */
+router.get(
+  '/google/:service',
+  googleRateLimit,
+  authenticateToken,
+  async (req: Request, res: Response): Promise<void> => {
+    const service = String(req.params['service'] ?? '');
+    if (!isGoogleService(service)) {
+      res.status(404).json({ success: false, error: 'Unknown map service', code: 'UNKNOWN_MAP_SERVICE', timestamp: new Date().toISOString() });
+      return;
+    }
+
+    const params = pickParams(service, req.query as Record<string, unknown>);
+    const missing = missingParam(service, params);
+    if (missing) {
+      res.status(400).json({ success: false, error: `Missing ${missing}`, code: 'MAP_PARAMS_MISSING', timestamp: new Date().toISOString() });
+      return;
+    }
+
+    const data = await callGoogle(service, params);
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  },
 );
 
 export default router;

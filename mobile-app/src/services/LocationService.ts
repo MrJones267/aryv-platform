@@ -9,6 +9,7 @@ import Geolocation from '@react-native-community/geolocation';
 import { getPosition } from './position';
 import { PermissionsAndroid, Platform, Alert } from 'react-native';
 import logger from './LoggingService';
+import { googleMaps } from './googleMaps';
 
 const log = logger.createLogger('LocationService');
 
@@ -220,19 +221,10 @@ export class LocationService {
   ): Promise<LocationAddress> {
     try {
       const { APP_CONFIG } = await import('../config/api');
-      const GOOGLE_MAPS_API_KEY = APP_CONFIG.GOOGLE_SERVICES.GEOCODING_API_KEY;
-      
-      // Check if we have a valid API key
-      if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('YOUR_PRODUCTION') || GOOGLE_MAPS_API_KEY === 'placeholder') {
-        log.warn('Google Maps API key not configured, using fallback geocoding');
-        return this.fallbackReverseGeocode(latitude, longitude);
-      }
-      
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}`
-      );
-      
-      const data = await response.json();
+      const data = await googleMaps('geocode', {
+        latlng: `${latitude},${longitude}`,
+        language: APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE,
+      }) as any;
       
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const result = data.results[0];
@@ -336,20 +328,13 @@ export class LocationService {
   async geocodeAddressDetailed(address: string): Promise<LocationCoordinates[]> {
     try {
       const { APP_CONFIG } = await import('../config/api');
-      const GOOGLE_GEOCODING_API_KEY = APP_CONFIG.GOOGLE_SERVICES.GEOCODING_API_KEY;
-      
-      // Check if we have a valid API key
-      if (!GOOGLE_GEOCODING_API_KEY || GOOGLE_GEOCODING_API_KEY.includes('YOUR_PRODUCTION') || GOOGLE_GEOCODING_API_KEY === 'placeholder') {
-        log.warn('Google Geocoding API key not configured, using fallback geocoding');
-        return this.fallbackGeocodeDetailed(address);
-      }
-      
-      const encodedAddress = encodeURIComponent(address);
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_GEOCODING_API_KEY}&language=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_LANGUAGE}&region=${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}&components=country:${APP_CONFIG.GOOGLE_SERVICES.DEFAULT_REGION}`
-      );
-      
-      const data = await response.json();
+      const { DEFAULT_LANGUAGE, DEFAULT_REGION } = APP_CONFIG.GOOGLE_SERVICES;
+      const data = await googleMaps('geocode', {
+        address,
+        language: DEFAULT_LANGUAGE,
+        region: DEFAULT_REGION,
+        components: `country:${DEFAULT_REGION}`,
+      }) as any;
       
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const results: LocationCoordinates[] = data.results.map((result: { geometry: { location: { lat: number; lng: number }; location_type: string } }) => ({
@@ -383,21 +368,19 @@ export class LocationService {
     const query = input.trim();
     if (query.length < 2) return [];
     const { APP_CONFIG } = await import('../config/api');
-    const { PLACES_API_KEY, DEFAULT_REGION, DEFAULT_LANGUAGE } = APP_CONFIG.GOOGLE_SERVICES;
-    const params = new URLSearchParams({
+    const { DEFAULT_REGION, DEFAULT_LANGUAGE } = APP_CONFIG.GOOGLE_SERVICES;
+    const params: Record<string, string> = {
       input: query,
-      key: PLACES_API_KEY,
       components: `country:${DEFAULT_REGION.toLowerCase()}`,
       language: DEFAULT_LANGUAGE,
       sessiontoken: this.placesSession(),
-    });
+    };
     if (near) {
-      params.set('location', `${near.latitude},${near.longitude}`);
-      params.set('radius', '50000');
+      params['location'] = `${near.latitude},${near.longitude}`;
+      params['radius'] = '50000';
     }
     try {
-      const response = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`);
-      const data = await response.json() as {
+      const data = await googleMaps('autocomplete', params) as unknown as {
         status: string;
         error_message?: string;
         predictions?: Array<{ place_id: string; description: string; structured_formatting?: { main_text?: string; secondary_text?: string } }>;
@@ -420,18 +403,15 @@ export class LocationService {
 
   /** Where a suggested place is, with its name kept as the address. */
   async getPlace(suggestion: PlaceSuggestion): Promise<LocationData | null> {
-    const { APP_CONFIG } = await import('../config/api');
-    const params = new URLSearchParams({
+    const params: Record<string, string> = {
       place_id: suggestion.placeId,
-      key: APP_CONFIG.GOOGLE_SERVICES.PLACES_API_KEY,
       fields: 'geometry,name,formatted_address',
       sessiontoken: this.placesSession(),
-    });
+    };
     // A session ends when a place is chosen; Google bills it as one search.
     this.placesSessionToken = null;
     try {
-      const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`);
-      const data = await response.json() as {
+      const data = await googleMaps('details', params) as unknown as {
         status: string;
         result?: { name?: string; formatted_address?: string; geometry?: { location?: { lat: number; lng: number } } };
       };
