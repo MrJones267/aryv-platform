@@ -10,6 +10,7 @@ import { DeliveryAgreement } from '../models';
 import { DeliveryStatus } from '../models/DeliveryAgreement';
 import { sequelize } from '../config/database';
 import { logInfo, logError } from '../utils/logger';
+import { round2 } from '../utils/fees';
 import courierEscrowService from './CourierEscrowService';
 
 // Payment release triggers
@@ -100,7 +101,7 @@ export class PaymentReleaseService {
         agreementId: completedAgreement.id,
         amount: completedAgreement.agreedPrice,
         platformFee: completedAgreement.platformFee,
-        courierEarnings: completedAgreement.agreedPrice - completedAgreement.platformFee,
+        courierEarnings: round2(completedAgreement.agreedPrice - completedAgreement.platformFee),
         trigger: PaymentReleaseTrigger.QR_CODE_SCAN,
         timestamp: new Date(),
       };

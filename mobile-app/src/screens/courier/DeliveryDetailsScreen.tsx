@@ -412,7 +412,7 @@ const DeliveryDetailsScreen: React.FC = () => {
         </View>
 
         {/* QR Code Info */}
-        {delivery.qrCodeToken && (
+        {delivery.status === 'in_transit' && (
           <View style={styles.qrCard}>
             <View style={styles.qrHeader}>
               <Icon name="qr-code" size={24} color={colors.success} />

@@ -24,7 +24,7 @@ import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { notifyDeliveryEvent } from '../services/courierNotifications';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
-import { DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
+import { DEFAULT_COURIER_FEE_RATE, round2 } from '../utils/fees';
 
 /** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
 const toGeoPoint = (coordinates: [number, number]): any => ({
@@ -581,7 +581,8 @@ export class CourierController {
         }
       }
 
-      const platformFee = agreedPrice * platformFeePercentage;
+      // To the cent: 25% of P40.10 is 10.025, which was stored as is.
+      const platformFee = round2(agreedPrice * platformFeePercentage);
       const escrowAmount = agreedPrice;
 
       // Create delivery agreement
@@ -606,8 +607,6 @@ export class CourierController {
         }],
       }, { transaction });
 
-      // Generate QR code for delivery verification
-      await deliveryAgreement.createQRCode(transaction);
       await deliveryAgreement.save({ transaction });
 
       // Mark package as no longer active (accepted)

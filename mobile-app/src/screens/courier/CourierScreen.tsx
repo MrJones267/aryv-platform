@@ -240,7 +240,9 @@ const CourierScreen: React.FC = () => {
         <Text style={styles.earningsText}>
           Earnings: P{(delivery.agreedPrice - delivery.platformFee).toFixed(2)}
         </Text>
-        {delivery.qrCodeToken && (
+        {/* A handover code exists once the package is collected. This read the
+            old qrCodeToken, which the server no longer sends. */}
+        {delivery.status === 'in_transit' && (
           <View style={styles.qrInfo}>
             <Icon name="qr-code" size={16} color={colors.success} />
             <Text style={styles.qrText}>{t('cf.qrReady')}</Text>
