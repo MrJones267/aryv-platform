@@ -253,6 +253,8 @@ describe('courier cash on delivery', () => {
         DeliveryStatus.COMPLETED,
         COURIER_ID,
         expect.objectContaining({ payment_method: 'cash_on_delivery' }),
+        // Written inside the completion's own transaction, not beside it.
+        expect.objectContaining({ commit: expect.any(Function) }),
       );
     });
 
