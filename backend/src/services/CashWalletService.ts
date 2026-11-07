@@ -535,10 +535,17 @@ export class CashWalletService {
     const transaction = await sequelize.transaction();
 
     try {
-      const [senderWallet, receiverWallet] = await Promise.all([
-        CashWallet.findOne({ where: { userId: request.fromUserId }, transaction, lock: true }),
-        CashWallet.findOne({ where: { userId: request.toUserId }, transaction, lock: true }),
-      ]);
+      // Lock both wallets one after the other, always in the same order. They
+      // were locked in request order, so A->B and B->A at the same moment
+      // each held one lock and waited for the other: Postgres aborted one
+      // with a deadlock error.
+      const lockWallet = (userId: string) =>
+        CashWallet.findOne({ where: { userId }, transaction, lock: transaction.LOCK.UPDATE });
+      const [firstId, secondId] = [request.fromUserId, request.toUserId].sort();
+      const first = await lockWallet(firstId!);
+      const second = firstId === secondId ? first : await lockWallet(secondId!);
+      const senderWallet = firstId === request.fromUserId ? first : second;
+      const receiverWallet = firstId === request.fromUserId ? second : first;
 
       if (!senderWallet || senderWallet.status !== 'active') {
         await transaction.rollback();

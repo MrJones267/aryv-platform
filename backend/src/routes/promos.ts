@@ -14,8 +14,8 @@ import { validateInput } from '../middleware/validation';
 import { authenticateToken, authenticateAdminToken } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 import { Response, Request } from 'express';
-import { redisClient } from '../config/redis';
 import PromoCode from '../models/PromoCode';
+import PromoRedemption from '../models/PromoRedemption';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -77,9 +77,11 @@ router.post(
         return;
       }
 
-      // Check per-user usage (Redis-backed for speed, falls back gracefully)
-      const usageKey = `promo_use:${normalised}:${userId}`;
-      const alreadyUsed = await redisClient.get(usageKey);
+      // Redemptions are recorded when a booking uses the code (one per user,
+      // by a unique index). This read a Redis key that nothing writes since
+      // /apply was retired, so it said "valid" for a code already used and
+      // the booking then refused it.
+      const alreadyUsed = await PromoRedemption.findOne({ where: { promoCodeId: promo.id, userId } });
       if (alreadyUsed) {
         res.status(400).json({ success: false, error: 'Promo code already used', code: 'PROMO_ALREADY_USED', timestamp: new Date().toISOString() });
         return;
