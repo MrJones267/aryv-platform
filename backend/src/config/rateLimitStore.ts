@@ -35,11 +35,19 @@ const OUTAGE_LOG_INTERVAL_MS = 60_000;
  * needs no restart.
  */
 class ResilientStore implements Store {
+  /**
+   * express-rate-limit tells stores apart by `prefix` when it checks that a
+   * request is counted once. Without it every ResilientStore looked alike,
+   * so the global limiter and a route's own limiter on the same request
+   * raised ERR_ERL_DOUBLE_COUNT, though each counts in its own store.
+   */
+  readonly prefix: string;
   private readonly redis: RedisStore;
   private readonly memory: MemoryStore;
   private lastOutageLog = 0;
 
   constructor(prefix: string) {
+    this.prefix = `rl:${prefix}:`;
     this.redis = new RedisStore({
       prefix: `rl:${prefix}:`,
       // Errors surface as rejections and are caught per call below, so a
