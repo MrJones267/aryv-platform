@@ -16,6 +16,10 @@ import DriverDocument, { DocumentStatus, DocumentType } from '../models/DriverDo
 import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
 import { deliveryDisputeService } from '../services/DeliveryDisputeService';
+import { deliveryHandoverService } from '../services/DeliveryHandoverService';
+import rateLimit from 'express-rate-limit';
+import { makeStore } from '../config/rateLimitStore';
+import { rateLimitKey } from '../config/rateLimitKey';
 
 const router = Router();
 
@@ -796,6 +800,67 @@ router.post(
       res.status(500).json({ success: false, error: 'Failed to submit rating', code: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
     }
   }) as any,
+);
+
+/**
+ * The delivery's handover code, for its sender. The code used to reach the
+ * recipient by SMS only; when the text never arrived, nobody could complete
+ * the delivery. The sender can now read it in the app and pass it on.
+ */
+const handoverCodeLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { success: false, error: 'Too many requests for delivery codes, please wait', code: 'HANDOVER_CODE_RATE_LIMIT' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeStore('handover-code'),
+  keyGenerator: rateLimitKey,
+});
+
+router.get(
+  '/deliveries/:agreementId/handover-code',
+  handoverCodeLimit,
+  [param('agreementId').isUUID().withMessage('Invalid delivery id'), validateInput],
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const result = await deliveryHandoverService.codeForSender(String(req.params['agreementId']), req.user!.id);
+    if (!result.ok) {
+      res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+      return;
+    }
+    res.json({
+      success: true,
+      data: { code: result.code, expiresAt: result.expiresAt, sentVia: result.sentVia },
+      timestamp: new Date().toISOString(),
+    });
+  },
+);
+
+/**
+ * Send a new handover code: the old one expired, its text never arrived, or
+ * it was locked by wrong guesses. The sender or the courier may ask; only
+ * the sender gets the new code back.
+ */
+router.post(
+  '/deliveries/:agreementId/handover-code',
+  handoverCodeLimit,
+  [param('agreementId').isUUID().withMessage('Invalid delivery id'), validateInput],
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const result = await deliveryHandoverService.reissueFor(String(req.params['agreementId']), req.user!.id);
+    if (!result.ok) {
+      res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+      return;
+    }
+    res.status(201).json({
+      success: true,
+      data: {
+        ...(result.code ? { code: result.code } : {}),
+        expiresAt: result.expiresAt,
+        sentVia: result.sentVia,
+        codesLeft: result.codesLeft,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  },
 );
 
 export default router;

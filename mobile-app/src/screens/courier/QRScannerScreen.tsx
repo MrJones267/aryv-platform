@@ -196,6 +196,31 @@ const QRScannerScreen: React.FC = () => {
    * SMS as text, so in practice they read it out and the courier types it —
    * scanning only helps if the recipient happens to display it as a QR.
    */
+  /**
+   * The recipient has no working code: the text never arrived, it expired,
+   * or wrong guesses locked it. A new one is texted to them (or to the
+   * sender); the courier is never shown it.
+   */
+  const [resending, setResending] = useState(false);
+  const requestNewCode = async (): Promise<void> => {
+    if (!agreementId) return;
+    setResending(true);
+    try {
+      const result = await PackageService.resendHandoverCode(agreementId);
+      if (result.success) {
+        const toSender = result.data?.sentVia === 'sender_sms';
+        Alert.alert(
+          t('handover.newCodeSentTitle'),
+          toSender ? t('handover.sentToSender') : t('handover.sentToRecipient'),
+        );
+      } else {
+        Alert.alert(t('common.error'), result.error || t('handover.couldNotSend'));
+      }
+    } finally {
+      setResending(false);
+    }
+  };
+
   const submitManualCode = async (): Promise<void> => {
     const code = manualCode.trim().toUpperCase();
 
@@ -262,6 +287,18 @@ const QRScannerScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
         </View>
+        {agreementId && (
+          <TouchableOpacity
+            onPress={requestNewCode}
+            disabled={resending}
+            accessibilityRole="button"
+            style={styles.newCodeLink}
+          >
+            <Text style={styles.newCodeLinkText}>
+              {resending ? t('cf2.checking') : t('handover.recipientHasNoCode')}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.footer}>
@@ -327,6 +364,16 @@ const styles = StyleSheet.create({
   },
   manualSubmitDisabled: {
     opacity: 0.6,
+  },
+  newCodeLink: {
+    marginTop: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  newCodeLinkText: {
+    color: colors.primary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   manualSubmitText: {
     color: colors.text.inverse,

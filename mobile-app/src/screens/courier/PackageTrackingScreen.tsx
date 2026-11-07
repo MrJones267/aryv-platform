@@ -24,6 +24,7 @@ import { colors } from '../../theme';
 import PackageService from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
+import HandoverCodeCard from '../../components/courier/HandoverCodeCard';
 import DeliveryTrackingMap from '../../components/courier/DeliveryTrackingMap';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import { useI18n } from '../../i18n/I18nContext';
@@ -374,6 +375,13 @@ const PackageTrackingScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        {/* The code the recipient gives the courier. Shown to the sender only
+            (the card renders nothing for anyone else), so a text that never
+            arrived no longer strands the delivery. */}
+        {deliveryAgreement?.status === 'in_transit' && deliveryAgreement.id && (
+          <HandoverCodeCard agreementId={deliveryAgreement.id} />
+        )}
 
         {/* Contact Information */}
         {deliveryAgreement?.courier && (

@@ -403,6 +403,37 @@ class PackageService {
     }
   }
 
+  /**
+   * The delivery's handover code, for the sender. It used to reach the
+   * recipient by SMS only, so a text that never arrived left the delivery
+   * impossible to complete; the sender can now read it and pass it on.
+   * Anyone else gets nothing (the server answers "not found").
+   */
+  async getHandoverCode(agreementId: string): Promise<{
+    success: boolean;
+    data?: { code: string; expiresAt: string; sentVia: 'recipient_sms' | 'sender_sms' | 'none' };
+    error?: string;
+    code?: string;
+  }> {
+    const response = await this.apiClient.get(`/courier/deliveries/${agreementId}/handover-code`);
+    return { success: response.success, data: response.data, error: response.error, code: response.code };
+  }
+
+  /**
+   * Replace the handover code and text it again: it expired, the text never
+   * arrived, or wrong guesses locked it. The sender gets the new code back;
+   * the courier only learns that one was sent.
+   */
+  async resendHandoverCode(agreementId: string): Promise<{
+    success: boolean;
+    data?: { code?: string; expiresAt: string; sentVia: 'recipient_sms' | 'sender_sms' | 'none'; codesLeft: number };
+    error?: string;
+    code?: string;
+  }> {
+    const response = await this.apiClient.post(`/courier/deliveries/${agreementId}/handover-code`);
+    return { success: response.success, data: response.data, error: response.error, code: response.code };
+  }
+
   /** This person's courier profile, or null if they have never been a courier. */
   async getCourierProfile(): Promise<{ isCourierActive?: boolean; isAvailableForDeliveries?: boolean } | null> {
     const response = await this.apiClient.get('/courier/profile');

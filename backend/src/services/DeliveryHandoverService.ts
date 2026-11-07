@@ -60,6 +60,37 @@ export const CODE_TTL_HOURS = 24;
  */
 export const MAX_FAILED_ATTEMPTS = 5;
 
+/**
+ * Codes one delivery may be issued: the one sent at pickup and up to five
+ * more. Each fresh code resets the wrong-guess count, so the cap also bounds
+ * how many guesses a delivery can ever take.
+ */
+export const MAX_CODES_PER_DELIVERY = 6;
+
+/** A refusal from the sender/courier code endpoints, with its HTTP status. */
+export interface CodeRefusal {
+  ok: false;
+  status: number;
+  code: string;
+  error: string;
+}
+
+export interface SenderCodeView {
+  ok: true;
+  code: string;
+  expiresAt: Date;
+  sentVia: 'recipient_sms' | 'sender_sms' | 'none';
+}
+
+export interface ReissueResult {
+  ok: true;
+  /** Only for the sender. The courier must never learn a code in advance. */
+  code?: string;
+  expiresAt: Date;
+  sentVia: 'recipient_sms' | 'sender_sms' | 'none';
+  codesLeft: number;
+}
+
 export interface IssueCodeResult {
   success: boolean;
   /** Never returned to the courier — for logs and tests only. */
@@ -378,6 +409,131 @@ export class DeliveryHandoverService {
       });
     } catch (error) {
       logError('Could not record failed handover attempt', error as Error, { agreementId });
+    }
+  }
+
+  /** Who is asking about a delivery: its sender, its courier, or neither. */
+  private async partyTo(agreementId: string, userId: string, transaction?: Transaction): Promise<{
+    agreement: DeliveryAgreement | null;
+    isSender: boolean;
+    isCourier: boolean;
+  }> {
+    const agreement = await DeliveryAgreement.findByPk(agreementId, {
+      ...(transaction ? { transaction, lock: Transaction.LOCK.UPDATE } : {}),
+    });
+    if (!agreement) return { agreement: null, isSender: false, isCourier: false };
+    const pkg = await Package.findByPk(agreement.packageId, { ...(transaction ? { transaction } : {}) });
+    return {
+      agreement,
+      isSender: pkg?.senderId === userId,
+      isCourier: agreement.courierId === userId,
+    };
+  }
+
+  /**
+   * The current code, for the package's sender only.
+   *
+   * The code used to reach the recipient by SMS alone, so a text that never
+   * arrived (an unverified number on a trial SMS account, no signal, a
+   * mistyped number) made the delivery impossible to complete. The sender is
+   * signed in and can pass the code on. The courier never sees it here.
+   */
+  async codeForSender(agreementId: string, userId: string): Promise<SenderCodeView | CodeRefusal> {
+    const { agreement, isSender } = await this.partyTo(agreementId, userId);
+    // Anyone but the sender is told it does not exist, as for a missing one.
+    if (!agreement || !isSender) {
+      return { ok: false, status: 404, code: 'NOT_FOUND', error: 'Delivery not found' };
+    }
+    if (agreement.status !== DeliveryStatus.IN_TRANSIT) {
+      return {
+        ok: false, status: 409, code: 'DELIVERY_NOT_IN_TRANSIT',
+        error: `This delivery is ${agreement.status}, so it has no handover code`,
+      };
+    }
+    const record = await DeliveryQRCode.findOne({
+      where: {
+        deliveryAgreementId: agreementId,
+        status: QRCodeStatus.ACTIVE,
+        expiresAt: { [Op.gt]: new Date() },
+      },
+      order: [['generatedAt', 'DESC']],
+    });
+    if (!record) {
+      return {
+        ok: false, status: 404, code: 'NO_ACTIVE_CODE',
+        error: 'The handover code has expired. Send a new one.',
+      };
+    }
+    return {
+      ok: true,
+      code: record.qrToken,
+      expiresAt: record.expiresAt,
+      sentVia: (record.deliveryChannel as SenderCodeView['sentVia']) ?? 'none',
+    };
+  }
+
+  /**
+   * Replace the code with a new one and text it again. The sender or the
+   * courier may ask, while the delivery is in transit: the code expires
+   * after a day, an SMS can go missing, and five wrong guesses lock it, and
+   * each of those used to strand the delivery until an admin stepped in.
+   * Only the sender is shown the new code.
+   */
+  async reissueFor(agreementId: string, userId: string): Promise<ReissueResult | CodeRefusal> {
+    const t = await sequelize.transaction();
+    try {
+      const { agreement, isSender, isCourier } = await this.partyTo(agreementId, userId, t);
+      if (!agreement || (!isSender && !isCourier)) {
+        await t.rollback();
+        return { ok: false, status: 404, code: 'NOT_FOUND', error: 'Delivery not found' };
+      }
+      if (agreement.status !== DeliveryStatus.IN_TRANSIT) {
+        await t.rollback();
+        return {
+          ok: false, status: 409, code: 'DELIVERY_NOT_IN_TRANSIT',
+          error: `This delivery is ${agreement.status}, so it has no handover code`,
+        };
+      }
+      const issuedSoFar = await DeliveryQRCode.count({
+        where: { deliveryAgreementId: agreementId },
+        transaction: t,
+      });
+      if (issuedSoFar >= MAX_CODES_PER_DELIVERY) {
+        await t.rollback();
+        return {
+          ok: false, status: 429, code: 'CODE_LIMIT_REACHED',
+          error: 'No more codes can be sent for this delivery. Raise a dispute to complete it.',
+        };
+      }
+
+      const issued = await this.issueCode(agreementId, t);
+      if (!issued.success || !issued.codeId) {
+        await t.rollback();
+        return { ok: false, status: 503, code: 'HANDOVER_CODE_UNAVAILABLE', error: 'Could not send a new code. Try again.' };
+      }
+      const record = await DeliveryQRCode.findByPk(issued.codeId, { transaction: t });
+      await agreement.logEvent('handover_code_reissued', {
+        requested_by: isSender ? 'sender' : 'courier',
+        sent_via: issued.channel ?? 'none',
+      }, userId, t);
+      await t.commit();
+
+      logInfo('Handover code reissued', {
+        agreementId,
+        requestedBy: isSender ? 'sender' : 'courier',
+        channel: issued.channel,
+      });
+      return {
+        ok: true,
+        ...(isSender && record ? { code: record.qrToken } : {}),
+        expiresAt: record!.expiresAt,
+        sentVia: issued.channel ?? 'none',
+        codesLeft: MAX_CODES_PER_DELIVERY - issuedSoFar - 1,
+      };
+    } catch (error) {
+      await t.rollback();
+      logError('Error reissuing handover code', error as Error, { agreementId });
+      return { ok: false, status: 500, code: 'REISSUE_FAILED', error: 'Could not send a new code' };
     }
   }
 
