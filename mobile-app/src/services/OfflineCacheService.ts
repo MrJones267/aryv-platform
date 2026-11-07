@@ -8,6 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetworkManager from '../utils/network/NetworkManager';
 import logger from './LoggingService';
+import { getAccessToken } from './sessionTokens';
 
 const log = logger.createLogger('OfflineCacheService');
 
@@ -170,8 +171,7 @@ class OfflineCacheService {
 
       for (const action of pending) {
         try {
-          const token = await AsyncStorage.getItem('@aryv_auth_token')
-            || await AsyncStorage.getItem('accessToken');
+          const token = await getAccessToken();
 
           const response = await fetch(action.endpoint, {
             method: action.method,

@@ -19,6 +19,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Keychain from 'react-native-keychain';
 import { authFetch } from './authFetch';
 import logger from './LoggingService';
 
@@ -39,38 +40,132 @@ const DEFAULT_EXPIRES_IN = 24 * 60 * 60;
 const getStore = () => (require('../store') as typeof import('../store')).store;
 
 /**
- * Write a token pair to every storage key it is read from. For sign-in
- * thunks, whose own reducers put the pair in Redux.
+ * Where the session lives: the Android Keystore (iOS Keychain), encrypted,
+ * through react-native-keychain. It was kept in AsyncStorage, which is
+ * plain text in the app's data folder, readable on a rooted phone.
+ *
+ * One record holds the pair and its expiry. A cache spares the Keystore a
+ * read on every request. Tokens from before this change (AsyncStorage) are
+ * moved across on first read and the plain copies removed, so nobody is
+ * signed out by the update. If secure storage is unavailable on a device,
+ * the session stays in AsyncStorage as before rather than failing sign-in.
+ */
+const KEYCHAIN_SERVICE = 'com.aryvmobile.session';
+const PLAIN_KEYS = [...ACCESS_KEYS, ...REFRESH_KEYS, EXPIRES_AT_KEY];
+
+export interface StoredSession {
+  accessToken: string;
+  refreshToken: string;
+  /** Epoch ms. */
+  expiresAt: number;
+}
+
+let cached: StoredSession | null | undefined;
+
+async function writeSecure(session: StoredSession): Promise<boolean> {
+  try {
+    await Keychain.setGenericPassword('aryv-session', JSON.stringify(session), {
+      service: KEYCHAIN_SERVICE,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
+    });
+    return true;
+  } catch (error) {
+    log.warn('Secure storage unavailable; keeping the session in app storage', error);
+    return false;
+  }
+}
+
+async function readSecure(): Promise<StoredSession | null> {
+  try {
+    const stored = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    if (!stored) return null;
+    const parsed = JSON.parse(stored.password) as Partial<StoredSession>;
+    return parsed.accessToken
+      ? { accessToken: parsed.accessToken, refreshToken: parsed.refreshToken ?? '', expiresAt: Number(parsed.expiresAt) || 0 }
+      : null;
+  } catch (error) {
+    log.warn('Could not read the session from secure storage', error);
+    return null;
+  }
+}
+
+/** The session, from the cache, the Keystore, or (moved across) AsyncStorage. */
+export async function getStoredSession(): Promise<StoredSession | null> {
+  if (cached !== undefined) return cached;
+  const secure = await readSecure();
+  if (secure) {
+    cached = secure;
+    return secure;
+  }
+  const plain = Object.fromEntries(await AsyncStorage.multiGet(PLAIN_KEYS)) as Record<string, string | null>;
+  const accessToken = ACCESS_KEYS.map((k) => plain[k]).find(Boolean);
+  if (!accessToken) {
+    cached = null;
+    return null;
+  }
+  const session: StoredSession = {
+    accessToken,
+    refreshToken: REFRESH_KEYS.map((k) => plain[k]).find(Boolean) ?? '',
+    expiresAt: Number(plain[EXPIRES_AT_KEY]) || 0,
+  };
+  if (await writeSecure(session)) {
+    await AsyncStorage.multiRemove(PLAIN_KEYS);
+  }
+  cached = session;
+  return session;
+}
+
+/**
+ * Store a token pair. For sign-in thunks, whose own reducers put the pair
+ * in Redux. Kept under this name: every sign-in path already calls it.
  */
 export async function storeTokenKeys(accessToken: string, refreshToken: string, expiresIn = DEFAULT_EXPIRES_IN): Promise<void> {
+  const session: StoredSession = { accessToken, refreshToken, expiresAt: Date.now() + expiresIn * 1000 };
+  cached = session;
+  if (await writeSecure(session)) {
+    // No plain copy left behind, including ones from before this change.
+    await AsyncStorage.multiRemove(PLAIN_KEYS);
+    return;
+  }
   await AsyncStorage.multiSet([
     ...ACCESS_KEYS.map((key): [string, string] => [key, accessToken]),
     ...REFRESH_KEYS.map((key): [string, string] => [key, refreshToken]),
-    [EXPIRES_AT_KEY, String(Date.now() + expiresIn * 1000)],
+    [EXPIRES_AT_KEY, String(session.expiresAt)],
   ]);
 }
 
-/** Save a token pair everywhere it is read from: storage and Redux. */
+/**
+ * Store a token pair and tell Redux, for refreshes and sign-ins that do not
+ * dispatch it themselves.
+ */
 export async function saveTokens(accessToken: string, refreshToken: string, expiresIn = DEFAULT_EXPIRES_IN): Promise<void> {
   await storeTokenKeys(accessToken, refreshToken, expiresIn);
   getStore().dispatch({ type: 'auth/setTokens', payload: { accessToken, refreshToken, expiresIn } });
 }
 
-/** Forget the tokens everywhere. */
+/** Forget the session everywhere it may be stored. */
 export async function clearTokens(): Promise<void> {
-  await AsyncStorage.multiRemove([...ACCESS_KEYS, ...REFRESH_KEYS, EXPIRES_AT_KEY]);
+  cached = null;
+  try {
+    await Keychain.resetGenericPassword({ service: KEYCHAIN_SERVICE });
+  } catch (error) {
+    log.warn('Could not clear the session from secure storage', error);
+  }
+  await AsyncStorage.multiRemove(PLAIN_KEYS);
 }
 
+/** Drop the in-memory copy, so the next read comes from storage (an app restart, in tests). */
+export function forgetCachedSession(): void {
+  cached = undefined;
+}
+
+/** The current access token, if signed in. Every API client reads it here. */
 export async function getAccessToken(): Promise<string | null> {
-  return AsyncStorage.getItem(ACCESS_KEYS[0]!);
+  return (await getStoredSession())?.accessToken ?? null;
 }
 
 async function getRefreshToken(): Promise<string | null> {
-  for (const key of REFRESH_KEYS) {
-    const value = await AsyncStorage.getItem(key);
-    if (value) return value;
-  }
-  return null;
+  return (await getStoredSession())?.refreshToken || null;
 }
 
 /** The session is over: clear it and send the person back to sign in. */

@@ -12,7 +12,7 @@ import AuthService from '../../services/AuthService';
 import { DemoAuthService } from '../../services/DemoAuthService';
 import { APP_CONFIG } from '../../config/api';
 import logger from '../../services/LoggingService';
-import { refreshSession, storeTokenKeys } from '../../services/sessionTokens';
+import { getStoredSession, refreshSession, storeTokenKeys } from '../../services/sessionTokens';
 import userManager from '../../services/UserManager';
 
 const log = logger.createLogger('AuthSlice');
@@ -198,8 +198,8 @@ export const refreshTokens = createAsyncThunk(
         success: true,
         data: {
           accessToken,
-          refreshToken: (await AsyncStorage.getItem('refreshToken')) ?? '',
-          expiresIn: Math.max(0, Math.round((Number(await AsyncStorage.getItem('tokenExpiresAt')) - Date.now()) / 1000)),
+          refreshToken: (await getStoredSession())?.refreshToken ?? '',
+          expiresIn: Math.max(0, Math.round((((await getStoredSession())?.expiresAt ?? 0) - Date.now()) / 1000)),
         },
       };
     } catch (error: any) {
@@ -347,9 +347,10 @@ export const initializeAuth = createAsyncThunk(
   'auth/initializeAuth',
   async (_, { dispatch, rejectWithValue }) => {
     try {
-      const tokens = await AsyncStorage.multiGet(['accessToken', 'refreshToken']);
-      const accessToken = tokens[0][1];
-      const refreshToken = tokens[1][1];
+      // From secure storage (sessionTokens), moved there from AsyncStorage.
+      const session = await getStoredSession();
+      const accessToken = session?.accessToken ?? null;
+      const refreshToken = session?.refreshToken || null;
       
       if (accessToken && refreshToken) {
         // Verify token is still valid

@@ -8,6 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
+import { getAccessToken } from './sessionTokens';
 
 const log = logger.createLogger('PromoCodeService');
 
@@ -49,8 +50,7 @@ class PromoCodeService {
   async validateCode(code: string): Promise<PromoCode | null> {
     try {
       const { apiUrl } = getApiConfig();
-      const token = await AsyncStorage.getItem('@aryv_auth_token')
-        || await AsyncStorage.getItem('accessToken');
+      const token = await getAccessToken();
 
       if (apiUrl && token) {
         const response = await fetch(`${apiUrl}/promos/validate`, {

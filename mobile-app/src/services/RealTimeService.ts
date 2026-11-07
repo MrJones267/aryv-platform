@@ -6,9 +6,9 @@
  */
 
 import { io, Socket } from 'socket.io-client';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import logger from './LoggingService';
+import { getAccessToken } from './sessionTokens';
 
 const log = logger.createLogger('RealTimeService');
 
@@ -119,7 +119,7 @@ export class RealTimeService {
       this.currentUserId = userId;
       this.events = events;
 
-      const token = await AsyncStorage.getItem('accessToken');
+      const token = await getAccessToken();
       const serverUrl = this.getServerUrl();
 
       log.info('Connecting to real-time server', { serverUrl });

@@ -10,13 +10,11 @@ import { googleAuthService } from './googleAuthService';
 import { User, UserSession, LoginCredentials, RegisterData } from '../types/user';
 // jwt-decode is optional - token validation is done manually below
 import { authFetch } from './authFetch';
-import { getValidAccessToken, isExpired, saveTokens } from './sessionTokens';
+import { clearTokens, getStoredSession, getValidAccessToken, isExpired, saveTokens, storeTokenKeys } from './sessionTokens';
 import logger from './LoggingService';
 
 const log = logger.createLogger('AuthService');
 
-const AUTH_TOKEN_KEY = '@aryv_auth_token';
-const REFRESH_TOKEN_KEY = '@aryv_refresh_token';
 const USER_DATA_KEY = '@aryv_user_data';
 
 export class AuthService {
@@ -30,14 +28,13 @@ export class AuthService {
 
   private async initializeAuth(): Promise<void> {
     try {
-      const [token, refreshToken, userData] = await Promise.all([
-        AsyncStorage.getItem(AUTH_TOKEN_KEY),
-        AsyncStorage.getItem(REFRESH_TOKEN_KEY),
+      const [session, userData] = await Promise.all([
+        getStoredSession(),
         AsyncStorage.getItem(USER_DATA_KEY),
       ]);
 
-      this.token = token;
-      this.refreshToken = refreshToken;
+      this.token = session?.accessToken ?? null;
+      this.refreshToken = session?.refreshToken || null;
       this.userData = userData ? JSON.parse(userData) : null;
     } catch (error) {
       log.error('Error initializing auth', error);
@@ -168,7 +165,7 @@ export class AuthService {
     try {
       await Promise.all([
         // Every copy of the tokens at once; see sessionTokens.
-        refreshToken ? saveTokens(token, refreshToken) : AsyncStorage.setItem(AUTH_TOKEN_KEY, token),
+        saveTokens(token, refreshToken ?? ''),
         user ? AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)) : Promise.resolve(),
       ]);
     } catch (error) {
@@ -195,8 +192,7 @@ export class AuthService {
       this.userData = null;
 
       await Promise.all([
-        AsyncStorage.removeItem(AUTH_TOKEN_KEY),
-        AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
+        clearTokens(),
         AsyncStorage.removeItem(USER_DATA_KEY),
       ]);
       
@@ -211,8 +207,7 @@ export class AuthService {
 
       try {
         await Promise.all([
-          AsyncStorage.removeItem(AUTH_TOKEN_KEY),
-          AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
+          clearTokens(),
           AsyncStorage.removeItem(USER_DATA_KEY),
         ]);
       } catch (storageError) {
@@ -242,13 +237,9 @@ export class AuthService {
     
     try {
       if (accessToken && refreshToken && user) {
-        // Both sets of keys, so no reader is left with an older pair.
-        await AsyncStorage.multiSet([
-          ['accessToken', accessToken],
-          ['refreshToken', refreshToken],
-          [AUTH_TOKEN_KEY, accessToken],
-          [REFRESH_TOKEN_KEY, refreshToken],
-          [USER_DATA_KEY, JSON.stringify(user)],
+        await Promise.all([
+          storeTokenKeys(accessToken, refreshToken),
+          AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(user)),
         ]);
       }
     } catch (error) {

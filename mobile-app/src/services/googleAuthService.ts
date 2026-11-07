@@ -6,7 +6,7 @@
 import { GoogleSignin, statusCodes, type SignInResponse } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authFetch } from './authFetch';
-import { refreshSession, saveTokens } from './sessionTokens';
+import { clearTokens, getStoredSession, refreshSession, saveTokens } from './sessionTokens';
 import logger from './LoggingService';
 
 const log = logger.createLogger('GoogleAuthService');
@@ -156,7 +156,6 @@ class GoogleAuthService {
           };
 
           await this.storeTokens(localTokens);
-          await AsyncStorage.setItem('@aryv_auth_token', localTokens.accessToken);
           await AsyncStorage.setItem('@aryv_user_data', JSON.stringify(localUser));
 
           return {
@@ -301,7 +300,7 @@ class GoogleAuthService {
    */
   private async clearStoredTokens() {
     try {
-      await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'tokenExpiresAt']);
+      await clearTokens();
     } catch (error) {
       log.error('Token clearing error:', error);
     }
@@ -312,19 +311,18 @@ class GoogleAuthService {
    */
   async getStoredAccessToken(): Promise<string | null> {
     try {
-      const [token, expiresAt] = await AsyncStorage.multiGet(['accessToken', 'tokenExpiresAt']);
-      
-      if (!token[1] || !expiresAt[1]) {
+      const session = await getStoredSession();
+      if (!session?.accessToken || !session.expiresAt) {
         return null;
       }
 
       // Check if token is expired
-      if (Date.now() > parseInt(expiresAt[1])) {
+      if (Date.now() > session.expiresAt) {
         await this.clearStoredTokens();
         return null;
       }
 
-      return token[1];
+      return session.accessToken;
     } catch (error) {
       log.error('Token retrieval error:', error);
       return null;
