@@ -6,7 +6,7 @@
  */
 
 import crypto from 'crypto';
-import { Model, DataTypes, Optional } from 'sequelize';
+import { Model, DataTypes, Optional, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 
 // Delivery status enum
@@ -120,7 +120,19 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
     return validTransitions[this.status]?.includes(newStatus) || false;
   }
 
-  public async transitionTo(newStatus: DeliveryStatus, userId?: string, eventData: Record<string, any> = {}): Promise<void> {
+  /**
+   * Every write here takes the caller's transaction. They used to call
+   * save() without one, which ran on a separate connection and committed
+   * the new status at once, even when the caller's transaction then rolled
+   * back: a pickup whose handover code failed to issue stayed "in transit"
+   * with no code, and nothing could move it on.
+   */
+  public async transitionTo(
+    newStatus: DeliveryStatus,
+    userId?: string,
+    eventData: Record<string, any> = {},
+    transaction?: Transaction,
+  ): Promise<void> {
     if (!this.canTransitionTo(newStatus)) {
       throw new Error(`Invalid transition from ${this.status} to ${newStatus}`);
     }
@@ -133,7 +145,7 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
       from: oldStatus,
       to: newStatus,
       ...eventData,
-    }, userId);
+    }, userId, transaction);
 
     // Handle status-specific logic
     switch (newStatus) {
@@ -145,10 +157,15 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
         break;
     }
 
-    await this.save();
+    await this.save(transaction ? { transaction } : {});
   }
 
-  public async logEvent(eventType: string, eventData: Record<string, any> = {}, userId?: string): Promise<void> {
+  public async logEvent(
+    eventType: string,
+    eventData: Record<string, any> = {},
+    userId?: string,
+    transaction?: Transaction,
+  ): Promise<void> {
     const event: DeliveryEvent = {
       timestamp: new Date().toISOString(),
       event_type: eventType,
@@ -157,14 +174,14 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
     };
 
     this.eventLog = [...this.eventLog, event];
-    await this.save();
+    await this.save(transaction ? { transaction } : {});
   }
 
   public generateQRToken(): string {
     return crypto.randomBytes(16).toString('hex').toUpperCase();
   }
 
-  public async createQRCode(): Promise<void> {
+  public async createQRCode(transaction?: Transaction): Promise<void> {
     const token = this.generateQRToken();
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
@@ -175,9 +192,9 @@ export class DeliveryAgreement extends Model<DeliveryAgreementAttributes, Delive
     await this.logEvent('qr_code_generated', {
       token: token,
       expires_at: expiresAt.toISOString(),
-    });
+    }, undefined, transaction);
 
-    await this.save();
+    await this.save(transaction ? { transaction } : {});
   }
 
   public isQRCodeValid(): boolean {

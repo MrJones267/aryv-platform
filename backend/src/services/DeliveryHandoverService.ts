@@ -265,6 +265,9 @@ export class DeliveryHandoverService {
 
       const record = await DeliveryQRCode.findOne({
         where: { qrToken: normalised },
+        // A double submit must not spend the code twice and complete the
+        // delivery twice; the second waits here and then sees it used.
+        lock: t.LOCK.UPDATE,
         transaction: t,
       });
 
