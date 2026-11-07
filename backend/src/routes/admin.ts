@@ -56,6 +56,7 @@ import { SOS_ESCALATION, reminderDueAfterMinutes } from '../services/EmergencySe
 import EmergencyAlert, { EmergencyAlertStatus } from '../models/EmergencyAlert';
 import contentReportService, { ReportError } from '../services/ContentReportService';
 import courierEscrowService from '../services/CourierEscrowService';
+import { notifyDeliveryEvent } from '../services/courierNotifications';
 
 const COMMISSION_KEY = 'platform:commission';
 
@@ -619,6 +620,11 @@ router.post('/courier/agreements/:id/release-payment', authenticateAdminToken, r
       release_reason: 'admin_manual_release',
       released_at: new Date().toISOString(),
     });
+    await notifyDeliveryEvent('completed_by_support', {
+      packageId: agreement.packageId,
+      deliveryAgreementId: agreement.id,
+      courierId: agreement.courierId,
+    }, ['sender', 'courier']);
 
     return res.json({ success: true, message: 'Payment released successfully', data: { agreementId: id, status: 'payment_released' }, timestamp: new Date().toISOString() });
   } catch (error) {

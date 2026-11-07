@@ -47,7 +47,7 @@ describe('NotificationService', () => {
 
       await notificationService.sendToUser('user123', notification);
 
-      expect(mockIO.to).toHaveBeenCalledWith('user_user123');
+      expect(mockIO.to).toHaveBeenCalledWith('user:user123');
       expect(mockIO.to().emit).toHaveBeenCalledWith('notification', notification);
     });
 
@@ -93,7 +93,7 @@ describe('NotificationService', () => {
 
       await notificationService.sendToRide('ride123', notification);
 
-      expect(mockIO.to).toHaveBeenCalledWith('ride_ride123');
+      expect(mockIO.to).toHaveBeenCalledWith('ride:ride123');
       expect(mockIO.to().emit).toHaveBeenCalledWith('notification', notification);
     });
   });
@@ -129,7 +129,7 @@ describe('NotificationService', () => {
       );
 
       expect(Booking.findByPk).toHaveBeenCalledWith('booking123', expect.any(Object));
-      expect(mockIO.to).toHaveBeenCalledWith('user_passenger123');
+      expect(mockIO.to).toHaveBeenCalledWith('user:passenger123');
       expect(mockIO.to).toHaveBeenCalledWith('booking_booking123');
     });
 
@@ -162,7 +162,7 @@ describe('NotificationService', () => {
         'passenger123'
       );
 
-      expect(mockIO.to).toHaveBeenCalledWith('user_driver123');
+      expect(mockIO.to).toHaveBeenCalledWith('user:driver123');
       // Should send notification to driver since passenger cancelled
     });
 
@@ -208,7 +208,7 @@ describe('NotificationService', () => {
 
       // Should still send to booking room but not to the passenger individually
       expect(mockIO.to).toHaveBeenCalledWith('booking_booking123');
-      expect(mockIO.to).toHaveBeenCalledWith('user_driver123'); // Driver should still be notified
+      expect(mockIO.to).toHaveBeenCalledWith('user:driver123'); // Driver should still be notified
     });
   });
 
@@ -262,9 +262,9 @@ describe('NotificationService', () => {
       }));
 
       // Should notify both passengers
-      expect(mockIO.to).toHaveBeenCalledWith('user_passenger1');
-      expect(mockIO.to).toHaveBeenCalledWith('user_passenger2');
-      expect(mockIO.to).toHaveBeenCalledWith('ride_ride123');
+      expect(mockIO.to).toHaveBeenCalledWith('user:passenger1');
+      expect(mockIO.to).toHaveBeenCalledWith('user:passenger2');
+      expect(mockIO.to).toHaveBeenCalledWith('ride:ride123');
     });
 
     it('should handle ride not found', async () => {
@@ -310,7 +310,7 @@ describe('NotificationService', () => {
       );
 
       // Should not notify the driver individually since they made the change
-      expect(mockIO.to).toHaveBeenCalledWith('ride_ride123');
+      expect(mockIO.to).toHaveBeenCalledWith('ride:ride123');
       // But should not send individual notification to driver
     });
   });
@@ -339,7 +339,7 @@ describe('NotificationService', () => {
       await notificationService.notifyNewBookingRequest('booking123');
 
       expect(Booking.findByPk).toHaveBeenCalledWith('booking123', expect.any(Object));
-      expect(mockIO.to).toHaveBeenCalledWith('user_driver123');
+      expect(mockIO.to).toHaveBeenCalledWith('user:driver123');
 
       const emitCall = mockIO.to().emit.mock.calls[0];
       expect(emitCall[0]).toBe('notification');
@@ -357,20 +357,6 @@ describe('NotificationService', () => {
       ).resolves.toBeUndefined();
 
       expect(mockIO.to).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Socket connection tracking', () => {
-    it('should track connected users count', () => {
-      expect(notificationService.getConnectedUsersCount()).toBe(0);
-    });
-
-    it('should check if user is connected', () => {
-      expect(notificationService.isUserConnected('user123')).toBe(false);
-    });
-
-    it('should get user socket count', () => {
-      expect(notificationService.getUserSocketCount('user123')).toBe(0);
     });
   });
 

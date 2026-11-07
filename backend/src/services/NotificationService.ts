@@ -98,7 +98,6 @@ export interface RideNotification extends NotificationData {
 
 export class NotificationService {
   private io: SocketIOServer | null = null;
-  private connectedUsers: Map<string, string[]> = new Map(); // userId -> socketIds[]
 
   constructor(io?: SocketIOServer) {
     if (io) {
@@ -112,63 +111,17 @@ export class NotificationService {
     this.setupSocketHandlers();
   }
 
+  /**
+   * Deliberately empty. This service used to register its own socket
+   * handlers: 'authenticate' joined the room of whatever userId the client
+   * sent, without checking the token, so any signed-in user could receive
+   * anyone's notifications; 'join_booking' and 'join_ride' joined any room
+   * unchecked. SocketService authenticates every connection, joins each
+   * socket to `user:<its own id>`, and checks access before joining a ride,
+   * so notifications go to those rooms instead.
+   */
   private setupSocketHandlers(): void {
-    if (!this.io) return;
-
-    this.io.on('connection', (socket) => {
-      logInfo('New socket connection', { socketId: socket.id });
-
-      // Handle user authentication
-      socket.on('authenticate', (data: { userId: string; token: string }) => {
-        try {
-          const { userId } = data;
-
-          // Add user to connected users map
-          if (!this.connectedUsers.has(userId)) {
-            this.connectedUsers.set(userId, []);
-          }
-          this.connectedUsers.get(userId)!.push(socket.id);
-
-          // Join user-specific room
-          socket.join(`user_${userId}`);
-
-          logInfo('User authenticated and joined room', { userId, socketId: socket.id });
-
-          socket.emit('authenticated', { success: true });
-        } catch (error) {
-          logError('Error authenticating user', error as Error);
-          socket.emit('authenticated', { success: false, error: 'Authentication failed' });
-        }
-      });
-
-      // Handle joining booking room
-      socket.on('join_booking', (data: { bookingId: string }) => {
-        socket.join(`booking_${data.bookingId}`);
-        logInfo('Socket joined booking room', { bookingId: data.bookingId, socketId: socket.id });
-      });
-
-      // Handle joining ride room
-      socket.on('join_ride', (data: { rideId: string }) => {
-        socket.join(`ride_${data.rideId}`);
-        logInfo('Socket joined ride room', { rideId: data.rideId, socketId: socket.id });
-      });
-
-      // Handle disconnection
-      socket.on('disconnect', () => {
-        // Remove socket from all user connections
-        for (const [userId, socketIds] of this.connectedUsers.entries()) {
-          const index = socketIds.indexOf(socket.id);
-          if (index !== -1) {
-            socketIds.splice(index, 1);
-            if (socketIds.length === 0) {
-              this.connectedUsers.delete(userId);
-            }
-            logInfo('User socket disconnected', { userId, socketId: socket.id });
-            break;
-          }
-        }
-      });
-    });
+    // Intentionally no handlers; see above.
   }
 
   /**
@@ -182,7 +135,7 @@ export class NotificationService {
     try {
       // Send via socket (real-time, works when app is open)
       if (this.io) {
-        this.io.to(`user_${userId}`).emit('notification', notification);
+        this.io.to(`user:${userId}`).emit('notification', notification);
       }
 
       // Send via FCM push (works when app is in background/closed)
@@ -253,7 +206,7 @@ export class NotificationService {
         return;
       }
 
-      this.io.to(`ride_${rideId}`).emit('notification', notification);
+      this.io.to(`ride:${rideId}`).emit('notification', notification);
 
       logInfo('Notification sent to ride room', {
         rideId,
@@ -526,26 +479,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Get count of connected users
-   */
-  getConnectedUsersCount(): number {
-    return this.connectedUsers.size;
-  }
-
-  /**
-   * Get connected socket count for a user
-   */
-  getUserSocketCount(userId: string): number {
-    return this.connectedUsers.get(userId)?.length || 0;
-  }
-
-  /**
-   * Check if user is connected
-   */
-  isUserConnected(userId: string): boolean {
-    return this.connectedUsers.has(userId) && this.connectedUsers.get(userId)!.length > 0;
-  }
 }
 
 export const notificationService = new NotificationService();
