@@ -17,6 +17,7 @@ import { AuthenticatedRequest } from '../types';
 import logger from '../utils/logger';
 import { deliveryDisputeService } from '../services/DeliveryDisputeService';
 import { deliveryHandoverService } from '../services/DeliveryHandoverService';
+import { courierCancellationService } from '../services/CourierCancellationService';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
@@ -860,6 +861,52 @@ router.post(
       },
       timestamp: new Date().toISOString(),
     });
+  },
+);
+
+/**
+ * The sender withdraws a package, or drops the courier who accepted it
+ * before pickup and withdraws it or reopens it (findAnotherCourier). Once
+ * the courier has the package, it is a dispute instead.
+ */
+router.post(
+  '/packages/:packageId/cancel',
+  [
+    param('packageId').isUUID().withMessage('Invalid package id'),
+    body('reason').optional().isString().isLength({ max: 500 }).withMessage('Reason is too long'),
+    body('findAnotherCourier').optional().isBoolean().withMessage('findAnotherCourier must be true or false'),
+    validateInput,
+  ],
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const result = await courierCancellationService.cancelBySender(String(req.params['packageId']), req.user!.id, {
+      reason: req.body?.reason,
+      findAnotherCourier: req.body?.findAnotherCourier === true || req.body?.findAnotherCourier === 'true',
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+      return;
+    }
+    res.json({ success: true, data: { packageState: result.packageState, cancelledDeliveryId: result.cancelledDeliveryId }, timestamp: new Date().toISOString() });
+  },
+);
+
+/** The courier hands back a delivery they accepted but have not picked up. */
+router.post(
+  '/deliveries/:agreementId/cancel',
+  [
+    param('agreementId').isUUID().withMessage('Invalid delivery id'),
+    body('reason').optional().isString().isLength({ max: 500 }).withMessage('Reason is too long'),
+    validateInput,
+  ],
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const result = await courierCancellationService.cancelByCourier(String(req.params['agreementId']), req.user!.id, {
+      reason: req.body?.reason,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ success: false, error: result.error, code: result.code, timestamp: new Date().toISOString() });
+      return;
+    }
+    res.json({ success: true, data: { packageState: result.packageState }, timestamp: new Date().toISOString() });
   },
 );
 

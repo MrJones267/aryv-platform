@@ -88,10 +88,6 @@ const PackageScreen: React.FC = () => {
   };
 
   const getStatusText = (package_: Package) => {
-    if (!package_.isActive) {
-      return t('status.cancelled');
-    }
-
     // A package has no status of its own; where it stands is the status of
     // its delivery. Reading only package_.status, every package showed as
     // "Active", whether a courier had it or it had been delivered.
@@ -125,7 +121,13 @@ const PackageScreen: React.FC = () => {
       }
     }
 
-    // Default to Active if no status is set but package is active
+    // No live delivery: withdrawn if inactive, else waiting for a courier.
+    // isActive used to be read first, but accepting a package also makes it
+    // inactive, so every accepted, in-transit or delivered package showed
+    // as "Cancelled".
+    if (!package_.isActive) {
+      return t('status.cancelled');
+    }
     return t('cf.active');
   };
 

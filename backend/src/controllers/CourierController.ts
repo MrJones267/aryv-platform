@@ -519,6 +519,19 @@ export class CourierController {
         return;
       }
 
+      // Nobody delivers their own package: it would only inflate their
+      // courier record and ratings.
+      if (packageData.senderId === userId) {
+        await transaction.rollback();
+        res.status(409).json({
+          success: false,
+          error: 'You cannot accept your own package',
+          code: 'OWN_PACKAGE',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       // Check if package already has an active delivery agreement
       const existingAgreement = await DeliveryAgreement.findOne({
         where: {
@@ -1041,6 +1054,14 @@ export class CourierController {
 
       const view = packageData.toJSON() as Record<string, unknown>;
       delete view['deliveryAgreements'];
+      // The sender and courier need the live delivery to act on it (cancel,
+      // track, confirm pickup); browsing couriers learn nothing about it.
+      const current = (isSender || isCourier)
+        ? [...live].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+        : undefined;
+      if (current) {
+        view['delivery'] = { id: (current as any).id, status: (current as any).status, courierId: (current as any).courierId };
+      }
       if (!isSender && !isCourier) {
         delete view['pickupContactName'];
         delete view['pickupContactPhone'];
