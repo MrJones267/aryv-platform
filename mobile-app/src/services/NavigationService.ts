@@ -6,8 +6,8 @@
  */
 
 import { LocationCoordinates } from './LocationService';
-import { APP_CONFIG } from '../config/api';
 import logger from './LoggingService';
+import { googleMaps } from './googleMaps';
 
 const log = logger.createLogger('NavigationService');
 
@@ -36,24 +36,16 @@ export interface DirectionsRequest {
 }
 
 class NavigationService {
-  private readonly GOOGLE_DIRECTIONS_API = 'https://maps.googleapis.com/maps/api/directions/json';
   
   /**
    * Get turn-by-turn directions between two points
    */
   async getDirections(request: DirectionsRequest): Promise<NavigationRoute> {
     try {
-      // Check if Google Maps API key is available
-      if (!this.hasGoogleMapsApiKey()) {
-        log.warn('Google Maps API key not configured, using calculated route');
-        return this.getMockDirections(request);
-      }
-
       const params = new URLSearchParams({
         origin: `${request.origin.latitude},${request.origin.longitude}`,
         destination: `${request.destination.latitude},${request.destination.longitude}`,
         mode: request.mode || 'driving',
-        key: this.getGoogleMapsApiKey(),
       });
 
       if (request.waypoints && request.waypoints.length > 0) {
@@ -67,8 +59,9 @@ class NavigationService {
         params.append('avoid', request.avoid.join('|'));
       }
 
-      const response = await fetch(`${this.GOOGLE_DIRECTIONS_API}?${params.toString()}`);
-      const data = await response.json();
+      const query: Record<string, string> = {};
+      params.forEach((value, name) => { query[name] = value; });
+      const data = await googleMaps('directions', query) as any;
 
       if (data.status !== 'OK') {
         throw new Error(`Directions API error: ${data.status}`);
@@ -170,24 +163,6 @@ class NavigationService {
     };
     
     return Math.round((distance / speeds[mode]) * 3600); // Return seconds
-  }
-
-  private hasGoogleMapsApiKey(): boolean {
-    const apiKey = APP_CONFIG.GOOGLE_SERVICES.MAPS_API_KEY;
-    // Check if Google Maps API key is configured and valid
-    return !!(apiKey && 
-             apiKey !== 'YOUR_GOOGLE_MAPS_API_KEY_HERE' && 
-             !apiKey.includes('YOUR_PRODUCTION') &&
-             apiKey.length > 30 && 
-             apiKey.startsWith('AIza'));
-  }
-
-  private getGoogleMapsApiKey(): string {
-    const apiKey = APP_CONFIG.GOOGLE_SERVICES.MAPS_API_KEY;
-    if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY_HERE' || apiKey.includes('YOUR_PRODUCTION')) {
-      throw new Error('Google Maps API key not configured');
-    }
-    return apiKey;
   }
 
   private getMockDirections(request: DirectionsRequest): NavigationRoute {
