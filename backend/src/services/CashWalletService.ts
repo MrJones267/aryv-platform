@@ -590,7 +590,10 @@ export class CashWalletService {
         CashWalletTransaction.create({
           walletId: senderWallet.id,
           type: 'transfer',
-          amount: -request.amount,
+          // Positive, like every debit: balanceBefore/balanceAfter show the
+          // direction. A negative amount broke the model's "greater than 0"
+          // rule, so every transfer failed before moving anything.
+          amount: request.amount,
           currency: senderWallet.currency,
           balanceBefore: senderBalanceBefore,
           balanceAfter: senderBalanceAfter,
@@ -598,7 +601,7 @@ export class CashWalletService {
           source: 'mobile_money',
           sourceReference: `transfer_to_${request.toUserId}`,
           description: `Transfer to user ${request.toUserId}: ${request.description}`,
-          metadata: request.metadata,
+          metadata: { ...(request.metadata ?? {}), direction: 'out' },
           processedAt: new Date(),
         }, { transaction }),
         CashWalletTransaction.create({
@@ -612,7 +615,7 @@ export class CashWalletService {
           source: 'mobile_money',
           sourceReference: `transfer_from_${request.fromUserId}`,
           description: `Transfer from user ${request.fromUserId}: ${request.description}`,
-          metadata: request.metadata,
+          metadata: { ...(request.metadata ?? {}), direction: 'in' },
           processedAt: new Date(),
         }, { transaction }),
       ]);
