@@ -25,6 +25,8 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { searchRides, setSearchFilters } from '../../store/slices/ridesSlice';
 import { getCurrentLocation } from '../../store/slices/locationSlice';
 import { locationService } from '../../services/LocationService';
+import type { LocationData } from '../../services/LocationService';
+import { LocationPicker } from '../../components/maps';
 import { ridesApi } from '../../services/api/ridesApi';
 import type { Location } from '../../services/api/ridesApi';
 import type { Ride } from '../../store/slices/ridesSlice';
@@ -75,6 +77,13 @@ const SearchScreen: React.FC = () => {
   const [isFormValid, setIsFormValid] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // Places chosen on the map, kept with their coordinates so search uses the
+  // exact pin instead of geocoding the label back. A pick only counts while
+  // the field still shows its address; typing over it falls back to text.
+  type PickedPlace = { latitude: number; longitude: number; address: string };
+  const [picked, setPicked] = useState<{ origin?: PickedPlace; destination?: PickedPlace }>({});
+  const [mapPickerFor, setMapPickerFor] = useState<'origin' | 'destination' | null>(null);
 
   // Filters
   const [selectedVehicleType, setSelectedVehicleType] = useState<string>('Any');
@@ -144,6 +153,21 @@ const SearchScreen: React.FC = () => {
       origin: prev.destination,
       destination: prev.origin,
     }));
+    setPicked(prev => ({ origin: prev.destination, destination: prev.origin }));
+  };
+
+  const handleMapLocationSelect = (location: LocationData): void => {
+    if (!mapPickerFor) {return;}
+    const address = location.address?.fullAddress
+      || location.address?.formatted
+      || `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
+    const field = mapPickerFor;
+    setFormData(prev => ({ ...prev, [field]: address }));
+    setPicked(prev => ({
+      ...prev,
+      [field]: { latitude: location.latitude, longitude: location.longitude, address },
+    }));
+    setMapPickerFor(null);
   };
 
   const handlePopularRoutePress = (route: PopularRoute): void => {
@@ -171,7 +195,9 @@ const SearchScreen: React.FC = () => {
     try {
       // Geocode origin - use current GPS coords if available and address matches
       let originCoords: { latitude: number; longitude: number };
-      if (currentLocation?.address && formData.origin === currentLocation.address) {
+      if (picked.origin && picked.origin.address === formData.origin) {
+        originCoords = { latitude: picked.origin.latitude, longitude: picked.origin.longitude };
+      } else if (currentLocation?.address && formData.origin === currentLocation.address) {
         originCoords = {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
@@ -181,7 +207,9 @@ const SearchScreen: React.FC = () => {
       }
 
       // Geocode destination
-      const destCoords = await geocodeAddress(formData.destination);
+      const destCoords = picked.destination && picked.destination.address === formData.destination
+        ? { latitude: picked.destination.latitude, longitude: picked.destination.longitude }
+        : await geocodeAddress(formData.destination);
 
       setIsGeocoding(false);
 
@@ -571,8 +599,18 @@ const SearchScreen: React.FC = () => {
               <TouchableOpacity
                 style={styles.locationButton}
                 onPress={handleUseCurrentLocation}
+                accessibilityRole="button"
+                accessibilityLabel={t('home.currentLocation')}
               >
-                <Icon name="my-location" size={16} color="#3B82F6" />
+                <Icon name="my-location" size={18} color="#3B82F6" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.locationButton}
+                onPress={() => setMapPickerFor('origin')}
+                accessibilityRole="button"
+                accessibilityLabel={t('search.pickOnMap')}
+              >
+                <Icon name="map" size={18} color="#3B82F6" />
               </TouchableOpacity>
             </View>
           </View>
@@ -597,6 +635,14 @@ const SearchScreen: React.FC = () => {
                 onChangeText={(text) => handleInputChange('destination', text)}
                 returnKeyType="next"
               />
+              <TouchableOpacity
+                style={styles.locationButton}
+                onPress={() => setMapPickerFor('destination')}
+                accessibilityRole="button"
+                accessibilityLabel={t('search.pickOnMap')}
+              >
+                <Icon name="map" size={18} color="#3B82F6" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -679,6 +725,13 @@ const SearchScreen: React.FC = () => {
           />
         )}
       </ScrollView>
+
+      <LocationPicker
+        visible={mapPickerFor !== null}
+        onClose={() => setMapPickerFor(null)}
+        onLocationSelect={handleMapLocationSelect}
+        title={mapPickerFor === 'destination' ? t('search.pickDestination') : t('search.pickOrigin')}
+      />
     </SafeAreaView>
   );
 };
@@ -732,7 +785,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   locationButton: {
-    padding: 4,
+    padding: 8,
   },
   swapContainer: {
     alignItems: 'center',

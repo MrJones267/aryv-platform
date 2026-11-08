@@ -30,7 +30,18 @@ const transformRideFromApi = (ride: any): Ride => {
 
 // Transform array of rides
 const transformRidesFromApi = (rides: any[]): Ride[] => {
-  return rides.map(transformRideFromApi);
+  return Array.isArray(rides) ? rides.map(transformRideFromApi) : [];
+};
+
+/**
+ * The rides in a list response. The server answers search and "my rides" with
+ * `{ rides, pagination }`, not a bare array; calling `.map` on that object is
+ * what showed "Search failed: undefined is not a function".
+ */
+const ridesFromPayload = (payload: unknown): any[] => {
+  if (Array.isArray(payload)) return payload;
+  const rides = (payload as { rides?: unknown } | null | undefined)?.rides;
+  return Array.isArray(rides) ? rides : [];
 };
 
 // Types
@@ -354,7 +365,7 @@ const ridesSlice = createSlice({
       })
       .addCase(searchRides.fulfilled, (state, action) => {
         state.searchLoading = false;
-        state.searchResults = transformRidesFromApi(action.payload || []);
+        state.searchResults = transformRidesFromApi(ridesFromPayload(action.payload));
         state.lastSearch = Date.now();
         state.error = null;
       })
@@ -370,7 +381,7 @@ const ridesSlice = createSlice({
       })
       .addCase(fetchMyRides.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.myRides = transformRidesFromApi(action.payload?.rides || []);
+        state.myRides = transformRidesFromApi(ridesFromPayload(action.payload));
         state.error = null;
       })
       .addCase(fetchMyRides.rejected, (state, action) => {
