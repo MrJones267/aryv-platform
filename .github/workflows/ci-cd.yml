@@ -146,13 +146,13 @@ jobs:
       - name: Audit backend production dependencies
         run: npm audit --workspace backend --omit=dev --audit-level=high
 
-  # ── Admin panel: the same type-check and build the deploy runs ────────────
+  # ── Admin panel: type-check, tests, and the same build the deploy runs ────
   # The panel deploys to Cloudflare on every push to main, and until now
   # nothing checked it before that: a change that broke its build or types
   # was found only by the failed deploy, after merging. Lint is not run yet:
   # its config fails on --max-warnings 0 for warnings that predate this job.
   admin-panel:
-    name: Admin panel (type-check, build)
+    name: Admin panel (type-check, test, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -165,6 +165,10 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - name: Type-check
         run: npm run type-check --workspace admin-panel
+      # The panel's tests never ran anywhere, so a regression like the
+      # two-factor sign-in that never showed its code box reached production.
+      - name: Test
+        run: npm test --workspace admin-panel -- --ci
       - name: Build
         run: npm run build --workspace admin-panel
         env:
