@@ -525,9 +525,22 @@ export class SocketService {
         return;
       }
 
+      // Relay only the ride's saved status. This broadcast whatever status
+      // the driver's app sent, so passengers could be shown "completed" or
+      // "cancelled" for a ride that was neither. Status changes happen over
+      // the API (start, complete, cancel), which saves them and notifies the
+      // passengers; this event only tells the room promptly.
+      if (status !== ride.status) {
+        socket.emit('error', {
+          message: 'That is not this ride\'s status. Change it from the ride screen.',
+          code: 'RIDE_STATUS_MISMATCH',
+        });
+        return;
+      }
+
       const statusUpdate: RideStatusUpdate = {
         rideId,
-        status,
+        status: ride.status,
         driverId: userId,
         timestamp: new Date(),
       };
@@ -535,10 +548,7 @@ export class SocketService {
       // Broadcast to all users in the ride
       this.io.to(`ride:${rideId}`).emit('ride_status_update', statusUpdate);
 
-      // Send push notifications to passengers (implementation depends on notification service)
-      await this.notifyRideStatusChange(rideId, status);
-
-      logInfo('Ride status updated', { userId, rideId, status });
+      logInfo('Ride status relayed', { userId, rideId, status: ride.status });
     } catch (error) {
       logError('Error updating ride status', error as Error, { userId: socket.userId, rideId: data.rideId });
       socket.emit('error', { message: 'Failed to update ride status' });
@@ -990,22 +1000,6 @@ export class SocketService {
     } catch (error) {
       logError('Error verifying ride access', error as Error, { userId, rideId });
       return false;
-    }
-  }
-
-  private async notifyRideStatusChange(rideId: string, status: RideStatus): Promise<void> {
-    try {
-      // Get all passengers for this ride
-      const bookings = await Booking.findAll({
-        where: { rideId },
-        include: [{ model: User, as: 'passenger' }],
-      });
-
-      // Send notifications (implementation depends on notification service)
-      // This is a placeholder for push notification service integration
-      logInfo('Ride status change notification sent', { rideId, status, passengerCount: bookings.length });
-    } catch (error) {
-      logError('Error sending ride status notifications', error as Error, { rideId, status });
     }
   }
 
