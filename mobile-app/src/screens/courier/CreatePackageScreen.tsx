@@ -27,6 +27,8 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import ImagePicker from '../../components/common/ImagePicker';
 import DeliveryTierSelector from '../../components/courier/DeliveryTierSelector';
 import LocationService from '../../services/LocationService';
+import type { LocationData } from '../../services/LocationService';
+import { LocationPicker } from '../../components/maps';
 import CurrencyService, { Currency } from '../../services/CurrencyService';
 import { useAppDispatch } from '../../store/hooks';
 import { createPackage as createPackageAction } from '../../store/slices/packageSlice';
@@ -118,6 +120,31 @@ const CreatePackageScreen: React.FC = () => {
   } | null>(null);
   const [routeStatus, setRouteStatus] = useState<'idle' | 'resolving' | 'failed'>('idle');
 
+  // Points chosen on the map, as [longitude, latitude] like geocodeAddress
+  // returns. A pick is used only while its field still shows that address,
+  // so typing over it falls back to looking the text up.
+  type PickedPoint = { address: string; coordinates: [number, number] };
+  const [picked, setPicked] = useState<{ pickup?: PickedPoint; dropoff?: PickedPoint }>({});
+  const [mapPickerFor, setMapPickerFor] = useState<'pickup' | 'dropoff' | null>(null);
+
+  const coordinatesFor = (side: 'pickup' | 'dropoff', address: string): Promise<[number, number] | null> => {
+    const point = picked[side];
+    return point && point.address === address
+      ? Promise.resolve(point.coordinates)
+      : LocationService.geocodeAddress(address);
+  };
+
+  const handleMapLocationSelect = (location: LocationData): void => {
+    if (!mapPickerFor) {return;}
+    const address = location.address?.fullAddress
+      || location.address?.formatted
+      || `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
+    const side = mapPickerFor;
+    setPicked(prev => ({ ...prev, [side]: { address, coordinates: [location.longitude, location.latitude] } }));
+    setFormData(prev => ({ ...prev, [side === 'pickup' ? 'pickupAddress' : 'dropoffAddress']: address }));
+    setMapPickerFor(null);
+  };
+
   const routeMatchesForm = (r: typeof route): r is NonNullable<typeof route> =>
     !!r && r.pickupAddress === formData.pickupAddress && r.dropoffAddress === formData.dropoffAddress;
 
@@ -129,8 +156,8 @@ const CreatePackageScreen: React.FC = () => {
     setRouteStatus('resolving');
     try {
       const [pickup, dropoff] = await Promise.all([
-        LocationService.geocodeAddress(pickupAddress),
-        LocationService.geocodeAddress(dropoffAddress),
+        coordinatesFor('pickup', pickupAddress),
+        coordinatesFor('dropoff', dropoffAddress),
       ]);
       if (!pickup || !dropoff) {
         setRoute(null);
@@ -431,6 +458,14 @@ const CreatePackageScreen: React.FC = () => {
             placeholderTextColor={colors.text.secondary}
             multiline
           />
+          <TouchableOpacity
+            style={styles.mapPickButton}
+            onPress={() => setMapPickerFor('pickup')}
+            accessibilityRole="button"
+          >
+            <Icon name="map" size={18} color={colors.primary} />
+            <Text style={styles.mapPickButtonText}>{t('search.pickOnMap')}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.row}>
@@ -474,6 +509,14 @@ const CreatePackageScreen: React.FC = () => {
             placeholderTextColor={colors.text.secondary}
             multiline
           />
+          <TouchableOpacity
+            style={styles.mapPickButton}
+            onPress={() => setMapPickerFor('dropoff')}
+            accessibilityRole="button"
+          >
+            <Icon name="map" size={18} color={colors.primary} />
+            <Text style={styles.mapPickButtonText}>{t('search.pickOnMap')}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.row}>
@@ -791,6 +834,13 @@ const CreatePackageScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <LocationPicker
+        visible={mapPickerFor !== null}
+        onClose={() => setMapPickerFor(null)}
+        onLocationSelect={handleMapLocationSelect}
+        title={mapPickerFor === 'dropoff' ? t('cf.deliveryLocation') : t('cf.pickupLocation')}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -874,6 +924,22 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 16,
+  },
+  mapPickButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: colors.primary + '15',
+  },
+  mapPickButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
   label: {
     fontSize: 16,

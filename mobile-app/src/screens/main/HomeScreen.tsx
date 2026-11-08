@@ -503,22 +503,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={[styles.howCardIcon, { backgroundColor: colors.primary + '15' }]}>
             <Icon name="search" size={22} color={colors.primary} />
           </View>
-          <Text style={styles.howCardTitle}>{t('home.howSearch')}</Text>
-          <Text style={styles.howCardDesc}>{t('home.howSearchBody')}</Text>
+          <View style={styles.howCardText}>
+            <Text style={styles.howCardTitle}>{t('home.howSearch')}</Text>
+            <Text style={styles.howCardDesc}>{t('home.howSearchBody')}</Text>
+          </View>
         </View>
         <View style={styles.howCard}>
           <View style={[styles.howCardIcon, { backgroundColor: '#10B981' + '15' }]}>
             <Icon name="event-seat" size={22} color="#10B981" />
           </View>
-          <Text style={styles.howCardTitle}>{t('home.howReserve')}</Text>
-          <Text style={styles.howCardDesc}>{t('home.howReserveBody')}</Text>
+          <View style={styles.howCardText}>
+            <Text style={styles.howCardTitle}>{t('home.howReserve')}</Text>
+            <Text style={styles.howCardDesc}>{t('home.howReserveBody')}</Text>
+          </View>
         </View>
         <View style={styles.howCard}>
           <View style={[styles.howCardIcon, { backgroundColor: '#F59E0B' + '15' }]}>
             <Icon name="directions-car" size={22} color="#F59E0B" />
           </View>
-          <Text style={styles.howCardTitle}>{t('home.howTravel')}</Text>
-          <Text style={styles.howCardDesc}>{t('home.howTravelBody')}</Text>
+          <View style={styles.howCardText}>
+            <Text style={styles.howCardTitle}>{t('home.howTravel')}</Text>
+            <Text style={styles.howCardDesc}>{t('home.howTravelBody')}</Text>
+          </View>
         </View>
       </View>
     </View>
@@ -979,14 +985,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+  // Full-width rows: three cards side by side left ~70dp for text on a
+  // typical phone, so titles and descriptions wrapped and overflowed.
   howItWorksCards: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginTop: 14,
     gap: 10,
   },
   howCard: {
-    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -1005,19 +1011,22 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginRight: 14,
+  },
+  howCardText: {
+    flex: 1,
+    minWidth: 0,
   },
   howCardTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.text.primary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   howCardDesc: {
-    fontSize: 11,
+    fontSize: 13,
     color: colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 18,
   },
 });
 
