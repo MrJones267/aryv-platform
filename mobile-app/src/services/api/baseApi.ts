@@ -6,7 +6,6 @@
  */
 
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import logger from '../LoggingService';
 
@@ -34,6 +33,7 @@ export interface ApiError {
 import { Platform } from 'react-native';
 import { getApiConfig } from '../../config/api';
 import { refreshSession } from '../sessionTokens';
+import { getAccessToken } from '../sessionTokens';
 
 // Get dynamic API configuration that supports local database backend
 const apiConfig = getApiConfig();
@@ -63,7 +63,7 @@ const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
+      const token = await getAccessToken();
       if (token) {
         config.headers.set('Authorization', `Bearer ${token}`);
       }

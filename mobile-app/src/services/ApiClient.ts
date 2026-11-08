@@ -8,6 +8,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiConfig } from '../config/api';
 import logger from './LoggingService';
+import { getAccessToken } from './sessionTokens';
 
 const log = logger.createLogger('ApiClient');
 
@@ -41,9 +42,10 @@ export class ApiClient {
   private async getAuthHeaders(): Promise<Record<string, string>> {
     try {
       // Check multiple possible token storage keys for compatibility
-      const token = await AsyncStorage.getItem('@aryv_auth_token')
-        || await AsyncStorage.getItem('@aryv_demo_auth_token')
-        || await AsyncStorage.getItem('accessToken');
+      // The session is in secure storage (sessionTokens); the demo key is
+      // only ever set in demo mode.
+      const token = await getAccessToken()
+        || await AsyncStorage.getItem('@aryv_demo_auth_token');
 
       if (token) {
         return { 'Authorization': `Bearer ${token}` };

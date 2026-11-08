@@ -217,3 +217,22 @@ jest.useFakeTimers();
 
 // Setup test timeout
 jest.setTimeout(10000);
+// react-native-keychain is a native module (the Android Keystore), absent
+// under Jest. An in-memory stand-in keeps the session (see sessionTokens)
+// for the length of a test file; tests that need more control mock it
+// themselves.
+jest.mock('react-native-keychain', () => {
+  let stored: { username: string; password: string } | false = false;
+  return {
+    ACCESSIBLE: { AFTER_FIRST_UNLOCK: 'AccessibleAfterFirstUnlock' },
+    setGenericPassword: jest.fn(async (username: string, password: string) => {
+      stored = { username, password };
+      return true;
+    }),
+    getGenericPassword: jest.fn(async () => stored),
+    resetGenericPassword: jest.fn(async () => {
+      stored = false;
+      return true;
+    }),
+  };
+});
