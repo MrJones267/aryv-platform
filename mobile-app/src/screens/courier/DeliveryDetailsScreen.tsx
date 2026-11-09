@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import { colors } from '../../theme';
 import PackageService, { DeliveryAgreement } from '../../services/PackageService';
+import DeliveryRatingCard from '../../components/courier/DeliveryRatingCard';
 import locationService from '../../services/LocationService';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ReportDeliveryProblem from '../../components/courier/ReportDeliveryProblem';
@@ -464,6 +465,10 @@ const DeliveryDetailsScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        {delivery.status === 'completed' && delivery.senderRating == null && (
+          <DeliveryRatingCard agreementId={delivery.id} rating="sender" />
+        )}
 
         <ReportDeliveryProblem
           agreementId={delivery.id}

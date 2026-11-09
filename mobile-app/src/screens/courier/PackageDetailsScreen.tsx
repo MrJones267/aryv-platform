@@ -63,7 +63,7 @@ const PackageDetailsScreen: React.FC = () => {
 
     Alert.alert(
       t('cf.acceptDelivery'),
-      t('cf.acceptFor', { price: (package_.senderPriceOffer ?? 0).toFixed(2) }),
+      t('cf.acceptFor', { price: CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency) }),
       [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -196,6 +196,13 @@ const PackageDetailsScreen: React.FC = () => {
     );
   }
 
+  // The fee as accepting will charge it, from the server. This said 10% while
+  // accepting charged the tier's rate (25% by default), so couriers expected
+  // more than they were paid.
+  const platformFee = package_.courierFee?.platformFee ?? 0;
+  const earnings = package_.courierFee?.earnings ?? Number(package_.senderPriceOffer ?? 0) - platformFee;
+  const feeRate = package_.courierFee?.rate ?? 0;
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView}>
@@ -208,7 +215,7 @@ const PackageDetailsScreen: React.FC = () => {
           
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>{t('cf.offeredAmount')}</Text>
-            <Text style={styles.priceValue}>P{(package_.senderPriceOffer ?? 0).toFixed(2)}</Text>
+            <Text style={styles.priceValue}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
           </View>
 
           {package_.systemSuggestedPrice && (
@@ -312,7 +319,7 @@ const PackageDetailsScreen: React.FC = () => {
               <View style={styles.tripItem}>
                 <Icon name="attach-money" size={20} color={colors.success} />
                 <Text style={styles.tripLabel}>{t('cf.earnings')}</Text>
-                <Text style={styles.tripValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
+                <Text style={styles.tripValue}>{CurrencyService.formatByCode(earnings, package_.currency)}</Text>
               </View>
             </View>
             
@@ -322,12 +329,12 @@ const PackageDetailsScreen: React.FC = () => {
                 <Text style={styles.feeValue}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
               </View>
               <View style={styles.feeRow}>
-                <Text style={styles.feeLabel}>{t('cf.platformFee10')}</Text>
-                <Text style={styles.feeValue}>-P{(package_.senderPriceOffer * 0.1).toFixed(2)}</Text>
+                <Text style={styles.feeLabel}>{t('pkg.platformFeePct', { pct: Math.round(feeRate * 100) })}</Text>
+                <Text style={styles.feeValue}>-{CurrencyService.formatByCode(platformFee, package_.currency)}</Text>
               </View>
               <View style={[styles.feeRow, styles.totalRow]}>
                 <Text style={styles.totalLabel}>{t('cf.yourEarnings')}</Text>
-                <Text style={styles.totalValue}>P{(package_.senderPriceOffer * 0.9).toFixed(2)}</Text>
+                <Text style={styles.totalValue}>{CurrencyService.formatByCode(earnings, package_.currency)}</Text>
               </View>
             </View>
           </View>

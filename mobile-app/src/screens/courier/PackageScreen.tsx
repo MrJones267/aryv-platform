@@ -29,6 +29,7 @@ const PackageScreen: React.FC = () => {
   const navigation = useNavigation();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
+  const [repostingId, setRepostingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -116,6 +117,8 @@ const PackageScreen: React.FC = () => {
           return t('cf2.disputed');
         case 'cancelled':
           return t('status.cancelled');
+        case 'expired':
+          return t('pkg.expired');
         default:
           return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
       }
@@ -151,20 +154,20 @@ const PackageScreen: React.FC = () => {
         <View style={styles.addressRow}>
           <Icon name="place" size={16} color={colors.text.secondary} />
           <Text style={styles.addressText} numberOfLines={1}>
-            From: {package_.pickupAddress}
+            {t('cf.pickup')}: {package_.pickupAddress}
           </Text>
         </View>
         <View style={styles.addressRow}>
           <Icon name="flag" size={16} color={colors.text.secondary} />
           <Text style={styles.addressText} numberOfLines={1}>
-            To: {package_.dropoffAddress}
+            {t('cf.delivery')}: {package_.dropoffAddress}
           </Text>
         </View>
       </View>
 
       <View style={styles.packageFooter}>
         <View style={styles.packageInfo}>
-          <Text style={styles.packageSize}>Size: {package_.packageSize}</Text>
+          <Text style={styles.packageSize}>{t('cf.size')} {package_.packageSize}</Text>
           {package_.fragile && (
             <View style={styles.fragileTag}>
               <Icon name="warning" size={12} color={colors.warning} />
@@ -176,10 +179,40 @@ const PackageScreen: React.FC = () => {
       </View>
 
       <Text style={styles.dateText}>
-        Created {new Date(package_.createdAt).toLocaleDateString()}
+        {t('pkg.createdOn', { date: new Date(package_.createdAt).toLocaleDateString() })}
       </Text>
+
+      {/* Couriers stop seeing a package once it runs out; offer it again. */}
+      {package_.status === 'expired' && (
+        <View style={styles.expiredRow}>
+          <Text style={styles.expiredText}>{t('pkg.expiredBody')}</Text>
+          <TouchableOpacity
+            style={styles.repostButton}
+            onPress={() => handleRepost(package_.id)}
+            disabled={repostingId === package_.id}
+            accessibilityRole="button"
+          >
+            <Text style={styles.repostText}>{repostingId === package_.id ? t('pkg.posting') : t('pkg.postAgain')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
+
+  const handleRepost = async (packageId: string): Promise<void> => {
+    setRepostingId(packageId);
+    try {
+      const result = await PackageService.repostPackage(packageId);
+      if (result.success) {
+        Alert.alert(t('pkg.repostedTitle'), t('pkg.repostedBody'));
+        await loadPackages();
+      } else {
+        Alert.alert(t('common.error'), result.error || t('pkg.repostFailed'));
+      }
+    } finally {
+      setRepostingId(null);
+    }
+  };
 
   if (loading) {
     return <LoadingScreen message={t('cf.loadingYourPackages')} />;
@@ -220,6 +253,31 @@ const PackageScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  expiredRow: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+  },
+  expiredText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: 8,
+  },
+  repostButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  repostText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
