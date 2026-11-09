@@ -21,6 +21,7 @@ import { courierCancellationService } from '../services/CourierCancellationServi
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
+import { packageExpiry, isPackageExpired } from '../utils/packageExpiry';
 
 const router = Router();
 
@@ -288,9 +289,29 @@ router.get('/packages/user', async (req: any, res: any): Promise<void> => {
       order: [['createdAt', 'DESC']],
     });
 
+    const LIVE = new Set(['pending_pickup', 'in_transit', 'completed', 'disputed']);
+    const view = packages.map((pkg) => {
+      const json = pkg.toJSON() as Record<string, any>;
+      const agreements: Array<Record<string, any>> = json['deliveryAgreements'] ?? [];
+      // A courier who cancelled is no longer the sender's business: their
+      // phone number stayed in this list after they handed the job back.
+      for (const agreement of agreements) {
+        if (!LIVE.has(agreement['status']) && agreement['courier']) {
+          delete agreement['courier']['phone'];
+        }
+      }
+      // Open but past its time: couriers no longer see it, so say so rather
+      // than show it as still waiting.
+      const hasLive = agreements.some((a) => LIVE.has(a['status']));
+      if (json['isActive'] && !hasLive && isPackageExpired(json['expiresAt'])) {
+        json['status'] = 'expired';
+      }
+      return json;
+    });
+
     res.json({
       success: true,
-      data: packages,
+      data: view,
       timestamp: new Date().toISOString(),
     });
 
@@ -788,12 +809,20 @@ router.post(
         await agreement.update({ courierRating: rating, ...(review !== undefined && { courierReview: review }) });
 
         // Update courier's aggregate rating on their profile
+        // The average of the ratings actually given. This divided by every
+        // delivery the courier had made, rated or not, and started each new
+        // courier from an assumed 5.0, so the figure meant little.
         const profile = await CourierProfile.findOne({ where: { userId: agreement.courierId } });
         if (profile) {
-          const total = profile.totalDeliveries || 1;
-          const current = profile.courierRating ?? 5.0;
-          const newRating = ((current * (total - 1)) + rating) / total;
-          await profile.update({ courierRating: Math.round(newRating * 100) / 100 });
+          const rated = await DeliveryAgreement.findAll({
+            where: { courierId: agreement.courierId, courierRating: { [Op.ne]: null } },
+            attributes: ['courierRating'],
+          });
+          const values = rated.map((a) => Number(a.courierRating)).filter((n) => Number.isFinite(n));
+          if (values.length > 0) {
+            const average = values.reduce((sum, n) => sum + n, 0) / values.length;
+            await profile.update({ courierRating: Math.round(average * 100) / 100 });
+          }
         }
       } else {
         if (agreement.senderRating !== null && agreement.senderRating !== undefined) {
@@ -897,6 +926,39 @@ router.post(
       return;
     }
     res.json({ success: true, data: { packageState: result.packageState, cancelledDeliveryId: result.cancelledDeliveryId }, timestamp: new Date().toISOString() });
+  },
+);
+
+/**
+ * POST /api/courier/packages/:packageId/repost
+ * The sender puts an expired package back in front of couriers for another week.
+ */
+router.post(
+  '/packages/:packageId/repost',
+  [param('packageId').isUUID().withMessage('Invalid package id'), validateInput],
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const pkg = await Package.findByPk(String(req.params['packageId']), {
+        include: [{ model: DeliveryAgreement, as: 'deliveryAgreements', attributes: ['id', 'status'] }],
+      });
+      // As for a missing package, so another sender's id cannot be confirmed.
+      if (!pkg || pkg.senderId !== req.user!.id) {
+        res.status(404).json({ success: false, error: 'Package not found', code: 'PACKAGE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+      const live = ((pkg as any).deliveryAgreements ?? []).some((a: { status: string }) => a.status !== 'cancelled');
+      if (!pkg.isActive || live) {
+        res.status(409).json({ success: false, error: 'Only a package still waiting for a courier can be posted again', code: 'PACKAGE_NOT_OPEN', timestamp: new Date().toISOString() });
+        return;
+      }
+      // The requested time has usually passed by now, so a fresh week.
+      const expiresAt = packageExpiry(null);
+      await pkg.update({ expiresAt });
+      res.json({ success: true, data: { id: pkg.id, expiresAt }, timestamp: new Date().toISOString() });
+    } catch (error) {
+      logger.error('Error reposting package', { error: (error as Error).message });
+      res.status(500).json({ success: false, error: 'Could not post the package again', code: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+    }
   },
 );
 

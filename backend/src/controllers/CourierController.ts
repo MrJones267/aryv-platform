@@ -25,8 +25,9 @@ import logger from '../utils/logger';
 import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { notifyDeliveryEvent } from '../services/courierNotifications';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
-import { DEFAULT_COURIER_FEE_RATE, round2 } from '../utils/fees';
 import { columnsOf, toPackageListView } from '../utils/packageListView';
+import { packageExpiry } from '../utils/packageExpiry';
+import { courierFeeFor } from '../services/courierFee';
 
 /** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
 const toGeoPoint = (coordinates: [number, number]): any => ({
@@ -359,6 +360,8 @@ export class CourierController {
         systemSuggestedPrice,
         deliveryTierId,
         ...(requestedDeliveryTime && { requestedDeliveryTime: new Date(requestedDeliveryTime) }),
+        // Closes for couriers a day after the requested time, or in a week.
+        expiresAt: packageExpiry(requestedDeliveryTime),
         urgencyLevel,
         demandMultiplierApplied,
         isActive: true,
@@ -631,23 +634,8 @@ export class CourierController {
         return;
       }
 
-      // Get delivery tier to determine platform fee
       const agreedPrice = packageData.senderPriceOffer;
-      let platformFeePercentage = DEFAULT_COURIER_FEE_RATE;
-
-      if (packageData.deliveryTierId) {
-        const deliveryTier = await DeliveryTier.findByPk(packageData.deliveryTierId);
-        if (deliveryTier) {
-          platformFeePercentage = deliveryTier.platformFeePercentage / 100;
-        }
-      }
-
-      // To the cent: 25% of P40.10 is 10.025, which was stored as is.
-      // Documents carry their own fee whatever tier they went by.
-      if ((packageData as { packageType?: string }).packageType === 'document') {
-        platformFeePercentage = DemandPricingEngine.DOCUMENT.feeRate;
-      }
-      const platformFee = round2(agreedPrice * platformFeePercentage);
+      const { platformFee } = await courierFeeFor(packageData);
       const escrowAmount = agreedPrice;
 
       // Create delivery agreement
@@ -1143,6 +1131,8 @@ export class CourierController {
       if (current) {
         view['delivery'] = { id: (current as any).id, status: (current as any).status, courierId: (current as any).courierId };
       }
+      // The fee as accepting will charge it, so the courier sees real earnings.
+      view['courierFee'] = await courierFeeFor(packageData as any);
       if (!isSender && !isCourier) {
         delete view['pickupContactName'];
         delete view['pickupContactPhone'];

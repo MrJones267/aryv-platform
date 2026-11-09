@@ -114,10 +114,18 @@ export interface Package {
   isOpen?: boolean;
   /** The live delivery, for its sender and courier only. */
   delivery?: { id: string; status: string; courierId: string };
+  /** When couriers stop seeing it. */
+  expiresAt?: string | null;
+  /** What accepting it charges, from GET /courier/packages/:id. */
+  courierFee?: { rate: number; platformFee: number; earnings: number };
 }
 
 export interface DeliveryAgreement {
   id: string;
+  /** The sender's rating of the courier; null until given. */
+  courierRating?: number | null;
+  /** The courier's rating of the sender; null until given. */
+  senderRating?: number | null;
   packageId: string;
   courierId: string;
   agreedPrice: number;
@@ -455,6 +463,24 @@ class PackageService {
   }> {
     const response = await this.apiClient.post(`/courier/packages/${packageId}/cancel`, options);
     return { success: response.success, data: response.data, error: response.error, code: response.code };
+  }
+
+  /**
+   * Rate the other side of a completed delivery: the sender rates the
+   * courier, the courier rates the sender. The server works out which.
+   */
+  async rateDelivery(agreementId: string, rating: number, review?: string): Promise<{ success: boolean; error?: string; code?: string }> {
+    const response = await this.apiClient.post(`/courier/deliveries/${agreementId}/rate`, {
+      rating,
+      ...(review && review.trim() ? { review: review.trim() } : {}),
+    });
+    return { success: response.success, error: response.error, code: response.code };
+  }
+
+  /** Put an expired package back in front of couriers for another week. */
+  async repostPackage(packageId: string): Promise<{ success: boolean; error?: string; code?: string }> {
+    const response = await this.apiClient.post(`/courier/packages/${packageId}/repost`, {});
+    return { success: response.success, error: response.error, code: response.code };
   }
 
   /** The courier hands back a delivery they accepted but have not picked up. */

@@ -22,6 +22,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
 import PackageService, { Package, DeliveryAgreement } from '../../services/PackageService';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import CurrencyService from '../../services/CurrencyService';
 import { useI18n } from '../../i18n/I18nContext';
 import { fixed } from '../../utils/fixed';
 
@@ -126,7 +127,7 @@ const CourierScreen: React.FC = () => {
           <Icon name="local-shipping" size={20} color={colors.primary} />
           <Text style={styles.packageTitle}>{package_.title}</Text>
         </View>
-        <Text style={styles.priceText}>P{(package_.senderPriceOffer ?? 0).toFixed(2)}</Text>
+        <Text style={styles.priceText}>{CurrencyService.formatByCode(package_.senderPriceOffer, package_.currency)}</Text>
       </View>
 
       <View style={styles.packageDetails}>

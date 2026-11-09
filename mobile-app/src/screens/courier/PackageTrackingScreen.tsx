@@ -28,17 +28,21 @@ import HandoverCodeCard from '../../components/courier/HandoverCodeCard';
 import DeliveryTrackingMap from '../../components/courier/DeliveryTrackingMap';
 import { CourierStackParamList } from '../../navigation/CourierNavigator';
 import { useI18n } from '../../i18n/I18nContext';
+import { useAppSelector } from '../../store/hooks';
+import DeliveryRatingCard from '../../components/courier/DeliveryRatingCard';
 
 type PackageTrackingRouteProp = RouteProp<CourierStackParamList, 'PackageTracking'>;
 
 const PackageTrackingScreen: React.FC = () => {
   const { t } = useI18n();
+  const currentUserId = useAppSelector((state) => state.user.profile?.id);
   const route = useRoute<PackageTrackingRouteProp>();
   const navigation = useNavigation();
   const { packageId } = route.params;
   
   interface PackageData {
     id: string;
+    senderId?: string;
     title: string;
     pickupAddress: string;
     dropoffAddress: string;
@@ -58,6 +62,7 @@ const PackageTrackingScreen: React.FC = () => {
     id: string;
     status: string;
     courierId: string;
+    courierRating?: number | null;
     agreedPrice: number;
     platformFee: number;
     courier?: CourierData;
@@ -375,6 +380,12 @@ const PackageTrackingScreen: React.FC = () => {
             </View>
           )}
         </View>
+
+        {/* The sender rates the courier once it is delivered. */}
+        {deliveryAgreement?.status === 'completed' && deliveryAgreement.courierRating == null
+          && pkg.senderId === currentUserId && (
+          <DeliveryRatingCard agreementId={deliveryAgreement.id} rating="courier" />
+        )}
 
         {/* The code the recipient gives the courier. Shown to the sender only
             (the card renders nothing for anyone else), so a text that never
