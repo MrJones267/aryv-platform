@@ -29,6 +29,7 @@ import EmergencyContact from '../models/EmergencyContact';
 import DriverDocument from '../models/DriverDocument';
 import { UPLOADS_DIR } from '../middleware/upload';
 import { fileStorageService, FileCategory } from './FileStorageService';
+import tripPhotoService from './TripPhotoService';
 import { UserStatus } from '../types';
 import { logInfo, logError } from '../utils/logger';
 
@@ -146,6 +147,7 @@ export const eraseAccount = async (userId: string, reason: string): Promise<void
   // Files after the commit: a rolled-back closure must not lose them.
   await Promise.all(files.documents.map(name => removeUpload('documents', name)));
   if (files.avatar) await removeUpload('avatars', files.avatar);
+  const tripPhotosKept = await tripPhotoService.eraseForUser(userId);
 
-  logInfo('Account erased', { userId, documentsRemoved: files.documents.length });
+  logInfo('Account erased', { userId, documentsRemoved: files.documents.length, tripPhotosKept });
 };

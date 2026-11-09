@@ -19,6 +19,7 @@ import { CurrencyService } from './CurrencyService';
 import verificationService from './VerificationService';
 import deliveryHandoverService from './DeliveryHandoverService';
 import { emergencyService } from './EmergencyService';
+import tripPhotoService from './TripPhotoService';
 import { logInfo, logError, logWarning } from '../utils/logger';
 
 /**
@@ -35,6 +36,12 @@ const EXPIRY_SWEEP_SCHEDULE = '30 3 * * *';
  * look every minute. The check is one indexed query when nothing is raised.
  */
 const SOS_ESCALATION_SCHEDULE = '* * * * *';
+
+/**
+ * Trip face photos are kept a day after the trip, so look hourly; a daily
+ * sweep would keep some of them for nearly two.
+ */
+const TRIP_PHOTO_SWEEP_SCHEDULE = '15 * * * *';
 
 const TIMEZONE = 'Africa/Gaborone';
 
@@ -61,6 +68,9 @@ export class ScheduledTasks {
     this.schedule('expiry-sweep', EXPIRY_SWEEP_SCHEDULE, () => this.runExpirySweeps());
     this.schedule('sos-escalation', SOS_ESCALATION_SCHEDULE, async () => {
       await emergencyService.escalateUnacknowledged();
+    });
+    this.schedule('trip-photo-sweep', TRIP_PHOTO_SWEEP_SCHEDULE, async () => {
+      await tripPhotoService.sweep();
     });
 
     this.running = true;

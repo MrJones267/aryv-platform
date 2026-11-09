@@ -39,6 +39,7 @@ import CashDispute from './CashDispute';
 import RideRequest from './RideRequest';
 import ContentReport from './ContentReport';
 import UserBlock from './UserBlock';
+import TripPhoto from './TripPhoto';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -140,6 +141,14 @@ const defineAssociations = (): void => {
     foreignKey: 'rideId',
     as: 'ride',
     onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  });
+
+  // Today's face photos for each side of a booking (TripPhotoService)
+  TripPhoto.belongsTo(Booking, {
+    foreignKey: 'bookingId',
+    as: 'booking',
+    onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
   });
 
@@ -547,6 +556,7 @@ export {
   RideRequest,
   ContentReport,
   UserBlock,
+  TripPhoto,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -599,6 +609,7 @@ export default {
   RideRequest,
   ContentReport,
   UserBlock,
+  TripPhoto,
   // Driver verification models
   DriverDocument,
   PromoRedemption,

@@ -57,14 +57,14 @@ export type MainTabParamList = {
 export type HomeStackParamList = {
   HomeMain: undefined;
   Search: undefined;
-  RideDetails: { rideId: string };
+  RideDetails: { rideId: string; bookingId?: string };
   CreateRide: undefined;
   Booking: { rideId: string };
   RideRequest: { origin?: any; destination?: any };
   RideRequestsNearby: undefined;
   CashPayment: { bookingId: string; driverId: string; amount: number; driverName: string; transactionId?: string };
   DriverCashReceipt: { transactionId: string; expectedAmount: number; riderName: string; bookingId: string };
-  RideTracking: { rideId: string; userId: string; isDriver: boolean };
+  RideTracking: { rideId: string; userId: string; isDriver: boolean; bookingId?: string };
   RideRating: { rideId: string; driverName?: string; origin?: string; destination?: string; role?: 'passenger' | 'driver' };
   AIRecommendations: undefined;
   DriverOnboarding: undefined;

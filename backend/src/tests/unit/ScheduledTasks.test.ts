@@ -54,11 +54,16 @@ describe('ScheduledTasks', () => {
   afterEach(() => tasks.stop());
 
   describe('starting', () => {
-    it('registers the exchange rate refresh, the expiry sweep and SOS escalation', () => {
+    it('registers the exchange rate refresh, the expiry sweep, SOS escalation and the trip photo sweep', () => {
       tasks.start();
 
-      expect(scheduled).toHaveLength(3);
-      expect(tasks.status().map((t) => t.name)).toEqual(['exchange-rates', 'expiry-sweep', 'sos-escalation']);
+      expect(scheduled).toHaveLength(4);
+      expect(tasks.status().map((t) => t.name)).toEqual(['exchange-rates', 'expiry-sweep', 'sos-escalation', 'trip-photo-sweep']);
+    });
+
+    it('sweeps trip photos hourly, so none outlives its day by much', () => {
+      tasks.start();
+      expect(scheduled[3]!.expression).toMatch(/^\d+ \* \* \* \*$/);
     });
 
     it('schedules the rate refresh and expiry sweep daily rather than continuously', () => {
@@ -80,7 +85,7 @@ describe('ScheduledTasks', () => {
       tasks.start();
       tasks.start();
 
-      expect(scheduled).toHaveLength(3);
+      expect(scheduled).toHaveLength(4);
     });
 
     it('stops everything it started', () => {
