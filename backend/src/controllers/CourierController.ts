@@ -26,6 +26,7 @@ import deliveryHandoverService from '../services/DeliveryHandoverService';
 import { notifyDeliveryEvent } from '../services/courierNotifications';
 import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/CurrencyService';
 import { DEFAULT_COURIER_FEE_RATE, round2 } from '../utils/fees';
+import { columnsOf, toPackageListView } from '../utils/packageListView';
 
 /** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
 const toGeoPoint = (coordinates: [number, number]): any => ({
@@ -494,9 +495,12 @@ export class CourierController {
         },
       });
 
+      // Raw rows carry column names and string decimals; the app reads the
+      // model's attribute names and numbers. See utils/packageListView.
+      const columns = columnsOf((Package as any).rawAttributes);
       res.status(200).json({
         success: true,
-        data: packages,
+        data: (packages as Record<string, unknown>[]).map((row) => toPackageListView(row, columns)),
         pagination: {
           limit,
           offset,

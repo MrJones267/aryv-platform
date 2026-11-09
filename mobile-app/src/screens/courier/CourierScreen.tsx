@@ -132,21 +132,21 @@ const CourierScreen: React.FC = () => {
       <View style={styles.packageDetails}>
         <View style={styles.addressRow}>
           <Icon name="place" size={16} color={colors.text.secondary} />
-          <Text style={styles.addressText} numberOfLines={1}>
-            Pickup: {package_.pickupAddress}
+          <Text style={styles.addressText} numberOfLines={2}>
+            {t('cf.pickup')}: {package_.pickupAddress}
           </Text>
         </View>
         <View style={styles.addressRow}>
           <Icon name="flag" size={16} color={colors.text.secondary} />
-          <Text style={styles.addressText} numberOfLines={1}>
-            Dropoff: {package_.dropoffAddress}
+          <Text style={styles.addressText} numberOfLines={2}>
+            {t('cf.delivery')}: {package_.dropoffAddress}
           </Text>
         </View>
       </View>
 
       <View style={styles.packageInfo}>
         <View style={styles.packageMeta}>
-          <Text style={styles.packageSize}>Size: {package_.packageSize}</Text>
+          <Text style={styles.packageSize}>{t('cf.size')} {package_.packageSize}</Text>
           {package_.distance && (
             <Text style={styles.distanceText}>
               {fixed(package_.distance, 1)} km
@@ -224,13 +224,13 @@ const CourierScreen: React.FC = () => {
           <View style={styles.addressRow}>
             <Icon name="place" size={16} color={colors.text.secondary} />
             <Text style={styles.addressText} numberOfLines={1}>
-              Pickup: {delivery.package.pickupAddress}
+              {t('cf.pickup')}: {delivery.package.pickupAddress}
             </Text>
           </View>
           <View style={styles.addressRow}>
             <Icon name="flag" size={16} color={colors.text.secondary} />
             <Text style={styles.addressText} numberOfLines={1}>
-              Dropoff: {delivery.package.dropoffAddress}
+              {t('cf.delivery')}: {delivery.package.dropoffAddress}
             </Text>
           </View>
         </View>
