@@ -24,7 +24,6 @@ import { fetchUserProfile, setPrimaryRole } from '../../store/slices/userSlice';
 import { UserRole } from '../../types/user';
 import { ProfileScreenProps } from '../../navigation/types';
 import UserPreferencesService from '../../services/UserPreferencesService';
-import { useAppTheme } from '../../contexts/ThemeContext';
 import UserProfileCard from '../../components/profile/UserProfileCard';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
@@ -67,7 +66,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { profile: user } = useAppSelector((state) => state.user);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
-  const { isDark, toggleTheme } = useAppTheme();
   
   const [isLoading, setIsLoading] = useState(false);
   const [currencyRegionText, setCurrencyRegionText] = useState(t('common.loading'));
@@ -180,10 +178,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   };
 
   const handleSettingToggle = (settingKey: string): void => {
-    if (settingKey === 'darkMode') {
-      toggleTheme();
-      return;
-    }
     setSettings(prev => ({ ...prev, [settingKey as keyof typeof settings]: !prev[settingKey as keyof typeof settings] }));
   };
 
@@ -426,14 +420,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           type: 'navigation',
           action: 'language',
         },
-        {
-          id: 'darkMode',
-          icon: 'dark-mode',
-          title: t('profile.darkMode'),
-          subtitle: isDark ? t('profile.on') : t('profile.off'),
-          type: 'switch',
-          value: isDark,
-        },
+        // No Dark Mode switch until the screens can follow it: they all use
+        // fixed light colours, so the switch only ever changed its own label.
       ],
     });
 

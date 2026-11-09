@@ -142,6 +142,55 @@ describe('UserController', () => {
       expect(fakeUser.update).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     });
+
+    describe('phone', () => {
+      const setup = (phone: string | null, isPhoneVerified = true) => {
+        const { sequelize } = require('../../config/database');
+        sequelize.transaction.mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() });
+        const fakeUser = {
+          id: 'u1', firstName: 'Old', phone, isPhoneVerified,
+          update: jest.fn().mockResolvedValue(true),
+          reload: jest.fn().mockResolvedValue({ id: 'u1' }),
+        };
+        (User.findByPk as jest.Mock).mockResolvedValue(fakeUser);
+        return fakeUser;
+      };
+
+      it('stores an empty phone box as null instead of failing validation', async () => {
+        const user = setup(null);
+        const res = mockRes();
+        await controller.updateProfile(mockReq({ id: 'u1' }, { firstName: 'New', phone: '' }), res);
+        expect(user.update).toHaveBeenCalledWith(expect.objectContaining({ phone: null }), expect.anything());
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+      });
+
+      it('normalises a number typed with spaces to E.164', async () => {
+        const user = setup('+26771234567');
+        const res = mockRes();
+        await controller.updateProfile(mockReq({ id: 'u1' }, { phone: '71 234 567' }), res);
+        const [changes] = user.update.mock.calls[0];
+        expect(changes.phone).toBe('+26771234567');
+        expect(changes.isPhoneVerified).toBeUndefined(); // same number: stays verified
+      });
+
+      it('clears phone verification when the number changes', async () => {
+        const user = setup('+26771234567');
+        const res = mockRes();
+        await controller.updateProfile(mockReq({ id: 'u1' }, { phone: '+267 72 000 111' }), res);
+        expect(user.update).toHaveBeenCalledWith(
+          expect.objectContaining({ phone: '+26772000111', isPhoneVerified: false }),
+          expect.anything(),
+        );
+      });
+
+      it('rejects a number that cannot be a phone number', async () => {
+        const user = setup(null);
+        const res = mockRes();
+        await controller.updateProfile(mockReq({ id: 'u1' }, { phone: '12' }), res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(user.update).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ── getUserStatistics ──────────────────────────────────────────────────────
