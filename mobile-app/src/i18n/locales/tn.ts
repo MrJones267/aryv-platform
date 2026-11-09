@@ -1907,6 +1907,7 @@ export const tn: Record<TranslationKey, string> = {
   'rq.noneNearby': 'Ga go na dikopo tsa mesepele gaufi le wena gajaana.',
   'rq.needLocation': 'Dumelela lefelo go bona dikopo tsa mesepele gaufi le wena.',
   'rq.needVerification': 'Dikopo tsa mesepele di bontshiwa bakgweetsi ba dikwalo tsa bone di amogetsweng. Fetsa netefatso ya mokgweetsi go di bona.',
+  'rq.finishVerification': 'Fetsa netefatso ya mokgweetsi',
   'rq.loadFailed': 'Ga re a kgona go tsenya dikopo tsa mesepele. Gogela kwa tlase go leka gape.',
 
   // Settings that work

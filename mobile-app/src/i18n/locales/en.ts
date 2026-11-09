@@ -1906,6 +1906,7 @@ export const en = {
   'rq.noneNearby': 'No open ride requests near you right now.',
   'rq.needLocation': 'Allow location access to see ride requests near you.',
   'rq.needVerification': 'Ride requests are shown to drivers whose documents are approved. Finish driver verification to see them.',
+  'rq.finishVerification': 'Finish driver verification',
   'rq.loadFailed': 'Could not load ride requests. Pull down to try again.',
 
   // Settings that work

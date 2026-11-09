@@ -85,6 +85,22 @@ describe('Ride requests', () => {
     expect((await nearby(GABORONE).expect(200)).body.data).toEqual([]);
   });
 
+  it('accepts a request with no price limit, sent as null as the app sends it', async () => {
+    // The app sends maxPrice: null for an empty price box; this was refused
+    // with 400 "maxPrice: Invalid value", so no such request could be made.
+    const created = await post({
+      origin: GABORONE, destination: FRANCISTOWN, departureTime: tomorrowAt(6).toISOString(), passengers: 1, maxPrice: null,
+    }).expect(201);
+    expect(created.body.data.maxPrice).toBeNull();
+
+    // Leaving it out means the same.
+    const omitted = await post({ origin: GABORONE, destination: FRANCISTOWN, departureTime: tomorrowAt(7).toISOString(), passengers: 1 }).expect(201);
+    expect(omitted.body.data.maxPrice).toBeNull();
+
+    // A price that is not a number is still refused.
+    await post({ origin: GABORONE, destination: FRANCISTOWN, departureTime: tomorrowAt(8).toISOString(), passengers: 1, maxPrice: 'cheap' }).expect(400);
+  });
+
   it('refuses a departure in the past', async () => {
     const res = await post({ origin: GABORONE, destination: FRANCISTOWN, departureTime: new Date(Date.now() - 60000).toISOString(), passengers: 1 }).expect(400);
     expect(res.body.code).toBe('INVALID_DEPARTURE_TIME');
