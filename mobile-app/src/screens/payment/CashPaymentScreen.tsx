@@ -523,6 +523,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   codeInput: {
+    // Explicit text colour: Android's DayNight theme otherwise draws light
+    // text in this white box when the phone is in dark mode.
+    color: colors.text.primary,
     backgroundColor: colors.background.primary,
     borderWidth: 1,
     borderColor: colors.border.light,

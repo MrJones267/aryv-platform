@@ -1,7 +1,11 @@
 <resources>
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-
+    <!-- Light only, for now. The screens use fixed light colours, so under
+         DayNight a phone in dark mode turned dialogs, pickers and default
+         text light-on-dark over white screens. Back to DayNight once the
+         screens follow the theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <!-- The ARYV arrow on white while the app starts. It stays as the window

@@ -19,6 +19,7 @@ import { AuthenticatedRequest } from '../types';
 import { UserStatus, VehicleStatus, RideStatus, BookingStatus } from '../types';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 import smsService from '../services/SMSService';
+import { toE164 } from '../utils/phone';
 
 export class UserController {
   async getProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -89,10 +90,27 @@ export class UserController {
         firstName, lastName, phone, dateOfBirth,
         gender, bio, emergencyContact, preferences,
       } = req.body;
+      // An empty box means "no number": stored as null. The model's format
+      // check rejected '' outright, so anyone without a phone (Google
+      // sign-ups) could not save their profile at all, and "71 234 567"
+      // failed on its spaces. Numbers are stored as E.164, as sign-up does.
+      const clearsPhone = phone === null || (typeof phone === 'string' && phone.trim() === '');
+      const normalisedPhone = phone === undefined || clearsPhone ? null : toE164(String(phone));
+      if (phone !== undefined && !clearsPhone && !normalisedPhone) {
+        await transaction.rollback();
+        res.status(400).json({
+          success: false,
+          error: 'Please enter a valid phone number',
+          code: 'INVALID_PHONE',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       const updateData = {
         ...(firstName !== undefined && { firstName }),
         ...(lastName !== undefined && { lastName }),
-        ...(phone !== undefined && { phone }),
+        ...(phone !== undefined && { phone: normalisedPhone }),
         ...(dateOfBirth !== undefined && { dateOfBirth }),
         ...(gender !== undefined && { gender }),
         ...(bio !== undefined && { bio }),
@@ -135,7 +153,13 @@ export class UserController {
         return;
       }
 
-      await user.update(updateData, { transaction });
+      // A new number has not been verified, whatever the old one was; keeping
+      // the flag showed a "phone verified" badge for an unchecked number.
+      const phoneChanged = phone !== undefined && normalisedPhone !== (user.phone ?? null);
+      await user.update(
+        phoneChanged ? { ...updateData, isPhoneVerified: false } : updateData,
+        { transaction },
+      );
       await transaction.commit();
 
       // Fetch updated user without sensitive data
