@@ -15,6 +15,7 @@ import {
   SafeAreaView,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
@@ -34,6 +35,9 @@ import { driverDisplayName } from '../../utils/driverName';
 import { useI18n } from '../../i18n/I18nContext';
 import type { TranslationKey } from '../../i18n/translations';
 import { fixed } from '../../utils/fixed';
+import TripPhotoPanel from '../../components/trip/TripPhotoPanel';
+import { takeFaceSelfie } from '../../utils/takeFaceSelfie';
+import type { RideBooking } from '../../services/api/ridesApi';
 
 const log = logger.createLogger('RideDetailsScreen');
 
@@ -97,6 +101,8 @@ interface RideDetails {
 const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route }) => {
   const { t } = useI18n();
   const { rideId } = route.params;
+  // Set when a passenger opens their own booking from My Rides.
+  const bookingId = (route.params as { bookingId?: string }).bookingId;
   const { profile: user } = useAppSelector((state) => state.user);
   
   const [ride, setRide] = useState<RideDetails | null>(null);
@@ -105,10 +111,82 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [promoDiscount, setPromoDiscount] = useState(0);
+  // The driver's view of who has booked, to accept or decline.
+  const [rideBookings, setRideBookings] = useState<RideBooking[]>([]);
+  const [respondingTo, setRespondingTo] = useState<string | null>(null);
 
   useEffect(() => {
     loadRideDetails();
   }, [rideId]);
+
+  const isDriverOfRide = !!ride && !!user && ride.driver?.id === user.id;
+
+  const loadRideBookings = async (): Promise<void> => {
+    try {
+      const response = await ridesApi.getRideBookings(rideId);
+      if (response.success && Array.isArray(response.data)) {setRideBookings(response.data);}
+    } catch (error) {
+      log.warn('Could not load the ride\'s bookings', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isDriverOfRide) {loadRideBookings();}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDriverOfRide, rideId]);
+
+  /**
+   * Accepting takes the driver's photo from today first: the passenger sees
+   * it, and the driver sees theirs, once the booking is confirmed.
+   */
+  const handleAcceptBooking = async (booking: RideBooking): Promise<void> => {
+    const selfieUri = await takeFaceSelfie(t, t('tripPhoto.acceptPurpose'));
+    if (!selfieUri) {return;}
+
+    setRespondingTo(booking.id);
+    try {
+      const upload = await ridesApi.uploadTripPhoto(booking.id, selfieUri);
+      if (!upload.success) {
+        Alert.alert(t('common.error'), upload.error || t('photo.uploadFailed'));
+        return;
+      }
+      const response = await ridesApi.confirmBooking(booking.id);
+      if (!response.success) {
+        Alert.alert(t('common.error'), response.error || t('tripPhoto.acceptFailed'));
+        return;
+      }
+      haptic.confirm();
+      await Promise.all([loadRideBookings(), loadRideDetails()]);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      Alert.alert(t('common.error'), errMsg || t('tripPhoto.acceptFailed'));
+    } finally {
+      setRespondingTo(null);
+    }
+  };
+
+  const handleDeclineBooking = (booking: RideBooking): void => {
+    Alert.alert(t('tripPhoto.declineTitle'), t('tripPhoto.declineBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('tripPhoto.decline'),
+        style: 'destructive',
+        onPress: async () => {
+          setRespondingTo(booking.id);
+          try {
+            const response = await ridesApi.rejectBooking(booking.id);
+            if (!response.success) {Alert.alert(t('common.error'), response.error || t('tripPhoto.declineFailed'));}
+            await loadRideBookings();
+          } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            Alert.alert(t('common.error'), errMsg || t('tripPhoto.declineFailed'));
+          } finally {
+            setRespondingTo(null);
+          }
+        },
+      },
+    ]);
+  };
 
   const loadRideDetails = async (): Promise<void> => {
     setIsLoading(true);
@@ -142,10 +220,20 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
         {
           text: t('rides.bookNow'),
           onPress: async () => {
+            // A photo from today for the driver; no photo, no booking.
+            const selfieUri = await takeFaceSelfie(t, t('tripPhoto.bookingPurpose'));
+            if (!selfieUri) {return;}
+
             setIsBooking(true);
             try {
               const response = await ridesApi.bookRide(ride.id, 1);
               if (response.success) {
+                const newBookingId = (response.data as { id?: string } | undefined)?.id;
+                if (newBookingId) {
+                  // A failed upload does not undo the booking; My Rides offers it again.
+                  await ridesApi.uploadTripPhoto(newBookingId, selfieUri)
+                    .catch((uploadError: unknown) => log.warn('Trip photo upload failed', uploadError));
+                }
                 Alert.alert(
                   t('rideDetails.bookSuccess'),
                   t('rideDetails.bookSuccessBody'),
@@ -503,8 +591,64 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
     </View>
   );
 
+  /** The driver's list of who has booked: accept or decline, and their photo from today. */
+  const renderDriverBookings = (): React.ReactNode => {
+    const active = rideBookings.filter((b) => b.status === 'pending' || b.status === 'confirmed');
+    if (!active.length) {return null;}
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t('tripPhoto.passengers')}</Text>
+        {active.map((booking) => {
+          const name = booking.passenger
+            ? `${booking.passenger.firstName} ${booking.passenger.lastName?.charAt(0) ?? ''}`.trim()
+            : t('rideDetails.passenger');
+          const busy = respondingTo === booking.id;
+          return (
+            <View key={booking.id} style={styles.driverBookingCard}>
+              <View style={styles.driverBookingHeader}>
+                <Text style={styles.driverBookingName}>{name}</Text>
+                <Text style={styles.seatsBooked}>
+                  {t('tripPhoto.seats', { count: booking.seatsBooked })} · {booking.status === 'pending' ? t('tripPhoto.waiting') : t('tripPhoto.accepted')}
+                </Text>
+              </View>
+              {booking.status === 'pending' ? (
+                <View style={styles.driverBookingActions}>
+                  <TouchableOpacity
+                    style={[styles.acceptButton, busy && styles.bookButtonDisabled]}
+                    onPress={() => handleAcceptBooking(booking)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                  >
+                    {busy ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
+                      <>
+                        <Icon name="photo-camera" size={18} color="#FFFFFF" />
+                        <Text style={styles.acceptButtonText}>{t('tripPhoto.accept')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.declineButton}
+                    onPress={() => handleDeclineBooking(booking)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.declineButtonText}>{t('tripPhoto.decline')}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TripPhotoPanel bookingId={booking.id} otherRole="passenger" refreshKey={booking.status} />
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderBookings = (): React.ReactNode => {
-    if (!ride?.bookings.length) return null;
+    if (isDriverOfRide) {return renderDriverBookings();}
+    if (!ride?.bookings?.length) return null;
 
     return (
       <View style={styles.section}>
@@ -747,6 +891,16 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
         {renderRideInfo()}
         {renderAmenities()}
         {renderPreferences()}
+        {bookingId && !isDriverOfRide && ride && (
+          <View style={styles.section}>
+            <TripPhotoPanel
+              bookingId={bookingId}
+              otherRole="driver"
+              otherName={driverDisplayName(ride.driver)}
+              refreshKey={ride.status}
+            />
+          </View>
+        )}
         {renderBookings()}
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -1011,6 +1165,58 @@ const styles = StyleSheet.create({
   seatsBooked: {
     fontSize: 12,
     color: '#666666',
+  },
+  driverBookingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    marginBottom: 10,
+  },
+  driverBookingHeader: {
+    marginBottom: 8,
+  },
+  driverBookingName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  driverBookingActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  acceptButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 10,
+    paddingVertical: 12,
+    gap: 6,
+    minHeight: 44,
+  },
+  acceptButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  declineButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingVertical: 12,
+    minHeight: 44,
+  },
+  declineButtonText: {
+    color: '#EF4444',
+    fontSize: 15,
+    fontWeight: '600',
   },
   actionContainer: {
     padding: 16,

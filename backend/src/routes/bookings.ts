@@ -17,6 +17,9 @@ import { paymentService } from '../services/PaymentService';
 import Booking from '../models/Booking';
 import { Request, Response } from 'express';
 import logger from '../utils/logger';
+import multer from 'multer';
+import { TripPhotoController } from '../controllers/TripPhotoController';
+import { handleMulterError } from '../middleware/upload';
 
 const router = Router();
 const bookingController = new BookingController();
@@ -387,6 +390,91 @@ router.post(
       });
     }
   },
+);
+
+// ─── Face photos from today ──────────────────────────────────────────────────
+// The passenger takes one when booking, the driver when accepting; each sees
+// the other's once the booking is confirmed. See TripPhotoService.
+
+const tripPhotoController = new TripPhotoController();
+
+const tripPhotoRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many photo requests, please try again later',
+  store: makeStore('trip-photo'),
+  keyGenerator: rateLimitKey,
+});
+
+// Kept in memory: the service stores it (R2 or disk) only once the caller is
+// known to belong to the booking.
+const tripPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+}).single('photo');
+
+const tripPhotoRoleValidation = [
+  ...bookingIdValidation,
+  param('role').isIn(['passenger', 'driver']).withMessage('Role must be passenger or driver'),
+];
+
+/**
+ * @route   POST /api/bookings/:id/trip-photo
+ * @desc    Add or retake the caller's face photo for this booking
+ * @access  Private (the booking's passenger or driver)
+ */
+router.post(
+  '/:id/trip-photo',
+  tripPhotoRateLimit,
+  authenticateToken,
+  tripPhotoUpload,
+  handleMulterError,
+  bookingIdValidation,
+  validateInput,
+  tripPhotoController.upload.bind(tripPhotoController),
+);
+
+/**
+ * @route   GET /api/bookings/:id/trip-photos
+ * @desc    Which of the booking's photos the caller can see
+ * @access  Private (the booking's passenger or driver)
+ */
+router.get(
+  '/:id/trip-photos',
+  tripPhotoRateLimit,
+  authenticateToken,
+  bookingIdValidation,
+  validateInput,
+  tripPhotoController.list.bind(tripPhotoController),
+);
+
+/**
+ * @route   GET /api/bookings/:id/trip-photos/:role/admin
+ * @desc    Either side's photo, for an admin looking into a report or SOS
+ * @access  Admin
+ */
+router.get(
+  '/:id/trip-photos/:role/admin',
+  tripPhotoRateLimit,
+  authenticateAdminToken,
+  authorizeAdminRoles('admin'),
+  tripPhotoRoleValidation,
+  validateInput,
+  tripPhotoController.showToAdmin.bind(tripPhotoController),
+);
+
+/**
+ * @route   GET /api/bookings/:id/trip-photos/:role
+ * @desc    One side's photo (own always; the other's once confirmed)
+ * @access  Private (the booking's passenger or driver)
+ */
+router.get(
+  '/:id/trip-photos/:role',
+  tripPhotoRateLimit,
+  authenticateToken,
+  tripPhotoRoleValidation,
+  validateInput,
+  tripPhotoController.show.bind(tripPhotoController),
 );
 
 export default router;

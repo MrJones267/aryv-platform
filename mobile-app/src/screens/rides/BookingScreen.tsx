@@ -19,6 +19,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { Button, Card, Badge, Avatar } from '../../components/ui';
+import { takeFaceSelfie } from '../../utils/takeFaceSelfie';
 import { ridesApi } from '../../services/api';
 import type { RideStop } from '../../services/api';
 import { BookingScreenProps } from '../../navigation/types';
@@ -322,6 +323,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         {
           text: t('booking.confirmPay'),
           onPress: async () => {
+            // A photo from today, so the driver can see who is getting in.
+            // No photo, no booking.
+            const selfieUri = await takeFaceSelfie(t, t('tripPhoto.bookingPurpose'));
+            if (!selfieUri) {return;}
+
             setIsBooking(true);
             try {
               const paymentMethodMap: Record<PaymentMethodType, string> = {
@@ -348,6 +354,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               if (response.success) {
                 const bookingId = response.data?.id;
                 let paymentSettled = false;
+
+                // Sent straight away; the driver sees it once they accept. A
+                // failed upload does not undo the booking: the ride's details
+                // offer to add it again.
+                if (bookingId) {
+                  try {
+                    const upload = await ridesApi.uploadTripPhoto(bookingId, selfieUri);
+                    if (!upload.success) {log.warn('Trip photo was not saved', upload.error);}
+                  } catch (uploadError) {
+                    log.warn('Trip photo upload failed', uploadError);
+                  }
+                }
 
                 // Step 2 & 3: Raise and settle the payment for that booking.
                 if (selectedPaymentMethod !== 'cash' && bookingId) {

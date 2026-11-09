@@ -24,6 +24,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useRealTime } from '../hooks/useRealTime';
 import { LocationUpdate, RideUpdate } from '../services/RealTimeService';
 import { ridesApi } from '../services/api/ridesApi';
+import type { RideBooking } from '../services/api/ridesApi';
+import TripPhotoPanel from '../components/trip/TripPhotoPanel';
 import { useAppSelector } from '../store/hooks';
 import TripShareSheet from '../components/trip/TripShareSheet';
 import { TripShareData } from '../services/TripSharingService';
@@ -45,6 +47,7 @@ interface RideTrackingScreenProps {
       rideId: string;
       userId: string;
       isDriver: boolean;
+      bookingId?: string;
     };
   }>;
 }
@@ -83,6 +86,8 @@ type RideTrackingParamList = {
     rideId: string;
     userId: string;
     isDriver: boolean;
+    /** The passenger's own booking, to show the driver's photo from today. */
+    bookingId?: string;
   };
 };
 
@@ -91,7 +96,20 @@ const RideTrackingScreen: React.FC = () => {
   const route = useRoute<RideTrackingScreenProps['route']>();
   const navigation = useNavigation<StackNavigationProp<RideTrackingParamList>>();
 
-  const { rideId, userId, isDriver } = route.params;
+  const { rideId, userId, isDriver, bookingId } = route.params;
+
+  // At pickup the driver checks each confirmed passenger against today's photo.
+  const [confirmedBookings, setConfirmedBookings] = useState<RideBooking[]>([]);
+  useEffect(() => {
+    if (!isDriver) {return;}
+    ridesApi.getRideBookings(rideId)
+      .then((res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setConfirmedBookings(res.data.filter((b) => b.status === 'confirmed'));
+        }
+      })
+      .catch((error: unknown) => log.warn('Could not load the ride\'s bookings', error));
+  }, [isDriver, rideId]);
 
   // Real-time hook
   const {
@@ -546,6 +564,15 @@ const RideTrackingScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.infoContainer}>
+        {!isDriver && bookingId && <TripPhotoPanel bookingId={bookingId} otherRole="driver" />}
+        {isDriver && confirmedBookings.map((booking) => (
+          <TripPhotoPanel
+            key={booking.id}
+            bookingId={booking.id}
+            otherRole="passenger"
+            otherName={booking.passenger?.firstName}
+          />
+        ))}
         {renderRideInfo()}
         {renderDriverActions()}
         {renderRecentUpdates()}

@@ -533,7 +533,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.actionContainer}>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => nav.navigate('RideTracking', { rideId: booking.ride.id, userId: user?.id, isDriver: false })}
+            onPress={() => nav.navigate('RideTracking', { rideId: booking.ride.id, userId: user?.id, isDriver: false, bookingId: booking.id })}
           >
             <Text style={styles.primaryButtonText}>{t('myRides.trackRide')}</Text>
           </TouchableOpacity>
@@ -547,7 +547,7 @@ const RidesScreen: React.FC<RidesScreenProps> = ({ navigation }) => {
         <View style={styles.actionContainer}>
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id })}
+            onPress={() => nav.navigate('RideDetails', { rideId: booking.ride.id, bookingId: booking.id })}
           >
             <Text style={styles.secondaryButtonText}>{t('home.viewDetails')}</Text>
           </TouchableOpacity>

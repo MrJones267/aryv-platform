@@ -157,6 +157,23 @@ export interface SearchRidesParams {
   limit?: number;
 }
 
+export type TripPhotoRole = 'passenger' | 'driver';
+
+/** A face photo from today on one side of a booking. */
+export interface TripPhotoSummary {
+  role: TripPhotoRole;
+  takenAt: string;
+}
+
+/** A booking as the ride's driver sees it, with its passenger. */
+export interface RideBooking {
+  id: string;
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  seatsBooked: number;
+  passengerId: string;
+  passenger?: { id: string; firstName: string; lastName: string; profilePicture?: string | null } | null;
+}
+
 export interface Booking {
   id: string;
   rideId: string;
@@ -397,6 +414,37 @@ class RidesApiService extends BaseApiService {
    */
   async rejectBooking(bookingId: string, reason?: string): Promise<ApiResponse<{ message: string }>> {
     return this.patch<{ message: string }>(`/bookings/${bookingId}/reject`, { reason });
+  }
+
+  /**
+   * The bookings on a ride the caller drives, each with its passenger.
+   */
+  async getRideBookings(rideId: string): Promise<ApiResponse<RideBooking[]>> {
+    return this.get<RideBooking[]>(`/rides/${rideId}/bookings`);
+  }
+
+  /**
+   * Add, or retake, the caller's face photo from today for a booking. The
+   * server files it under whichever side the caller is on.
+   */
+  async uploadTripPhoto(bookingId: string, imageUri: string): Promise<ApiResponse<TripPhotoSummary>> {
+    const formData = new FormData();
+    formData.append('photo', { uri: imageUri, type: 'image/jpeg', name: 'trip-photo.jpg' } as unknown as Blob);
+    return this.upload<TripPhotoSummary>(`/bookings/${bookingId}/trip-photo`, formData);
+  }
+
+  /**
+   * Which of a booking's photos the caller can see: their own, and the other
+   * side's once the booking is confirmed.
+   */
+  async getTripPhotos(bookingId: string): Promise<ApiResponse<{ myRole: TripPhotoRole; bookingStatus: string; photos: TripPhotoSummary[] }>> {
+    return this.get(`/bookings/${bookingId}/trip-photos`);
+  }
+
+  /** Where one side's photo is served; it needs the access token as a header. */
+  tripPhotoUrl(bookingId: string, role: TripPhotoRole): string {
+    const base = (this.client.defaults.baseURL ?? '').replace(/\/$/, '');
+    return `${base}/bookings/${bookingId}/trip-photos/${role}`;
   }
 
   /**

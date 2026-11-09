@@ -36,7 +36,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logInfo, logWarning, logError } from '../utils/logger';
 
-export type FileCategory = 'avatars' | 'documents' | 'vehicles';
+export type FileCategory = 'avatars' | 'documents' | 'vehicles' | 'trip-photos';
 
 export interface StoredFile {
   /** Opaque handle to give back to `urlFor` / `remove`. */
@@ -50,7 +50,7 @@ export interface StoredFile {
  *
  * Avatars are shown to other users by design; identity documents are not.
  */
-const PRIVATE_CATEGORIES: ReadonlySet<FileCategory> = new Set(['documents']);
+const PRIVATE_CATEGORIES: ReadonlySet<FileCategory> = new Set(['documents', 'trip-photos']);
 
 /** How long a signed link to a private document stays valid. */
 const SIGNED_URL_TTL_SECONDS = 300;
