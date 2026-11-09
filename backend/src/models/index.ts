@@ -40,6 +40,7 @@ import RideRequest from './RideRequest';
 import ContentReport from './ContentReport';
 import UserBlock from './UserBlock';
 import TripPhoto from './TripPhoto';
+import BookingPin from './BookingPin';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -557,6 +558,7 @@ export {
   ContentReport,
   UserBlock,
   TripPhoto,
+  BookingPin,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -610,6 +612,7 @@ export default {
   ContentReport,
   UserBlock,
   TripPhoto,
+  BookingPin,
   // Driver verification models
   DriverDocument,
   PromoRedemption,

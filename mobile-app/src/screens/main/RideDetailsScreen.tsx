@@ -36,6 +36,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import type { TranslationKey } from '../../i18n/translations';
 import { fixed } from '../../utils/fixed';
 import TripPhotoPanel from '../../components/trip/TripPhotoPanel';
+import { PinDisplay, PinEntry } from '../../components/trip/PinVerification';
 import { takeFaceSelfie } from '../../utils/takeFaceSelfie';
 import type { RideBooking } from '../../services/api/ridesApi';
 
@@ -114,6 +115,8 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
   // The driver's view of who has booked, to accept or decline.
   const [rideBookings, setRideBookings] = useState<RideBooking[]>([]);
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
+  // The passenger whose pickup PIN the driver is checking.
+  const [pinCheckFor, setPinCheckFor] = useState<string | null>(null);
 
   useEffect(() => {
     loadRideDetails();
@@ -637,7 +640,24 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
                   </TouchableOpacity>
                 </View>
               ) : (
-                <TripPhotoPanel bookingId={booking.id} otherRole="passenger" refreshKey={booking.status} />
+                <>
+                  <TripPhotoPanel bookingId={booking.id} otherRole="passenger" refreshKey={booking.status} />
+                  {booking.pinVerified ? (
+                    <View style={styles.pinCheckedRow}>
+                      <Icon name="verified-user" size={18} color="#10B981" />
+                      <Text style={styles.pinCheckedText}>{t('pin.checkedDriver')}</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.checkPinButton}
+                      onPress={() => setPinCheckFor(booking.id)}
+                      accessibilityRole="button"
+                    >
+                      <Icon name="lock" size={18} color="#3B82F6" />
+                      <Text style={styles.checkPinText}>{t('pin.checkButton')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
             </View>
           );
@@ -899,6 +919,10 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
               otherName={driverDisplayName(ride.driver)}
               refreshKey={ride.status}
             />
+            {/* Shown once the driver has accepted; read it out at pickup. */}
+            {ride.status !== 'completed' && ride.status !== 'cancelled' && (
+              <PinDisplay bookingId={bookingId} visible />
+            )}
           </View>
         )}
         {renderBookings()}
@@ -906,6 +930,19 @@ const RideDetailsScreen: React.FC<RideDetailsScreenProps> = ({ navigation, route
       </ScrollView>
       
       {renderActionButtons()}
+
+      {pinCheckFor && (
+        <PinEntry
+          visible
+          bookingId={pinCheckFor}
+          onVerified={() => {
+            haptic.confirm();
+            setPinCheckFor(null);
+            loadRideBookings();
+          }}
+          onCancel={() => setPinCheckFor(null)}
+        />
+      )}
 
       {/* Trip share sheet */}
       {ride && (
@@ -1165,6 +1202,32 @@ const styles = StyleSheet.create({
   seatsBooked: {
     fontSize: 12,
     color: '#666666',
+  },
+  checkPinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#3B82F615',
+    minHeight: 36,
+  },
+  checkPinText: {
+    color: '#3B82F6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pinCheckedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pinCheckedText: {
+    color: '#10B981',
+    fontSize: 14,
+    fontWeight: '600',
   },
   driverBookingCard: {
     backgroundColor: '#FFFFFF',

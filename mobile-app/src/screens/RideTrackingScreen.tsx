@@ -30,7 +30,7 @@ import { useAppSelector } from '../store/hooks';
 import TripShareSheet from '../components/trip/TripShareSheet';
 import { TripShareData } from '../services/TripSharingService';
 import DriverVerificationCard from '../components/verification/DriverVerificationCard';
-import { PinDisplay, PinEntry } from '../components/trip/PinVerification';
+import { PinDisplay } from '../components/trip/PinVerification';
 import { Skeleton, SkeletonCircle, ScreenSkeleton } from '../components/ui/Skeleton';
 import RouteDeviationService, { DeviationAlert } from '../services/RouteDeviationService';
 import locationService from '../services/LocationService';
@@ -139,8 +139,7 @@ const RideTrackingScreen: React.FC = () => {
   const [estimatedArrival, setEstimatedArrival] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, unknown>[]>([]);
   const [showShareSheet, setShowShareSheet] = useState(false);
-  const [showPinEntry, setShowPinEntry] = useState(false);
-  const [pinVerified, setPinVerified] = useState(false);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [routeDeviation, setRouteDeviation] = useState<DeviationAlert | null>(null);
 
   // Map reference
@@ -165,31 +164,40 @@ const RideTrackingScreen: React.FC = () => {
   };
 
   /**
-   * Update ride status
+   * Start or finish the ride. These go to the server, which saves them and
+   * tells the passengers. They used to go only over the socket, which the
+   * server refuses for status changes, so "completed" here changed nothing,
+   * while this screen still said it had.
    */
-  const updateRideStatus = async (newStatus: string, message?: string) => {
+  const changeRideStatus = async (next: 'in_progress' | 'completed') => {
+    setIsChangingStatus(true);
     try {
-      const rideUpdate: RideUpdate = {
-        rideId,
-        status: newStatus as RideUpdate['status'],
-        message,
-        location: driverLocation ? {
-          lat: driverLocation.latitude,
-          lng: driverLocation.longitude,
-        } : undefined,
-      };
-
-      sendRideUpdate(rideUpdate);
-
-      // Update local state
-      setRideStatus(newStatus);
-
-      // Show confirmation
-      Alert.alert(t('common.success'), t('track.statusUpdated'));
-    } catch (error) {
+      const res = next === 'in_progress' ? await ridesApi.startRide(rideId) : await ridesApi.completeRide(rideId);
+      if (!res.success) {
+        Alert.alert(t('common.error'), res.error || t('cash.failedToUpdateRideStatus'));
+        return;
+      }
+      setRideStatus(next);
+      // Prompt the room; the server's status is what it relays.
+      sendRideUpdate({ rideId, status: next as RideUpdate['status'] });
+      Alert.alert(t('common.success'), next === 'in_progress' ? t('cash.rideStarted') : t('cash.rideCompletedSuccessfully'));
+    } catch (error: unknown) {
       log.error('Failed to update ride status:', error);
-      Alert.alert(t('common.error'), t('cash.failedToUpdateRideStatus'));
+      Alert.alert(t('common.error'), error instanceof Error ? error.message : t('cash.failedToUpdateRideStatus'));
+    } finally {
+      setIsChangingStatus(false);
     }
+  };
+
+  /** "Arrived at pickup" is an announcement to the passengers, not a saved status. */
+  const announceArrival = () => {
+    sendRideUpdate({
+      rideId,
+      status: 'driver_arrived' as RideUpdate['status'],
+      message: t('cash.driverHasArrived'),
+      location: driverLocation ? { lat: driverLocation.latitude, lng: driverLocation.longitude } : undefined,
+    });
+    Alert.alert(t('common.success'), t('cash.driverHasArrived'));
   };
 
   /**
@@ -363,49 +371,40 @@ const RideTrackingScreen: React.FC = () => {
     </View>
   );
 
-  const handleStartRide = () => {
-    if (!pinVerified) {
-      setShowPinEntry(true);
-    } else {
-      updateRideStatus('in_progress', t('cash.rideStarted'));
-    }
-  };
-
-  const handlePinVerified = () => {
-    setPinVerified(true);
-    setShowPinEntry(false);
-    updateRideStatus('in_progress', t('cash.pinVerifiedRideStarted'));
-  };
-
+  // Each passenger's PIN is checked on the ride's details, before starting.
   const renderDriverActions = () => {
-    if (!isDriver) return null;
+    if (!isDriver) {return null;}
 
     return (
       <View style={styles.driverActions}>
         <Text style={styles.sectionTitle}>{t('cash.driverControls')}</Text>
         <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.startButton]}
-            onPress={handleStartRide}
-          >
-            <Text style={styles.buttonText}>
-              {pinVerified ? t('rideDetails.startRide') : t('cash.verifyPinStart')}
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.arriveButton]}
-            onPress={() => updateRideStatus('driver_arrived', t('cash.driverHasArrived'))}
-          >
-            <Text style={styles.buttonText}>{t('cash.markArrived')}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.completeButton]}
-            onPress={() => updateRideStatus('completed', t('cash.rideCompletedSuccessfully'))}
-          >
-            <Text style={styles.buttonText}>{t('rideDetails.completeRide')}</Text>
-          </TouchableOpacity>
+          {rideStatus === 'confirmed' && (
+            <>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.arriveButton]}
+                onPress={announceArrival}
+              >
+                <Text style={styles.buttonText}>{t('cash.markArrived')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.startButton]}
+                onPress={() => changeRideStatus('in_progress')}
+                disabled={isChangingStatus}
+              >
+                <Text style={styles.buttonText}>{t('rideDetails.startRide')}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {rideStatus === 'in_progress' && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.completeButton]}
+              onPress={() => changeRideStatus('completed')}
+              disabled={isChangingStatus}
+            >
+              <Text style={styles.buttonText}>{t('rideDetails.completeRide')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -598,19 +597,11 @@ const RideTrackingScreen: React.FC = () => {
       )}
 
       {/* Passenger: Show PIN when driver has arrived */}
-      {!isDriver && (rideStatus === 'driver_arrived' || rideStatus === 'confirmed') && (
+      {!isDriver && bookingId && (rideStatus === 'driver_arrived' || rideStatus === 'confirmed') && (
         <View style={styles.pinDisplayContainer}>
-          <PinDisplay rideId={rideId} visible />
+          <PinDisplay bookingId={bookingId} visible />
         </View>
       )}
-
-      {/* Driver: PIN entry modal */}
-      <PinEntry
-        visible={showPinEntry}
-        rideId={rideId}
-        onVerified={handlePinVerified}
-        onCancel={() => setShowPinEntry(false)}
-      />
 
       {/* Trip share sheet */}
       <TripShareSheet

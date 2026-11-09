@@ -172,6 +172,8 @@ export interface RideBooking {
   seatsBooked: number;
   passengerId: string;
   passenger?: { id: string; firstName: string; lastName: string; profilePicture?: string | null } | null;
+  /** Whether the driver has checked this passenger's pickup PIN. */
+  pinVerified?: boolean;
 }
 
 export interface Booking {
@@ -439,6 +441,21 @@ class RidesApiService extends BaseApiService {
    */
   async getTripPhotos(bookingId: string): Promise<ApiResponse<{ myRole: TripPhotoRole; bookingStatus: string; photos: TripPhotoSummary[] }>> {
     return this.get(`/bookings/${bookingId}/trip-photos`);
+  }
+
+  /**
+   * The passenger's pickup PIN for a confirmed booking, to read to the driver.
+   */
+  async getPickupPin(bookingId: string): Promise<ApiResponse<{ pin: string; verified: boolean }>> {
+    return this.get(`/bookings/${bookingId}/pickup-pin`);
+  }
+
+  /**
+   * The driver checks the PIN the passenger read out. The server answers
+   * whether it matched; the driver's app never learns the PIN.
+   */
+  async verifyPickupPin(bookingId: string, pin: string): Promise<ApiResponse<{ verified: boolean; attemptsLeft: number }>> {
+    return this.post(`/bookings/${bookingId}/pickup-pin/verify`, { pin });
   }
 
   /** Where one side's photo is served; it needs the access token as a header. */

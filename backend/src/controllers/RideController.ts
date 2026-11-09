@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import { Op, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
+import pickupPinService from '../services/PickupPinService';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import User from '../models/User';
@@ -1515,9 +1516,12 @@ export class RideController {
         order: [['createdAt', 'ASC']],
       });
 
+      // Whether each passenger's pickup PIN has been checked, so the driver's
+      // list can show it. The PIN itself is never sent to the driver.
+      const verified = await pickupPinService.verifiedAmong(bookings.map((b) => b.id));
       res.json({
         success: true,
-        data: bookings,
+        data: bookings.map((b) => ({ ...b.toJSON(), pinVerified: verified.has(b.id) })),
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -1613,6 +1617,12 @@ export class RideController {
             },
             transaction,
           },
+        );
+        // Requests the driver never accepted did not travel; they were left
+        // pending for ever, so the passenger still saw them as waiting.
+        await Booking.update(
+          { status: BookingStatus.CANCELLED },
+          { where: { rideId, status: BookingStatus.PENDING }, transaction },
         );
 
         // Handle group chat completion after transaction commits
