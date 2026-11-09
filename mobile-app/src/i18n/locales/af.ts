@@ -1906,6 +1906,7 @@ export const af: Record<TranslationKey, string> = {
   'rq.noneNearby': 'Geen oop ritversoeke naby jou op die oomblik nie.',
   'rq.needLocation': 'Laat liggingtoegang toe om ritversoeke naby jou te sien.',
   'rq.needVerification': 'Ritversoeke word gewys aan bestuurders wie se dokumente goedgekeur is. Voltooi bestuurderverifikasie om dit te sien.',
+  'rq.finishVerification': 'Voltooi bestuurderverifikasie',
   'rq.loadFailed': 'Kon nie ritversoeke laai nie. Trek af om weer te probeer.',
 
   // Settings that work

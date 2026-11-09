@@ -37,7 +37,10 @@ router.post(
     body('destination.longitude').isFloat({ min: -180, max: 180 }).withMessage('destination is required'),
     body('departureTime').notEmpty().withMessage('departureTime is required'),
     body('passengers').isInt({ min: 1, max: 8 }).withMessage('passengers must be between 1 and 8'),
-    body('maxPrice').optional().isFloat({ min: 0 }),
+    // An empty price box arrives as null and means "no limit"; plain
+    // optional() let only a missing field through, so every request without
+    // a price was refused (400 maxPrice: Invalid value).
+    body('maxPrice').optional({ values: 'null' }).isFloat({ min: 0 }),
     body('description').optional().isLength({ max: 500 }),
   ],
   validateInput,

@@ -62,6 +62,13 @@ const RideRequestsNearbyScreen: React.FC<Props> = ({ navigation }) => {
         setState(/DRIVER_NOT_VERIFIED|403|approved/i.test(String(res.error)) ? 'not_verified' : 'error');
       }
     } catch (error) {
+      // A refused request arrives here, not in the branch above: the API
+      // client rejects on any non-2xx. So a driver awaiting approval was told
+      // "could not load" instead of why.
+      if ((error as { code?: string })?.code === 'DRIVER_NOT_VERIFIED') {
+        setState('not_verified');
+        return;
+      }
       log.warn('Could not load nearby requests', error);
       setState('error');
     }
@@ -125,7 +132,18 @@ const RideRequestsNearbyScreen: React.FC<Props> = ({ navigation }) => {
           ListHeaderComponent={state === 'ready' && requests.length > 0 ? <Text style={styles.intro}>{t('rq.nearbyIntro')}</Text> : null}
           ListEmptyComponent={
             state === 'no_location' ? message(t('rq.needLocation'))
-              : state === 'not_verified' ? message(t('rq.needVerification'))
+              : state === 'not_verified' ? (
+                <View>
+                  {message(t('rq.needVerification'))}
+                  <TouchableOpacity
+                    style={styles.verifyButton}
+                    onPress={() => (navigation as unknown as { navigate: (screen: string) => void }).navigate('DriverOnboarding')}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.verifyButtonText}>{t('rq.finishVerification')}</Text>
+                  </TouchableOpacity>
+                </View>
+              )
                 : state === 'error' ? message(t('rq.loadFailed'))
                   : message(t('rq.noneNearby'))
           }
@@ -137,6 +155,8 @@ const RideRequestsNearbyScreen: React.FC<Props> = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background.primary },
+  verifyButton: { alignSelf: 'center', marginTop: 16, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: colors.primary },
+  verifyButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border.light },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text.primary },
   list: { padding: 16, paddingBottom: 40 },

@@ -117,7 +117,8 @@ const RideRequestScreen: React.FC<RideRequestScreenProps> = ({ navigation, route
         destination: { latitude: destination.latitude, longitude: destination.longitude, address: addressOf(destination) },
         departureTime: departure.toISOString(),
         passengers: seats,
-        maxPrice: maxPrice.trim() ? Number(maxPrice) : null,
+        // Left out when empty: "no limit". Servers before this fix refused null.
+        ...(maxPrice.trim() && Number.isFinite(Number(maxPrice)) ? { maxPrice: Number(maxPrice) } : {}),
         description: note.trim() || undefined,
       });
       if (!res.success) {
