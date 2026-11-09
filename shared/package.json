@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "joi": "^17.11.0",
-    "date-fns": "^2.30.0"
+    "date-fns": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",
