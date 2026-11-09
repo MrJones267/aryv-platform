@@ -530,7 +530,10 @@ export class SocketService {
       // "cancelled" for a ride that was neither. Status changes happen over
       // the API (start, complete, cancel), which saves them and notifies the
       // passengers; this event only tells the room promptly.
-      if (status !== ride.status) {
+      // "Arrived at pickup" is an announcement, not a saved status: relay it
+      // while the ride is confirmed, so passengers know to come out.
+      const arrival = (status as string) === 'driver_arrived' && ride.status === 'confirmed';
+      if (!arrival && status !== ride.status) {
         socket.emit('error', {
           message: 'That is not this ride\'s status. Change it from the ride screen.',
           code: 'RIDE_STATUS_MISMATCH',
@@ -540,7 +543,7 @@ export class SocketService {
 
       const statusUpdate: RideStatusUpdate = {
         rideId,
-        status: ride.status,
+        status: arrival ? status : ride.status,
         driverId: userId,
         timestamp: new Date(),
       };

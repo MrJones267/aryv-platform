@@ -35,7 +35,7 @@ jest.mock('../../config/database', () => ({
   },
 }));
 jest.mock('../../services/PaymentService', () => ({ paymentService: { createPaymentIntent: jest.fn() } }));
-jest.mock('../../services/NotificationService', () => ({ notificationService: { notifyBookingUpdate: jest.fn() } }));
+jest.mock('../../services/NotificationService', () => ({ notificationService: { notifyBookingUpdate: jest.fn(), notifyBookingStatusChange: jest.fn() } }));
 
 import Booking from '../../models/Booking';
 
@@ -195,6 +195,31 @@ describe('BookingController', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true })
       );
+    });
+  });
+
+  describe('confirmBooking', () => {
+    const pendingBookingOn = (rideStatus: string) => {
+      const ride = { id: 'ride-1', driverId: 'driver-1', status: rideStatus, update: jest.fn() };
+      const booking = { id: 'booking-1', status: BookingStatus.PENDING, ride, update: jest.fn() };
+      (Booking.findByPk as jest.Mock).mockResolvedValueOnce(booking).mockResolvedValueOnce({ ...booking, status: BookingStatus.CONFIRMED });
+      return { ride, booking };
+    };
+    const asDriver = () => mockRequest({ user: { id: 'driver-1', email: 'd@test.com', role: 'driver' } as any, params: { id: 'booking-1' } });
+
+    it('confirms a pending ride when the driver accepts its first passenger', async () => {
+      // Only a card payment used to do this, and a ride starts only from
+      // confirmed: drivers with cash passengers could never start the ride.
+      const { ride, booking } = pendingBookingOn(RideStatus.PENDING);
+      await controller.confirmBooking(asDriver(), mockResponse());
+      expect(booking.update).toHaveBeenCalledWith({ status: BookingStatus.CONFIRMED }, expect.anything());
+      expect(ride.update).toHaveBeenCalledWith({ status: 'confirmed' }, expect.anything());
+    });
+
+    it('leaves a ride that is already under way alone', async () => {
+      const { ride } = pendingBookingOn(RideStatus.IN_PROGRESS);
+      await controller.confirmBooking(asDriver(), mockResponse());
+      expect(ride.update).not.toHaveBeenCalled();
     });
   });
 });

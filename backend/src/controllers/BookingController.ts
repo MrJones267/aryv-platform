@@ -673,6 +673,13 @@ export class BookingController {
       }
 
       await booking.update({ status: BookingStatus.CONFIRMED }, { transaction });
+
+      // A ride with an accepted passenger is confirmed. Nothing did this but a
+      // card payment, and a ride can only be started from confirmed, so a
+      // driver with cash passengers could never start (or finish) the ride.
+      if (booking.ride && booking.ride.status === 'pending') {
+        await booking.ride.update({ status: 'confirmed' as any }, { transaction });
+      }
       await transaction.commit();
 
       // Send real-time notification

@@ -19,6 +19,8 @@ import { Request, Response } from 'express';
 import logger from '../utils/logger';
 import multer from 'multer';
 import { TripPhotoController } from '../controllers/TripPhotoController';
+import pickupPinService, { PickupPinError } from '../services/PickupPinService';
+import { AuthenticatedRequest } from '../types';
 import { handleMulterError } from '../middleware/upload';
 
 const router = Router();
@@ -417,6 +419,71 @@ const tripPhotoRoleValidation = [
   ...bookingIdValidation,
   param('role').isIn(['passenger', 'driver']).withMessage('Role must be passenger or driver'),
 ];
+
+// ─── Pickup PIN ──────────────────────────────────────────────────────────────
+// The passenger reads it out; the driver checks it. See PickupPinService.
+
+const pinCheckRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many PIN checks, please try again later',
+  store: makeStore('pickup-pin'),
+  keyGenerator: rateLimitKey,
+});
+
+const sendPinError = (res: Response, error: unknown, action: string): void => {
+  if (error instanceof PickupPinError) {
+    res.status(error.status).json({ success: false, error: error.message, code: error.code, timestamp: new Date().toISOString() });
+    return;
+  }
+  logger.error(`Pickup PIN ${action} failed`, { error: (error as Error)?.message });
+  res.status(500).json({ success: false, error: 'Something went wrong', code: 'INTERNAL_ERROR', timestamp: new Date().toISOString() });
+};
+
+/**
+ * @route   GET /api/bookings/:id/pickup-pin
+ * @desc    The passenger's PIN for their confirmed booking
+ * @access  Private (the booking's passenger)
+ */
+router.get(
+  '/:id/pickup-pin',
+  bookingRateLimit,
+  authenticateToken,
+  bookingIdValidation,
+  validateInput,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await pickupPinService.forPassenger(req.params['id']!, (req as AuthenticatedRequest).user!.id);
+      res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      sendPinError(res, error, 'read');
+    }
+  },
+);
+
+/**
+ * @route   POST /api/bookings/:id/pickup-pin/verify
+ * @desc    The driver checks the PIN the passenger read out
+ * @access  Private (the ride's driver)
+ */
+router.post(
+  '/:id/pickup-pin/verify',
+  pinCheckRateLimit,
+  authenticateToken,
+  [
+    ...bookingIdValidation,
+    body('pin').isString().matches(/^\d{4}$/).withMessage('The PIN is 4 digits'),
+  ],
+  validateInput,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await pickupPinService.verify(req.params['id']!, (req as AuthenticatedRequest).user!.id, req.body.pin);
+      res.json({ success: true, data, timestamp: new Date().toISOString() });
+    } catch (error) {
+      sendPinError(res, error, 'check');
+    }
+  },
+);
 
 /**
  * @route   POST /api/bookings/:id/trip-photo

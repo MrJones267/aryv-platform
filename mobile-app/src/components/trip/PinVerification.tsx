@@ -17,26 +17,29 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../theme';
-import PinVerificationService from '../../services/PinVerificationService';
+import { ridesApi } from '../../services/api/ridesApi';
+import { useI18n } from '../../i18n/I18nContext';
 import { haptic } from '../../services/HapticService';
 
 // ─── Passenger PIN Display ───────────────────────────────────────────
 
 interface PinDisplayProps {
-  rideId: string;
+  /** The passenger's own booking. The PIN comes from the server once it is confirmed. */
+  bookingId: string;
   visible: boolean;
 }
 
-export const PinDisplay: React.FC<PinDisplayProps> = ({ rideId, visible }) => {
+export const PinDisplay: React.FC<PinDisplayProps> = ({ bookingId, visible }) => {
+  const { t } = useI18n();
   const [pin, setPin] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pinService = PinVerificationService.getInstance();
 
   useEffect(() => {
-    if (visible && rideId) {
-      loadOrCreatePin();
+    if (visible && bookingId) {
+      loadPin();
     }
-  }, [visible, rideId]);
+  }, [visible, bookingId]);
 
   useEffect(() => {
     if (visible) {
@@ -51,24 +54,31 @@ export const PinDisplay: React.FC<PinDisplayProps> = ({ rideId, visible }) => {
     }
   }, [visible, pulseAnim]);
 
-  const loadOrCreatePin = async () => {
-    let existingPin = await pinService.getPinForRide(rideId);
-    if (!existingPin) {
-      existingPin = await pinService.createPinForRide(rideId);
+  // The PIN used to be made and kept on this phone alone, so the driver's
+  // phone had nothing to check it against. Before the driver accepts there
+  // is none, and nothing is shown.
+  const loadPin = async () => {
+    try {
+      const res = await ridesApi.getPickupPin(bookingId);
+      if (res.success && res.data) {
+        setPin(res.data.pin);
+        setVerified(res.data.verified);
+      }
+    } catch {
+      setPin(null);
     }
-    setPin(existingPin);
   };
 
-  if (!visible || !pin) return null;
+  if (!visible || !pin) {return null;}
 
   return (
     <Animated.View style={[styles.pinDisplayCard, { transform: [{ scale: pulseAnim }] }]}>
       <View style={styles.pinDisplayHeader}>
         <Icon name="lock" size={18} color={colors.primary} />
-        <Text style={styles.pinDisplayTitle}>Your Pickup PIN</Text>
+        <Text style={styles.pinDisplayTitle}>{t('pin.yourPin')}</Text>
       </View>
       <Text style={styles.pinDisplaySubtitle}>
-        Share this PIN with your driver at pickup
+        {verified ? t('pin.checked') : t('pin.shareAtPickup')}
       </Text>
       <View style={styles.pinDigitsRow}>
         {pin.split('').map((digit, index) => (
@@ -78,7 +88,7 @@ export const PinDisplay: React.FC<PinDisplayProps> = ({ rideId, visible }) => {
         ))}
       </View>
       <Text style={styles.pinDisplayHint}>
-        Driver must enter this to start the ride
+        {t('pin.onlyReadOut')}
       </Text>
     </Animated.View>
   );
@@ -88,28 +98,31 @@ export const PinDisplay: React.FC<PinDisplayProps> = ({ rideId, visible }) => {
 
 interface PinEntryProps {
   visible: boolean;
-  rideId: string;
+  /** The passenger's booking whose PIN is being checked. */
+  bookingId: string;
   onVerified: () => void;
   onCancel: () => void;
 }
 
 export const PinEntry: React.FC<PinEntryProps> = ({
   visible,
-  rideId,
+  bookingId,
   onVerified,
   onCancel,
 }) => {
   const [digits, setDigits] = useState(['', '', '', '']);
+  const { t } = useI18n();
   const [error, setError] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const pinService = PinVerificationService.getInstance();
 
   useEffect(() => {
     if (visible) {
       setDigits(['', '', '', '']);
       setError(false);
+      setErrorText(null);
       setVerifying(false);
       // Focus first input when modal opens
       setTimeout(() => inputRefs.current[0]?.focus(), 300);
@@ -165,18 +178,22 @@ export const PinEntry: React.FC<PinEntryProps> = ({
   const verifyPin = async (pin: string) => {
     setVerifying(true);
     try {
-      const isCorrect = await pinService.verifyPin(rideId, pin);
-      if (isCorrect) {
+      // Checked by the server: this phone never sees the passenger's PIN.
+      const res = await ridesApi.verifyPickupPin(bookingId, pin);
+      if (res.success && res.data?.verified) {
         onVerified();
       } else {
         setError(true);
+        setErrorText(t('pin.wrong', { count: res.data?.attemptsLeft ?? 0 }));
         haptic.errorFeedback();
         triggerShake();
         setDigits(['', '', '', '']);
         setTimeout(() => inputRefs.current[0]?.focus(), 400);
       }
-    } catch {
+    } catch (failure: unknown) {
+      // Locked after too many tries, or the passenger has no PIN yet.
       setError(true);
+      setErrorText(failure instanceof Error ? failure.message : t('pin.checkFailed'));
       triggerShake();
     } finally {
       setVerifying(false);
@@ -210,9 +227,9 @@ export const PinEntry: React.FC<PinEntryProps> = ({
             <Icon name="lock" size={32} color={colors.primary} />
           </View>
 
-          <Text style={styles.entryTitle}>Enter Pickup PIN</Text>
+          <Text style={styles.entryTitle}>{t('pin.enterTitle')}</Text>
           <Text style={styles.entrySubtitle}>
-            Ask the passenger for their 4-digit PIN
+            {t('pin.askPassenger')}
           </Text>
 
           <Animated.View
@@ -239,12 +256,12 @@ export const PinEntry: React.FC<PinEntryProps> = ({
 
           {error && (
             <Text style={styles.entryErrorText}>
-              Incorrect PIN. Please try again.
+              {errorText ?? t('pin.checkFailed')}
             </Text>
           )}
 
           {verifying && (
-            <Text style={styles.entryVerifyingText}>Verifying...</Text>
+            <Text style={styles.entryVerifyingText}>{t('pin.checking')}</Text>
           )}
         </View>
       </View>

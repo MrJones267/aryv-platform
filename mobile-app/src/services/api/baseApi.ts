@@ -29,6 +29,36 @@ export interface ApiError {
   timestamp: string;
 }
 
+/**
+ * What a failed request rejects with: an Error carrying the server's message
+ * and code, and still shaped as an ApiError.
+ *
+ * It used to reject with a plain object. Screens that showed
+ * `error instanceof Error ? error.message : String(error)` then showed
+ * "[object Object]" or their generic fallback, never the server's reason
+ * ("Verify your identity before activating courier deliveries").
+ */
+export class ApiRequestError extends Error implements ApiError {
+  readonly success = false as const;
+  readonly error: string;
+  readonly code?: string;
+  readonly details?: unknown;
+  readonly timestamp: string;
+  readonly status?: number;
+
+  constructor(body: Omit<ApiError, 'success'> & { status?: number }) {
+    super(body.error);
+    // Keeps instanceof working where the class is compiled down for Hermes.
+    Object.setPrototypeOf(this, ApiRequestError.prototype);
+    this.name = 'ApiRequestError';
+    this.error = body.error;
+    this.code = body.code;
+    this.details = body.details;
+    this.timestamp = body.timestamp;
+    this.status = body.status;
+  }
+}
+
 // Base API configuration
 import { Platform } from 'react-native';
 import { getApiConfig } from '../../config/api';
@@ -136,12 +166,11 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       }
       
-      const networkError: ApiError = {
-        success: false,
+      const networkError = new ApiRequestError({
         error: 'Network error. Please check your internet connection.',
         code: 'NETWORK_ERROR',
         timestamp: new Date().toISOString(),
-      };
+      });
       
       if (!originalRequest.skipErrorAlert) {
         Alert.alert(
@@ -155,13 +184,13 @@ apiClient.interceptors.response.use(
     }
     
     // Handle server errors
-    const serverError: ApiError = {
-      success: false,
+    const serverError = new ApiRequestError({
       error: error.response.data?.error || 'An unexpected error occurred',
       code: error.response.data?.code || 'SERVER_ERROR',
       details: error.response.data?.details,
       timestamp: new Date().toISOString(),
-    };
+      status: error.response.status,
+    });
     
     // Show user-friendly error messages for specific status codes
     if (error.response.status >= 500 && !originalRequest.skipErrorAlert) {
@@ -269,18 +298,20 @@ export class BaseApiService {
   }
   
   // Error handler
-  private handleError(error: unknown): ApiError {
+  private handleError(error: unknown): ApiRequestError {
+    if (error instanceof ApiRequestError) {
+      return error;
+    }
     if (typeof error === 'object' && error !== null && 'success' in error && (error as ApiError).success === false) {
-      return error as ApiError;
+      return new ApiRequestError(error as ApiError);
     }
 
     const errMsg = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
+    return new ApiRequestError({
       error: errMsg || 'An unexpected error occurred',
       code: 'UNKNOWN_ERROR',
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 }
 
