@@ -443,7 +443,7 @@ export class CourierEscrowService {
 
       if (courierProfile) {
         const courierEarnings = round2(agreement.agreedPrice - agreement.platformFee);
-        await courierProfile.recordSuccessfulDelivery(courierEarnings);
+        await courierProfile.recordSuccessfulDelivery(courierEarnings, t);
       }
 
       await agreement.logEvent(isCash ? 'cash_collected' : 'payment_released', {

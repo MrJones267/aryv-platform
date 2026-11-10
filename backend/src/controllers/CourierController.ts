@@ -428,26 +428,19 @@ export class CourierController {
       const limit = Math.min(parseInt(req.query['limit'] as string) || 20, 100); // cap at 100
       const offset = Math.max(parseInt(req.query['offset'] as string) || 0, 0);
 
-      const whereClause: any = {
-        isActive: true,
-        [Op.or]: [
-          { expiresAt: { [Op.is]: null } },
-          { expiresAt: { [Op.gt]: new Date() } },
-        ],
-      };
-
-      // Filter by package sizes if specified
-      if (packageSizes) {
-        const sizesArray = Array.isArray(packageSizes) ? packageSizes : [packageSizes];
-        whereClause.packageSize = { [Op.in]: sizesArray };
-      }
-
-      // Filter by price range if specified
-      if (minPrice || maxPrice) {
-        whereClause.senderPriceOffer = {};
-        if (minPrice) whereClause.senderPriceOffer[Op.gte] = parseFloat(minPrice as string);
-        if (maxPrice) whereClause.senderPriceOffer[Op.lte] = parseFloat(maxPrice as string);
-      }
+      // The size and price filters. They were built into a Sequelize where
+      // clause that the raw query below never used, so they did nothing.
+      const VALID_SIZES = ['small', 'medium', 'large', 'custom'];
+      const sizes = (packageSizes ? (Array.isArray(packageSizes) ? packageSizes : [packageSizes]) : [])
+        .map(String)
+        .filter((size) => VALID_SIZES.includes(size));
+      const minOffer = minPrice !== undefined && minPrice !== '' ? parseFloat(minPrice as string) : NaN;
+      const maxOffer = maxPrice !== undefined && maxPrice !== '' ? parseFloat(maxPrice as string) : NaN;
+      const filterClause = [
+        sizes.length > 0 ? 'AND p.package_size::text IN (:sizes)' : '',
+        Number.isFinite(minOffer) ? 'AND p.sender_price_offer >= :minOffer' : '',
+        Number.isFinite(maxOffer) ? 'AND p.sender_price_offer <= :maxOffer' : '',
+      ].join(' ');
 
       // Build location-based query if coordinates provided — use parameterized replacements to prevent injection
       const hasCoords = lat && lng;
@@ -483,6 +476,7 @@ export class CourierController {
             AND da.status NOT IN ('cancelled', 'disputed')
           )
           ${locationClause}
+          ${filterClause}
         ORDER BY ${hasCoords ? 'distance_from_courier ASC,' : ''} p.created_at DESC
         LIMIT :limit OFFSET :offset
       `;
@@ -493,6 +487,9 @@ export class CourierController {
           lat: parsedLat,
           lng: parsedLng,
           radiusMeters: radius * 1000,
+          ...(sizes.length > 0 ? { sizes } : {}),
+          ...(Number.isFinite(minOffer) ? { minOffer } : {}),
+          ...(Number.isFinite(maxOffer) ? { maxOffer } : {}),
           limit,
           offset,
         },
@@ -869,11 +866,16 @@ export class CourierController {
         // Count the miss so repeated guessing runs into the cap. Recorded
         // outside the verification call so it survives that call's rollback.
         if (verification.code === 'CODE_NOT_FOUND') {
-          const inTransit = await DeliveryAgreement.findOne({
+          // A wrong code is a wrong guess at every delivery the courier is
+          // carrying. It was counted against whichever one the database
+          // returned first, so with two in hand the other could be guessed
+          // at without limit.
+          const inTransit = await DeliveryAgreement.findAll({
             where: { courierId: userId, status: DeliveryStatus.IN_TRANSIT },
+            attributes: ['id'],
           });
-          if (inTransit) {
-            await deliveryHandoverService.recordFailedAttempt(inTransit.id);
+          for (const delivery of inTransit) {
+            await deliveryHandoverService.recordFailedAttempt(delivery.id);
           }
         }
 

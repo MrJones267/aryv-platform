@@ -18,6 +18,7 @@ import { DriverVerificationStatus } from '../models/DriverDocument';
 import PromoCode from '../models/PromoCode';
 import PromoRedemption from '../models/PromoRedemption';
 import RideStop from '../models/RideStop';
+import BookingPin from '../models/BookingPin';
 import rideSegmentService from '../services/RideSegmentService';
 import priceSuggestionService from '../services/PriceSuggestionService';
 import rideRecommendationService from '../services/RideRecommendationService';
@@ -1005,6 +1006,55 @@ export class RideController {
         return;
       }
 
+      // Cancelled rides are finished too.
+      if (ride.status === RideStatus.CANCELLED) {
+        res.status(400).json({
+          success: false,
+          error: 'Cannot update a cancelled ride',
+          code: 'RIDE_NOT_UPDATABLE',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
+
+      // Passengers booked the ride as it was. With bookings on it, the price
+      // and the route are fixed, and the seats cannot drop below those taken;
+      // all of these could be changed under them, without a word.
+      const liveBookings = await Booking.findAll({
+        where: { rideId: id, status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED] } },
+        attributes: ['id', 'seatsBooked'],
+        transaction,
+      });
+      if (liveBookings.length > 0) {
+        const fixed = ['pricePerSeat', 'originAddress', 'originCoordinates', 'destinationAddress', 'destinationCoordinates']
+          .filter((field) => updateData[field] !== undefined);
+        if (fixed.length > 0) {
+          res.status(409).json({
+            success: false,
+            error: 'This ride has bookings, so its price and route cannot be changed. Cancel the ride and post a new one instead.',
+            code: 'RIDE_HAS_BOOKINGS',
+            data: { fields: fixed },
+            timestamp: new Date().toISOString(),
+          });
+          await transaction.rollback();
+          return;
+        }
+        const taken = liveBookings.reduce((sum, b) => sum + Number(b.seatsBooked), 0);
+        if (updateData.availableSeats !== undefined && Number(updateData.availableSeats) < taken) {
+          res.status(409).json({
+            success: false,
+            error: `${taken} seat(s) are already booked on this ride`,
+            code: 'SEATS_ALREADY_BOOKED',
+            data: { booked: taken },
+            timestamp: new Date().toISOString(),
+          });
+          await transaction.rollback();
+          return;
+        }
+      }
+      const previousDeparture = new Date(ride.departureTime).getTime();
+
       // Process coordinate updates
       if (updateData.originCoordinates) {
         updateData.originCoordinates = {
@@ -1027,7 +1077,31 @@ export class RideController {
       }
 
       await ride.update(updateData, { transaction });
+      // On a ride with stops, the last stop's fare is the ride's price; left
+      // alone, a new price was shown but the old one charged.
+      if (updateData.pricePerSeat !== undefined) {
+        const lastStop = await RideStop.findOne({ where: { rideId: id }, order: [['sequence', 'DESC']], transaction });
+        if (lastStop) await lastStop.update({ fareFromOrigin: Number(updateData.pricePerSeat) }, { transaction });
+      }
       await transaction.commit();
+
+      // Booked passengers hear about a new departure time.
+      if (liveBookings.length > 0 && new Date(ride.departureTime).getTime() !== previousDeparture) {
+        const passengers = await Booking.findAll({ where: { id: { [Op.in]: liveBookings.map((b) => b.id) } }, attributes: ['passengerId'] });
+        for (const { passengerId } of passengers) {
+          try {
+            await notificationService.sendToUser(passengerId, {
+              type: 'ride_time_changed',
+              title: 'Your ride has a new departure time',
+              message: `Your ride from ${ride.originAddress} to ${ride.destinationAddress} now leaves at a different time. Open the booking to see it.`,
+              data: { rideId: id, departureTime: new Date(ride.departureTime).toISOString() },
+              timestamp: new Date().toISOString(),
+            });
+          } catch (error) {
+            logger.warn('Could not tell a passenger about a new departure time', { rideId: id, error: getErrorMessage(error) });
+          }
+        }
+      }
 
       // Fetch updated ride with associations
       const updatedRide = await Ride.findByPk(id, {
@@ -1241,6 +1315,19 @@ export class RideController {
         return;
       }
 
+      // A ride that has not been started keeps its pending or confirmed
+      // status after its departure time, so it could still be booked.
+      if (ride.departureTime && new Date(ride.departureTime).getTime() <= Date.now()) {
+        res.status(400).json({
+          success: false,
+          error: 'This ride has already left',
+          code: 'RIDE_DEPARTED',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
+
       // Which part of the journey the passenger wants. Defaults to the whole
       // thing, which is every intra-city trip and every ride without stops.
       const stops = await rideSegmentService.getStops(ride as any, transaction);
@@ -1300,7 +1387,12 @@ export class RideController {
         transaction,
       });
 
-      if (existingBooking) {
+      // A cancelled booking does not hold the passenger out of the ride for
+      // good. The database allows one booking per passenger per ride, so the
+      // cancelled one is brought back rather than a second one made.
+      const revivable = existingBooking?.status === BookingStatus.CANCELLED ? existingBooking : null;
+
+      if (existingBooking && !revivable) {
         res.status(400).json({
           success: false,
           error: 'You already have a booking for this ride',
@@ -1379,27 +1471,42 @@ export class RideController {
       }
 
       // Create booking
-      const booking = await Booking.create(
-        {
-          rideId,
-          passengerId,
-          seatsBooked: seatsRequested,
-          // Inherited from the ride: the passenger pays the price the driver
-          // set, in the currency the driver set it in.
-          currency: ride.currency,
-          boardingSequence,
-          alightingSequence,
-          totalAmount: Math.round((grossTotal - discountAmount) * 100) / 100,
-          platformFee,
-          promoCode: appliedPromoCode,
-          discountAmount,
-          pickupAddress,
-          dropoffAddress,
-          specialRequests,
-          status: BookingStatus.PENDING,
-        },
-        { transaction },
-      );
+      const bookingValues = {
+        rideId,
+        passengerId,
+        seatsBooked: seatsRequested,
+        // Inherited from the ride: the passenger pays the price the driver
+        // set, in the currency the driver set it in.
+        currency: ride.currency,
+        boardingSequence,
+        alightingSequence,
+        totalAmount: Math.round((grossTotal - discountAmount) * 100) / 100,
+        platformFee,
+        promoCode: appliedPromoCode,
+        discountAmount,
+        pickupAddress,
+        dropoffAddress,
+        specialRequests,
+        status: BookingStatus.PENDING,
+      };
+      let booking;
+      if (revivable) {
+        // As new: no old reason, ratings or checked PIN carried over.
+        await BookingPin.destroy({ where: { bookingId: revivable.id }, transaction });
+        booking = await revivable.update(
+          {
+            ...bookingValues,
+            cancelReason: null,
+            ratingGiven: null,
+            reviewText: null,
+            passengerRatingGiven: null,
+            passengerReviewText: null,
+          } as any,
+          { transaction },
+        );
+      } else {
+        booking = await Booking.create(bookingValues, { transaction });
+      }
 
       if (promoRecord && discountAmount > 0) {
         // The unique index on (promo_code_id, user_id) is what actually

@@ -32,7 +32,7 @@ import { DeliveryAgreement, DeliveryStatus, DeliveryEvent } from '../models/Deli
 import { DeliveryDispute, DisputeStatus, DisputeType } from '../models/DeliveryDispute';
 import CommissionLedger, { CommissionEntryType } from '../models/CommissionLedger';
 import UserWallet from '../models/UserWallet';
-import { Package } from '../models';
+import { Package, CourierProfile } from '../models';
 import { CommissionService } from './CommissionService';
 import { notificationService } from './NotificationService';
 import { formatMoneyInCurrency } from '../utils/money';
@@ -123,6 +123,12 @@ class DeliveryDisputeService {
         transaction: t,
       });
       if (open) return fail(409, 'DISPUTE_EXISTS', 'This delivery already has an open dispute');
+      // One decision per delivery. A completed delivery could be disputed
+      // again after every resolution, without limit.
+      const decided = await DeliveryDispute.count({ where: { deliveryAgreementId: agreementId }, transaction: t });
+      if (decided > 0) {
+        return fail(409, 'DISPUTE_ALREADY_DECIDED', 'ARYV has already reviewed a problem with this delivery. Contact support if something new has happened.');
+      }
       if (!DISPUTABLE.includes(agreement.status)) {
         return fail(409, 'NOT_DISPUTABLE', 'A problem can be reported once the courier has the package, or after delivery');
       }
@@ -300,6 +306,12 @@ class DeliveryDisputeService {
       }
 
       const completed = earned > 0;
+      // Disputed while in transit and found delivered: the courier's record
+      // never counted it, as only the handover code did that.
+      if (completed && !agreement.deliveryConfirmedAt) {
+        const profile = await CourierProfile.findOne({ where: { userId: agreement.courierId }, transaction: t, lock: t.LOCK.UPDATE });
+        if (profile) await profile.recordSuccessfulDelivery(round2(earned - target), t);
+      }
       await agreement.update({
         status: completed ? DeliveryStatus.COMPLETED : DeliveryStatus.CANCELLED,
         ...(completed && !agreement.deliveryConfirmedAt ? { deliveryConfirmedAt: new Date() } : {}),

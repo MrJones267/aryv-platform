@@ -5,7 +5,7 @@
  * @lastModified 2025-01-24
  */
 
-import { Model, DataTypes, Optional } from 'sequelize';
+import { Model, DataTypes, Optional, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import { PackageSize } from './Package';
 
@@ -85,10 +85,14 @@ export class CourierProfile extends Model<CourierProfileAttributes, CourierProfi
     await this.save();
   }
 
-  public async recordSuccessfulDelivery(earnings: number): Promise<void> {
+  /**
+   * Takes the caller's transaction: saved without one, the count and earnings
+   * stayed even when the delivery's completion rolled back.
+   */
+  public async recordSuccessfulDelivery(earnings: number, transaction?: Transaction): Promise<void> {
     this.successfulDeliveries += 1;
-    this.totalCourierEarnings += earnings;
-    await this.save();
+    this.totalCourierEarnings = Number(this.totalCourierEarnings) + earnings;
+    await this.save(transaction ? { transaction } : {});
   }
 
   public override toJSON(): object {

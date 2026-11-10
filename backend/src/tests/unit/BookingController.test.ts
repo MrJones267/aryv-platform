@@ -22,6 +22,7 @@ jest.mock('../../config/database', () => ({
     })),
     fn: jest.fn(),
     col: jest.fn(),
+    query: jest.fn().mockResolvedValue([]),
     // Returned stub lets model files load under automock without a real DB.
     define: jest.fn(() => ({
       findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
@@ -104,6 +105,47 @@ describe('BookingController', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('getMyBookings paging', () => {
+    it('pages both sides together, in order, with the true total', async () => {
+      const { sequelize } = jest.requireMock('../../config/database');
+      sequelize.query
+        .mockResolvedValueOnce([{ id: 'b-new' }, { id: 'b-old' }])
+        .mockResolvedValueOnce([{ total: 37 }]);
+      const row = (id: string, passengerId: string) => ({ id, passengerId, toJSON: () => ({ id, passengerId }) });
+      // Returned out of order, as a plain id lookup may.
+      (Booking.findAll as jest.Mock).mockResolvedValue([row('b-old', 'someone-else'), row('b-new', 'passenger-1')]);
+      const res = mockResponse();
+
+      await controller.getMyBookings(mockRequest({ query: { type: 'both', page: '2', limit: '2' } }), res);
+
+      const { data } = (res.json as jest.Mock).mock.calls[0][0];
+      expect(data.bookings.map((b: any) => [b.id, b.userType])).toEqual([['b-new', 'passenger'], ['b-old', 'driver']]);
+      expect(data.pagination).toEqual({ page: 2, limit: 2, total: 37, totalPages: 19 });
+      expect(sequelize.query.mock.calls[0][1].replacements).toEqual(expect.objectContaining({ limit: 2, offset: 2 }));
+    });
+  });
+
+  describe('updateBooking by the driver', () => {
+    it('cancels with a reason and tells the passenger', async () => {
+      const { notificationService } = jest.requireMock('../../services/NotificationService');
+      const booking: any = {
+        id: 'booking-1', passengerId: 'passenger-9', status: BookingStatus.CONFIRMED,
+        ride: { id: 'ride-1', driverId: 'passenger-1', status: RideStatus.CONFIRMED, update: jest.fn() },
+      };
+      booking.update = jest.fn(async (values: any) => Object.assign(booking, values));
+      (Booking.findByPk as jest.Mock).mockResolvedValue(booking);
+      const res = mockResponse();
+
+      await controller.updateBooking(mockRequest({ params: { id: 'booking-1' }, body: { status: BookingStatus.CANCELLED } }), res);
+
+      expect(booking.update).toHaveBeenCalledWith(
+        { status: BookingStatus.CANCELLED, cancelReason: 'Cancelled by the driver' },
+        expect.anything(),
+      );
+      expect(notificationService.notifyBookingStatusChange).toHaveBeenCalledWith('booking-1', BookingStatus.CANCELLED, 'passenger-1');
     });
   });
 
