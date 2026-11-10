@@ -70,9 +70,12 @@ const updateBookingValidation = [
 
 const cancelBookingValidation = [
   param('id').isUUID().withMessage('Booking ID must be a valid UUID'),
+  // Optional: the app's cancel button sends none, and requiring one refused
+  // every cancellation made from it.
   body('reason')
-    .isLength({ min: 5, max: 500 })
-    .withMessage('Cancel reason must be between 5 and 500 characters'),
+    .optional({ values: 'falsy' })
+    .isLength({ max: 500 })
+    .withMessage('Cancel reason cannot exceed 500 characters'),
 ];
 
 const rateBookingValidation = [
