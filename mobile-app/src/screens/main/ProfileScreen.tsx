@@ -27,6 +27,7 @@ import UserPreferencesService from '../../services/UserPreferencesService';
 import UserProfileCard from '../../components/profile/UserProfileCard';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { driverStanding } from '../../utils/driverStanding';
 
 const log = logger.createLogger('ProfileScreen');
 
@@ -230,6 +231,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       case 'becomeDriver':
         nav.navigate('DriverOnboarding');
         break;
+      case 'driverVerification':
+        nav.navigate('VerificationWorkflow');
+        break;
       case 'logout':
         handleLogout();
         break;
@@ -284,8 +288,30 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       ],
     });
 
-    // Become a Driver prompt (for non-drivers)
-    if (!hasRole('driver')) {
+    // By approval, not by the role chosen at sign-up.
+    const standing = driverStanding(user);
+    const isApprovedDriver = standing === 'approved';
+
+    // An application under review: say so, rather than offer to start again.
+    if (standing === 'under_review' || standing === 'suspended') {
+      sections.push({
+        id: 'driverReview',
+        title: t('profile.driveWith'),
+        items: [
+          {
+            id: 'driverReview',
+            icon: standing === 'suspended' ? 'block' : 'hourglass-top',
+            title: t('driver.verificationTitle'),
+            subtitle: standing === 'suspended' ? t('driver.suspendedTitle') : t('driver.reviewTitle'),
+            type: 'navigation',
+            action: 'driverVerification',
+          },
+        ],
+      });
+    }
+
+    // Become a Driver prompt (for people who have not applied)
+    if (standing === 'none') {
       sections.push({
         id: 'becomeDriver',
         title: t('profile.driveWith'),
@@ -302,8 +328,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       });
     }
 
-    // Driver section (only for drivers)
-    if (hasRole('driver')) {
+    // Driver section (only for approved drivers)
+    if (isApprovedDriver) {
       const activeVehicle = getActiveVehicle();
       sections.push({
         id: 'driver',
@@ -428,7 +454,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     // Demand near you, for drivers deciding when to offer a ride. Platform
     // revenue used to be listed here for every user, with made-up figures;
     // that belongs in the admin panel.
-    if (hasRole('driver')) {
+    if (isApprovedDriver) {
       sections.push({
         id: 'insights',
         title: t('profile.analytics'),

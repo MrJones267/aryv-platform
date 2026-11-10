@@ -22,6 +22,8 @@ export interface User {
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
   isDriverVerified: boolean; // Added driver verification
+  /** 'unverified' | 'pending' | 'verified' | 'rejected' | 'suspended', from the server. */
+  driverVerificationStatus?: string | null;
   rating?: number;
   totalRides: number;
   totalDeliveries: number; // Added total deliveries

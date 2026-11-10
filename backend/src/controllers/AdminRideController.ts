@@ -6,6 +6,7 @@
  */
 
 import { Response } from 'express';
+import { cancelBookingsOnRides, notifyCancelledBookings } from '../services/RideCancellationService';
 import { Op, QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import Ride from '../models/Ride';
@@ -180,8 +181,11 @@ export class AdminRideController {
       await ride.update({
         status: RideStatus.CANCELLED,
       }, { transaction });
+      // And its bookings, with the passengers told; they used to stay live.
+      const cancelledBookings = await cancelBookingsOnRides([String(id)], `Ride cancelled by ARYV: ${reason ?? ''}`.trim(), transaction);
 
       await transaction.commit();
+      await notifyCancelledBookings(cancelledBookings, String(adminUser?.id ?? 'admin'));
 
       // Log admin action
       logInfo('Admin cancelled ride', {
@@ -400,8 +404,13 @@ export class AdminRideController {
       await ride.update({
         status,
       }, { transaction });
+      // Setting a ride to cancelled from here takes its bookings with it too.
+      const cancelledBookings = status === RideStatus.CANCELLED
+        ? await cancelBookingsOnRides([String(id)], `Ride cancelled by ARYV${reason ? `: ${reason}` : ''}`, transaction)
+        : [];
 
       await transaction.commit();
+      await notifyCancelledBookings(cancelledBookings, String(adminUser?.id ?? 'admin'));
 
       // Log admin action
       logInfo('Admin updated ride status', {
