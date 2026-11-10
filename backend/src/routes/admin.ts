@@ -26,7 +26,7 @@ import { redisClient } from '../config/redis';
 import { PLATFORM_DEFAULT_CURRENCY } from '../services/CurrencyService';
 import { getMonthlyRevenue, getRevenueByCurrency } from '../services/RevenueReportService';
 import { DeliveryTier } from '../models/DeliveryTier';
-import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE } from '../utils/fees';
+import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RATE, hasAtMostTwoDecimals } from '../utils/fees';
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
 import { recordAdminAction } from '../services/AuditService';
@@ -1591,7 +1591,7 @@ router.get('/commission/:id/ledger', authenticateAdminToken, requireAdmin, async
  */
 router.post('/commission/:id/settlements', authenticateAdminToken, requireAdmin, async (req: any, res) => {
   const { amount, method, reference, note } = req.body ?? {};
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || !hasAtMostTwoDecimals(amount)) {
     return res.status(400).json({ success: false, error: 'amount must be a positive amount with at most two decimal places', code: 'VALIDATION_ERROR', timestamp: new Date().toISOString() });
   }
   if (!(ADMIN_SETTLEMENT_METHODS as readonly string[]).includes(method)) {

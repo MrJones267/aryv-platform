@@ -25,6 +25,14 @@ export const CASH_COMMISSION_RATE = 0.10;
 export const BOOKING_PLATFORM_FEE_RATE = 0.05;
 
 /**
+ * Whether an amount of money has at most two decimal places. Compared with a
+ * tolerance: 19.99 * 100 is 1998.9999999999998 in floating point, so an exact
+ * comparison refused 19.99, 1.15 and 0.07 as having too many decimals.
+ */
+export const hasAtMostTwoDecimals = (amount: number): boolean =>
+  Number.isFinite(amount) && Math.abs(Math.round(amount * 100) - amount * 100) < 1e-6;
+
+/**
  * Platform share of a courier delivery when the package has no delivery tier.
  * A package with a tier uses that tier's platform_fee_percentage instead.
  */
