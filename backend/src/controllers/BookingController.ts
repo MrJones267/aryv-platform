@@ -371,6 +371,8 @@ export class BookingController {
             allowedUpdates.cancelReason = typeof updateData.reason === 'string' && updateData.reason.trim()
               ? updateData.reason.trim().slice(0, 500)
               : 'Cancelled by the driver';
+            // Turning down a request that was still pending is a rejection.
+            if (booking.status === BookingStatus.PENDING) allowedUpdates.rejectedByDriver = true;
           }
         }
       }
@@ -799,7 +801,8 @@ export class BookingController {
       // With a reason: the booking model refuses a cancellation without one,
       // so every rejection failed.
       const cancelReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : 'Declined by the driver';
-      await booking.update({ status: BookingStatus.CANCELLED, cancelReason }, { transaction });
+      // Remembered on the booking: a rejected passenger may ask once more.
+      await booking.update({ status: BookingStatus.CANCELLED, cancelReason, rejectedByDriver: true }, { transaction });
 
       await transaction.commit();
 

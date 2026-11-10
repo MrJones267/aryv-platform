@@ -1395,6 +1395,19 @@ export class RideController {
       // cancelled one is brought back rather than a second one made.
       const revivable = existingBooking?.status === BookingStatus.CANCELLED ? existingBooking : null;
 
+      // After a driver's rejection the passenger may ask once more, in case
+      // it was a mistake, and no more than that.
+      if (revivable?.rejectedByDriver && revivable.rerequestedAfterRejection) {
+        res.status(403).json({
+          success: false,
+          error: 'The driver has declined your request for this ride',
+          code: 'REQUEST_DECLINED',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
+
       if (existingBooking && !revivable) {
         res.status(400).json({
           success: false,
@@ -1500,6 +1513,7 @@ export class RideController {
           {
             ...bookingValues,
             cancelReason: null,
+            ...(revivable.rejectedByDriver ? { rerequestedAfterRejection: true } : {}),
             ratingGiven: null,
             reviewText: null,
             passengerRatingGiven: null,

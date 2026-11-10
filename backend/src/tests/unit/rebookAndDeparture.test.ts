@@ -97,6 +97,36 @@ describe('booking a ride', () => {
     expect(BookingPin.destroy).toHaveBeenCalled();
   });
 
+  it('lets a rejected passenger ask once more, and marks that request as used', async () => {
+    rideLeaving(new Date(Date.now() + HOUR));
+    const rejected: any = { id: 'booking-1', status: BookingStatus.CANCELLED, rejectedByDriver: true, rerequestedAfterRejection: false };
+    rejected.update = jest.fn(async (values: any) => Object.assign(rejected, values));
+    jest.spyOn(Booking, 'findOne').mockResolvedValue(rejected);
+    const res = mockRes();
+
+    await controller.bookRide(request(), res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(rejected.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: BookingStatus.PENDING, rerequestedAfterRejection: true }),
+      expect.anything(),
+    );
+  });
+
+  it('refuses a rejected passenger who has already asked again', async () => {
+    rideLeaving(new Date(Date.now() + HOUR));
+    const rejected: any = { id: 'booking-1', status: BookingStatus.CANCELLED, rejectedByDriver: true, rerequestedAfterRejection: true, update: jest.fn() };
+    jest.spyOn(Booking, 'findOne').mockResolvedValue(rejected);
+    const res = mockRes();
+
+    await controller.bookRide(request(), res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REQUEST_DECLINED' }));
+    expect(rejected.update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('still refuses a second booking while one is live', async () => {
     rideLeaving(new Date(Date.now() + HOUR));
     jest.spyOn(Booking, 'findOne').mockResolvedValue({ id: 'booking-1', status: BookingStatus.PENDING } as any);

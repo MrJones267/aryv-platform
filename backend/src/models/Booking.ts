@@ -47,6 +47,10 @@ export interface BookingModel extends Model<
   reviewText: CreationOptional<string | null>;
   passengerRatingGiven: CreationOptional<number | null>;
   passengerReviewText: CreationOptional<string | null>;
+  /** The driver rejected this request at some point. Never cleared. */
+  rejectedByDriver: CreationOptional<boolean>;
+  /** The one further request allowed after a rejection has been made. */
+  rerequestedAfterRejection: CreationOptional<boolean>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 
@@ -248,6 +252,18 @@ const Booking = sequelize.define<BookingModel>(
       validate: {
         len: { args: [0, 1000], msg: 'Review text cannot exceed 1000 characters' },
       },
+    },
+    rejectedByDriver: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'rejected_by_driver',
+    },
+    rerequestedAfterRejection: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'rerequested_after_rejection',
     },
     createdAt: {
       type: DataTypes.DATE,
