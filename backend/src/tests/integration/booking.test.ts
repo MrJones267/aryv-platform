@@ -364,14 +364,18 @@ describe('Booking System Integration Tests', () => {
       expect(response.body.data.status).toBe(BookingStatus.CANCELLED);
     });
 
-    it('should require cancellation reason', async () => {
+    // The app's cancel button sends no reason. Requiring one refused every
+    // cancellation made from it, so the server now records who cancelled.
+    it('should cancel without a reason and record who cancelled', async () => {
       const response = await request(app)
         .post(`/api/bookings/${booking.id}/cancel`)
         .set('Authorization', `Bearer ${passengerToken}`)
         .send({})
-        .expect(400);
+        .expect(200);
 
-      expect(response.body.success).toBe(false);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.status).toBe(BookingStatus.CANCELLED);
+      expect(response.body.data.cancelReason).toBe('Cancelled by the passenger');
     });
   });
 

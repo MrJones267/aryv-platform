@@ -302,11 +302,8 @@ const Booking = sequelize.define<BookingModel>(
       },
     },
     validate: {
-      ratingRequiresReview() {
-        if (this['ratingGiven'] && !this['reviewText']) {
-          throw new Error('Review text is required when giving a rating');
-        }
-      },
+      // A rating needs no review: the routes make it optional, and requiring
+      // one here turned every stars-only rating into a server error.
       cancelReasonRequired() {
         if (this['status'] === BookingStatus.CANCELLED && !this['cancelReason']) {
           throw new Error('Cancel reason is required when cancelling a booking');
