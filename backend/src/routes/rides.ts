@@ -196,6 +196,11 @@ const searchRidesValidation = [
     .optional()
     .isInt({ min: 1, max: 7 })
     .withMessage('Number of seats must be between 1 and 7'),
+  // The name installed apps use for the same thing.
+  query('passengers')
+    .optional()
+    .isInt({ min: 1, max: 7 })
+    .withMessage('Number of passengers must be between 1 and 7'),
   query('maxPrice')
     .optional()
     .isFloat({ min: 0.01 })
@@ -560,7 +565,7 @@ router.post(
   authenticateToken,
   [
     param('id').isUUID().withMessage('Ride ID must be a valid UUID'),
-    body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be a whole number from 1 to 5'),
     body('comment').optional().isLength({ max: 500 }).withMessage('Comment cannot exceed 500 characters'),
     body('tags').optional().isArray().withMessage('Tags must be an array'),
   ],

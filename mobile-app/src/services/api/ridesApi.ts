@@ -243,8 +243,9 @@ class RidesApiService extends BaseApiService {
         destinationLat: params.destination.latitude,
         destinationLng: params.destination.longitude,
         departureDate: params.departureDate,
-        passengers: params.passengers,
-        maxDistance: params.maxDistance || 500,
+        // The server's names. It was sent `passengers` and `maxDistance`,
+        // neither of which the server read.
+        seats: params.passengers,
         maxPrice: params.maxPrice,
         page: params.page || 1,
         limit: params.limit || 20,

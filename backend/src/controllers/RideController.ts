@@ -6,7 +6,7 @@
  */
 
 import { Request, Response } from 'express';
-import { Op, Transaction } from 'sequelize';
+import { Op, QueryTypes, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import pickupPinService from '../services/PickupPinService';
 import { cancelBookingsOnRides, notifyCancelledBookings } from '../services/RideCancellationService';
@@ -270,11 +270,14 @@ export class RideController {
         destinationLng,
         departureDate,
         radius = 10,
-        seats = 1,
         maxPrice,
         page = 1,
         limit = 20,
       } = req.query;
+
+      // Installed apps send the count as `passengers`. Only `seats` was read,
+      // so a search for four people was answered as a search for one.
+      const seats = req.query['seats'] ?? req.query['passengers'] ?? 1;
 
       const offset = (Number(page) - 1) * Number(limit);
       const searchDate = new Date(departureDate as string);
@@ -1728,8 +1731,10 @@ export class RideController {
         );
         // Requests the driver never accepted did not travel; they were left
         // pending for ever, so the passenger still saw them as waiting.
+        // With a reason: the booking model refuses a cancellation without
+        // one, which failed this whole request, so no ride could be completed.
         await Booking.update(
-          { status: BookingStatus.CANCELLED },
+          { status: BookingStatus.CANCELLED, cancelReason: 'The driver did not accept this request before the ride' },
           { where: { rideId, status: BookingStatus.PENDING }, transaction },
         );
 
@@ -2270,6 +2275,13 @@ export class RideController {
         return;
       }
 
+      // The driver's live position is for the people on the ride. Any
+      // signed-in user could read it for any ride id.
+      if (!(await this.isRideParticipant(String(id), userId))) {
+        res.status(403).json({ success: false, error: 'Only the driver and passengers of this ride can follow it', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+        return;
+      }
+
       const socketService = req.app.get('socketService');
       const trackingData = socketService ? await socketService.getRideTrackingData(id) : null;
 
@@ -2327,26 +2339,59 @@ export class RideController {
         return;
       }
 
-      // Determine who to rate (if passenger rates, update driver rating; if driver rates, update passenger rating)
+      // The rating is kept on the booking, once per side. It used to be kept
+      // nowhere, so the same person could rate again and again and move the
+      // other's score each time; and a driver's rating looked for a booking
+      // the driver had made on their own ride, found none, and was dropped
+      // while the app was told it had been saved.
       const isDriver = ride.driverId === userId;
-      const booking = await Booking.findOne({ where: { rideId: id, passengerId: userId } });
-      const isPassenger = !!booking;
+      const stars = Math.round(Number(rating));
+      const review = typeof comment === 'string' && comment.trim() ? comment.trim().slice(0, 1000) : null;
 
-      if (!isDriver && !isPassenger) {
-        res.status(403).json({ success: false, error: 'Not authorized to rate this ride', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
-        return;
-      }
+      if (isDriver) {
+        // One rating for the passengers who travelled and are not yet rated.
+        const unrated = await Booking.findAll({
+          where: { rideId: id, status: BookingStatus.COMPLETED, passengerRatingGiven: { [Op.is]: null } } as any,
+        });
+        if (unrated.length === 0) {
+          res.status(409).json({ success: false, error: 'You have already rated the passengers on this ride', code: 'ALREADY_RATED', timestamp: new Date().toISOString() });
+          return;
+        }
+        await sequelize.transaction(async (transaction) => {
+          for (const booking of unrated) {
+            await booking.update({ passengerRatingGiven: stars, passengerReviewText: review }, { transaction });
+            const passenger = await User.findByPk(booking.passengerId, { transaction, lock: transaction.LOCK.UPDATE });
+            if (passenger) {
+              const count = passenger.totalPassengerRatings ?? 0;
+              const average = ((Number(passenger.passengerRating ?? 5) * count) + stars) / (count + 1);
+              await passenger.update(
+                { passengerRating: Math.round(average * 100) / 100, totalPassengerRatings: count + 1 },
+                { transaction },
+              );
+            }
+          }
+        });
+      } else {
+        const booking = await Booking.findOne({ where: { rideId: id, passengerId: userId, status: BookingStatus.COMPLETED } });
+        if (!booking) {
+          res.status(403).json({ success: false, error: 'Not authorized to rate this ride', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
+          return;
+        }
+        if (booking.ratingGiven !== null && booking.ratingGiven !== undefined) {
+          res.status(409).json({ success: false, error: 'You have already rated this ride', code: 'ALREADY_RATED', timestamp: new Date().toISOString() });
+          return;
+        }
+        await booking.update({ ratingGiven: stars, reviewText: review });
 
-      // Update rating for the other party
-      const targetId = isDriver
-        ? (booking ? booking.passengerId : null)
-        : ride.driverId;
-
-      if (targetId) {
-        const target = await User.findByPk(targetId);
-        if (target) {
-          const newRating = ((target.rating || 0) * (target.totalRides || 1) + rating) / ((target.totalRides || 1) + 1);
-          await target.update({ rating: Math.round(newRating * 10) / 10 });
+        // The driver's score is the average of the ratings actually given.
+        const [row] = await sequelize.query<{ average: number | null }>(
+          `SELECT AVG(b.rating_given)::float AS average
+             FROM bookings b JOIN rides r ON r.id = b.ride_id
+            WHERE r.driver_id = :driverId AND b.rating_given IS NOT NULL`,
+          { type: QueryTypes.SELECT, replacements: { driverId: ride.driverId } },
+        );
+        if (row?.average != null) {
+          await User.update({ rating: Math.round(row.average * 10) / 10 }, { where: { id: ride.driverId } });
         }
       }
 

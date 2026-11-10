@@ -28,6 +28,9 @@ import { PLATFORM_DEFAULT_CURRENCY, CurrencyService } from '../services/Currency
 import { columnsOf, toPackageListView } from '../utils/packageListView';
 import { packageExpiry } from '../utils/packageExpiry';
 import { courierFeeFor } from '../services/courierFee';
+import { CommissionService } from '../services/CommissionService';
+
+const commissionService = new CommissionService();
 
 /** [lng, lat] from a request, as the GeoJSON point a GEOMETRY column stores. */
 const toGeoPoint = (coordinates: [number, number]): any => ({
@@ -627,6 +630,23 @@ export class CourierController {
           success: false,
           error: 'User is not an active courier',
           code: 'NOT_ACTIVE_COURIER',
+        });
+        return;
+      }
+
+      // A courier too far behind on commission takes no more cash work, as a
+      // driver takes no more cash rides. The check existed only in
+      // CourierEscrowService.createDeliveryAgreement, which nothing calls, so
+      // it was never applied. Every delivery made here is cash on delivery.
+      const commission = await commissionService.isBlockedForUnpaidCommission(userId, transaction);
+      if (commission.blocked) {
+        await transaction.rollback();
+        res.status(403).json({
+          success: false,
+          error: `Settle your outstanding commission (${commission.owed.toFixed(2)}) before accepting more deliveries. Limit: ${commission.threshold.toFixed(2)}.`,
+          code: 'COMMISSION_OUTSTANDING',
+          data: { owed: commission.owed, threshold: commission.threshold },
+          timestamp: new Date().toISOString(),
         });
         return;
       }

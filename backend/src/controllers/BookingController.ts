@@ -585,7 +585,11 @@ export class BookingController {
       await booking.update(
         {
           status: BookingStatus.CANCELLED,
-          cancelReason: reason,
+          // The app asks for no reason, and the model refuses a cancellation
+          // without one.
+          cancelReason: typeof reason === 'string' && reason.trim()
+            ? reason.trim()
+            : (cancelledByDriver ? 'Cancelled by the driver' : 'Cancelled by the passenger'),
         },
         { transaction },
       );
@@ -792,7 +796,10 @@ export class BookingController {
         return;
       }
 
-      await booking.update({ status: BookingStatus.CANCELLED }, { transaction });
+      // With a reason: the booking model refuses a cancellation without one,
+      // so every rejection failed.
+      const cancelReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : 'Declined by the driver';
+      await booking.update({ status: BookingStatus.CANCELLED, cancelReason }, { transaction });
 
       await transaction.commit();
 

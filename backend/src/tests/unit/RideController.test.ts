@@ -181,6 +181,49 @@ describe('RideController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
     });
+
+    it('keeps a passenger rating on their booking and refuses a second one', async () => {
+      const { sequelize } = jest.requireMock('../../config/database');
+      sequelize.query = jest.fn().mockResolvedValue([{ average: 4 }]);
+      const booking = { ratingGiven: null as number | null, update: jest.fn(async (v: any) => { booking.ratingGiven = v.ratingGiven; }) };
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'driver-1', status: RideStatus.COMPLETED });
+      (Booking.findOne as jest.Mock).mockResolvedValue(booking);
+
+      const first = mockResponse();
+      await controller.rateRide(mockRequest({ params: { id: 'ride-1' }, body: { rating: 4 } }), first);
+      expect(booking.update).toHaveBeenCalledWith({ ratingGiven: 4, reviewText: null });
+      expect(first.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+
+      const second = mockResponse();
+      await controller.rateRide(mockRequest({ params: { id: 'ride-1' }, body: { rating: 1 } }), second);
+      expect(second.status).toHaveBeenCalledWith(409);
+      expect(booking.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a driver rating on each passenger who travelled', async () => {
+      const { sequelize } = jest.requireMock('../../config/database');
+      sequelize.transaction.mockImplementationOnce(async (run: any) => run({ LOCK: { UPDATE: 'UPDATE' } }));
+      const booking = { passengerId: 'p-1', update: jest.fn() };
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'user-1', status: RideStatus.COMPLETED });
+      (Booking.findAll as jest.Mock).mockResolvedValueOnce([booking]);
+
+      const res = mockResponse();
+      await controller.rateRide(mockRequest({ params: { id: 'ride-1' }, body: { rating: 5, comment: ' On time ' } }), res);
+
+      expect(booking.update).toHaveBeenCalledWith(
+        { passengerRatingGiven: 5, passengerReviewText: 'On time' },
+        expect.anything(),
+      );
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    });
+
+    it('refuses a driver who has already rated everyone', async () => {
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'user-1', status: RideStatus.COMPLETED });
+      (Booking.findAll as jest.Mock).mockResolvedValueOnce([]);
+      const res = mockResponse();
+      await controller.rateRide(mockRequest({ params: { id: 'ride-1' }, body: { rating: 5 } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
   });
 
   describe('updateRideStatus', () => {
@@ -258,6 +301,32 @@ describe('RideController', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true, data: [] })
       );
+    });
+  });
+
+  describe('getRideUpdates', () => {
+    const app = { get: jest.fn(() => ({ getRideTrackingData: jest.fn().mockResolvedValue({ driverLocation: { lat: -24.6, lng: 25.9 } }) })) };
+
+    it("refuses someone who is not on the ride", async () => {
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'driver-1', status: RideStatus.IN_PROGRESS, updatedAt: new Date() });
+      (Booking.count as jest.Mock).mockResolvedValueOnce(0);
+      const res = mockResponse();
+
+      await controller.getRideUpdates(mockRequest({ params: { id: 'ride-1' }, app } as any), res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('shows the driver position to a passenger on the ride', async () => {
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'driver-1', status: RideStatus.IN_PROGRESS, updatedAt: new Date() });
+      (Booking.count as jest.Mock).mockResolvedValueOnce(1);
+      const res = mockResponse();
+
+      await controller.getRideUpdates(mockRequest({ params: { id: 'ride-1' }, app } as any), res);
+
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.data.currentLocation).toEqual({ lat: -24.6, lng: 25.9 });
     });
   });
 });

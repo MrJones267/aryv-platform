@@ -5,7 +5,7 @@
  * @lastModified 2026-11-08
  */
 
-import ridesSlice, { searchRides } from '../ridesSlice';
+import ridesSlice, { searchRides, searchWindowStart } from '../ridesSlice';
 
 const reducer = ridesSlice.reducer;
 
@@ -37,5 +37,18 @@ describe('searchRides.fulfilled', () => {
   it('treats a missing or odd payload as no results instead of throwing', () => {
     expect(fulfilled(undefined).searchResults).toEqual([]);
     expect(fulfilled({ pagination: {} }).searchResults).toEqual([]);
+  });
+});
+
+describe('searchWindowStart', () => {
+  const now = new Date(2026, 10, 10, 15, 0, 0);
+
+  it('starts a later day at its midnight, not at the current time of day', () => {
+    const picked = new Date(2026, 10, 11, 15, 0, 0);
+    expect(searchWindowStart(picked, now)).toEqual(new Date(2026, 10, 11, 0, 0, 0));
+  });
+
+  it('starts today from now, so rides that have left stay out', () => {
+    expect(searchWindowStart(new Date(2026, 10, 10, 9, 0, 0), now)).toEqual(now);
   });
 });

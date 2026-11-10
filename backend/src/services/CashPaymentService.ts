@@ -249,7 +249,10 @@ export class CashPaymentService {
     const transaction = await sequelize.transaction();
 
     try {
-      const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction });
+      // Locked: the driver and the passenger confirm at about the same moment.
+      // Unlocked, each read "pending" and wrote their own side, so neither
+      // saw the other's and the payment never completed.
+      const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction, lock: Transaction.LOCK.UPDATE });
 
       if (!cashTransaction) {
         throw new Error('Transaction not found');
@@ -376,7 +379,10 @@ export class CashPaymentService {
     const transaction = await sequelize.transaction();
 
     try {
-      const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction });
+      // Locked: the driver and the passenger confirm at about the same moment.
+      // Unlocked, each read "pending" and wrote their own side, so neither
+      // saw the other's and the payment never completed.
+      const cashTransaction = await CashTransaction.findByPk(transactionId, { transaction, lock: Transaction.LOCK.UPDATE });
 
       if (!cashTransaction) {
         throw new Error('Transaction not found');

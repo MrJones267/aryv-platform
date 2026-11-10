@@ -186,3 +186,22 @@ describe('CashPaymentService.createCashPayment', () => {
     expect(result.error).toMatch(/Booking not found/);
   });
 });
+
+describe('CashPaymentService confirmations', () => {
+  // The driver and the passenger confirm at about the same moment. Without a
+  // row lock each read "pending" and neither completed the payment.
+  it.each(['confirmCashReceived', 'confirmCashPaid'] as const)('%s reads the transaction under a row lock', async (method) => {
+    const service = new CashPaymentService();
+    const tx = { commit: jest.fn(), rollback: jest.fn() };
+    jest.spyOn(sequelize, 'transaction').mockResolvedValue(tx as any);
+    const findByPk = jest.fn().mockResolvedValue(null);
+    (CashTransaction as any).findByPk = findByPk;
+
+    const result = method === 'confirmCashReceived'
+      ? await service.confirmCashReceived('cash-tx-1', DRIVER, 120)
+      : await service.confirmCashPaid('cash-tx-1', RIDER, '123456');
+
+    expect(result.success).toBe(false);
+    expect(findByPk).toHaveBeenCalledWith('cash-tx-1', expect.objectContaining({ transaction: tx, lock: 'UPDATE' }));
+  });
+});
