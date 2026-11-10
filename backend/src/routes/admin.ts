@@ -335,14 +335,14 @@ router.get('/rides/:id', authenticateAdminToken, AdminRideController.getRideById
  * @desc    Cancel ride with reason
  * @access  Private (Admin)
  */
-router.post('/rides/:id/cancel', authenticateAdminToken, AdminRideController.cancelRide);
+router.post('/rides/:id/cancel', authenticateAdminToken, requireAdmin, AdminRideController.cancelRide);
 
 /**
  * @route   PUT /api/admin/rides/:id/status
  * @desc    Update ride status (admin override)
  * @access  Private (Admin)
  */
-router.put('/rides/:id/status', authenticateAdminToken, AdminRideController.updateRideStatus);
+router.put('/rides/:id/status', authenticateAdminToken, requireAdmin, AdminRideController.updateRideStatus);
 
 /**
  * @route   GET /api/admin/rides/:id/bookings

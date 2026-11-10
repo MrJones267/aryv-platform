@@ -58,7 +58,9 @@ export class CommissionService {
       return;
     }
 
-    let wallet = await UserWallet.findOne({ where: { userId: driverId }, transaction });
+    // Locked: two trips finishing at once each read the same balance and
+    // the second write lost the first's commission.
+    let wallet = await UserWallet.findOne({ where: { userId: driverId }, transaction, lock: Transaction.LOCK.UPDATE });
     if (!wallet) {
       wallet = await UserWallet.create({ userId: driverId }, { transaction });
     }

@@ -6,7 +6,7 @@
  */
 
 import { Response } from 'express';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import Booking from '../models/Booking';
 import Ride from '../models/Ride';
@@ -17,6 +17,8 @@ import { AuthenticatedRequest } from '../types';
 import logger, { getErrorMessage, getErrorStack } from '../utils/logger';
 import { paymentService } from '../services/PaymentService';
 import { notificationService } from '../services/NotificationService';
+import { rideSegmentService } from '../services/RideSegmentService';
+import { BOOKING_PLATFORM_FEE_RATE } from '../utils/fees';
 
 export class BookingController {
   async getMyBookings(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -34,94 +36,76 @@ export class BookingController {
         return;
       }
 
-      const offset = (Number(page) - 1) * Number(limit);
-      const whereClause: any = {};
+      const pageNumber = Math.max(1, Number(page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(limit) || 20));
 
-      if (status) {
-        whereClause.status = status;
-      }
+      // One ordered, counted query for whichever side was asked for. Each
+      // side used to be fetched and paged on its own, then merged and cut to
+      // one page: with both sides, up to a page of bookings was dropped and
+      // never shown, and the total was only ever the size of that page.
+      const asPassenger = type === 'passenger' || type === 'both';
+      const asDriver = type === 'driver' || type === 'both';
+      const roleClause = [
+        asPassenger ? 'b.passenger_id = :userId' : '',
+        asDriver ? 'r.driver_id = :userId' : '',
+      ].filter(Boolean).join(' OR ');
+      const statusClause = status ? 'AND b.status::text = :status' : '';
+      const from = `FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id WHERE (${roleClause}) ${statusClause}`;
+      const replacements = { userId, status: String(status ?? ''), limit: pageSize, offset: (pageNumber - 1) * pageSize };
 
-      let bookings: any[] = [];
+      const [pageRows, countRows] = await Promise.all([
+        sequelize.query<{ id: string }>(
+          `SELECT b.id ${from} ORDER BY b.created_at DESC, b.id LIMIT :limit OFFSET :offset`,
+          { type: QueryTypes.SELECT, replacements },
+        ),
+        sequelize.query<{ total: number }>(
+          `SELECT COUNT(*)::int AS total ${from}`,
+          { type: QueryTypes.SELECT, replacements },
+        ),
+      ]);
+      const ids = pageRows.map((row) => row.id);
+      const total = countRows[0]?.total ?? 0;
 
-      if (type === 'passenger' || type === 'both') {
-        // Get bookings as passenger
-        const passengerBookings = await Booking.findAll({
-          where: {
-            passengerId: userId,
-            ...whereClause,
+      const found = ids.length === 0 ? [] : await Booking.findAll({
+        where: { id: { [Op.in]: ids } },
+        include: [
+          {
+            model: Ride,
+            as: 'ride',
+            include: [
+              {
+                model: User,
+                as: 'driver',
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
+              },
+              {
+                model: Vehicle,
+                as: 'vehicle',
+                attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate'],
+              },
+            ],
           },
-          include: [
-            {
-              model: Ride,
-              as: 'ride',
-              include: [
-                {
-                  model: User,
-                  as: 'driver',
-                  attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
-                },
-                {
-                  model: Vehicle,
-                  as: 'vehicle',
-                  attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate'],
-                },
-              ],
-            },
-          ],
-          order: [['createdAt', 'DESC']],
-          limit: Number(limit),
-          offset,
-        });
-
-        bookings = [...bookings, ...passengerBookings.map(b => ({ ...b.toJSON(), userType: 'passenger' }))];
-      }
-
-      if (type === 'driver' || type === 'both') {
-        // Get bookings for rides where user is the driver
-        const driverBookings = await Booking.findAll({
-          where: whereClause,
-          include: [
-            {
-              model: Ride,
-              as: 'ride',
-              where: { driverId: userId },
-              include: [
-                {
-                  model: Vehicle,
-                  as: 'vehicle',
-                  attributes: ['id', 'make', 'model', 'year', 'color', 'licensePlate'],
-                },
-              ],
-            },
-            {
-              model: User,
-              as: 'passenger',
-              attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
-            },
-          ],
-          order: [['createdAt', 'DESC']],
-          limit: Number(limit),
-          offset,
-        });
-
-        bookings = [...bookings, ...driverBookings.map(b => ({ ...b.toJSON(), userType: 'driver' }))];
-      }
-
-      // Sort by creation date
-      bookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      // Apply pagination to combined results
-      const paginatedBookings = bookings.slice(0, Number(limit));
+          {
+            model: User,
+            as: 'passenger',
+            attributes: ['id', 'firstName', 'lastName', 'phone', 'profilePicture'],
+          },
+        ],
+      });
+      const order = new Map(ids.map((id, index) => [id, index]));
+      const bookings = found
+        .sort((x, y) => (order.get(x.id) ?? 0) - (order.get(y.id) ?? 0))
+        .map((b) => ({ ...b.toJSON(), userType: b.passengerId === userId && asPassenger ? 'passenger' : 'driver' }));
 
       res.json({
         success: true,
         data: {
-          bookings: paginatedBookings,
+          bookings,
           pagination: {
-            page: Number(page),
-            limit: Number(limit),
-            total: bookings.length,
-            totalPages: Math.ceil(bookings.length / Number(limit)),
+            page: pageNumber,
+            limit: pageSize,
+            total,
+            totalPages: Math.ceil(total / pageSize),
           },
         },
         timestamp: new Date().toISOString(),
@@ -307,19 +291,38 @@ export class BookingController {
         // Passengers can update seat count if ride allows it
         if (updateData.seatsBooked !== undefined) {
           const ride = booking.ride!;
-          const existingBookings = await Booking.sum('seatsBooked', {
-            where: {
-              rideId: ride.id,
-              id: { [Op.ne]: booking.id },
-              status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
-            },
+          const seats = Number(updateData.seatsBooked);
+          if (!Number.isInteger(seats) || seats < 1) {
+            res.status(400).json({
+              success: false,
+              error: 'Seats must be a whole number of at least 1',
+              code: 'INVALID_SEATS',
+              timestamp: new Date().toISOString(),
+            });
+            await transaction.rollback();
+            return;
+          }
+
+          // Counted and priced as booking does: per leg of this booking's own
+          // part of the journey, at that part's fare. It was counted against
+          // the whole ride and priced at the full fare, so a passenger riding
+          // one leg of a multi-stop ride was charged end to end, and any promo
+          // discount on the booking was dropped.
+          const stops = await rideSegmentService.getStops(ride as any, transaction);
+          const whole = rideSegmentService.wholeJourney(stops);
+          const boardingSequence = booking.boardingSequence ?? whole.boardingSequence;
+          const alightingSequence = booking.alightingSequence ?? whole.alightingSequence;
+          const availability = await rideSegmentService.getSegmentAvailability(
+            ride.id,
+            ride.availableSeats,
+            boardingSequence,
+            alightingSequence,
             transaction,
-          });
+          );
+          // This booking's own seats are part of what is taken.
+          const availableSeats = availability.available + Number(booking.seatsBooked);
 
-          const otherBookedSeats = existingBookings || 0;
-          const availableSeats = ride.availableSeats - otherBookedSeats;
-
-          if (updateData.seatsBooked > availableSeats) {
+          if (seats > availableSeats) {
             res.status(400).json({
               success: false,
               error: `Only ${availableSeats} seats available`,
@@ -330,9 +333,13 @@ export class BookingController {
             return;
           }
 
-          allowedUpdates.seatsBooked = updateData.seatsBooked;
-          // Recalculate total amount
-          allowedUpdates.totalAmount = ride.pricePerSeat * updateData.seatsBooked * 1.05; // Include platform fee
+          const fare = rideSegmentService.fareForSegment(stops, boardingSequence, alightingSequence) * seats;
+          const platformFee = fare * BOOKING_PLATFORM_FEE_RATE;
+          const discount = Math.min(Number(booking.discountAmount ?? 0), platformFee);
+
+          allowedUpdates.seatsBooked = seats;
+          allowedUpdates.platformFee = platformFee;
+          allowedUpdates.totalAmount = Math.round((fare + platformFee - discount) * 100) / 100;
         }
       }
 
@@ -358,6 +365,15 @@ export class BookingController {
           }
 
           allowedUpdates.status = updateData.status;
+          // The model refuses a cancellation without a reason, so cancelling
+          // through this route failed.
+          if (updateData.status === BookingStatus.CANCELLED) {
+            allowedUpdates.cancelReason = typeof updateData.reason === 'string' && updateData.reason.trim()
+              ? updateData.reason.trim().slice(0, 500)
+              : 'Cancelled by the driver';
+            // Turning down a request that was still pending is a rejection.
+            if (booking.status === BookingStatus.PENDING) allowedUpdates.rejectedByDriver = true;
+          }
         }
       }
 
@@ -372,11 +388,17 @@ export class BookingController {
         return;
       }
 
+      // Read before the update: afterwards booking.status is already the new
+      // one, so the comparison below never held and nobody was notified.
+      const previousStatus = booking.status;
       await booking.update(allowedUpdates, { transaction });
+      // As confirming through POST /:id/confirm does.
+      if (allowedUpdates.status === BookingStatus.CONFIRMED && booking.ride && booking.ride.status === 'pending') {
+        await booking.ride.update({ status: 'confirmed' as any }, { transaction });
+      }
       await transaction.commit();
 
-      // Send real-time notification if status changed
-      if (allowedUpdates.status && allowedUpdates.status !== booking.status) {
+      if (allowedUpdates.status && allowedUpdates.status !== previousStatus) {
         await notificationService.notifyBookingStatusChange(
           booking.id,
           allowedUpdates.status,
@@ -779,7 +801,8 @@ export class BookingController {
       // With a reason: the booking model refuses a cancellation without one,
       // so every rejection failed.
       const cancelReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : 'Declined by the driver';
-      await booking.update({ status: BookingStatus.CANCELLED, cancelReason }, { transaction });
+      // Remembered on the booking: a rejected passenger may ask once more.
+      await booking.update({ status: BookingStatus.CANCELLED, cancelReason, rejectedByDriver: true }, { transaction });
 
       await transaction.commit();
 

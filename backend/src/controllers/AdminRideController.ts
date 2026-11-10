@@ -13,7 +13,7 @@ import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import User from '../models/User';
 import Vehicle from '../models/Vehicle';
-import { RideStatus, AdminAuthenticatedRequest } from '../types';
+import { RideStatus, BookingStatus, AdminAuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
 
 export class AdminRideController {
@@ -401,9 +401,44 @@ export class AdminRideController {
       }
 
       const oldStatus = ride.status;
+
+      // A ride moves forward, or is cancelled before it ends. Any status
+      // could be set from any other, so a finished ride could be reopened
+      // with its bookings still completed or cancelled.
+      const ALLOWED: Record<string, string[]> = {
+        [RideStatus.PENDING]: [RideStatus.CONFIRMED, RideStatus.IN_PROGRESS, RideStatus.CANCELLED],
+        [RideStatus.CONFIRMED]: [RideStatus.IN_PROGRESS, RideStatus.COMPLETED, RideStatus.CANCELLED],
+        [RideStatus.IN_PROGRESS]: [RideStatus.COMPLETED, RideStatus.CANCELLED],
+        [RideStatus.COMPLETED]: [],
+        [RideStatus.CANCELLED]: [],
+      };
+      if (!(ALLOWED[oldStatus] ?? []).includes(status)) {
+        res.status(409).json({
+          success: false,
+          error: `A ${oldStatus} ride cannot be set to ${status}`,
+          code: 'INVALID_STATUS_TRANSITION',
+          timestamp: new Date().toISOString(),
+        });
+        await transaction.rollback();
+        return;
+      }
+
       await ride.update({
         status,
       }, { transaction });
+
+      // As when the driver completes it: those who travelled are completed,
+      // and requests never accepted are closed. They were left as they were.
+      if (status === RideStatus.COMPLETED) {
+        await Booking.update(
+          { status: BookingStatus.COMPLETED },
+          { where: { rideId: id, status: BookingStatus.CONFIRMED }, transaction },
+        );
+        await Booking.update(
+          { status: BookingStatus.CANCELLED, cancelReason: 'The driver did not accept this request before the ride' },
+          { where: { rideId: id, status: BookingStatus.PENDING }, transaction },
+        );
+      }
       // Setting a ride to cancelled from here takes its bookings with it too.
       const cancelledBookings = status === RideStatus.CANCELLED
         ? await cancelBookingsOnRides([String(id)], `Ride cancelled by ARYV${reason ? `: ${reason}` : ''}`, transaction)
