@@ -269,11 +269,14 @@ export class RideController {
         destinationLng,
         departureDate,
         radius = 10,
-        seats = 1,
         maxPrice,
         page = 1,
         limit = 20,
       } = req.query;
+
+      // Installed apps send the count as `passengers`. Only `seats` was read,
+      // so a search for four people was answered as a search for one.
+      const seats = req.query['seats'] ?? req.query['passengers'] ?? 1;
 
       const offset = (Number(page) - 1) * Number(limit);
       const searchDate = new Date(departureDate as string);
@@ -2162,6 +2165,13 @@ export class RideController {
 
       if (!ride) {
         res.status(404).json({ success: false, error: 'Ride not found', code: 'RIDE_NOT_FOUND', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      // The driver's live position is for the people on the ride. Any
+      // signed-in user could read it for any ride id.
+      if (!(await this.isRideParticipant(String(id), userId))) {
+        res.status(403).json({ success: false, error: 'Only the driver and passengers of this ride can follow it', code: 'FORBIDDEN', timestamp: new Date().toISOString() });
         return;
       }
 

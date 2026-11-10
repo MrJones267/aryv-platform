@@ -174,13 +174,24 @@ const initialState: RidesState = {
 };
 
 // Async thunks
+/**
+ * Where a day's search starts. The server returns rides in the 24 hours from
+ * this moment. The picker keeps the current time of day, so choosing tomorrow
+ * at 3pm searched from 3pm tomorrow and missed every ride that morning. A
+ * later day starts at its midnight; today starts now, so past rides stay out.
+ */
+export const searchWindowStart = (picked: Date, now: Date = new Date()): Date => {
+  const startOfDay = new Date(picked.getFullYear(), picked.getMonth(), picked.getDate());
+  return startOfDay.getTime() > now.getTime() ? startOfDay : now;
+};
+
 export const searchRides = createAsyncThunk(
   'rides/searchRides',
   async (searchParams: SearchRidesParams, { rejectWithValue }) => {
     try {
       const apiParams = {
         ...searchParams,
-        departureDate: searchParams.departureDate.toISOString(),
+        departureDate: searchWindowStart(searchParams.departureDate).toISOString(),
       };
       const response = await ridesApi.searchRides(apiParams);
       

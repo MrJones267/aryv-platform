@@ -196,6 +196,11 @@ const searchRidesValidation = [
     .optional()
     .isInt({ min: 1, max: 7 })
     .withMessage('Number of seats must be between 1 and 7'),
+  // The name installed apps use for the same thing.
+  query('passengers')
+    .optional()
+    .isInt({ min: 1, max: 7 })
+    .withMessage('Number of passengers must be between 1 and 7'),
   query('maxPrice')
     .optional()
     .isFloat({ min: 0.01 })

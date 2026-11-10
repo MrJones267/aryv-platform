@@ -303,4 +303,30 @@ describe('RideController', () => {
       );
     });
   });
+
+  describe('getRideUpdates', () => {
+    const app = { get: jest.fn(() => ({ getRideTrackingData: jest.fn().mockResolvedValue({ driverLocation: { lat: -24.6, lng: 25.9 } }) })) };
+
+    it("refuses someone who is not on the ride", async () => {
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'driver-1', status: RideStatus.IN_PROGRESS, updatedAt: new Date() });
+      (Booking.count as jest.Mock).mockResolvedValueOnce(0);
+      const res = mockResponse();
+
+      await controller.getRideUpdates(mockRequest({ params: { id: 'ride-1' }, app } as any), res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('shows the driver position to a passenger on the ride', async () => {
+      (Ride.findByPk as jest.Mock).mockResolvedValue({ id: 'ride-1', driverId: 'driver-1', status: RideStatus.IN_PROGRESS, updatedAt: new Date() });
+      (Booking.count as jest.Mock).mockResolvedValueOnce(1);
+      const res = mockResponse();
+
+      await controller.getRideUpdates(mockRequest({ params: { id: 'ride-1' }, app } as any), res);
+
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.data.currentLocation).toEqual({ lat: -24.6, lng: 25.9 });
+    });
+  });
 });
