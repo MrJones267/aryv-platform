@@ -26,6 +26,51 @@ import DriverDocument, {
 } from '../models/DriverDocument';
 import User from '../models/User';
 import { logInfo, logError, logWarning } from '../utils/logger';
+import { notificationService } from './NotificationService';
+
+const DOCUMENT_NAMES: Record<string, string> = {
+  drivers_license: "driver's licence",
+  vehicle_registration: 'vehicle registration',
+  insurance_card: 'insurance',
+  national_id: 'national ID',
+  passport: 'passport',
+};
+
+/** Tell the applicant what was decided. Never fails the review itself. */
+const notifyReviewDecision = async (
+  userId: string,
+  documentType: string,
+  decision: DocumentStatus,
+  driverStatus: DriverVerificationStatus,
+  reason?: string | null,
+): Promise<void> => {
+  const name = DOCUMENT_NAMES[documentType] ?? documentType.replace(/_/g, ' ');
+  let title: string;
+  let message: string;
+  if (decision === DocumentStatus.APPROVED) {
+    if (driverStatus === DriverVerificationStatus.VERIFIED) {
+      title = 'You are approved to drive';
+      message = 'Your documents are approved. You can now offer rides and see ride requests near you.';
+    } else {
+      title = 'Document approved';
+      message = `Your ${name} was approved.`;
+    }
+  } else {
+    title = 'Document not accepted';
+    message = `Your ${name} was not accepted${reason ? `: ${reason}` : ''}. Upload it again from Driver verification.`;
+  }
+  try {
+    await notificationService.sendToUser(userId, {
+      type: 'verification_update',
+      title,
+      message,
+      data: { documentType, decision, driverStatus },
+      timestamp: new Date().toISOString(),
+    } as any);
+  } catch (error) {
+    logError('Could not tell an applicant about a document decision', error as Error, { userId, documentType });
+  }
+};
 
 export interface SubmitDocumentInput {
   userId: string;
@@ -260,6 +305,9 @@ export class VerificationService {
         adminId: input.adminId,
       });
 
+      // The applicant used to learn of a decision only by checking again.
+      await notifyReviewDecision(document.userId, String(document.documentType), nextStatus, driverStatus, input.rejectionReason);
+
       return { success: true, status: nextStatus, driverStatus };
     } catch (error) {
       await transaction.rollback();
@@ -332,6 +380,13 @@ export class VerificationService {
             driverVerificationStatus: status,
             driverVerifiedAt:
               status === DriverVerificationStatus.VERIFIED ? new Date() : null,
+            // Approved to drive makes a passenger a driver. Nothing changed
+            // the role after sign-up, so an approved driver who had signed
+            // up as a passenger was still sent to driver onboarding, still
+            // offered "Become a driver", and left out of the admin's drivers.
+            ...(status === DriverVerificationStatus.VERIFIED && (user as any).role === 'passenger'
+              ? { role: 'driver' }
+              : {}),
           } as any,
           { ...(transaction ? { transaction } : {}) },
         );

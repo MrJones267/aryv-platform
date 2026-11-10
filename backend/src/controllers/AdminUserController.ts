@@ -15,6 +15,43 @@ import Vehicle from '../models/Vehicle';
 import { UserRole, UserStatus, RideStatus, BookingStatus, AdminAuthenticatedRequest } from '../types';
 import { logInfo, logError } from '../utils/logger';
 import { toE164 } from '../utils/phone';
+import RideRequest from '../models/RideRequest';
+import { Package, DeliveryAgreement } from '../models';
+import { DeliveryStatus } from '../models/DeliveryAgreement';
+import { cancelUpcomingRidesOf, notifyCancelledBookings } from '../services/RideCancellationService';
+import { courierCancellationService } from '../services/CourierCancellationService';
+import { deliveryDisputeService } from '../services/DeliveryDisputeService';
+import { DisputeType } from '../models/DeliveryDispute';
+
+/**
+ * Free the deliveries a blocked courier holds. Each in its own step, after
+ * the block has committed, so one failure does not undo the rest.
+ */
+const releaseDeliveriesOf = async (courierId: string): Promise<void> => {
+  const held = await DeliveryAgreement.findAll({
+    where: { courierId, status: { [Op.in]: [DeliveryStatus.PENDING_PICKUP, DeliveryStatus.IN_TRANSIT] } },
+    include: [{ model: Package, as: 'package', attributes: ['id', 'senderId'] }],
+  });
+  for (const agreement of held) {
+    try {
+      if (agreement.status === DeliveryStatus.PENDING_PICKUP) {
+        await courierCancellationService.cancelByCourier(agreement.id, courierId, {
+          reason: 'The courier can no longer deliver (account suspended by ARYV)',
+        });
+      } else {
+        const senderId = (agreement as any).package?.senderId as string | undefined;
+        if (senderId) {
+          await deliveryDisputeService.raise(senderId, agreement.id, {
+            disputeType: DisputeType.OTHER,
+            description: 'The courier\'s account was suspended by ARYV while they held this package. Support will arrange its return or delivery.',
+          });
+        }
+      }
+    } catch (error) {
+      logError('Could not release a blocked courier\'s delivery', error as Error, { agreementId: agreement.id });
+    }
+  }
+};
 
 // Constants
 /**
@@ -454,31 +491,48 @@ export class AdminUserController {
         status: UserStatus.SUSPENDED,
       }, { transaction });
 
-      // Cancel all active rides where user is the driver
-      await Ride.update(
-        { status: RideStatus.CANCELLED },
-        {
-          where: {
-            driverId: id,
-            status: { [Op.in]: [RideStatus.PENDING, RideStatus.CONFIRMED] },
-          },
-          transaction,
-        },
-      );
+      // As a driver: their upcoming rides, and every passenger booked on
+      // them. Only the rides were cancelled, so their passengers' bookings
+      // stayed live on rides that would never run.
+      const driverSideBookings = await cancelUpcomingRidesOf(String(id), 'The driver can no longer offer this ride', transaction);
 
-      // Cancel all pending/confirmed bookings by the user as passenger
+      // As a passenger: their own bookings, which their drivers are told about.
+      const ownBookings = await Booking.findAll({
+        where: { passengerId: id, status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED] } },
+        attributes: ['id'],
+        transaction,
+      });
       await Booking.update(
         { status: BookingStatus.CANCELLED, cancelReason: `Account blocked by admin: ${reason}` },
+        { where: { id: { [Op.in]: ownBookings.map((b) => b.id) } }, transaction },
+      );
+
+      // Their open ride requests, which drivers would otherwise keep seeing.
+      await RideRequest.update(
+        { status: 'cancelled' } as any,
+        { where: { passengerId: id, status: 'active' }, transaction },
+      );
+
+      // As a sender: packages still waiting for a courier stop being offered.
+      await Package.update(
+        { isActive: false } as any,
         {
           where: {
-            passengerId: id,
-            status: { [Op.in]: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+            senderId: id,
+            isActive: true,
+            id: { [Op.notIn]: sequelize.literal(`(SELECT package_id FROM delivery_agreements WHERE status <> 'cancelled')`) },
           },
           transaction,
         },
       );
 
       await transaction.commit();
+
+      await notifyCancelledBookings([...driverSideBookings, ...ownBookings.map((b) => b.id)], String(adminUser?.id ?? 'admin'));
+      // As a courier: they cannot sign in any more, so deliveries they hold
+      // would be stuck. Not yet collected: handed back, the package reopens
+      // and the sender is told. Already collected: a dispute support resolves.
+      await releaseDeliveriesOf(String(id));
 
       // Log admin action
       logInfo('Admin blocked user', {

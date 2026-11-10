@@ -21,6 +21,9 @@ jest.mock('../../utils/logger', () => ({
   logError: jest.fn(),
   logWarning: jest.fn(),
 }));
+jest.mock('../../services/NotificationService', () => ({
+  notificationService: { sendToUser: jest.fn().mockResolvedValue(undefined) },
+}));
 
 const USER = 'user-uuid-1';
 const ADMIN = 'admin-uuid-1';
@@ -169,6 +172,18 @@ describe('VerificationService', () => {
       expect(written.reviewedAt).toBeInstanceOf(Date);
     });
 
+    it('tells the applicant what was decided, with the reason for a rejection', async () => {
+      const { notificationService } = require('../../services/NotificationService');
+      findByPk.mockResolvedValue(makeDoc());
+
+      await service.reviewDocument({ documentId: 'doc-1', adminId: ADMIN, approve: false, rejectionReason: 'Photo is blurry' });
+
+      expect(notificationService.sendToUser).toHaveBeenCalledWith(USER, expect.objectContaining({
+        title: 'Document not accepted',
+        message: expect.stringContaining('Photo is blurry'),
+      }));
+    });
+
     it('will not re-review a decided document', async () => {
       findByPk.mockResolvedValue(makeDoc({ status: DocumentStatus.APPROVED }));
 
@@ -240,6 +255,39 @@ describe('VerificationService', () => {
       const status = await service.recomputeDriverStatus(USER);
 
       expect(status).toBe(DriverVerificationStatus.REJECTED);
+    });
+
+    it('makes an approved passenger a driver', async () => {
+      // Nothing changed the role after sign-up, so an approved driver who
+      // signed up as a passenger was still sent to driver onboarding.
+      findAll.mockResolvedValue(approvedAll());
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        id: USER, role: 'passenger', driverVerificationStatus: DriverVerificationStatus.PENDING, update: userUpdate,
+      } as any);
+
+      await service.recomputeDriverStatus(USER);
+
+      expect(userUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ driverVerificationStatus: DriverVerificationStatus.VERIFIED, role: 'driver' }),
+        expect.anything(),
+      );
+    });
+
+    it('leaves the role alone until fully approved, and never touches an admin', async () => {
+      findAll.mockResolvedValue([approvedAll()[0]]);
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        id: USER, role: 'passenger', driverVerificationStatus: DriverVerificationStatus.UNVERIFIED, update: userUpdate,
+      } as any);
+      await service.recomputeDriverStatus(USER);
+      expect(userUpdate.mock.calls[0][0]).not.toHaveProperty('role');
+
+      userUpdate.mockClear();
+      findAll.mockResolvedValue(approvedAll());
+      jest.spyOn(User, 'findByPk').mockResolvedValue({
+        id: USER, role: 'admin', driverVerificationStatus: DriverVerificationStatus.PENDING, update: userUpdate,
+      } as any);
+      await service.recomputeDriverStatus(USER);
+      expect(userUpdate.mock.calls[0][0]).not.toHaveProperty('role');
     });
 
     it('never clears an admin suspension through document arithmetic', async () => {

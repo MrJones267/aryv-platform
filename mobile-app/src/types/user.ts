@@ -53,6 +53,8 @@ export interface User {
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
   isDriverVerified: boolean;
+  /** 'unverified' | 'pending' | 'verified' | 'rejected' | 'suspended', from the server. */
+  driverVerificationStatus?: string | null;
   isIdentityVerified?: boolean;
 
   // Statistics

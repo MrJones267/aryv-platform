@@ -38,7 +38,8 @@ const transformUserFromApi = (user: any): User => {
     totalDeliveries: user.totalDeliveries || 0,
     isEmailVerified: user.isEmailVerified || false,
     isPhoneVerified: user.isPhoneVerified || false,
-    isDriverVerified: user.isDriverVerified || false,
+    // The server sends driverVerificationStatus; isDriverVerified never existed there.
+    isDriverVerified: user.isDriverVerified || user.driverVerificationStatus === 'verified',
     status: user.status || 'active'
   };
 };

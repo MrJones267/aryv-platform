@@ -37,6 +37,7 @@ import EmergencyAlertModal from '../../components/emergency/EmergencyAlertModal'
 import OfflineBanner from '../../components/common/OfflineBanner';
 import logger from '../../services/LoggingService';
 import { useI18n } from '../../i18n/I18nContext';
+import { driverStanding } from '../../utils/driverStanding';
 
 const log = logger.createLogger('HomeScreen');
 
@@ -152,12 +153,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const handleOfferRide = (): void => {
     haptic.tap();
-    // If user is not yet a driver, route to driver onboarding
-    const isDriver = user?.roles?.includes('driver') || user?.primaryRole === 'driver';
-    if (!isDriver) {
-      navigation.navigate('DriverOnboarding');
-    } else {
+    // By approval, not by the role chosen at sign-up: an approved driver
+    // who signed up as a passenger was sent back to onboarding every time.
+    const standing = driverStanding(user);
+    const nav = navigation as unknown as { navigate: (screen: string, params?: Record<string, unknown>) => void };
+    if (standing === 'approved') {
       navigation.navigate('CreateRide');
+    } else if (standing === 'under_review') {
+      Alert.alert(t('driver.reviewTitle'), t('driver.reviewBody'), [
+        { text: t('common.ok'), style: 'cancel' },
+        { text: t('driver.viewDocuments'), onPress: () => nav.navigate('Profile', { screen: 'VerificationWorkflow' }) },
+      ]);
+    } else if (standing === 'suspended') {
+      Alert.alert(t('driver.suspendedTitle'), t('driver.suspendedBody'));
+    } else {
+      navigation.navigate('DriverOnboarding');
     }
   };
 

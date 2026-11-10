@@ -5,7 +5,7 @@
  * @lastModified 2025-02-05
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -69,6 +69,20 @@ const DriverOnboardingScreen: React.FC = () => {
 
   // Step 2: Vehicle data (handled by VehicleRegistrationForm)
   const [vehicleRegistered, setVehicleRegistered] = useState(false);
+  // A car already on the account, so going through again does not ask for it.
+  const [existingVehicle, setExistingVehicle] = useState<{ make: string; model: string; licensePlate?: string } | null>(null);
+
+  useEffect(() => {
+    userApi.getVehicles()
+      .then((res) => {
+        const first = res.success && Array.isArray(res.data) ? res.data[0] : undefined;
+        if (first) {
+          setExistingVehicle(first as { make: string; model: string; licensePlate?: string });
+          setVehicleRegistered(true);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   // Step 3: Documents
   const [documentsStarted, setDocumentsStarted] = useState(false);
@@ -148,12 +162,12 @@ const DriverOnboardingScreen: React.FC = () => {
         Alert.alert(t('common.error'), response.error || t('rf.failedToRegisterVehicle'));
       }
     } catch (error: unknown) {
-      // Continue even if API fails
+      // Not saved means not registered. This used to carry on as if it had
+      // worked, so a new driver believed their car was on file and only
+      // found out when publishing a ride failed.
       const errMsg = error instanceof Error ? error.message : String(error);
-      log.warn('Vehicle registration API failed, continuing:', errMsg);
-      setVehicleRegistered(true);
-      dispatch(completeOnboardingStep('vehicle_registration'));
-      goToStep(2);
+      log.warn('Vehicle registration failed:', errMsg);
+      Alert.alert(t('common.error'), errMsg || t('rf.failedToRegisterVehicle'));
     } finally {
       setIsSubmitting(false);
     }
@@ -386,10 +400,29 @@ const DriverOnboardingScreen: React.FC = () => {
         {t('rf.addYourVehicleDetailsSo')}
       </Text>
 
-      <VehicleRegistrationForm
-        onVehicleRegister={handleVehicleRegister}
-        isLoading={isSubmitting}
-      />
+      {existingVehicle ? (
+        <View style={styles.existingVehicle}>
+          <Icon name="directions-car" size={22} color="#10B981" />
+          <Text style={styles.existingVehicleText}>
+            {t('driver.vehicleOnFile', { vehicle: `${existingVehicle.make} ${existingVehicle.model}${existingVehicle.licensePlate ? ` (${existingVehicle.licensePlate})` : ''}` })}
+          </Text>
+          <TouchableOpacity
+            style={styles.existingVehicleButton}
+            onPress={() => {
+              dispatch(completeOnboardingStep('vehicle_registration'));
+              goToStep(2);
+            }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.existingVehicleButtonText}>{t('verify.continue')}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <VehicleRegistrationForm
+          onVehicleRegister={handleVehicleRegister}
+          isLoading={isSubmitting}
+        />
+      )}
     </View>
   );
 
@@ -527,6 +560,33 @@ const DriverOnboardingScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  existingVehicle: {
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    gap: 10,
+  },
+  existingVehicleText: {
+    fontSize: 15,
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  existingVehicleButton: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  existingVehicleButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

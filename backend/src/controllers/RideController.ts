@@ -9,6 +9,7 @@ import { Request, Response } from 'express';
 import { Op, Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 import pickupPinService from '../services/PickupPinService';
+import { cancelBookingsOnRides, notifyCancelledBookings } from '../services/RideCancellationService';
 import Ride from '../models/Ride';
 import Booking from '../models/Booking';
 import User from '../models/User';
@@ -1636,6 +1637,16 @@ export class RideController {
           // Log error but don't fail the ride completion
           logger.error('Error processing ride group completion:', { rideId, error });
         }
+      } else if (status === RideStatus.CANCELLED) {
+        // The passengers' bookings go with the ride, and they are told. They
+        // used to stay confirmed on a ride that would never run, while the
+        // app told the driver they had been notified.
+        const reason = typeof req.body?.reason === 'string' && req.body.reason.trim()
+          ? `Ride cancelled by driver: ${req.body.reason.trim()}`
+          : 'Ride cancelled by driver';
+        const cancelled = await cancelBookingsOnRides([rideId!], reason, transaction);
+        await transaction.commit();
+        await notifyCancelledBookings(cancelled, userId);
       } else {
         await transaction.commit();
       }
