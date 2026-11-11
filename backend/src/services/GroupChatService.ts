@@ -94,13 +94,6 @@ export interface GroupMessageSearchOptions {
 /** How long a ride's chat and its messages are kept after the trip ends. */
 export const RIDE_CHAT_RETENTION_HOURS = 24;
 
-/** A vote to keep a ride chat: refused, as every ride chat is deleted. */
-export class RideChatNotKeptError extends Error {
-  constructor() {
-    super(`Ride chats are deleted ${RIDE_CHAT_RETENTION_HOURS} hours after the trip and cannot be kept`);
-  }
-}
-
 export class GroupChatService {
   private socketService?: SocketService | undefined;
   private notificationService: AdvancedNotificationService;
@@ -1043,10 +1036,9 @@ export class GroupChatService {
     const transaction = await sequelize.transaction();
 
     try {
-      // Every ride chat ends the same way: kept for a day after the trip,
-      // then deleted with its messages. Groups used to be archived after two
-      // hours with every message kept, and members could vote to keep the
-      // group for good.
+      // A ride chat is kept for a day after the trip, then deleted with its
+      // messages, unless its members vote to keep it (voteToKeepGroup). It
+      // used to be archived after two hours with every message kept.
       await this.sendRideCompletionMessage(group.id, transaction);
       await this.scheduleGroupDisbanding(group.id, RIDE_CHAT_RETENTION_HOURS, transaction);
 
@@ -1067,11 +1059,11 @@ export class GroupChatService {
       groupChatId,
       senderId: await this.chatCreator(groupChatId, transaction),
       type: MessageType.SYSTEM,
-      content: `Trip completed. Thank you for riding together. This chat and its messages will be deleted in ${RIDE_CHAT_RETENTION_HOURS} hours.`,
+      content: `Trip completed. Thank you for riding together. This chat and its messages will be deleted in ${RIDE_CHAT_RETENTION_HOURS} hours, unless the group votes to keep it.`,
       metadata: {
         systemMessageType: 'ride_completed',
         timestamp: new Date().toISOString(),
-        canKeepGroup: false,
+        canKeepGroup: true,
       },
       attachments: [],
       mentions: [],
@@ -1158,11 +1150,131 @@ export class GroupChatService {
   }
 
   /**
-   * Ride chats are no longer kept by a vote: each is deleted a day after the
-   * trip. Older apps still show the vote, so they are told why it does nothing.
+   * Convert ride group to custom group to persist after ride
    */
-  async voteToKeepGroup(_groupChatId: string, _userId: string, _keepActive: boolean): Promise<void> {
-    throw new RideChatNotKeptError();
+  private async convertRideGroupToCustom(groupChatId: string, transaction: Transaction): Promise<void> {
+    await GroupChat.update({
+      type: GroupChatType.CUSTOM_GROUP,
+      rideId: null as any,
+      metadata: {
+        ...((await GroupChat.findByPk(groupChatId))?.metadata || {}),
+        // Cleared, or the sweep would find this chat due again on every run.
+        scheduledDisbandAt: null,
+        convertedFrom: 'ride_group',
+        convertedAt: new Date(),
+      },
+    }, {
+      where: { id: groupChatId },
+      transaction,
+    });
+
+    // Send conversion notification
+    await GroupChatMessage.create({
+      groupChatId,
+      senderId: await this.chatCreator(groupChatId, transaction),
+      type: MessageType.SYSTEM,
+      content: '🔄 Group converted to custom group and will remain active.',
+      metadata: {
+        systemMessageType: 'group_converted',
+        timestamp: new Date().toISOString(),
+        fromType: 'ride_group',
+        toType: 'custom_group',
+      },
+      attachments: [],
+      mentions: [],
+      reactions: {},
+    }, { transaction });
+
+    // Emit real-time notification
+    const socketService = this.getSocketService();
+    if (socketService) {
+      socketService.emitToRoom(`group_${groupChatId}`, 'group_converted', {
+        groupChatId,
+        newType: 'custom_group',
+        message: 'Group converted to custom group',
+      });
+    }
+  }
+
+  /**
+   * Allow users to vote to keep group active
+   */
+  async voteToKeepGroup(groupChatId: string, userId: string, keepActive: boolean): Promise<void> {
+    const transaction = await sequelize.transaction();
+
+    try {
+      const group = await GroupChat.findByPk(groupChatId);
+      if (!group || group.status !== GroupChatStatus.ACTIVE) {
+        throw new Error('Group not found or not active');
+      }
+
+      const metadata = group.metadata || {};
+      if (!metadata.scheduledDisbandAt) {
+        throw new Error('Group is not scheduled for disbanding');
+      }
+
+      // Initialize votes object if it doesn't exist
+      if (!metadata.keepGroupVotes) {
+        metadata.keepGroupVotes = {};
+      }
+
+      metadata.keepGroupVotes[userId] = keepActive;
+
+      // Count votes
+      const activeParticipants = await GroupChatParticipant.count({
+        where: {
+          groupChatId,
+          status: ParticipantStatus.ACTIVE,
+        },
+      });
+
+      const votes = Object.values(metadata.keepGroupVotes);
+      const keepVotes = votes.filter(vote => vote === true).length;
+      const totalVotes = votes.length;
+
+      // Require majority vote to keep group active
+      if (keepVotes > activeParticipants / 2) {
+        metadata.keepGroupActive = true;
+      }
+
+      await group.update({ metadata }, { transaction });
+
+      // Send voting update message
+      await GroupChatMessage.create({
+        groupChatId,
+        senderId: userId,
+        type: MessageType.SYSTEM,
+        content: `📊 Vote to keep group: ${keepVotes}/${totalVotes} votes to keep active (need ${Math.floor(activeParticipants / 2) + 1})`,
+        metadata: {
+          systemMessageType: 'group_vote_update',
+          timestamp: new Date().toISOString(),
+          keepVotes,
+          totalVotes,
+          requiredVotes: Math.floor(activeParticipants / 2) + 1,
+        },
+        attachments: [],
+        mentions: [],
+        reactions: {},
+      }, { transaction });
+
+      await transaction.commit();
+
+      // Emit real-time notification
+      const socketService = this.getSocketService();
+      if (socketService) {
+        socketService.emitToRoom(`group_${groupChatId}`, 'group_vote_update', {
+          groupChatId,
+          keepVotes,
+          totalVotes,
+          requiredVotes: Math.floor(activeParticipants / 2) + 1,
+          userVote: { userId, keepActive },
+        });
+      }
+    } catch (error) {
+      await transaction.rollback();
+      logger.error('Error processing group vote:', error);
+      throw error;
+    }
   }
 
   /**
@@ -1213,7 +1325,15 @@ export class GroupChatService {
       for (const group of expiredGroups) {
         const transaction = await sequelize.transaction();
         try {
-          await this.disbandRideGroup(group.id, transaction);
+          // The members voted to keep it: it becomes an ordinary group. Only
+          // the old in-process timer honoured the vote; this sweep, the part
+          // that actually ran, deleted the group regardless.
+          const current = await GroupChat.findByPk(group.id, { transaction });
+          if (current?.metadata?.keepGroupActive) {
+            await this.convertRideGroupToCustom(group.id, transaction);
+          } else {
+            await this.disbandRideGroup(group.id, transaction);
+          }
           await transaction.commit();
           cleanedCount++;
         } catch (error) {

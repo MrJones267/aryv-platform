@@ -115,7 +115,7 @@ You may delete your own account at any time under Settings, Privacy.`,
     {
       id: '9',
       title: '9. Privacy',
-      content: `Our Privacy Policy explains what information we collect, how we use and share it, how long we keep it, and your rights. Trip chats are deleted 24 hours after the trip is completed.
+      content: `Our Privacy Policy explains what information we collect, how we use and share it, how long we keep it, and your rights. A trip's chat is deleted 24 hours after the trip is completed, unless the people in it vote to keep it.
 
 Read it at aryv-app.com/privacy.`,
       expanded: false,

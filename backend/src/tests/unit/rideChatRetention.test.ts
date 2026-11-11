@@ -6,7 +6,7 @@
  */
 
 import { sequelize } from '../../config/database';
-import GroupChatService, { RIDE_CHAT_RETENTION_HOURS, RideChatNotKeptError } from '../../services/GroupChatService';
+import GroupChatService, { RIDE_CHAT_RETENTION_HOURS } from '../../services/GroupChatService';
 import GroupChat, { GroupChatStatus } from '../../models/GroupChat';
 import GroupChatParticipant from '../../models/GroupChatParticipant';
 import GroupChatMessage from '../../models/GroupChatMessage';
@@ -49,7 +49,7 @@ describe('ride chat retention', () => {
     await service.handleRideCompletion('ride-1');
 
     const message = (GroupChatMessage.create as jest.Mock).mock.calls[0][0];
-    expect(message.content).toContain('deleted in 24 hours');
+    expect(message.content).toContain('deleted in 24 hours, unless the group votes to keep it');
 
     const { metadata } = (GroupChat.update as jest.Mock).mock.calls[0][0];
     const due = new Date(metadata.scheduledDisbandAt).getTime();
@@ -78,7 +78,17 @@ describe('ride chat retention', () => {
     expect(GroupChatMessage.create).not.toHaveBeenCalled();
   });
 
-  it('refuses a vote to keep a ride chat', async () => {
-    await expect(service.voteToKeepGroup('group-1', 'user-1', true)).rejects.toBeInstanceOf(RideChatNotKeptError);
+  it('keeps a chat its members voted to keep: no messages are deleted', async () => {
+    jest.spyOn(sequelize, 'query').mockResolvedValue([{ id: 'group-1' }] as any);
+    jest.spyOn(GroupChat, 'findByPk').mockResolvedValue({ id: 'group-1', metadata: { keepGroupActive: true, scheduledDisbandAt: '2026-11-10T08:00:00.000Z' } } as any);
+    jest.spyOn(GroupChat, 'findAll').mockResolvedValue([]);
+
+    await service.cleanupInactiveGroups();
+
+    expect(GroupChatMessage.destroy).not.toHaveBeenCalled();
+    const kept = (GroupChat.update as jest.Mock).mock.calls[0][0];
+    expect(kept.type).toBe('custom_group');
+    // Cleared, so the sweep does not find it due again.
+    expect(kept.metadata.scheduledDisbandAt).toBeNull();
   });
 });
