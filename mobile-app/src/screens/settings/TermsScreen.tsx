@@ -29,144 +29,116 @@ interface TermsSection {
 }
 
 const TermsScreen: React.FC<TermsScreenProps> = ({ navigation }) => {
+  // The same terms as aryv-app.com/terms. The earlier text promised a payment
+  // system, insurance and photo confirmation the app does not have.
   const [sections, setSections] = useState<TermsSection[]>([
     {
       id: '1',
-      title: '1. Acceptance of Terms',
-      content: `By accessing and using the ARYV mobile application and services, you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+      title: '1. What ARYV is',
+      content: `ARYV is a platform that puts people in touch: passengers with drivers who are making a trip, and people sending a package with couriers who can carry it.
 
-These Terms of Service constitute a legally binding agreement between you and ARYV regarding your use of our ride-sharing and courier services.`,
+ARYV does not provide transport or delivery itself. Drivers and couriers are independent users of the platform, not employees or agents of ARYV, and the trip or delivery is an arrangement between the users who agree to it.
+
+By creating an account or using ARYV you agree to these terms.`,
       expanded: false,
     },
     {
       id: '2',
-      title: '2. Use License',
-      content: `Permission is granted to temporarily download one copy of ARYV app for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
-
-• Modify or copy the materials
-• Use the materials for any commercial purpose or for any public display (commercial or non-commercial)
-• Attempt to decompile or reverse engineer any software contained in ARYV
-• Remove any copyright or other proprietary notations from the materials
-
-This license shall automatically terminate if you violate any of these restrictions and may be terminated by ARYV at any time.`,
+      title: '2. Your account',
+      content: `• You must be at least 18 years old
+• Give accurate, current information and keep it up to date
+• Keep your password safe; you are responsible for what happens under your account
+• Tell us straight away if you think someone else has used your account
+• One person, one account. Do not let someone else drive or deliver under yours`,
       expanded: false,
     },
     {
       id: '3',
-      title: '3. User Accounts and Registration',
-      content: `To use certain features of our service, you must register for an account. You are responsible for:
-
-• Providing accurate, current, and complete information during registration
-• Maintaining the security of your password and account
-• All activities that occur under your account
-• Notifying us immediately of any unauthorized use of your account
-
-You must be at least 18 years old to create an account and use our services.`,
+      title: '3. Rides',
+      content: `• To offer rides you need a valid driving licence, a roadworthy, registered and insured vehicle, and documents approved by ARYV
+• Every booking is a request until the driver accepts it. Drivers may decline
+• The driver sets the price per seat. The price shown when you book is the price you pay
+• Either side may cancel a booking before the ride. Please cancel as early as you can
+• Drivers must follow the road traffic laws and carry no more passengers than the vehicle is licensed for
+• Ratings must be honest`,
       expanded: false,
     },
     {
       id: '4',
-      title: '4. Ride-Sharing Services',
-      content: `ARYV provides a platform that connects passengers with drivers. Key terms for ride-sharing:
-
-• Drivers are independent contractors, not employees of ARYV
-• All rides are subject to driver acceptance
-• Payment is processed through our secure payment system
-• Cancellation policies apply as outlined in the app
-• Both drivers and passengers must comply with safety guidelines
-• Ratings and reviews help maintain service quality
-
-ARYV reserves the right to suspend or terminate accounts that violate community guidelines.`,
+      title: '4. Package delivery',
+      content: `• The sender describes the package and names the price. A courier who accepts agrees to deliver it for that price
+• Describe the package accurately. Do not send anything illegal, dangerous or stolen, and do not send cash or items you cannot afford to lose
+• When the courier collects the package, the recipient is sent a delivery code. The delivery is complete when the courier enters it. Only give the code once you have the package
+• Delivery times are estimates, not guarantees
+• ARYV does not insure packages. A package is carried at the risk of the sender and the courier
+• Either side can report a problem with a delivery. ARYV reviews it and records an outcome`,
       expanded: false,
     },
     {
       id: '5',
-      title: '5. Courier and Package Delivery',
-      content: `Our courier service allows users to send packages with the following terms:
-
-• All packages must comply with prohibited items list
-• Users are responsible for accurate package descriptions
-• Insurance options are available for valuable items
-• Delivery timeframes are estimates, not guarantees
-• Photo confirmation required for package handoffs
-• Disputes are resolved through our mediation process
-
-ARYV is not liable for packages that are incorrectly described or contain prohibited items.`,
+      title: '5. Payment and commission',
+      content: `• Rides and deliveries are paid in cash, directly between users. ARYV does not hold or transfer this money
+• Both sides confirm a cash payment in the app so each has a record
+• ARYV charges drivers and couriers a commission on what they earn through the platform. The app shows the amount owed
+• An account that owes more than its limit cannot take new cash work until it is settled
+• Promotional discounts are applied when you book and cannot be exchanged for cash`,
       expanded: false,
     },
     {
       id: '6',
-      title: '6. Payment Terms',
-      content: `By using our payment processing services, you agree to:
-
-• Provide valid payment information
-• Pay all charges incurred through your account
-• Accept dynamic pricing during peak hours
-• Understand that refunds are subject to our refund policy
-• Allow ARYV to charge your default payment method
-
-All payments are processed securely through encrypted channels.`,
+      title: '6. How you must behave',
+      content: `You must not:
+• Use ARYV for anything unlawful
+• Harass, threaten, discriminate against or endanger another user
+• Give false information, impersonate someone, or submit documents that are not yours
+• Arrange a trip or delivery through ARYV and complete it outside the app to avoid commission
+• Manipulate ratings, promotions or disputes
+• Interfere with the app, access other users' data, or copy or reverse engineer the software`,
       expanded: false,
     },
     {
       id: '7',
-      title: '7. Privacy and Data Protection',
-      content: `Your privacy is important to us. Our Privacy Policy explains:
+      title: '7. Safety',
+      content: `ARYV checks drivers' and couriers' documents and provides safety tools such as the pickup PIN, trip photos, emergency alerts, blocking and reporting. These reduce risk; they do not remove it.
 
-• What information we collect and why
-• How we use and share your information
-• Your rights regarding your personal data
-• Security measures we implement
-• How to contact us about privacy concerns
-
-By using our services, you consent to our collection and use of information as outlined in our Privacy Policy.`,
+Use your own judgment about who you travel with and what you carry. In an emergency, contact the emergency services first.`,
       expanded: false,
     },
     {
       id: '8',
-      title: '8. Prohibited Uses',
-      content: `You may not use our service:
+      title: '8. Suspension and closing accounts',
+      content: `We may suspend or close an account that breaks these terms, puts other users at risk, or owes commission that is not settled. When an account is suspended, its upcoming rides and bookings are cancelled and the people affected are told.
 
-• For any unlawful purpose or to solicit others to perform unlawful acts
-• To violate any international, federal, provincial, or state regulations, rules, laws, or local ordinances
-• To infringe upon or violate our intellectual property rights or the intellectual property rights of others
-• To harass, abuse, insult, harm, defame, slander, disparage, intimidate, or discriminate
-• To submit false or misleading information
-• To upload or transmit viruses or any other type of malicious code`,
+You may delete your own account at any time under Settings, Privacy.`,
       expanded: false,
     },
     {
       id: '9',
-      title: '9. Disclaimer',
-      content: `The information on this app is provided on an 'as is' basis. To the fullest extent permitted by law, ARYV:
+      title: '9. Privacy',
+      content: `Our Privacy Policy explains what information we collect, how we use and share it, how long we keep it, and your rights. A trip's chat is deleted 24 hours after the trip is completed, unless the people in it vote to keep it.
 
-• Excludes all representations and warranties relating to this app and its contents
-• Does not guarantee the accuracy, completeness, or timeliness of information
-• Is not responsible for any losses arising from the use of this app
-• Does not guarantee uninterrupted service availability
-
-Use of our services is at your own risk.`,
+Read it at aryv-app.com/privacy.`,
       expanded: false,
     },
     {
       id: '10',
-      title: '10. Limitations',
-      content: `In no event shall ARYV or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use the materials on ARYV, even if ARYV or a ARYV authorized representative has been notified orally or in writing of the possibility of such damage.
+      title: '10. Our responsibility to you',
+      content: `ARYV is provided "as is". To the fullest extent the law allows:
+• We do not guarantee that a ride or courier will be available, or that a trip or delivery will be completed
+• We are not responsible for the acts or omissions of other users, including drivers and couriers
+• We are not liable for indirect loss, or for loss of or damage to a package
 
-Some jurisdictions do not allow limitations on implied warranties, or limitations of liability for consequential or incidental damages, so these limitations may not apply to you.`,
+Nothing in these terms limits liability that cannot be limited by law, or takes away your rights under consumer protection law.`,
       expanded: false,
     },
     {
       id: '11',
-      title: '11. Terms Modifications',
-      content: `ARYV may revise these terms of service at any time without notice. By using this app, you are agreeing to be bound by the then current version of these terms of service.
+      title: '11. Changes and governing law',
+      content: `We may update these terms. We will post the new version at aryv-app.com/terms, and for significant changes we will tell you in the app or by email before they take effect.
 
-We will notify users of significant changes through:
-• In-app notifications
-• Email notifications to registered users
-• Updates posted on our website
+These terms are governed by the laws of the Republic of Botswana.
 
-Continued use of our services after changes constitutes acceptance of new terms.`,
+Contact: hello@aryv-app.com, or ARYV, Box 440, Masunga, Botswana.`,
       expanded: false,
     },
   ]);
@@ -217,7 +189,7 @@ Continued use of our services after changes constitutes acceptance of new terms.
         <View style={styles.introduction}>
           <Text style={styles.introTitle}>Terms of Service</Text>
           <Text style={styles.introText}>
-            Last updated: January 27, 2025
+            Last updated: 10 November 2026
           </Text>
           <Text style={styles.introDescription}>
             Please read these Terms of Service carefully before using the ARYV application. 

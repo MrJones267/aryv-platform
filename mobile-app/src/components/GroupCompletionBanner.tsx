@@ -61,7 +61,7 @@ export const GroupCompletionBanner: React.FC<GroupCompletionBannerProps> = ({
           'Vote Recorded',
           keepActive 
             ? 'Your vote to keep the group active has been recorded.'
-            : 'Your vote to archive the group has been recorded.'
+            : 'Your vote to let this chat be deleted has been recorded.'
         );
       }
     } catch (error) {
@@ -119,7 +119,7 @@ export const GroupCompletionBanner: React.FC<GroupCompletionBannerProps> = ({
         <View style={styles.headerContent}>
           <Text style={styles.title}>Trip Completed!</Text>
           <Text style={styles.subtitle}>
-            This group will be archived in {getTimeRemaining()} unless members vote to keep it active.
+            This chat and its messages will be deleted in {getTimeRemaining()} unless members vote to keep it.
           </Text>
         </View>
         <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
@@ -146,7 +146,7 @@ export const GroupCompletionBanner: React.FC<GroupCompletionBannerProps> = ({
             disabled={isVoting}
           >
             <Icon name="archive" size={20} color={colors.white} />
-            <Text style={styles.voteButtonText}>Archive</Text>
+            <Text style={styles.voteButtonText}>Delete</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -161,7 +161,7 @@ export const GroupCompletionBanner: React.FC<GroupCompletionBannerProps> = ({
               color={colors.white} 
             />
             <Text style={styles.votedText}>
-              You voted to {userVote ? 'keep' : 'archive'} this group
+              You voted to {userVote ? 'keep' : 'delete'} this chat
             </Text>
           </View>
         </View>

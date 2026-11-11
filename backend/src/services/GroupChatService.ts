@@ -5,7 +5,7 @@
  * @lastModified 2025-01-25
  */
 
-import { Op, Transaction, WhereOptions } from 'sequelize';
+import { Op, QueryTypes, Transaction, WhereOptions } from 'sequelize';
 import { sequelize } from '../config/database';
 import GroupChat, { GroupChatType, GroupChatStatus } from '../models/GroupChat';
 import GroupChatParticipant, { ParticipantRole, ParticipantStatus } from '../models/GroupChatParticipant';
@@ -90,6 +90,9 @@ export interface GroupMessageSearchOptions {
   afterDate?: Date;
   onlyPinned?: boolean;
 }
+
+/** How long a ride's chat and its messages are kept after the trip ends. */
+export const RIDE_CHAT_RETENTION_HOURS = 24;
 
 export class GroupChatService {
   private socketService?: SocketService | undefined;
@@ -1033,27 +1036,11 @@ export class GroupChatService {
     const transaction = await sequelize.transaction();
 
     try {
-      // Get group settings for auto-disbanding preferences
-      const settings = group.settings || {};
-      const autoDisbandOnRideCompletion = settings.autoDisbandOnRideCompletion !== false; // Default: true
-      const disbandDelay = settings.disbandDelay || 2; // Default: 2 hours
-      const allowMembersToKeepGroup = settings.allowMembersToKeepGroup || false;
-
-      // Send completion notification to group
+      // A ride chat is kept for a day after the trip, then deleted with its
+      // messages, unless its members vote to keep it (voteToKeepGroup). It
+      // used to be archived after two hours with every message kept.
       await this.sendRideCompletionMessage(group.id, transaction);
-
-      if (autoDisbandOnRideCompletion) {
-        if (disbandDelay > 0) {
-          // Schedule delayed disbanding
-          await this.scheduleGroupDisbanding(group.id, disbandDelay, allowMembersToKeepGroup, transaction);
-        } else {
-          // Immediate disbanding
-          await this.disbandRideGroup(group.id, transaction);
-        }
-      } else {
-        // Convert ride group to custom group to persist
-        await this.convertRideGroupToCustom(group.id, transaction);
-      }
+      await this.scheduleGroupDisbanding(group.id, RIDE_CHAT_RETENTION_HOURS, transaction);
 
       await transaction.commit();
       logger.info('Processed ride group completion', { groupId: group.id, rideId: group.rideId });
@@ -1072,7 +1059,7 @@ export class GroupChatService {
       groupChatId,
       senderId: await this.chatCreator(groupChatId, transaction),
       type: MessageType.SYSTEM,
-      content: '🎉 Trip completed! Thank you for riding together. This group will be archived in 2 hours unless you choose to keep it active.',
+      content: `Trip completed. Thank you for riding together. This chat and its messages will be deleted in ${RIDE_CHAT_RETENTION_HOURS} hours, unless the group votes to keep it.`,
       metadata: {
         systemMessageType: 'ride_completed',
         timestamp: new Date().toISOString(),
@@ -1089,92 +1076,47 @@ export class GroupChatService {
       socketService.emitToRoom(`group_${groupChatId}`, 'ride_completed', {
         groupChatId,
         message: 'Trip completed successfully',
-        autoArchiveIn: 2, // hours
+        autoArchiveIn: RIDE_CHAT_RETENTION_HOURS,
       });
     }
   }
 
   /**
-   * Schedule group disbanding with delay
+   * Record when a ride chat is to be deleted. cleanupInactiveGroups carries
+   * it out. This also set an in-process timer, which did not survive a
+   * restart; the sweep is what actually ran.
    */
   private async scheduleGroupDisbanding(
     groupChatId: string,
     delayHours: number,
-    allowKeepOption: boolean,
     transaction: Transaction,
   ): Promise<void> {
-    // Update group metadata to mark for scheduled disbanding
+    const group = await GroupChat.findByPk(groupChatId, { transaction });
     await GroupChat.update({
       metadata: {
+        ...(group?.metadata || {}),
         scheduledDisbandAt: new Date(Date.now() + delayHours * 60 * 60 * 1000),
-        allowKeepOption,
         disbandReason: 'ride_completed',
       },
     }, {
       where: { id: groupChatId },
       transaction,
     });
-
-    // In a production system, you would use a job scheduler like Bull Queue
-    // For now, we'll use setTimeout (note: this won't persist across server restarts)
-    setTimeout(async () => {
-      try {
-        await this.executeDisbandingIfScheduled(groupChatId);
-      } catch (error) {
-        logger.error('Error executing scheduled disbanding:', error);
-      }
-    }, delayHours * 60 * 60 * 1000);
   }
 
   /**
-   * Execute disbanding if still scheduled
-   */
-  private async executeDisbandingIfScheduled(groupChatId: string): Promise<void> {
-    const transaction = await sequelize.transaction();
-
-    try {
-      const group = await GroupChat.findByPk(groupChatId);
-      if (!group || group.status !== GroupChatStatus.ACTIVE) {
-        await transaction.rollback();
-        return;
-      }
-
-      const metadata = group.metadata || {};
-      if (!metadata.scheduledDisbandAt) {
-        await transaction.rollback();
-        return;
-      }
-
-      // Check if group members voted to keep it active
-      if (metadata.keepGroupActive) {
-        await this.convertRideGroupToCustom(groupChatId, transaction);
-        await transaction.commit();
-        return;
-      }
-
-      // Proceed with disbanding
-      await this.disbandRideGroup(groupChatId, transaction);
-      await transaction.commit();
-
-      logger.info('Auto-disbanded ride group after delay', { groupChatId });
-    } catch (error) {
-      await transaction.rollback();
-      logger.error('Error executing scheduled disbanding:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Disband a ride group by archiving it
+   * Close a ride chat and delete its messages.
    */
   private async disbandRideGroup(groupChatId: string, transaction: Transaction): Promise<void> {
-    // Archive the group
+    const group = await GroupChat.findByPk(groupChatId, { transaction });
     await GroupChat.update({
       status: GroupChatStatus.ARCHIVED,
+      lastMessageId: null as any,
       metadata: {
-        ...((await GroupChat.findByPk(groupChatId))?.metadata || {}),
+        ...(group?.metadata || {}),
         archivedAt: new Date(),
         archivedReason: 'ride_completed',
+        messagesDeletedAt: new Date(),
       },
     }, {
       where: { id: groupChatId },
@@ -1193,21 +1135,8 @@ export class GroupChatService {
       transaction,
     });
 
-    // Send final system message
-    await GroupChatMessage.create({
-      groupChatId,
-      senderId: await this.chatCreator(groupChatId, transaction),
-      type: MessageType.SYSTEM,
-      content: '📁 Group has been archived after trip completion. Chat history is preserved.',
-      metadata: {
-        systemMessageType: 'group_archived',
-        timestamp: new Date().toISOString(),
-        reason: 'ride_completed',
-      },
-      attachments: [],
-      mentions: [],
-      reactions: {},
-    }, { transaction });
+    // The messages go; a report made about one keeps its own excerpt.
+    await GroupChatMessage.destroy({ where: { groupChatId }, force: true, transaction });
 
     // Emit real-time notification
     const socketService = this.getSocketService();
@@ -1215,7 +1144,7 @@ export class GroupChatService {
       socketService.emitToRoom(`group_${groupChatId}`, 'group_archived', {
         groupChatId,
         reason: 'ride_completed',
-        message: 'Group archived after trip completion',
+        message: 'This chat has ended and its messages have been deleted',
       });
     }
   }
@@ -1229,6 +1158,8 @@ export class GroupChatService {
       rideId: null as any,
       metadata: {
         ...((await GroupChat.findByPk(groupChatId))?.metadata || {}),
+        // Cleared, or the sweep would find this chat due again on every run.
+        scheduledDisbandAt: null,
         convertedFrom: 'ride_group',
         convertedAt: new Date(),
       },
@@ -1379,21 +1310,30 @@ export class GroupChatService {
     try {
       const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
 
-      // Find groups scheduled for disbanding that passed their deadline
-      const expiredGroups = await GroupChat.findAll({
-        where: {
-          status: GroupChatStatus.ACTIVE,
-          metadata: {
-            scheduledDisbandAt: { [Op.lt]: new Date() },
-          },
-        },
-      });
+      // Ride chats whose day is up. Compared as timestamps: the JSON filter
+      // this used compared the stored ISO string with a differently formatted
+      // one as text, so a chat was not seen as due until the following day.
+      const expiredGroups = await sequelize.query<{ id: string }>(
+        `SELECT id FROM group_chats
+          WHERE status::text = :active
+            AND (metadata->>'scheduledDisbandAt') IS NOT NULL
+            AND (metadata->>'scheduledDisbandAt')::timestamptz < NOW()`,
+        { type: QueryTypes.SELECT, replacements: { active: GroupChatStatus.ACTIVE } },
+      );
 
       let cleanedCount = 0;
       for (const group of expiredGroups) {
         const transaction = await sequelize.transaction();
         try {
-          await this.disbandRideGroup(group.id, transaction);
+          // The members voted to keep it: it becomes an ordinary group. Only
+          // the old in-process timer honoured the vote; this sweep, the part
+          // that actually ran, deleted the group regardless.
+          const current = await GroupChat.findByPk(group.id, { transaction });
+          if (current?.metadata?.keepGroupActive) {
+            await this.convertRideGroupToCustom(group.id, transaction);
+          } else {
+            await this.disbandRideGroup(group.id, transaction);
+          }
           await transaction.commit();
           cleanedCount++;
         } catch (error) {
@@ -1438,7 +1378,7 @@ export class GroupChatService {
         }
       }
 
-      logger.info(`Cleaned up ${cleanedCount} inactive groups`);
+      if (cleanedCount > 0) logger.info(`Cleaned up ${cleanedCount} inactive groups`);
       return cleanedCount;
     } catch (error) {
       logger.error('Error cleaning up inactive groups:', error);
