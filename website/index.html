@@ -11,128 +11,386 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://aryv-app.com/">
 <meta property="og:image" content="https://aryv-app.com/assets/logo.png">
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" type="image/svg+xml" href="/assets/mark.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="preload" href="/assets/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
+<svg width="0" height="0" class="sr-only" aria-hidden="true" focusable="false">
+  <symbol id="i-seat" viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 17H3v-4l2.2-5.2A2 2 0 0 1 7 6.6h10a2 2 0 0 1 1.8 1.2L21 13v4h-2"/><path d="M3 13h18"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/><path d="M9.5 17h5"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/><path d="m7.5 5.5 9 5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 12h.01M10.5 12h.01M14 12h.01M17.5 12h.01"/></symbol>
+  <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v.01M18 14.5v.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.8-2.5h6.4L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.5M12 17.5h.01"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M5.5 3.8v16.4a.8.8 0 0 0 1.2.7l14-8.2a.8.8 0 0 0 0-1.4l-14-8.2a.8.8 0 0 0-1.2.7z"/></symbol>
+</svg>
+
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="/"><img src="/assets/logo.png" alt="" width="34" height="34">ARYV</a>
+    <a class="brand" href="/"><img src="/assets/mark.svg" alt="" width="36" height="31">ARYV</a>
     <nav class="nav" aria-label="Main">
-      <a href="/#how">How it works</a>
+      <a href="/#ride">Ride</a>
+      <a href="/#drive">Drive</a>
+      <a href="/#deliver">Deliver</a>
       <a href="/#safety">Safety</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
+      <a href="/#faq">Help</a>
     </nav>
+    <div class="header-cta">
+      <a class="btn btn-light btn-sm" href="/#get-app">Get the app</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary>
+        <nav class="menu-panel" aria-label="Mobile">
+          <a href="/#ride">Ride</a>
+          <a href="/#drive">Drive</a>
+          <a href="/#deliver">Deliver</a>
+          <a href="/#safety">Safety</a>
+          <a href="/#faq">Help</a>
+          <a href="/#get-app">Get the app</a>
+        </nav>
+      </details>
+    </div>
   </div>
 </header>
+
 <main id="main">
+
+<!-- Hero -->
 <div class="hero">
-  <div class="wrap">
-    <h1>Share the ride. Send the package.</h1>
-    <p class="lead">ARYV connects people travelling the same way. Book a seat with a verified driver, offer the empty seats in your car, or send a package with someone already heading there.</p>
-    <div class="actions">
-      <span class="button" aria-disabled="true">Coming soon to Google Play</span>
-      <a class="button quiet" href="#how">See how it works</a>
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow"><span class="dot"></span>Launching in Botswana</span>
+      <h1>Go further,<br><span class="grad-text">together.</span></h1>
+      <p class="lead">ARYV connects people travelling the same way. Book a seat with a verified driver, share the empty seats in your car, or send a package with someone already heading there.</p>
+      <div class="actions">
+        <span class="store" aria-disabled="true" role="note">
+          <svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>
+          <span><small>Coming soon to</small><strong>Google Play</strong></span>
+        </span>
+        <a class="btn btn-ghost-dark" href="#how">See how it works <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <ul class="modes" aria-label="Ways to use ARYV">
+        <li><a href="#ride"><svg class="icon" aria-hidden="true"><use href="#i-seat"/></svg>Find a seat</a></li>
+        <li><a href="#drive"><svg class="icon" aria-hidden="true"><use href="#i-car"/></svg>Offer a ride</a></li>
+        <li><a href="#deliver"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>Send a package</a></li>
+      </ul>
     </div>
-    <ul class="badges" aria-label="At a glance">
-      <li>Rides between towns and across town</li>
-      <li>Package delivery</li>
-      <li>Pay in cash</li>
-      <li>English, Setswana and Afrikaans</li>
+
+    <div class="stage" aria-hidden="true">
+      <div class="phone">
+        <div class="screen">
+          <span class="notch"></span>
+          <svg class="map" viewBox="0 0 300 620" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="rt" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#2fd3b8"/><stop offset=".5" stop-color="#5e98e2"/><stop offset="1" stop-color="#8b45e8"/>
+              </linearGradient>
+            </defs>
+            <rect width="300" height="620" fill="#e9edf3"/>
+            <path d="M-20 140 C60 120 120 170 200 150 S300 120 330 130 L330 210 C260 200 200 240 120 230 S20 200 -20 220Z" fill="#dde9e1"/>
+            <path d="M180 300 h140 v120 h-140z M-10 330 h90 v90 h-90z" fill="#dfe4ec"/>
+            <circle cx="235" cy="250" r="34" fill="#d3ecf0"/>
+            <g stroke="#fff" stroke-linecap="round" fill="none">
+              <path d="M-10 100 L320 60" stroke-width="10"/>
+              <path d="M40 -10 L90 640" stroke-width="12"/>
+              <path d="M-10 280 L320 300" stroke-width="8"/>
+              <path d="M150 -10 C170 200 130 380 210 640" stroke-width="8"/>
+              <path d="M-10 460 L320 430" stroke-width="10"/>
+              <path d="M260 -10 L240 640" stroke-width="6"/>
+            </g>
+            <path d="M78 470 C70 400 140 380 150 300 S120 180 210 120" stroke="url(#rt)" stroke-width="7" stroke-linecap="round" fill="none" opacity=".25"/>
+            <path class="route" d="M78 470 C70 400 140 380 150 300 S120 180 210 120" stroke="url(#rt)" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <circle cx="78" cy="470" r="11" fill="#fff"/><circle cx="78" cy="470" r="6" fill="#2fd3b8"/>
+            <path d="M210 114c-8 0-14-6-14-14s6-14 14-14 14 6 14 14-6 14-14 14z" fill="#0b1020"/>
+            <path d="M210 120l-6-8h12z" fill="#0b1020"/>
+            <rect x="205" y="95" width="10" height="10" rx="2" fill="#a046ee"/>
+          </svg>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="trip-line">
+              <i></i><b>Gaborone</b>
+              <span class="bar"></span><span></span>
+              <i class="to"></i><b>Francistown</b>
+            </div>
+            <div class="sheet-row">
+              <span class="avatar">TM</span>
+              <span class="meta"><b>Tomorrow, 07:30</b><span>3 seats left</span></span>
+              <span class="pill">Verified</span>
+            </div>
+            <span class="cta">Request a seat</span>
+          </div>
+        </div>
+      </div>
+      <div class="float float-a">
+        <span class="badge-ic teal"><svg class="icon"><use href="#i-shield"/></svg></span>
+        <span><b>Driver verified</b><span>Documents checked by ARYV</span></span>
+      </div>
+      <div class="float float-b">
+        <span class="badge-ic"><svg class="icon"><use href="#i-key"/></svg></span>
+        <span><b>Pickup PIN</b><span class="pin-digits"><em>4</em><em>8</em><em>2</em><em>1</em></span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Trust strip -->
+<div class="trust">
+  <div class="wrap">
+    <ul>
+      <li><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><span><b>Verified drivers</b><span>Checked before their first trip</span></span></li>
+      <li><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg></span><span><b>Pickup PIN</b><span>Know it's the right car</span></span></li>
+      <li><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-cash"/></svg></span><span><b>Pay in cash</b><span>Straight to your driver</span></span></li>
+      <li><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span><span><b>Your language</b><span>English, Setswana, Afrikaans</span></span></li>
     </ul>
   </div>
 </div>
 
-<section id="who">
+<!-- Ride / Drive / Deliver -->
+<section aria-labelledby="ride-h">
   <div class="wrap">
-    <h2>One app, three ways to use it</h2>
-    <p class="intro">Switch between them whenever you like. You only verify your documents if you want to drive or deliver.</p>
-    <div class="grid">
-      <div class="card">
-        <span class="tag">Passengers</span>
-        <h3>Find a seat going your way</h3>
-        <ul>
+    <div class="feature" id="ride">
+      <div class="feature-copy">
+        <span class="kicker">For passengers</span>
+        <h2 id="ride-h">Find a seat going your way</h2>
+        <p>Across town or between towns, travel with someone who is already making the trip.</p>
+        <ul class="checks">
           <li>Search rides by where you are going and when.</li>
           <li>Join part of a longer trip and pay only for your part of it.</li>
           <li>No ride yet? Post a request and nearby drivers can see it.</li>
-          <li>See the price before you book.</li>
+          <li>See the price before you book. That's the price you pay.</li>
         </ul>
+        <a class="link-arrow" href="#how">How a ride works <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </div>
-      <div class="card">
-        <span class="tag">Drivers</span>
-        <h3>Fill your empty seats</h3>
-        <ul>
+      <div class="visual v-ride" aria-hidden="true">
+        <div class="ui-stack">
+          <div class="ui ui-tilt-a">
+            <p class="ui-title">Where to?</p>
+            <div class="field"><i></i><span>Mogoditshane</span></div>
+            <div class="field"><i class="to"></i><b>Palapye</b></div>
+          </div>
+          <div class="ui ui-tilt-b">
+            <div class="result"><span class="time">06:45</span><span class="meta"><b>Via Mahalapye</b>2 seats left</span><span class="pill">Verified</span></div>
+            <div class="result"><span class="time">09:10</span><span class="meta"><b>Direct</b>4 seats left</span><span class="pill">Verified</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature flip" id="drive">
+      <div class="feature-copy">
+        <span class="kicker">For drivers</span>
+        <h2>Driving anyway? Fill the empty seats.</h2>
+        <p>Post the trip you are already making, choose who comes along, and share the cost of the road.</p>
+        <ul class="checks">
           <li>Post a trip with your stops, seats and price per seat.</li>
           <li>Accept or decline each booking request.</li>
           <li>Check each passenger's pickup PIN before you set off.</li>
-          <li>Passengers pay you in cash; ARYV's commission is settled separately.</li>
+          <li>Passengers pay you in cash. ARYV's commission is settled separately.</li>
         </ul>
+        <a class="link-arrow" href="#faq">Questions about driving <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </div>
-      <div class="card">
-        <span class="tag">Senders and couriers</span>
-        <h3>Deliver with someone already travelling</h3>
-        <ul>
+      <div class="visual v-drive" aria-hidden="true">
+        <div class="ui-stack">
+          <div class="ui ui-tilt-a">
+            <p class="ui-title">New booking request</p>
+            <div class="result"><span class="avatar">LK</span><span class="meta"><b>1 seat · Gaborone to Lobatse</b>Pickup at Game City</span></div>
+            <div class="req-actions"><span>Decline</span><span class="yes">Accept</span></div>
+          </div>
+          <div class="ui ui-tilt-b">
+            <p class="ui-title">Check the pickup PIN</p>
+            <p class="ui-sub">Ask your passenger to read it out</p>
+            <div class="big-pin"><em>4</em><em>8</em><em>2</em><em>1</em></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature" id="deliver">
+      <div class="feature-copy">
+        <span class="kicker">For senders and couriers</span>
+        <h2>Send it with someone already going there</h2>
+        <p>Packages travel with people making the trip anyway, and arrive only when the recipient says so.</p>
+        <ul class="checks">
           <li>Describe the package, set your offer, and a courier accepts it.</li>
           <li>Follow the package on the map while it is on its way.</li>
-          <li>The recipient gets a delivery code; the courier needs it to finish.</li>
+          <li>The recipient gets a delivery code. The courier needs it to finish.</li>
           <li>Something went wrong? Report it and ARYV reviews the delivery.</li>
         </ul>
+        <a class="link-arrow" href="#safety">How deliveries stay safe <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <div class="visual v-deliver" aria-hidden="true">
+        <div class="ui-stack">
+          <div class="ui ui-tilt-a">
+            <p class="ui-title">Package to Maun</p>
+            <ol class="timeline">
+              <li class="done"><b>Collected</b>Recipient sent a delivery code</li>
+              <li><b>On the way</b>Live on the map</li>
+              <li class="next"><b>Delivered</b>When the courier enters the code</li>
+            </ol>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="how">
+<!-- How it works -->
+<section id="how" aria-labelledby="how-h">
   <div class="wrap">
-    <h2>How a ride works</h2>
-    <p class="intro">From search to drop-off.</p>
+    <div class="section-head">
+      <span class="kicker">How it works</span>
+      <h2 id="how-h">From search to drop-off in four steps</h2>
+      <p>Simple for passengers, in control for drivers.</p>
+    </div>
     <ol class="steps">
-      <li><strong>Search or post</strong>Passengers search for a ride; drivers post the trip they are making.</li>
+      <li><strong>Search or post</strong>Passengers search for a ride. Drivers post the trip they are making.</li>
       <li><strong>Request a seat</strong>The driver sees your request and accepts or declines it.</li>
-      <li><strong>Meet and check</strong>Read your pickup PIN to the driver so you both know it is the right car.</li>
+      <li><strong>Meet and check</strong>Read your pickup PIN to the driver so you both know it's the right car.</li>
       <li><strong>Travel and pay</strong>Pay the driver in cash, then rate each other when the ride ends.</li>
     </ol>
   </div>
 </section>
 
-<div class="band" id="safety">
-  <section>
-    <div class="wrap">
+<!-- Safety -->
+<div class="safety" id="safety">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Safety</span>
       <h2>Built so strangers can trust each other</h2>
-      <p class="intro">Sharing a car or handing over a package only works when both sides know who they are dealing with.</p>
-      <div class="grid">
-        <div class="card"><h3>Verified drivers and couriers</h3><p>Nobody can offer a ride or carry a package until ARYV staff have reviewed their identity and vehicle documents.</p></div>
-        <div class="card"><h3>Pickup PIN</h3><p>Each booking has a PIN that only the passenger sees. The driver checks it at pickup.</p></div>
-        <div class="card"><h3>A photo from today</h3><p>Passenger and driver each take a face photo for the trip, shown to the other once the booking is confirmed and deleted a day later.</p></div>
-        <div class="card"><h3>Emergency alert</h3><p>An SOS button shares your location with your emergency contacts and with ARYV's on-call staff.</p></div>
-        <div class="card"><h3>Delivery code</h3><p>A package is only marked delivered when the courier enters the code the recipient was sent.</p></div>
-        <div class="card"><h3>Block and report</h3><p>Block anyone you do not want to deal with again, and report behaviour for ARYV to review.</p></div>
-      </div>
+      <p>Sharing a car or handing over a package only works when both sides know who they are dealing with.</p>
     </div>
-  </section>
+    <div class="safety-grid">
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span><h3>Verified drivers and couriers</h3><p>Nobody can offer a ride or carry a package until ARYV staff have reviewed their identity and vehicle documents.</p></div>
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg></span><h3>Pickup PIN</h3><p>Each booking has a PIN that only the passenger sees. The driver checks it at pickup.</p></div>
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg></span><h3>A photo from today</h3><p>Passenger and driver each take a face photo for the trip, shown to the other once the booking is confirmed and deleted a day later.</p></div>
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg></span><h3>Emergency alert</h3><p>An SOS button shares your location with your emergency contacts and with ARYV's on-call staff.</p></div>
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg></span><h3>Delivery code</h3><p>A package is only marked delivered when the courier enters the code the recipient was sent.</p></div>
+      <div class="s-card"><span class="ic"><svg class="icon" aria-hidden="true"><use href="#i-ban"/></svg></span><h3>Block and report</h3><p>Block anyone you do not want to deal with again, and report behaviour for ARYV to review.</p></div>
+    </div>
+    <p class="fine">These tools reduce risk; they do not remove it. In an emergency, contact the emergency services first.</p>
+  </div>
 </div>
 
-<section id="contact">
+<!-- Languages -->
+<section class="hello" aria-labelledby="hello-h">
   <div class="wrap">
-    <h2>Questions?</h2>
-    <p class="intro">Write to <a href="mailto:hello@aryv-app.com">hello@aryv-app.com</a>. To remove your account and personal data, see <a href="/delete-account">Delete your account</a>.</p>
+    <span class="kicker">Made for here</span>
+    <h2 id="hello-h" class="greetings"><span>Dumela.</span> <span>Hallo.</span> <span>Hello.</span></h2>
+    <p>Use ARYV in the language you're most at home in, and switch whenever you like.</p>
+    <ul class="langs" aria-label="Languages">
+      <li>Setswana</li><li>English</li><li>Afrikaans</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Driver band -->
+<section aria-labelledby="band-h">
+  <div class="wrap">
+    <div class="band-cta">
+      <div>
+        <h2 id="band-h">Your next trip could pay for its fuel.</h2>
+        <p>Post the trip you are already making and share the cost with passengers going the same way. You only verify your documents if you want to drive or deliver.</p>
+        <a class="btn btn-light" href="#get-app">Get the app <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <ul>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg>You set the route, stops and price</li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-seat"/></svg>You choose who rides with you</li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>Riders rate you, and you rate them</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" aria-labelledby="faq-h">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="kicker">Help</span>
+      <h2 id="faq-h">Questions, answered</h2>
+      <p>Still stuck? Write to <a href="mailto:hello@aryv-app.com">hello@aryv-app.com</a>.</p>
+    </div>
+    <div class="faq">
+      <div>
+        <details><summary>How do I pay for a ride or delivery?</summary><p>In cash, directly to the person: the passenger pays the driver, and the recipient or sender pays the courier. Both sides confirm the payment in the app so each has a record. ARYV does not hold or transfer the money.</p></details>
+        <details><summary>Who sets the price?</summary><p>For rides, the driver sets a price per seat, and the price you see when you book is the price you pay. For deliveries, the sender names the price and a courier who accepts agrees to it.</p></details>
+        <details><summary>How are drivers and couriers checked?</summary><p>Before anyone can offer a ride or carry a package, ARYV staff review their identity documents and, for drivers, their licence, vehicle registration and insurance.</p></details>
+        <details><summary>What is the pickup PIN?</summary><p>Every booking has a PIN that only the passenger sees. Read it to your driver at pickup so you both know you have the right car and the right person.</p></details>
+        <details><summary>Can I cancel a booking?</summary><p>Yes. Either side may cancel before the ride. Please cancel as early as you can so the other person can make other plans.</p></details>
+      </div>
+      <div>
+        <details><summary>Are packages insured?</summary><p>No. ARYV does not insure packages, so don't send cash or anything you can't afford to lose. If something goes wrong, report it in the app and ARYV will review the delivery.</p></details>
+        <details><summary>What happens to my trip chat?</summary><p>A ride's chat is deleted 24 hours after the ride is completed, unless the people in the chat vote to keep it.</p></details>
+        <details><summary>Who can use ARYV?</summary><p>Anyone aged 18 or over. To drive you need a valid licence and a roadworthy, registered and insured vehicle, approved by ARYV.</p></details>
+        <details><summary>How do I delete my account?</summary><p>In the app, go to Settings, then Privacy, then Delete My Account. You can also email us. See <a href="/delete-account">Delete your account</a> for what is removed and what is kept.</p></details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<section class="final" id="get-app" aria-labelledby="final-h">
+  <div class="wrap">
+    <h2 id="final-h">Ready when you are.</h2>
+    <p>ARYV is coming soon to Google Play. One app for riding, driving and delivering.</p>
+    <div class="actions">
+      <span class="store" aria-disabled="true" role="note">
+        <svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>
+        <span><small>Coming soon to</small><strong>Google Play</strong></span>
+      </span>
+    </div>
   </div>
 </section>
 
 </main>
+
 <footer class="site-footer">
   <div class="wrap">
-    <div>&copy; 2026 ARYV. Shared rides and deliveries in Botswana.</div>
-    <ul>
-      <li><a href="/privacy">Privacy Policy</a></li>
-      <li><a href="/terms">Terms of Service</a></li>
-      <li><a href="/delete-account">Delete your account</a></li>
-      <li><a href="mailto:hello@aryv-app.com">hello@aryv-app.com</a></li>
-    </ul>
+    <div class="footer-grid">
+      <div>
+        <a class="brand" href="/"><img src="/assets/mark.svg" alt="" width="36" height="31">ARYV</a>
+        <p>Shared rides and package delivery in Botswana. Go further, together.</p>
+      </div>
+      <div>
+        <h2>Use ARYV</h2>
+        <ul>
+          <li><a href="/#ride">Ride</a></li>
+          <li><a href="/#drive">Drive</a></li>
+          <li><a href="/#deliver">Deliver</a></li>
+          <li><a href="/#safety">Safety</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Legal</h2>
+        <ul>
+          <li><a href="/privacy">Privacy Policy</a></li>
+          <li><a href="/terms">Terms of Service</a></li>
+          <li><a href="/delete-account">Delete your account</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Contact</h2>
+        <ul>
+          <li><a href="mailto:hello@aryv-app.com">hello@aryv-app.com</a></li>
+          <li>ARYV, Box 440, Masunga, Botswana</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-base">
+      <span>&copy; 2026 ARYV. All rights reserved.</span>
+      <span>English · Setswana · Afrikaans</span>
+    </div>
   </div>
 </footer>
 </body>
