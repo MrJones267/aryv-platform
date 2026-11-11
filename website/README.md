@@ -13,6 +13,19 @@ because the CSP allows fonts from this site only. The phone and app cards
 on the landing page are illustrations built in HTML/CSS, not screenshots.
 Light and dark mode follow the visitor's system setting.
 
+## Search and sharing
+
+- `assets/og-image.jpg` (1200x630) is the preview shown when a link is
+  shared. Keep it under 300 KB or WhatsApp will not show it. It was
+  rendered from HTML using the site's font and mark.
+- `sitemap.xml` lists the indexable pages; update `lastmod` when a page
+  changes. `robots.txt` points to it. The 404 page is `noindex`.
+- The landing page carries Organization and WebSite structured data
+  (JSON-LD). That is a data block, not a script, so the CSP does not
+  block it.
+- "Notify me at launch" is a `mailto:` link to hello@aryv-app.com with
+  a pre-filled subject, so the site still needs no forms or scripts.
+
 ## Deploy (Cloudflare Pages)
 
 1. Create a Pages project connected to this repository.
