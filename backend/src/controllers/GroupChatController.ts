@@ -9,6 +9,7 @@ import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import GroupChatService, {
   GroupChatAccessError,
+  RideChatNotKeptError,
   CreateGroupChatRequest,
   SendGroupMessageRequest,
   JoinGroupRequest,
@@ -532,6 +533,10 @@ export class GroupChatController {
         message: 'Vote recorded successfully',
       });
     } catch (error) {
+      if (error instanceof RideChatNotKeptError) {
+        res.status(409).json({ success: false, message: error.message, code: 'RIDE_CHAT_NOT_KEPT' });
+        return;
+      }
       logger.error('Error recording group vote:', error);
       res.status(500).json({
         success: false,

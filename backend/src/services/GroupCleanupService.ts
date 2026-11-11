@@ -23,12 +23,14 @@ export class GroupCleanupService {
    */
   public startScheduler(): void {
     try {
-      // Clean up inactive groups every 6 hours
-      this.cleanupJob = cron.schedule('0 */6 * * *', async () => {
+      // Every 15 minutes: this is what deletes a ride chat a day after its
+      // trip, so at six-hourly it could run that much late.
+      this.cleanupJob = cron.schedule('*/15 * * * *', async () => {
         try {
-          logger.info('Starting scheduled group cleanup...');
           const cleanedCount = await this.groupChatService.cleanupInactiveGroups();
-          logger.info(`Scheduled group cleanup completed: ${cleanedCount} groups processed`);
+          if (cleanedCount > 0) {
+            logger.info(`Scheduled group cleanup completed: ${cleanedCount} groups processed`);
+          }
         } catch (error) {
           logger.error('Error during scheduled group cleanup:', error);
         }
