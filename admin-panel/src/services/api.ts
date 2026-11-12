@@ -285,6 +285,21 @@ export const analyticsService = {
     >('/analytics/usage'),
 };
 
+// People who left an email on aryv-app.com to hear when the app launches.
+export interface LaunchSignupSummary {
+  total: number;
+  android: number;
+  ios: number;
+  unspecified: number;
+  latestAt: string | null;
+}
+
+export const launchSignupService = {
+  getSummary: () => adminApi.get<ApiResponse<LaunchSignupSummary>>('/launch-signups'),
+  // Admin and above; the server refuses moderators with 403.
+  exportCsv: () => adminApi.get<Blob>('/launch-signups/export', { responseType: 'blob' }),
+};
+
 // The currency list is public and lives outside /api/admin, so it bypasses
 // adminApi's base URL (and its 401 redirect, which it can never trigger).
 export const currencyService = {

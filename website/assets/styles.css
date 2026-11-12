@@ -501,3 +501,24 @@ tr:last-child td { border-bottom: 0; }
 .final .form-msg { display: none; max-width: 32rem; margin: 24px auto 0; padding: 12px 16px; border-radius: var(--radius-sm); background: #fdecec; color: #8a1c1c; font-size: .95rem; font-weight: 600; scroll-margin-top: 120px; }
 .final .form-msg:target { display: block; }
 @media (prefers-color-scheme: dark) { .final .form-msg { background: #3a1416; color: #ffc9c9; } }
+
+/* ---------- Phone choice on the sign-up form (optional) ---------- */
+.platform { border: 0; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.platform legend { float: left; margin-right: 6px; font-size: .9rem; font-weight: 600; }
+.platform legend span { font-weight: 400; color: var(--muted); }
+.platform label { position: relative; margin: 0; font-weight: 600; font-size: .9rem; cursor: pointer; }
+.platform input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.platform label span { display: inline-block; padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
+.platform input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.platform input:focus-visible + span { outline: 3px solid var(--blue); outline-offset: 2px; }
+.notify-dark .platform legend { color: var(--on-ink); }
+.notify-dark .platform legend span { color: var(--on-ink-muted); }
+.notify-dark .platform label span { color: var(--on-ink); background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .22); }
+.notify-dark .platform input:checked + span { background: rgba(51, 236, 196, .16); border-color: #33ecc4; color: #fff; }
+
+/* ---------- Share on WhatsApp ---------- */
+.share { margin: 20px 0 0; }
+.final .share { margin: 22px auto 0; }
+.btn-share { background: #25d366; color: #06301a; }
+.btn-share:hover { background: #2fe076; }
+.doc h2 + p + .share, .doc .share { margin-bottom: 18px; }

@@ -156,9 +156,10 @@ describe('route contract', () => {
       // for signed-out recipients, these should move behind auth.
       /^\/api\/rides\/[0-9a-f-]{36}$/,
       /^\/api\/users\/[0-9a-f-]{36}$/,
-      // The website's "tell me when ARYV launches" form: visitors have no
-      // account. It only adds an email address to a list.
-      /^\/api\/launch-signups$/,
+      // The website's "tell me when ARYV launches" form, and the link in the
+      // launch email that takes an address off the list: visitors have no
+      // account. Removal is authorised by a signed token instead.
+      /^\/api\/launch-signups(\/remove)?$/,
     ];
 
     const isPublic = (concrete: string): boolean =>

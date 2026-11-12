@@ -30,9 +30,24 @@ Light and dark mode follow the visitor's system setting.
   `/#notify-invalid` / `/#notify-failed`, which CSS `:target` shows beside the
   form. No scripts are needed, and the CSP's `form-action` allows only the
   API. The hidden `company` field is a bot trap.
-- To export the list at launch, query the production database:
-  `SELECT email, created_at FROM launch_signups ORDER BY created_at;`
-  The Privacy Policy says the list is deleted once the launch email is sent.
+- The form also asks, optionally, Android or iPhone (`platform`, migration
+  044). The admin dashboard's "Launch sign-ups" card shows the counts.
+- **At launch:** download the CSV from that card (admin role and above;
+  each download is in the audit log). Every row has a `removal_link`; put it
+  in that person's email, and also send the header
+  `List-Unsubscribe: <removal_link>` with
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click` so mail apps show an
+  unsubscribe button. The link opens a confirm page on the API; nothing is
+  removed until the person presses the button. Links are signed with
+  `LAUNCH_SIGNUP_SECRET` (or `JWT_SECRET` when unset), so changing that
+  secret breaks links already sent.
+- The Privacy Policy says the list is deleted once the launch email is
+  sent: `DELETE FROM launch_signups;` afterwards.
+- "Share ARYV on WhatsApp" (final section and /thanks) is a plain
+  `https://wa.me/?text=` link and needs no business number.
+- `styles.css` is linked as `styles.css?v=N` on every page, because
+  Cloudflare lets browsers keep it for 4 hours. Bump `N` on every page
+  whenever the stylesheet changes.
 
 ## Deploy (Cloudflare Pages)
 
