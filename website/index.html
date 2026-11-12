@@ -25,7 +25,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="preload" href="/assets/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/styles.css">
+<link rel="stylesheet" href="/assets/styles.css?v=2">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -407,8 +407,8 @@
         <span><small>Coming soon to the</small><strong>App Store</strong></span>
       </span>
     </div>
-    <p class="form-msg" id="notify-invalid" role="alert">That email address doesn't look right. Please check it and try again.</p>
-    <p class="form-msg" id="notify-failed" role="alert">Sorry, we couldn't save that just now. Please try again in a few minutes.</p>
+    <p class="form-msg" id="notify-invalid" role="alert" hidden>That email address doesn't look right. Please check it and try again.</p>
+    <p class="form-msg" id="notify-failed" role="alert" hidden>Sorry, we couldn't save that just now. Please try again in a few minutes.</p>
     <form class="notify" action="https://api.aryv-app.com/api/launch-signups" method="post">
       <label for="email-final">Get an email the day ARYV launches</label>
       <div class="notify-row">
