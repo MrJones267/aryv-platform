@@ -206,7 +206,7 @@ Contact: hello@aryv-app.com, or ARYV, Box 440, Masunga, Botswana.`,
           <Text style={styles.contactText}>
             If you have any questions about these Terms of Service, please contact us at:
           </Text>
-          <Text style={styles.contactEmail}>legal@aryv-app.com</Text>
+          <Text style={styles.contactEmail}>privacy@aryv-app.com</Text>
         </View>
 
         <View style={styles.footer}>
