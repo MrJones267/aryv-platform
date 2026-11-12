@@ -23,8 +23,16 @@ Light and dark mode follow the visitor's system setting.
 - The landing page carries Organization and WebSite structured data
   (JSON-LD). That is a data block, not a script, so the CSP does not
   block it.
-- "Notify me at launch" is a `mailto:` link to hello@aryv-app.com with
-  a pre-filled subject, so the site still needs no forms or scripts.
+- "Notify me" is a plain HTML form that posts to
+  `https://api.aryv-app.com/api/launch-signups` (backend
+  `routes/launchSignups.ts`, table `launch_signups`, migration 043). The API
+  stores the address and redirects to `/thanks`, or back to
+  `/#notify-invalid` / `/#notify-failed`, which CSS `:target` shows beside the
+  form. No scripts are needed, and the CSP's `form-action` allows only the
+  API. The hidden `company` field is a bot trap.
+- To export the list at launch, query the production database:
+  `SELECT email, created_at FROM launch_signups ORDER BY created_at;`
+  The Privacy Policy says the list is deleted once the launch email is sent.
 
 ## Deploy (Cloudflare Pages)
 

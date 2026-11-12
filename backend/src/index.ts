@@ -40,6 +40,7 @@ import blockRoutes from './routes/blocks';
 import verificationRoutes from './routes/verification';
 import emergencyRoutes from './routes/emergency';
 import callRoutes from './routes/calls';
+import launchSignupRoutes from './routes/launchSignups';
 import promoRoutes, { seedBuiltInPromos } from './routes/promos';
 import SocketService from './services/SocketService';
 import { authenticateToken } from './middleware/auth';
@@ -97,6 +98,10 @@ app.use(helmet({
   contentSecurityPolicy: NODE_ENV !== 'development',
   noSniff: true,
 }));
+
+// The website's "tell me when ARYV launches" form. Before CORS on purpose:
+// see the note in routes/launchSignups.ts.
+app.use('/api/launch-signups', launchSignupRoutes);
 
 // CORS configuration - allow mobile app (React Native), admin panel, and web clients
 const corsOrigins = process.env['CORS_ORIGIN']
