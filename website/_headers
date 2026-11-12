@@ -1,7 +1,8 @@
 # Security headers for the public ARYV website on Cloudflare Pages.
-# The site is static: no scripts, no forms, no cookies. Fonts are self-hosted.
+# The site is static: no scripts and no cookies. Fonts are self-hosted. The one
+# form, the launch sign-up, posts to the API, which redirects back here.
 /*
-  Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self' https://api.aryv-app.com; frame-ancestors 'none'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

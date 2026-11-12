@@ -41,6 +41,7 @@ import ContentReport from './ContentReport';
 import UserBlock from './UserBlock';
 import TripPhoto from './TripPhoto';
 import BookingPin from './BookingPin';
+import LaunchSignup from './LaunchSignup';
 
 // Driver verification models
 import DriverDocument from './DriverDocument';
@@ -559,6 +560,7 @@ export {
   UserBlock,
   TripPhoto,
   BookingPin,
+  LaunchSignup,
   // Driver verification models
   DriverDocument,
   PromoRedemption,
@@ -613,6 +615,7 @@ export default {
   UserBlock,
   TripPhoto,
   BookingPin,
+  LaunchSignup,
   // Driver verification models
   DriverDocument,
   PromoRedemption,

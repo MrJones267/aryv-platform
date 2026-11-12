@@ -74,6 +74,7 @@ export const MOUNTS: Array<{ path: string; module: string }> = [
   { path: '/api/verification', module: '../../routes/verification' },
   { path: '/api/emergency', module: '../../routes/emergency' },
   { path: '/api/calls', module: '../../routes/calls' },
+  { path: '/api/launch-signups', module: '../../routes/launchSignups' },
 ];
 
 /**
