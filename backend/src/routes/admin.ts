@@ -30,6 +30,7 @@ import { BOOKING_PLATFORM_FEE_RATE, CASH_COMMISSION_RATE, DEFAULT_COURIER_FEE_RA
 import { MIN_LENGTH as PASSWORD_MIN_LENGTH } from '../utils/password';
 import logger from '../utils/logger';
 import { recordAdminAction } from '../services/AuditService';
+import { launchSignupService } from '../services/LaunchSignupService';
 import { validatePasswordStrength } from '../utils/password';
 import CommissionService from '../services/CommissionService';
 import { SettlementMethod } from '../models/CommissionLedger';
@@ -2022,6 +2023,46 @@ router.get('/activity-feed', authenticateAdminToken, async (req, res) => {
   } catch (error) {
     logger.error(`Admin activity feed failed: ${(error as Error).message}`);
     return res.status(500).json({ success: false, error: 'Failed to load recent activity', code: 'ACTIVITY_FEED_FAILED', timestamp: new Date().toISOString() });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Launch sign-ups from aryv-app.com
+// ---------------------------------------------------------------------------
+
+/** @route GET /api/admin/launch-signups — how many are waiting, by phone */
+router.get('/launch-signups', authenticateAdminToken, async (_req, res) => {
+  try {
+    const data = await launchSignupService.summary();
+    return res.json({ success: true, data, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error('Could not count launch sign-ups', { error: (error as Error).message });
+    return res.status(500).json({ success: false, error: 'Could not count launch sign-ups', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
+  }
+});
+
+/**
+ * @route GET /api/admin/launch-signups/export — every address as CSV, with
+ * its removal link, for the launch email. Personal data, so admin and above,
+ * and each download is written to the audit log.
+ */
+router.get('/launch-signups/export', authenticateAdminToken, requireAdmin, async (req: any, res) => {
+  try {
+    const { csv, count } = await launchSignupService.exportCsv();
+    await recordAdminAction(req, {
+      adminUserId: req.user?.id,
+      action: 'launch_signups.export',
+      resourceType: 'launch_signup',
+      details: { outcome: 'succeeded', count },
+    });
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="aryv-launch-signups-${day}.csv"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(csv);
+  } catch (error) {
+    logger.error('Could not export launch sign-ups', { error: (error as Error).message });
+    return res.status(500).json({ success: false, error: 'Could not export launch sign-ups', code: 'INTERNAL_SERVER_ERROR', timestamp: new Date().toISOString() });
   }
 });
 

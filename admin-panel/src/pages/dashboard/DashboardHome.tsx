@@ -47,6 +47,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import LaunchSignupsCard from '../../components/dashboard/LaunchSignupsCard';
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   fetchDashboardStats,
@@ -240,6 +241,11 @@ const DashboardHome: React.FC = () => {
           />
         </Grid>
       </Grid>
+
+      {/* Launch sign-ups from the website */}
+      <Box mb={3}>
+        <LaunchSignupsCard />
+      </Box>
 
       {/* Charts Row */}
       <Grid container spacing={3} mb={3}>
