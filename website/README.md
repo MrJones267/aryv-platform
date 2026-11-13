@@ -1,7 +1,8 @@
 # ARYV public website
 
-Static pages for `https://aryv-app.com`: landing, Privacy Policy, Terms of
-Service, and the account-deletion page Google Play requires. No build step.
+Static pages for `https://aryv-app.com`: landing, Drive with ARYV
+(`drive.html`), Privacy Policy, Terms of Service, and the account-deletion
+page Google Play requires. No build step.
 
 ## Design
 
@@ -12,6 +13,25 @@ vector trace of `ARYV3.png`). The font is Plus Jakarta Sans
 because the CSP allows fonts from this site only. The phone and app cards
 on the landing page are illustrations built in HTML/CSS, not screenshots.
 Light and dark mode follow the visitor's system setting.
+
+## Content rules
+
+- Every claim about how ARYV works is taken from the Terms, the Privacy
+  Policy or the app's code. Nothing is invented: no user counts, no
+  earnings figures.
+- Fees and commission are described, never given as percentages, because
+  admins can change the rates in settings. If you publish numbers, the site
+  must change whenever the rates do.
+- Driver documents on `drive.html` follow `REQUIRED_DOCUMENT_TYPES` in
+  `backend/src/models/DriverDocument.ts` (licence, vehicle registration,
+  insurance). Update the page if that list changes.
+
+## Checks
+
+Lighthouse (12.2, mobile and desktop) on every page, 13 November 2026:
+performance 98-100, accessibility 100, best practices 100. SEO is 92 only
+because Lighthouse fetches `robots.txt` from inside the page and the CSP
+blocks that; crawlers fetch it directly. Rerun after design changes.
 
 ## Search and sharing
 
