@@ -4,6 +4,11 @@ Static pages for `https://aryv-app.com`: landing, Drive with ARYV
 (`drive.html`), Privacy Policy, Terms of Service, and the account-deletion
 page Google Play requires. No build step.
 
+The site is the `website/` folder; paths below are relative to it. These
+notes live in `docs/` because Cloudflare Pages publishes **every** file in
+`website/`. Put nothing there that should not be public: notes, drafts,
+exports, `.env` files.
+
 ## Design
 
 Plain HTML and CSS, no scripts (the CSP in `_headers` forbids them, and
@@ -50,6 +55,10 @@ blocks that; crawlers fetch it directly. Rerun after design changes.
   `/#notify-invalid` / `/#notify-failed`, which CSS `:target` shows beside the
   form. No scripts are needed, and the CSP's `form-action` allows only the
   API. The hidden `company` field is a bot trap.
+- A new address gets one "You're on the ARYV launch list" email straight
+  away (backend `services/EmailService.ts`, sent through Cloudflare Email
+  Service), with its removal link and unsubscribe headers. Signing up again
+  sends nothing.
 - The form also asks, optionally, Android or iPhone (`platform`, migration
   044). The admin dashboard's "Launch sign-ups" card shows the counts.
 - **At launch:** download the CSV from that card (admin role and above;
