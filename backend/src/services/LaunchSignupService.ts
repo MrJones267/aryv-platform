@@ -2,7 +2,7 @@
  * @fileoverview The launch sign-up list: adding, removing, counting, exporting
  * @author Oabona-Majoko
  * @created 2026-11-13
- * @lastModified 2026-11-13
+ * @lastModified 2026-11-17
  *
  * Removal links are signed rather than stored: the token is an HMAC of the
  * address, so a link works for exactly one address and needs no table of
@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database';
 import LaunchSignup from '../models/LaunchSignup';
+import type { OutgoingEmail } from './EmailService';
 
 export type LaunchPlatform = 'android' | 'ios';
 export const LAUNCH_PLATFORMS: readonly LaunchPlatform[] = ['android', 'ios'];
@@ -43,6 +44,53 @@ export const removalUrl = (email: string): string =>
   `${API_URL}/api/launch-signups/remove?email=${encodeURIComponent(email)}&token=${removalToken(email)}`;
 
 /**
+ * The email sent the moment someone joins the list. It promises only what
+ * the privacy policy says: one email at launch, and the address shared with
+ * no one.
+ */
+export const welcomeEmail = (email: string): OutgoingEmail => {
+  const remove = removalUrl(email);
+  const removeHtml = remove.replace(/&/g, '&amp;');
+  const text = [
+    "You're on the ARYV launch list.",
+    '',
+    'Thanks for signing up. We will email you once, on the day ARYV launches in Botswana, with the links to get the app on Google Play and the App Store.',
+    '',
+    "Until then we won't send you anything else, and we don't share your address with anyone.",
+    '',
+    'Know someone who travels the same roads? Send them to https://aryv-app.com',
+    '',
+    `Didn't sign up, or changed your mind? Remove your address here: ${remove}`,
+    '',
+    'ARYV · https://aryv-app.com · hello@aryv-app.com',
+  ].join('\n');
+
+  const html = `<!doctype html><html lang="en"><body style="margin:0;padding:24px;background:#f4f6fb;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#0b1020">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border-radius:16px;padding:32px">
+<tr><td>
+<p style="margin:0 0 20px;font-size:22px;font-weight:800;letter-spacing:.04em">ARYV</p>
+<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25">You're on the launch list.</h1>
+<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#39415a">Thanks for signing up. We will email you once, on the day ARYV launches in Botswana, with the links to get the app on Google Play and the App Store.</p>
+<p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#39415a">Until then we won't send you anything else, and we don't share your address with anyone.</p>
+<p style="margin:0 0 28px;font-size:16px;line-height:1.6;color:#39415a">Know someone who travels the same roads? Send them to <a href="https://aryv-app.com" style="color:#1f6fd1">aryv-app.com</a>.</p>
+<p style="margin:0;font-size:13px;line-height:1.6;color:#6b7390">Didn't sign up, or changed your mind? <a href="${removeHtml}" style="color:#6b7390">Remove your address</a>.<br>ARYV · <a href="https://aryv-app.com" style="color:#6b7390">aryv-app.com</a> · <a href="mailto:hello@aryv-app.com" style="color:#6b7390">hello@aryv-app.com</a></p>
+</td></tr></table></td></tr></table></body></html>`;
+
+  return {
+    to: email,
+    subject: "You're on the ARYV launch list",
+    text,
+    html,
+    replyTo: 'hello@aryv-app.com',
+    headers: {
+      'List-Unsubscribe': `<${remove}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  };
+};
+
+/**
  * Quote a CSV cell, and defuse cells a spreadsheet would run as a formula
  * (an address may legally begin with = or +).
  */
@@ -63,16 +111,21 @@ export const launchSignupService = {
   /**
    * Keep an address once. Signing up again keeps the first date, and records
    * the platform if this time the visitor gave one.
+   *
+   * @returns true when the address is new to the list, so the caller sends
+   *          the welcome email once per address rather than once per visit.
    */
-  async add(email: string, platform: LaunchPlatform | null): Promise<void> {
-    await sequelize.query(
+  async add(email: string, platform: LaunchPlatform | null): Promise<boolean> {
+    const rows = await sequelize.query<{ inserted: boolean }>(
       `INSERT INTO launch_signups (id, email, platform, created_at, updated_at)
        VALUES (:id, :email, :platform, NOW(), NOW())
        ON CONFLICT (email) DO UPDATE
          SET platform = COALESCE(EXCLUDED.platform, launch_signups.platform),
-             updated_at = NOW()`,
-      { replacements: { id: crypto.randomUUID(), email: email.toLowerCase(), platform }, type: QueryTypes.INSERT },
+             updated_at = NOW()
+       RETURNING (xmax = 0) AS inserted`,
+      { replacements: { id: crypto.randomUUID(), email: email.toLowerCase(), platform }, type: QueryTypes.SELECT },
     );
+    return rows[0]?.inserted === true;
   },
 
   async remove(email: string): Promise<void> {

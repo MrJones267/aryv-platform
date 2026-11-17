@@ -10,7 +10,6 @@ import { isNameLocked, changesName, NAME_LOCKED_MESSAGE } from '../services/iden
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
-import nodemailer from 'nodemailer';
 import { Op } from 'sequelize';
 import { AuthService } from '../services/AuthService';
 import { redisClient } from '../config/redis';
@@ -19,6 +18,7 @@ import { AuthenticatedRequest, AppError } from '../types';
 import logger from '../utils/logger';
 import { toE164 } from '../utils/phone';
 import { eraseAccount } from '../services/AccountClosureService';
+import { sendEmail, isEmailConfigured } from '../services/EmailService';
 import { validatePasswordStrength } from '../utils/password';
 import otpService, {
   OTP_PURPOSES,
@@ -721,7 +721,7 @@ export class AuthController {
       // Through OtpService like every other code, so wrong guesses are counted
       // and the code is destroyed after five. The hand-rolled key here had no
       // limit at all: a million guesses in ten minutes would always land.
-      if (!process.env['SMTP_HOST'] && process.env['NODE_ENV'] === 'production') {
+      if (!isEmailConfigured() && process.env['NODE_ENV'] === 'production') {
         res.status(503).json({ success: false, error: 'Email is not available right now', code: 'EMAIL_UNAVAILABLE', timestamp: new Date().toISOString() });
         return;
       }
@@ -737,15 +737,8 @@ export class AuthController {
       }
       const otp = issued.code;
 
-      if (process.env['SMTP_HOST']) {
-        const transporter = nodemailer.createTransport({
-          host: process.env['SMTP_HOST'],
-          port: parseInt(process.env['SMTP_PORT'] || '587', 10),
-          secure: process.env['SMTP_SECURE'] === 'true',
-          auth: { user: process.env['SMTP_USER'], pass: process.env['SMTP_PASS'] },
-        });
-        await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
+      if (isEmailConfigured()) {
+        await sendEmail({
           to: user.email,
           subject: 'Verify your email',
           text: `Your verification code is: ${otp}. Valid for 10 minutes.`,
@@ -974,7 +967,7 @@ export class AuthController {
       // Without a mail server nothing reaches the person, and production used
       // to answer "OTP sent via email" anyway. Say so instead, before a code
       // is issued and counted against them.
-      if (!process.env['SMTP_HOST'] && process.env['NODE_ENV'] === 'production') {
+      if (!isEmailConfigured() && process.env['NODE_ENV'] === 'production') {
         res.status(503).json({ success: false, error: 'Email codes are not available right now. Use your phone number instead.', code: 'EMAIL_UNAVAILABLE', timestamp: new Date().toISOString() });
         return;
       }
@@ -997,15 +990,8 @@ export class AuthController {
         return;
       }
 
-      if (process.env['SMTP_HOST']) {
-        const transporter = nodemailer.createTransport({
-          host: process.env['SMTP_HOST'],
-          port: parseInt(process.env['SMTP_PORT'] || '587', 10),
-          secure: process.env['SMTP_SECURE'] === 'true',
-          auth: { user: process.env['SMTP_USER'], pass: process.env['SMTP_PASS'] },
-        });
-        await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
+      if (isEmailConfigured()) {
+        await sendEmail({
           to: recipient,
           subject: 'Your ARYV verification code',
           // The body is built only from our own strings and the generated code.
@@ -1367,20 +1353,9 @@ export class AuthController {
 
       const resetUrl = `${process.env['FRONTEND_URL'] || 'http://localhost:3000'}/reset-password?token=${token}`;
 
-      if (process.env['SMTP_HOST']) {
-        const transporter = nodemailer.createTransport({
-          host: process.env['SMTP_HOST'],
-          port: parseInt(process.env['SMTP_PORT'] || '587', 10),
-          secure: process.env['SMTP_SECURE'] === 'true',
-          auth: {
-            user: process.env['SMTP_USER'],
-            pass: process.env['SMTP_PASS'],
-          },
-        });
-
-        await transporter.sendMail({
-          from: process.env['SMTP_FROM'] || 'noreply@aryv-app.com',
-          to: email,
+      if (isEmailConfigured()) {
+        await sendEmail({
+          to: (user as any).email,
           subject: 'Password Reset Request',
           text: `Click the link below to reset your password. This link expires in 1 hour.\n\n${resetUrl}`,
           html: `<p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
