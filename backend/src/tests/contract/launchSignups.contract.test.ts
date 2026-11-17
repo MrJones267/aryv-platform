@@ -3,7 +3,7 @@
  *               signing up, leaving, and the admin count and export
  * @author Oabona-Majoko
  * @created 2026-11-12
- * @lastModified 2026-11-13
+ * @lastModified 2026-11-17
  *
  * The form is a plain HTML post from aryv-app.com, so every answer must be
  * a redirect back to the site, and the CORS check must not stand in its way.
@@ -22,13 +22,22 @@ import LaunchSignup from '../../models/LaunchSignup';
 import * as AuditService from '../../services/AuditService';
 import { AdminUser } from '../../models/AdminUser';
 import { adminAuthHeader } from './harness';
+import * as EmailService from '../../services/EmailService';
 
 describe('POST /api/launch-signups', () => {
   let saved: jest.SpyInstance;
+  let mailed: jest.SpyInstance;
 
   beforeEach(() => {
-    saved = jest.spyOn(launchSignupService, 'add').mockResolvedValue(undefined);
+    saved = jest.spyOn(launchSignupService, 'add').mockResolvedValue(true);
+    jest.spyOn(EmailService, 'isEmailConfigured').mockReturnValue(true);
+    mailed = jest.spyOn(EmailService, 'sendEmail').mockResolvedValue(undefined);
   });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  /** The welcome email is sent after the redirect; let it start. */
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
 
   const post = (form: Record<string, string>) =>
     request(app)
@@ -103,6 +112,59 @@ describe('POST /api/launch-signups', () => {
       .send({ email: 'lesedi@example.com' });
 
     expect(res.status).toBe(303);
+  });
+
+  it('sends a new address one welcome email, with its own removal link', async () => {
+    await post({ email: 'Neo@Example.com' });
+    await settle();
+
+    expect(mailed).toHaveBeenCalledTimes(1);
+    const message = mailed.mock.calls[0][0] as EmailService.OutgoingEmail;
+    expect(message.to).toBe('neo@example.com');
+    expect(message.subject).toMatch(/launch list/i);
+    expect(message.text).toContain(removalUrl('neo@example.com'));
+    expect(message.html).toContain(removalUrl('neo@example.com').replace(/&/g, '&amp;'));
+    expect(message.headers).toEqual({
+      'List-Unsubscribe': `<${removalUrl('neo@example.com')}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    });
+    expect(message.replyTo).toBe('hello@aryv-app.com');
+  });
+
+  it('does not email an address that was already on the list', async () => {
+    saved.mockResolvedValueOnce(false);
+
+    const res = await post({ email: 'tumi@example.com' });
+    await settle();
+
+    expect(res.headers['location']).toBe(REDIRECTS.saved);
+    expect(mailed).not.toHaveBeenCalled();
+  });
+
+  it('still says the address was kept when the welcome email fails', async () => {
+    mailed.mockRejectedValueOnce(new Error('provider down'));
+
+    const res = await post({ email: 'kabelo@example.com' });
+    await settle();
+
+    expect(res.headers['location']).toBe(REDIRECTS.saved);
+    expect(mailed).toHaveBeenCalled();
+  });
+
+  it('sends no email when no provider is configured', async () => {
+    (EmailService.isEmailConfigured as jest.Mock).mockReturnValue(false);
+
+    await post({ email: 'onalenna@example.com' });
+    await settle();
+
+    expect(mailed).not.toHaveBeenCalled();
+  });
+
+  it('emails nobody for a bot that fills the hidden field', async () => {
+    await post({ email: 'victim@example.com', company: 'Spam Ltd' });
+    await settle();
+
+    expect(mailed).not.toHaveBeenCalled();
   });
 
   it('sends visitors only to the website, whatever they post', async () => {

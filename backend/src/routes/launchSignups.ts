@@ -3,7 +3,7 @@
  *               and the link that takes an address off the list again
  * @author Oabona-Majoko
  * @created 2026-11-12
- * @lastModified 2026-11-13
+ * @lastModified 2026-11-17
  *
  * The website runs no scripts, so sign-up takes a plain HTML form post and
  * answers with a redirect back to the site: /thanks when the address is
@@ -13,6 +13,8 @@
  * request (the browser sends it and follows the redirect without reading
  * the response), and the CORS check would otherwise reject the website's
  * Origin unless someone remembered to add it to CORS_ORIGIN.
+ *
+ * A new address gets one welcome email, with its removal link, right away.
  *
  * The answer is the same whether or not the address was already on the
  * list, so the form cannot be used to find out who has signed up.
@@ -30,7 +32,8 @@ import { body, validationResult } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { makeStore } from '../config/rateLimitStore';
 import { rateLimitKey } from '../config/rateLimitKey';
-import { launchSignupService, asLaunchPlatform, isValidRemovalToken } from '../services/LaunchSignupService';
+import { launchSignupService, asLaunchPlatform, isValidRemovalToken, welcomeEmail } from '../services/LaunchSignupService';
+import { sendEmail, isEmailConfigured } from '../services/EmailService';
 import { logError } from '../utils/logger';
 
 /** Where the visitor is sent back to. Fixed, so this is not an open redirect. */
@@ -105,8 +108,17 @@ router.post(
     try {
       // An unknown platform is dropped rather than refused: the question is
       // optional, and the address is what matters.
-      await launchSignupService.add((req.body.email as string).toLowerCase(), asLaunchPlatform(req.body.platform));
+      const email = (req.body.email as string).toLowerCase();
+      const isNew = await launchSignupService.add(email, asLaunchPlatform(req.body.platform));
       back(res, REDIRECTS.saved);
+      // After the redirect, so the visitor never waits on the mail provider.
+      // Only for an address new to the list: signing up twice, or someone
+      // typing in another person's address over and over, sends one email.
+      if (isNew && isEmailConfigured()) {
+        sendEmail(welcomeEmail(email)).catch((error: Error) =>
+          logError('Could not send a launch welcome email', error),
+        );
+      }
     } catch (error) {
       logError('Could not save a launch sign-up', error as Error);
       back(res, REDIRECTS.failed);
